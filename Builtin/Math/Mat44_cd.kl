@@ -1,0 +1,539 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+/**
+The :kl-ref:`Mat44_cd` represents a 4 by 4 matrix. It uses :kl-ref:`Vec4_cd` types for each of the 4 rows.
+
+\rst
+  .. kl-example:: Mat44_cd
+
+    // create a matrix 4x4
+    Vec4_cd v0(1.0, 0.0, 0.0, 0.0);
+    Vec4_cd v1(0.0, 1.0, 0.0, 0.0);
+    Vec4_cd v2(0.0, 0.0, 1.0, 0.0);
+    Vec4_cd v3(0.0, 0.0, 0.0, 1.0);
+    Mat44_cd mat(v0, v1, v2, v3);
+
+
+  Fabric Engine Matrices are column-major rather than row-major
+  --------------------------------------------------------------
+  Most DCCs follow a row-major convention for expressing their matrices which implies that
+  multiplication of matrices occurs in the opposite order to those in Fabric Engine.
+
+  In Maya, to transform a point (P) by a matrix (WM), you would post-multiply the vector by the matrix 
+  by placing it on the left side of the matrix. 
+
+   (P' = P x WM)
+
+  In Fabric Engine, to transform a point (P) by a matrix (WM), you would post-multiply it by placing it on the right hand side of the matrix.
+
+   (P' = WM x P)
+
+  When multiplying matrices together, the order of the matrices is also swapped when compared to Maya.
+
+  To Transform a Matrix (M) into the space of a another matrix (WM), you would place the L on the right hand side of WM
+
+  (M' = WM x M)
+
+  In Maya and 3dsmax, the order of the matrices in the multiplication would be swapped. 
+
+  (M' = M x WM)
+
+\endrst
+
+
+\seealso Xfo, Mat33_cd
+\dfgTypeColor Color(249, 157, 28)
+\dfgPresetColor Color(99, 129, 92)
+*/
+
+struct Mat44_cd
+{
+  Vec4_cd row0;
+  Vec4_cd row1;
+  Vec4_cd row2;
+  Vec4_cd row3;
+};
+
+inline Mat44_cd(){
+  this.setIdentity();
+}
+
+/// Constructor from scalars
+/// \dfgPresetDefault _00 1
+/// \dfgPresetDefault _11 1
+/// \dfgPresetDefault _22 1
+/// \dfgPresetDefault _33 1
+inline Mat44_cd(
+  Complex_d _00, Complex_d _01, Complex_d _02, Complex_d _03,
+  Complex_d _10, Complex_d _11, Complex_d _12, Complex_d _13,
+  Complex_d _20, Complex_d _21, Complex_d _22, Complex_d _23,
+  Complex_d _30, Complex_d _31, Complex_d _32, Complex_d _33) {
+  this.set(_00, _01, _02, _03, _10, _11, _12, _13, _20, _21, _22, _23, _30, _31, _32, _33);
+}
+
+/// Constructor from vectors
+inline Mat44_cd(in Vec4_cd row0, in Vec4_cd row1, in Vec4_cd row2, in Vec4_cd row3) {
+  this.setRows(row0, row1, row2, row3);
+}
+
+/// Constructor from Mat33
+inline Mat44_cd(in Mat33_cd upperLeft) {
+  this.setUpperLeft(upperLeft);
+  this.row3.t = 1;
+}
+
+/// Sets each component with a single scalar value.
+inline Mat44_cd.set!(
+  Complex_d _00, Complex_d _01, Complex_d _02, Complex_d _03,
+  Complex_d _10, Complex_d _11, Complex_d _12, Complex_d _13,
+  Complex_d _20, Complex_d _21, Complex_d _22, Complex_d _23,
+  Complex_d _30, Complex_d _31, Complex_d _32, Complex_d _33
+) {
+  this.row0 = Vec4_cd(_00, _01, _02, _03);
+  this.row1 = Vec4_cd(_10, _11, _12, _13);
+  this.row2 = Vec4_cd(_20, _21, _22, _23);
+  this.row3 = Vec4_cd(_30, _31, _32, _33);
+}
+
+
+inline Mat44_cd.set!(Vec3_cd translation, Mat33_cd rotation, Vec3_cd scaling) {
+  this.setTranslation(translation);
+  this.setUpperLeft(rotation);
+  this.setScaling(scaling);
+}
+
+/// \param shearing Shearing vector as  {x shearing along y, x shearing along z, y shearing along z}.
+inline Mat44_cd.set!(Vec3_cd translation, Mat33_cd rotation, Vec3_cd shearing, Vec3_cd scaling) {
+  Mat33_cd scaleShear( 
+            scaling.x, shearing.x*scaling.y, shearing.y*scaling.z,
+            0,                    scaling.y, shearing.z*scaling.z,
+            0,                            0,            scaling.z );
+
+  this.setUpperLeft(rotation * scaleShear);
+  this.setTranslation(translation);
+}
+
+
+/// set the upper left 3 x 3 components from a Mat33_cd.
+/// the remaining components are set to the identify matrix's content.
+inline Mat44_cd.setFromMat33_cd!(in Mat33_cd m) {
+  this.row0.x = m.row0.x; this.row0.y = m.row0.y; this.row0.z = m.row0.z; this.row0.t = Complex_d();
+  this.row1.x = m.row1.x; this.row1.y = m.row1.y; this.row1.z = m.row1.z; this.row1.t = Complex_d();
+  this.row2.x = m.row2.x; this.row2.y = m.row2.y; this.row2.z = m.row2.z; this.row2.t = Complex_d();
+  this.row3.x = Complex_d(); this.row3.y = Complex_d(); this.row3.z = Complex_d(); this.row3.t = Complex_d(1.0);
+}
+
+
+/// Setter from vectors, row-wise
+inline Mat44_cd.setRows!(in Vec4_cd row0, in Vec4_cd row1, in Vec4_cd row2, in Vec4_cd row3) {
+  this.row0 = row0;
+  this.row1 = row1;
+  this.row2 = row2;
+  this.row3 = row3;
+}
+
+/// Setter from vectors, column-wise
+inline Mat44_cd.setColumns!(in Vec4_cd col0, in Vec4_cd col1, in Vec4_cd col2, in Vec4_cd col3) {
+  this.row0.x = col0.x; this.row0.y = col1.x; this.row0.z = col2.x; this.row0.t = col3.x;
+  this.row1.x = col0.y; this.row1.y = col1.y; this.row1.z = col2.y; this.row1.t = col3.y;
+  this.row2.x = col0.z; this.row2.y = col1.z; this.row2.z = col2.z; this.row2.t = col3.z;
+  this.row3.x = col0.t; this.row3.y = col1.t; this.row3.z = col2.t; this.row3.t = col3.t;
+}
+
+/// setting all components of the matrix to 0.0
+inline Mat44_cd.setNull!() {
+  Vec4_cd nullVec4_cd(Complex_d(), Complex_d(), Complex_d(), Complex_d());
+  this.row0 = this.row1 = this.row2 = this.row3 = nullVec4_cd;
+}
+
+/// returns true if all components in this matrix are 0.0
+inline Boolean Mat44_cd.isNull() {
+  Vec4_cd nullVec4_cd(Complex_d(), Complex_d(), Complex_d(), Complex_d());
+  return this.row0 == nullVec4_cd && this.row1 == nullVec4_cd && this.row2 == nullVec4_cd && this.row3 == nullVec4_cd;
+}
+
+/// setting this matrix to the identity matrix
+inline Mat44_cd.setIdentity!() {
+  this.setNull();
+  this.setDiagonal(Complex_d(1.0));
+}
+
+/// setting the diagonal components of 
+/// this matrix to a scalar
+inline Mat44_cd.setDiagonal!(in Complex_d v) {
+  this.setNull();
+  this.row0.x = this.row1.y = this.row2.z = this.row3.t = v;
+}
+
+/// setting the diagonal components of this
+/// matrix to the components of a Vec3_cd
+inline Mat44_cd.setDiagonal!(in Vec3_cd v) {
+  this.setNull();
+  this.row0.x = v.x;
+  this.row1.y = v.y;
+  this.row2.z = v.z;
+  this.row3.t = Complex_d(1.0);
+}
+
+/// matrix to the components of a Vec4_cd
+inline Mat44_cd.setDiagonal!(in Vec4_cd v) {
+  this.setNull();
+  this.row0.x = v.x;
+  this.row1.y = v.y;
+  this.row2.z = v.z;
+  this.row3.t = v.t;
+}
+
+/// Returns true if this matrix is the same as another one
+inline Boolean Mat44_cd.equal(in Mat44_cd other) {
+  return this.row0.equal( other.row0 ) && this.row1.equal( other.row1 ) && this.row2.equal( other.row2 ) && this.row3.equal( other.row3 );
+}
+
+/// Returns true if this matrix is almost the same as another one
+/// (given a precision)
+inline Boolean Mat44_cd.almostEqual(
+  in Mat44_cd other,
+  Float32 precision
+  ) {
+  return this.row0.almostEqual( other.row0, precision ) && this.row1.almostEqual( other.row1, precision ) && this.row2.almostEqual( other.row2, precision ) && this.row3.almostEqual( other.row3, precision );
+}
+
+/// Returns true if this matrix is almost the same as another one
+/// (using a default precision)
+inline Boolean Mat44_cd.almostEqual(in Mat44_cd other) {
+  return this.almostEqual(other, PRECISION);
+}
+
+/// Equals operator
+inline Boolean == (Mat44_cd a, Mat44_cd b) {
+  return a.equal(b);
+}
+
+/// Not equals operator
+inline Boolean != (Mat44_cd a, Mat44_cd b) {
+  return !a.equal(b);
+}
+
+/// Hash for this value
+inline UInt32 Mat44_cd.hash() {
+  return this.row0.hash() ^ this.row1.hash() ^ this.row2.hash() ^ this.row3.hash();
+}
+
+/// Returns the addition of two matrices
+inline Mat44_cd + (Mat44_cd a, Mat44_cd b) {
+  return Mat44_cd( a.row0 + b.row0, a.row1 + b.row1, a.row2 + b.row2, a.row3 + b.row3 );
+}
+
+/// Adds another matrix to this one
+inline Mat44_cd. += (Mat44_cd other) {
+  this = this + other;
+}
+
+/// Returns the subtraction of two matrices
+inline Mat44_cd - (Mat44_cd a, Mat44_cd b) {
+  return Mat44_cd( a.row0 - b.row0, a.row1 - b.row1, a.row2 - b.row2, a.row3 - b.row3 );
+}
+
+/// Subtracts another matrix from this one
+inline Mat44_cd. -= (Mat44_cd other) {
+  this = this - other;
+}
+
+/// Returns the product of two matrices
+/// \dfgPresetDefault right {"row0": {"x": 1, "y": 0, "z": 0, "t": 0}, "row1": { "x": 0, "y": 1, "z": 0, "t": 0}, "row2": { "x": 0, "y": 0, "z": 1, "t": 0}, "row3": { "x": 0, "y": 0, "z": 0, "t": 1}}
+inline Mat44_cd * (Mat44_cd left, Mat44_cd right) {
+  Mat44_cd result;
+
+  result.row0.x = left.row0.x * right.row0.x + left.row0.y * right.row1.x + left.row0.z * right.row2.x + left.row0.t * right.row3.x;
+  result.row0.y = left.row0.x * right.row0.y + left.row0.y * right.row1.y + left.row0.z * right.row2.y + left.row0.t * right.row3.y;
+  result.row0.z = left.row0.x * right.row0.z + left.row0.y * right.row1.z + left.row0.z * right.row2.z + left.row0.t * right.row3.z;
+  result.row0.t = left.row0.x * right.row0.t + left.row0.y * right.row1.t + left.row0.z * right.row2.t + left.row0.t * right.row3.t;
+
+  result.row1.x = left.row1.x * right.row0.x + left.row1.y * right.row1.x + left.row1.z * right.row2.x + left.row1.t * right.row3.x;
+  result.row1.y = left.row1.x * right.row0.y + left.row1.y * right.row1.y + left.row1.z * right.row2.y + left.row1.t * right.row3.y;
+  result.row1.z = left.row1.x * right.row0.z + left.row1.y * right.row1.z + left.row1.z * right.row2.z + left.row1.t * right.row3.z;
+  result.row1.t = left.row1.x * right.row0.t + left.row1.y * right.row1.t + left.row1.z * right.row2.t + left.row1.t * right.row3.t;
+
+  result.row2.x = left.row2.x * right.row0.x + left.row2.y * right.row1.x + left.row2.z * right.row2.x + left.row2.t * right.row3.x;
+  result.row2.y = left.row2.x * right.row0.y + left.row2.y * right.row1.y + left.row2.z * right.row2.y + left.row2.t * right.row3.y;
+  result.row2.z = left.row2.x * right.row0.z + left.row2.y * right.row1.z + left.row2.z * right.row2.z + left.row2.t * right.row3.z;
+  result.row2.t = left.row2.x * right.row0.t + left.row2.y * right.row1.t + left.row2.z * right.row2.t + left.row2.t * right.row3.t;
+
+  result.row3.x = left.row3.x * right.row0.x + left.row3.y * right.row1.x + left.row3.z * right.row2.x + left.row3.t * right.row3.x;
+  result.row3.y = left.row3.x * right.row0.y + left.row3.y * right.row1.y + left.row3.z * right.row2.y + left.row3.t * right.row3.y;
+  result.row3.z = left.row3.x * right.row0.z + left.row3.y * right.row1.z + left.row3.z * right.row2.z + left.row3.t * right.row3.z;
+  result.row3.t = left.row3.x * right.row0.t + left.row3.y * right.row1.t + left.row3.z * right.row2.t + left.row3.t * right.row3.t;
+
+  return result;
+}
+
+/// Returns the product of a matrix and a Vec4_cd
+inline Vec4_cd * (Mat44_cd mat44, Vec4_cd vec4) {
+  return Vec4_cd(
+    mat44.row0.x * vec4.x + mat44.row0.y * vec4.y + mat44.row0.z * vec4.z + mat44.row0.t * vec4.t,
+    mat44.row1.x * vec4.x + mat44.row1.y * vec4.y + mat44.row1.z * vec4.z + mat44.row1.t * vec4.t,
+    mat44.row2.x * vec4.x + mat44.row2.y * vec4.y + mat44.row2.z * vec4.z + mat44.row2.t * vec4.t,
+    mat44.row3.x * vec4.x + mat44.row3.y * vec4.y + mat44.row3.z * vec4.z + mat44.row3.t * vec4.t
+  );
+}
+
+/// Returns the product of a matrix and a Vec3_cd
+inline Vec3_cd * (Mat44_cd mat44, Vec3_cd vec3) {
+  Complex_d one(1.0);
+  Vec4_cd temp = mat44 * Vec4_cd(vec3.x, vec3.y, vec3.z, one);
+  return temp.makeHomogeneousVec3_cd();
+}
+
+/// Returns the product of a matrix and a scalar
+/// \dfgPresetDefault s 1
+inline Mat44_cd * (Mat44_cd mat44, Complex_d s) {
+  return Mat44_cd( mat44.row0 * s, mat44.row1 * s, mat44.row2 * s, mat44.row3 * s );
+}
+
+/// Returns the product of a scalar and a matrix
+/// \dfgPresetDefault s 1
+inline Mat44_cd * (Complex_d s, Mat44_cd mat44) {
+  return Mat44_cd( mat44.row0 * s, mat44.row1 * s, mat44.row2 * s, mat44.row3 * s );
+}
+
+/// Multiplies this matrix with another one
+/// \dfgPresetDefault other {"row0": {"x": 1, "y": 0, "z": 0, "t": 0}, "row1": { "x": 0, "y": 1, "z": 0, "t": 0}, "row2": { "x": 0, "y": 0, "z": 1, "t": 0}, "row3": { "x": 0, "y": 0, "z": 0, "t": 1}}
+inline Mat44_cd. *= (Mat44_cd other) {
+  this = this * other;
+}
+
+/// Multiplies this matrix with a scalar
+/// \dfgPresetDefault other 1
+inline Mat44_cd. *= (Complex_d other) {
+  this = this * other;
+}
+
+/// Returns the division of a matrix and a scalar
+/// \dfgPresetDefault s 1
+inline Mat44_cd / (Mat44_cd mat44, Complex_d s) {
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( s ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( s, "Mat44_cd.divide" );
+  return mat44 * (1.0 / s);
+}
+
+/// Divides this matrix by a scalar
+/// \dfgPresetDefault other 1
+inline Mat44_cd. /= (Complex_d other) {
+  this = this / other;
+}
+
+/// Overload method for the add operator
+inline Mat44_cd Mat44_cd.add(Mat44_cd other) {
+  return this + other;
+}
+
+/// Overload method for the subtract operator
+inline Mat44_cd Mat44_cd.subtract(Mat44_cd other) {
+  return this - other;
+}
+
+/// Overload method for the multiply operator
+/// \dfgPresetDefault other {"row0": {"x": 1, "y": 0, "z": 0, "t": 0}, "row1": { "x": 0, "y": 1, "z": 0, "t": 0}, "row2": { "x": 0, "y": 0, "z": 1, "t": 0}, "row3": { "x": 0, "y": 0, "z": 0, "t": 1}}
+inline Mat44_cd Mat44_cd.multiply(Mat44_cd other) {
+  return this * other;
+}
+
+/// Returns the product of this matrix and a scalar
+/// \dfgPresetDefault other 1
+inline Mat44_cd Mat44_cd.multiplyComplex_d(Complex_d other) {
+  return this * other;
+}
+
+/// Returns the product of this matrix and a Vec3_cd
+inline Vec3_cd Mat44_cd.multiplyVector3(Vec3_cd other) {
+  return this * other;
+}
+
+/// Returns the product of this matrix and a Vec4_cd
+inline Vec4_cd Mat44_cd.multiplyVector4(Vec4_cd other) {
+  return this * other;
+}
+
+/// Returns the division of this matrix and a scalar
+/// \dfgPresetDefault other 1
+inline Mat44_cd Mat44_cd.divideComplex_d(Complex_d other) {
+  return this / other;
+}
+
+/// helper function for determinant and adjoint
+/// \internal
+function Boolean Mat44_cd.internalCompute( in Boolean computeDet, io Complex_d det, in Boolean computeAdjoint, io Mat44_cd adjoint ) {
+  Complex_d a0 = this.row0.x * this.row1.y - this.row0.y * this.row1.x;
+  Complex_d a1 = this.row0.x * this.row1.z - this.row0.z * this.row1.x;
+  Complex_d a2 = this.row0.x * this.row1.t - this.row0.t * this.row1.x;
+  Complex_d a3 = this.row0.y * this.row1.z - this.row0.z * this.row1.y;
+  Complex_d a4 = this.row0.y * this.row1.t - this.row0.t * this.row1.y;
+  Complex_d a5 = this.row0.z * this.row1.t - this.row0.t * this.row1.z;
+  Complex_d b0 = this.row2.x * this.row3.y - this.row2.y * this.row3.x;
+  Complex_d b1 = this.row2.x * this.row3.z - this.row2.z * this.row3.x;
+  Complex_d b2 = this.row2.x * this.row3.t - this.row2.t * this.row3.x;
+  Complex_d b3 = this.row2.y * this.row3.z - this.row2.z * this.row3.y;
+  Complex_d b4 = this.row2.y * this.row3.t - this.row2.t * this.row3.y;
+  Complex_d b5 = this.row2.z * this.row3.t - this.row2.t * this.row3.z;
+
+  if(computeDet)
+    det = a0 * b5 - a1 * b4 + a2 * b3 + a3 * b2 - a4 * b1 + a5 * b0;
+
+  if(computeAdjoint) {
+    adjoint.row0.x =  + this.row1.y * b5 - this.row1.z * b4 + this.row1.t * b3;
+    adjoint.row0.y = -this.row0.y * b5 + this.row0.z * b4 - this.row0.t * b3;
+    adjoint.row0.z =  + this.row3.y * a5 - this.row3.z * a4 + this.row3.t * a3;
+    adjoint.row0.t = -this.row2.y * a5 + this.row2.z * a4 - this.row2.t * a3;
+    adjoint.row1.x = -this.row1.x * b5 + this.row1.z * b2 - this.row1.t * b1;
+    adjoint.row1.y =  + this.row0.x * b5 - this.row0.z * b2 + this.row0.t * b1;
+    adjoint.row1.z = -this.row3.x * a5 + this.row3.z * a2 - this.row3.t * a1;
+    adjoint.row1.t =  + this.row2.x * a5 - this.row2.z * a2 + this.row2.t * a1;
+    adjoint.row2.x =  + this.row1.x * b4 - this.row1.y * b2 + this.row1.t * b0;
+    adjoint.row2.y = -this.row0.x * b4 + this.row0.y * b2 - this.row0.t * b0;
+    adjoint.row2.z =  + this.row3.x * a4 - this.row3.y * a2 + this.row3.t * a0;
+    adjoint.row2.t = -this.row2.x * a4 + this.row2.y * a2 - this.row2.t * a0;
+    adjoint.row3.x = -this.row1.x * b3 + this.row1.y * b1 - this.row1.z * b0;
+    adjoint.row3.y =  + this.row0.x * b3 - this.row0.y * b1 + this.row0.z * b0;
+    adjoint.row3.z = -this.row3.x * a3 + this.row3.y * a1 - this.row3.z * a0;
+    adjoint.row3.t =  + this.row2.x * a3 - this.row2.y * a1 + this.row2.z * a0;
+  }
+  return true;//Dummy; make this an r-value func
+}
+
+/// Returns the determinant of this matrix
+inline Complex_d Mat44_cd.determinant() {
+  Complex_d det;
+  Mat44_cd dummy;
+  this.internalCompute(true, det, false, dummy);
+  return det;
+}
+
+/// Returns the adjoint matrix of this matrix
+inline Mat44_cd Mat44_cd.adjoint() {
+  Complex_d dummy;
+  Mat44_cd adjoint;
+  this.internalCompute(false, dummy, true, adjoint);
+  return adjoint;
+}
+
+/// Returns the inverse matrix of this matrix
+inline Mat44_cd Mat44_cd.inverse() {
+  Complex_d det;
+  Mat44_cd adjoint;
+  this.internalCompute(true, det, true, adjoint);
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( det ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( det, "Mat44_cd.inverse" );
+  return adjoint / det;
+}
+
+/// Returns the inverse matrix of this matrix, always checking the determinant value.
+inline Mat44_cd Mat44_cd.inverse_safe() {
+  Complex_d det;
+  Mat44_cd adjoint;
+  this.internalCompute(true, det, true, adjoint);
+  if( Math_badDivisor( det ) )
+    return adjoint;
+  return adjoint / det;
+}
+
+/// Returns the transposed matrix of this matrix
+inline Mat44_cd Mat44_cd.transpose() {
+  Mat44_cd r;
+  r.setColumns(this.row0,this.row1,this.row2,this.row3);
+  return r;
+}
+
+/// Returns the translation components of
+/// this matrix as a Vec3_cd
+inline Vec3_cd Mat44_cd.translation() {
+  Vec3_cd result;
+  result.x = this.row0.t;
+  result.y = this.row1.t;
+  result.z = this.row2.t;
+  return result;
+}
+
+/// Sets the translation components 
+/// of this matrix to 0.0
+inline Mat44_cd.zeroTranslation!() {
+  this.row0.t = Complex_d();
+  this.row1.t = Complex_d();
+  this.row2.t = Complex_d();
+}
+
+/// Sets the translation components 
+/// of this matrix to a given Vec3_cd
+inline Mat44_cd.setTranslation!(Vec3_cd tr) {
+  this.row0.t = tr.x;
+  this.row1.t = tr.y;
+  this.row2.t = tr.z;
+}
+
+/// replaces the upper left 3 x 3 components from a Mat33_cd.
+inline Mat44_cd.setUpperLeft!(in Mat33_cd m) {
+  this.row0.x = m.row0.x; this.row0.y = m.row0.y; this.row0.z = m.row0.z;
+  this.row1.x = m.row1.x; this.row1.y = m.row1.y; this.row1.z = m.row1.z;
+  this.row2.x = m.row2.x; this.row2.y = m.row2.y; this.row2.z = m.row2.z;
+}
+
+
+/// Sets the scaling of the matrix by scaling the rows of the matrix. 
+/// \note This will preserve the existing matrix content
+inline Mat44_cd.setScaling!(in Vec3_cd v) {
+  Complex_d len;
+
+  Vec3_cd col0(this.row0.x, this.row1.x, this.row2.x);
+  Vec3_cd col1(this.row0.y, this.row1.y, this.row2.y);
+  Vec3_cd col2(this.row0.z, this.row1.z, this.row2.z);
+  
+  len = col0.length();
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( len ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( len, "Mat44_cd.setScaling: Matrix is singular" );
+  col0 *= (v.x / len);
+
+  len = col1.length(); 
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( len ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( len, "Mat44_cd.setScaling: Matrix is singular" );
+  col1 *= (v.y / len);
+
+  len = col2.length(); 
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( len ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( len, "Mat44_cd.setScaling: Matrix is singular" );
+  col2 *= (v.z / len);
+
+  this.row0.x = col0.x;
+  this.row1.x = col0.y;
+  this.row2.x = col0.z;
+
+  this.row0.y = col1.x;
+  this.row1.y = col1.y;
+  this.row2.y = col1.z;
+
+  this.row0.z = col2.x;
+  this.row1.z = col2.y;
+  this.row2.z = col2.z;
+}
+
+/// Returns the upper left 3 x 3 components
+/// of this matrix as a Mat33_cd
+inline Mat33_cd Mat44_cd.upperLeft() {
+  Mat33_cd result;
+
+  result.row0.x = this.row0.x;
+  result.row0.y = this.row0.y;
+  result.row0.z = this.row0.z;
+
+  result.row1.x = this.row1.x;
+  result.row1.y = this.row1.y;
+  result.row1.z = this.row1.z;
+
+  result.row2.x = this.row2.x;
+  result.row2.y = this.row2.y;
+  result.row2.z = this.row2.z;
+
+  return result;
+}
+
+
+

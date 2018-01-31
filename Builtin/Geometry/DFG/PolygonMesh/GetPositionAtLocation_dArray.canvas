@@ -1,0 +1,86 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/PolygonMesh.html",
+    "uiTooltip" : "From a GeometryLocation, returns the local position as a Vec3_d (double precision Float64).\n\n Supported by PolygonMesh"
+    },
+  "title" : "GetPositionAtLocation_d[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "PolygonMesh[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "location",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "GeometryLocation[]" : [
+          {
+            "index" : -1,
+            "subIndex" : 0,
+            "barycentric" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "GeometryLocation[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Vec3_d[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "B6748D358F995B3B5DAE6D44E1333768",
+  "code" : "require Geometry;
+
+operator Geometry_PolygonMesh_getPositionAtLocation_d_task<<<index>>>(
+  io Vec3_d[] result
+, in PolygonMesh[] this
+, in GeometryLocation[] location
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].getPositionAtLocation_d(location[index < location.size() ? index : location.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( location.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < location.size()) task_size = location.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Geometry_PolygonMesh_getPositionAtLocation_d_task(index, result, this, location);
+    }
+  } else {
+    Geometry_PolygonMesh_getPositionAtLocation_d_task<<<task_size>>>(result, this, location);
+  }
+}
+"
+  }

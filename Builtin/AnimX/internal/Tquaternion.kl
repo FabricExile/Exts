@@ -1,0 +1,57 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+// animx uses the default Quat_d
+
+namespace AnimX
+{
+  Quat_d slerp(Quat_d p, Quat_d q, Float64 t)
+  {
+    Quat_d tmp(q);
+    Float64 cosOmega = p.dot(q);
+
+    // Always take the shortest path
+    if (cosOmega < 0)
+    {
+      cosOmega = -cosOmega;
+      tmp = tmp.multiplyFloat64(-1.0);
+    }
+
+    // Standard case slerp
+    if (cosOmega < 1.0 - kSlerpThreshold)
+    {
+      Float64 omega = acos(Math_clamp(cosOmega, -1.0, 1.0));
+      Float64 sinOmega = sin(omega);
+      Float64 s1 = sin((1.0 - t) * omega) / sinOmega;
+      Float64 s2 = sin(t * omega) / sinOmega;
+      return s1 * p + s2 * tmp;
+    }
+
+    // Otherwise p and q are very close, fallback to linear interpolation
+    return (p + t * (tmp - p)).unit();
+  }
+
+  Quat_d doubleImpl(Quat_d q0, Quat_d q1)
+  {
+    return q1.multiplyFloat64(2.0 * q0.dot(q1)) - q0;
+  }
+
+  function Quat_d bezierPt(Quat_d qPrev, Quat_d q, Quat_d qNext, Boolean findNextCtrlPt) {
+    // Calculate next ctrl point ( a ) relative to q
+    Quat_d ctrlPt = (doubleImpl(qPrev, q) + qNext).unit();
+
+    // Calculate previous ctrl point ( b-1 ) relative to q
+    if (!findNextCtrlPt)
+      ctrlPt = doubleImpl(ctrlPt, q);
+
+    return slerp(q, ctrlPt, kOneThird);
+  }
+
+  function Quat_d bezier(Quat_d p, Quat_d a, Quat_d b, Quat_d q, Float64 t) {
+    Quat_d tmp = slerp(a, b, t);
+    return slerp(slerp(slerp(p, a, t), tmp, t),
+        slerp(tmp, slerp(b, q, t), t),
+        t);
+  }
+}

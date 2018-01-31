@@ -1,0 +1,84 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Ray.html"
+    },
+  "title" : "Ray[] ->",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "value",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Ray[]" : [
+          {
+            "start" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              },
+            "direction" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Ray[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "start",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "direction",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Vec3[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "1AA9A2E836A7E0919B3B8B23854D1ED3",
+  "code" : "require Math;
+
+operator Math_Ray_decompose_task<<<index>>>(in Ray[] value, io Vec3[] start, io Vec3[] direction) {
+  start[index] = value[index].start;
+  direction[index] = value[index].direction;
+}
+
+dfgEntry {
+  Size task_size = value.size();
+  start.resize(task_size);
+  direction.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size i = 0; i < task_size; i++) {
+      Math_Ray_decompose_task(i, value, start, direction);
+    }
+  } else {
+    Math_Ray_decompose_task<<<task_size>>>(value, start, direction);
+  }
+}
+"
+  }

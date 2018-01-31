@@ -1,0 +1,56 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/**
+The ImporterBehavior represents an animation or an interactive characteristic 
+of an object. Behaviors are typically interpreted by
+realtime applications to express interaction.
+\dfgPresetOmit
+*/
+object ImporterBehavior : ImporterObject permits Importer
+{
+};
+
+/// \dfgPresetOmit
+function ImporterBehavior(String id, String path) {
+  this.initialize(id, path, 'Behavior');
+}
+
+/// \dfgPresetOmit
+protected function ImporterBehavior.initialize!(String id, String path, String type) {
+  this.parent.initialize(id, path, type);
+  this.initProperty('behaviorType', ImporterString(''));
+}
+
+/// \dfgPresetOmit
+function String ImporterBehavior.getBehaviorType(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('behaviorType', context);
+  return mutableThis.getStringProperty('behaviorType');
+}
+
+/// \dfgPresetOmit
+function ImporterBehavior.setBehaviorType!(String behaviorType) {
+  this.setProperty('behaviorType', behaviorType);
+}
+
+/// \dfgPresetOmit
+function String ImporterBehavior.getDependencyID(ImporterContext context, String propertyName) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty(propertyName, context);
+  return mutableThis.getStringProperty(propertyName);
+}
+
+/// \dfgPresetOmit
+function Ref<ImporterObject> ImporterBehavior.getDependency(ImporterContext context, String propertyName) {
+  return this.importer.getObjectFromID(this.getDependencyID(context, propertyName));
+}
+
+/// \dfgPresetOmit
+function ImporterBehavior.setDependency!(String propertyName, Ref<ImporterObject> dependency) {
+  if(dependency == null)
+    this.properties[propertyName] = ImporterString('');
+  else
+    this.properties[propertyName] = ImporterString(dependency.getID());
+}

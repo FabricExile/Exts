@@ -1,0 +1,141 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+require Math, FabricStatistics;
+
+/**
+  The Image2DRGBA is an Image2D storing RGBA pixel values.
+  \example
+
+  require OpenImageIO;
+  require FileIO;
+  require Images;
+
+  function Boolean loadRGBAImageData(
+    String filePath,
+    io Image2DRGBA image
+  ) {
+
+    OpenImageInput oiimage = OpenImageInput();
+    oiimage.open(filePath);
+    if(oiimage.valid()) {
+      OpenImageTypeDesc desc = OpenImageTypeDesc(OpenImage_BASETYPE_UINT8, OpenImage_AGGREGATE_SCALAR, OpenImage_VECSEMANTICS_NOXFORM);
+
+      OpenImageSpec spec = oiimage.spec();
+      image.resize(spec.get_full_width(), spec.get_full_height());
+      Boolean success = false;
+      if(spec.get_nchannels() == 4) {
+        Data data = image.pixels.data();
+        success = oiimage.read_image(desc, data, 0, 0, 0);
+      } else if(spec.get_nchannels() == 3) {
+        image.resize(image.width, image.height);
+        Byte bytes[];
+        bytes.resize(image.width * image.height * spec.get_nchannels());
+        Data data = bytes.data();
+        success = oiimage.read_image(desc, data, 0, 0, 0);
+        if(success) {
+          Size offset = 0;
+          for(Size i=0;i< image.pixels.size();i++) {
+            image.pixels[i].r = bytes[offset++];
+            image.pixels[i].g = bytes[offset++];
+            image.pixels[i].b = bytes[offset++];
+            image.pixels[i].a = 255;
+          }
+        }
+      }
+      if(!success) {
+        setError("Image2D '"+filePath+"' could not be converted to RGBA.");
+      }
+    }
+    else {
+      setError("Image2D '"+filePath+"' could not be opened!");
+      return false;
+    }
+    return true;
+  }
+
+  operator entry() {
+
+    FilePath inputPath = FilePath('${FABRIC_SCENE_GRAPH_DIR}/Python/Apps/Resources/Images/logo.png').expandEnvVars();
+
+    Image2DRGBA image();
+    loadRGBAImageData(inputPath.string(), image);
+
+    // report some pixel
+    for(Size i=1;i<5;i++)
+      for(Size j=1;j<5;j++)
+        report(image.sample(Scalar(i)/5.0, Scalar(j)/5.0));
+  }
+
+  \endexample
+  \seealso Image2D
+*/
+object Image2DRGBA : Image2D {
+  RGBA pixels[];
+};
+
+/// Default constructor. Sets up the statistics register.
+function Image2DRGBA() {
+  if(FabricStatisticsEnabled())
+    this.autoStats = StatisticsAutoRegisterMember(this);
+}
+
+/// Resize the image allocating space for pixel storage.
+/// \param width The new width of the image
+/// \param height The new height of the image
+function Image2DRGBA.resize!(
+  in UInt32 width,
+  in UInt32 height,
+){
+  this.pixels.resize(width * height);
+  this.width = width;
+  this.height = height;
+  this.incrementVersion();
+}
+
+
+/// Samples the image pixels, returning a bi-linearly interpolated pixel value. 
+/// \param u The u param to sample the image. Should range between 0.0 and 1.0 
+/// \param v The v param to sample the image. Should range between 0.0 and 1.0 
+function RGBA Image2DRGBA.sample(
+  in Scalar u,
+  in Scalar v
+){
+  Scalar u1, u2, v1, v2;
+  UInt32 tl, bl, tr, br;
+  Scalar uinterp, vinterp;
+  this.getSampleParams( 
+    u, v,
+    u1, u2, v1, v2,
+    tl, bl, tr, br,
+    uinterp, vinterp
+    );
+  
+  RGBA tlClr = this.pixels[tl];
+  RGBA blClr = this.pixels[bl];
+  RGBA trClr = this.pixels[tr];
+  RGBA brClr = this.pixels[br];
+  RGBA uClr = tlClr.linearInterpolate(blClr, uinterp);
+  RGBA vClr = trClr.linearInterpolate(brClr, uinterp);
+  return uClr.linearInterpolate(vClr, vinterp);
+}
+
+/// Sets a new pixel value
+/// \param uindex the index of the pixel in u
+/// \param vindex the index of the pixel in v
+/// \param pixelValue the new value for the pixel
+inline Image2DRGBA.setPixel!(  in Integer uindex,
+  in Integer vindex,
+  in RGBA pixelValue
+){
+  this.pixels[(vindex * this.width) + uindex] = pixelValue;
+}
+
+//Implementation of StatisticSource interface's 'getStatistics()'.
+function StatisticRecord[] Image2DRGBA.getStatistics() {
+  StatisticRecord stats[] = this.parent.getStatistics();
+  stats.push( StatisticRecord( "Size", this.pixels.size() ) );
+  stats.push( StatisticRecord( Statistic_MemoryUsage, 12*4+this.pixels.size()*4*4 ) );
+  return stats;
+}

@@ -1,0 +1,563 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/******************************************************************************
+Bezier CURVES
+******************************************************************************/
+
+CurvesStructure.bezier_updateDomainAndSpanCountFromPoints!( io Curves_data curveData ) {
+  // We ignore extra points if not adding up to a piece. This might occur as a temporary state when drawing point per point.
+  UInt8 degree = curveData.order - 1;
+
+  if( curveData.isClosed() ) {
+    curveData.spanCount = curveData.pointCount / degree;//Note: we want Integer truncation here
+    curveData.wrappedCVCount = 1;
+  } else if( curveData.pointCount ) {
+    curveData.spanCount = ( curveData.pointCount - 1 ) / degree;//Note: we want Integer truncation here
+    curveData.wrappedCVCount = 0;
+  }
+
+  this.setDomain( curveData, Vec2( curveData.domainStart, curveData.spanCount - curveData.domainStart ) );
+}
+
+UInt32 CurvesStructure.bezier_openOrCloseCurve_getReservedPointCount!( io Curves_data curveData, Boolean open ) {
+  // Since the Bezier is piecewise, we need to keep a "full piece".
+  // So, we add one point if opening, remove one if closing
+  if( open )
+    return curveData.pointCount + 1;
+  else
+    return curveData.pointCount ? curveData.pointCount - 1 : 0;
+}
+
+CurvesStructure.bezier_openOrCloseCurve_reservedPoints!( io Curves_data curveData, Boolean open, io LocalL8UInt32Array copyAttrFrom, io LocalL8UInt32Array copyAttrTo ) {
+  // Since the Bezier is piecewise, we need to keep a "full piece".
+  // So, we added one point if opening, removed one if closing
+
+  UInt32 prevFirstPointIfMoved;
+
+  if( open ) {
+    clearFlag( curveData.flags, curveFlags_closed );
+    this.resizePoints( curveData, curveData.pointCount + 1, prevFirstPointIfMoved );
+  } else {
+    setFlag( curveData.flags, curveFlags_closed );
+    this.resizePoints( curveData, curveData.pointCount ? curveData.pointCount - 1 : 0, prevFirstPointIfMoved );
+  }
+  if( open ) {
+    if( curveData.pointCount ) {
+      // Copy first point to last point
+      copyAttrFrom.push( curveData.firstPoint );
+      copyAttrTo.push( curveData.pointCount - 1 );
+    }
+  }
+  this.bezier_updateDomainAndSpanCountFromPoints( curveData );
+}
+
+CurvesStructure.bezier_getWeights_nonRational( UInt8 order, Float32 param, io UInt32 count, io Float32 pointWeights<> ) {
+  // We provide an optimized, expanded version up to maxOrder
+  count = order;
+
+  Float32 t = param;
+  Float32 mt = 1.0 - param;
+
+  // We support order from 1 to 7
+  switch( order ) {
+    case 1: {
+      pointWeights[0] = 1.0f;
+      break;
+    }
+    case 2: {
+      pointWeights[0] = mt;
+      pointWeights[1] = t;
+      break;
+    }
+    case 3: {
+      pointWeights[0] = mt * mt;
+      pointWeights[1] = 2 * mt*t;
+      pointWeights[2] = t * t;
+      break;
+    }
+    default: {
+      Float32 t2 = t*t;
+      Float32 t3 = t2*t;
+      Float32 mt2 = mt*mt;
+      Float32 mt3 = mt2*mt;
+      if( order == 4 ) {
+        pointWeights[0] = mt3;
+        pointWeights[1] = 3 * mt2*t;
+        pointWeights[2] = 3 * mt*t2;
+        pointWeights[3] = t3;
+      } else {
+        Float32 t4 = t2*t2;
+        Float32 mt4 = mt2*mt2;
+        if( order == 5 ) {
+          pointWeights[0] = mt4;
+          pointWeights[1] = 4 * mt3*t;
+          pointWeights[2] = 6 * mt2*t2;
+          pointWeights[3] = 4 * mt*t3;
+          pointWeights[4] = t4;
+        } else {
+          Float32 t5 = t3*t2;
+          Float32 mt5 = mt3*mt2;
+          if( order == 5 ) {
+            pointWeights[0] = mt5;
+            pointWeights[1] = 5 * mt4*t;
+            pointWeights[2] = 10 * mt3*t2;
+            pointWeights[3] = 10 * mt2*t3;
+            pointWeights[4] = 5 * mt*t4;
+            pointWeights[5] = t5;
+          } else {
+            Float32 t6 = t3*t3;
+            Float32 mt6 = mt3*mt3;
+            if( order == 6 ) {
+              pointWeights[0] = mt6;
+              pointWeights[1] = 6 * mt5*t;
+              pointWeights[2] = 15 * mt4*t2;
+              pointWeights[3] = 20 * mt3*t3;
+              pointWeights[4] = 15 * mt2*t4;
+              pointWeights[5] = 6 * mt*t5;
+              pointWeights[6] = t6;
+            } else {
+              Float32 t7 = t4*t3;
+              Float32 mt7 = mt4*mt3;
+              if( order == 7 ) {
+                pointWeights[0] = mt7;
+                pointWeights[1] = 7 * mt6*t;
+                pointWeights[2] = 21 * mt5*t2;
+                pointWeights[3] = 35 * mt4*t3;
+                pointWeights[4] = 35 * mt3*t4;
+                pointWeights[5] = 21 * mt2*t5;
+                pointWeights[6] = 7 * mt*t6;
+                pointWeights[7] = t7;
+              } else {
+                // Max order == 8 == curves_maxOrder
+                Float32 t8 = t4*t4;
+                Float32 mt8 = mt4*mt4;
+                pointWeights[0] = mt8;
+                pointWeights[1] = 7 * mt7*t;
+                pointWeights[2] = 21 * mt6*t2;
+                pointWeights[3] = 35 * mt5*t3;
+                pointWeights[4] = 35 * mt4*t4;
+                pointWeights[5] = 35 * mt3*t5;
+                pointWeights[6] = 21 * mt2*t6;
+                pointWeights[7] = 7 * mt*t7;
+                pointWeights[8] = t8;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+CurvesStructure.bezier_getDerWeights_nonRational( UInt8 order, Float32 param, io UInt32 count, io Float32 derPointWeights<> ) {
+  count = order;
+
+  // Compute derivative weights: bezier of order-1
+  UInt32 derOrder;
+  this.bezier_getWeights_nonRational( order - 1, param, derOrder, derPointWeights );
+
+  // The derivative is a Bezier of (order-1) applied to delta vectors:
+  //  (a', b', ...) = ( n*(b-a), n*(c-b), ... ) with n = order-1
+  //
+  // Convert derivative vector weights (w0, w1, ...) * (n*(b-a), n*(c-b), ...) to (a, b, c...) weights.
+  //
+  // Eg: for order = 3: (w0, w1) apply to (2*(b-a), 2*(c-b))
+  // Which leads to:
+  //   wa = 2*(-w0)
+  //   wb = 2*(w0 - w1) // Similar form for middle terms of superior orders
+  //   wc = 2*w1
+  // We do this transformation below:
+
+  Float32 n = derOrder;
+
+  derPointWeights[derOrder] = n*derPointWeights[derOrder - 1];// last point ("c" above)
+  for( Size i = derOrder - 1; i--; )
+    derPointWeights[i + 1] = n*( derPointWeights[i] - derPointWeights[i + 1] );// intermediate points ("b" above)
+  derPointWeights[0] = -n*derPointWeights[0];// first point ("a" above)
+}
+
+inline CurvesStructure.bezier_getPoints( Curves_data curveData, UInt32 spanIndex, io UInt32 count, io UInt32 pointIndices<> ) {
+  count = curveData.order;
+
+  UInt32 start = curveData.firstPoint + spanIndex * ( curveData.order - 1 );
+  UInt32 last = curveData.firstPoint + curveData.pointCount;
+
+  for( UInt8 i = 0; i < curveData.order; ++i ) {
+    pointIndices[i] = start++;
+    if( pointIndices[i] >= last )
+      pointIndices[i] = curveData.firstPoint;
+  }
+}
+
+CurvesStructure.bezier_getPointsAndWeights_nonRational( Curves_data curveData, UInt32 spanIndex, Float32 spanParam, io UInt32 count, io UInt32 pointIndices<>, io Float32 pointWeights<> ) {
+  // We provide an optimized, expanded version up to maxOrder
+  this.bezier_getWeights_nonRational( curveData.order, spanParam, count, pointWeights );
+  this.bezier_getPoints( curveData, spanIndex, count, pointIndices );
+}
+
+// Returns invWSum
+Float32 CurvesStructure.rational_divideWeights( Curves_data curveData, UInt32 count, UInt32 pointIndices<>, io Float32 pointWeights<>, Boolean multiplyByRationalWeight ) {
+  if( curveData.isRational() ) {
+    Float32 wSum;
+    // Pre-multiply rational weight then normalize
+    for( Size i = 0; i < count; ++i ) {
+      Float32 rationalWeight = this.weights[pointIndices[i]];
+      if( multiplyByRationalWeight ) {
+        pointWeights[i] *= rationalWeight;
+        wSum += pointWeights[i];
+      } else
+        wSum += pointWeights[i] * rationalWeight;
+    }
+    Float32 invWSum = 1.0f / wSum;
+    for( Size i = 0; i < count; ++i )
+      pointWeights[i] *= invWSum;
+    return invWSum;
+  } else
+    return 1.0f;
+}
+
+inline CurvesStructure.bezier_getPointsAndWeights( Curves_data curveData, UInt32 spanIndex, Float32 spanParam, io UInt32 count, io UInt32 pointIndices<>, io Float32 pointWeights<> ) {
+  this.bezier_getPointsAndWeights_nonRational( curveData, spanIndex, spanParam, count, pointIndices, pointWeights );
+  if( curveData.isRational() )
+    this.rational_divideWeights( curveData, count, pointIndices, pointWeights, true );
+}
+
+inline CurvesStructure.bezier_getWeights( Curves_data curveData, Float32 spanParam, UInt32 count, UInt32 pointIndices<>, io Float32 pointWeights<> ) {
+  UInt32 dummy;
+  this.bezier_getWeights_nonRational( curveData.order, spanParam, dummy, pointWeights );
+  if( curveData.isRational() )
+    this.rational_divideWeights( curveData, count, pointIndices, pointWeights, true );
+}
+
+CurvesStructure.applyRationalQuotient( Curves_data curveData, io Float32 pointWeights<>, UInt32 pointIndices<>, io Float32 derPointWeights<> ) {
+
+  if( curveData.isRational() ) {
+    Float32 invWSum = this.rational_divideWeights( curveData, curveData.order, pointIndices, pointWeights, false );
+    // Follow the logic of OpenNURBS'a ON_EvaluateQuotientRule.
+    // In their case, they are working directly on (X,Y,Z,W), (Z',Y',Z',W')
+    // However here, we have pointWeights=(wa, wb, wc, ...)/W, and derPointWeights=(wa', wb', wc', ...)/W, 
+    // still not linear combined to (A, B, C, ...).
+    // But for W, we have combined it already, and 1/W = invWSum was already multiplied with pointWeights and derPointWeights.
+
+    // From OpenNURBS + >>> our case
+    // 1rst derivative - faster special case 
+    // f = v;            // f = func(t) >>> in our case: pointWeights vector
+    // x = v + v_stride; // x = numerator'(t)/w >>> in our case, derPointWeights vector (already mult by invWSum)
+    // wt = -x[dim];     // wt = -denominator'(t)/w >>> in our case, -derWSum computed below (already mult by invWSum)
+    // j = dim; while( j-- ) *x++ += wt* *f++;
+
+    Float32 derWSum;
+    for( Size i = 0; i < curveData.order; ++i ) {
+      Float32 derWeight = derPointWeights[i] * invWSum; // Pre-multiply with invWSum
+      derPointWeights[i] = derWeight;
+      derWSum += derWeight * this.weights[pointIndices[i]];
+    }
+
+    Float32 wt = -derWSum;// wt as above
+
+    // Apply to all weights
+    for( Size i = 0; i < curveData.order; ++i ) {
+      Float32 f = pointWeights[i];// f as above
+      derPointWeights[i] += wt * f;
+
+      //Pre-multiply weights so it can apply to non-homogeneous coordinates
+      Float32 rationalWeight = this.weights[pointIndices[i]];
+      pointWeights[i] *= rationalWeight;
+      derPointWeights[i] *= rationalWeight;
+    }
+  }
+}
+
+CurvesStructure.bezier_getWeights( Curves_data curveData, Float32 spanParam, UInt32 count, UInt32 pointIndices<>,
+  io Float32 pointWeights<>, io Float32 derPointWeights<> ) {
+
+  // First, get weights
+  UInt32 dummy;
+  this.bezier_getWeights_nonRational( curveData.order, spanParam, dummy, pointWeights );
+  this.bezier_getDerWeights_nonRational( curveData.order, spanParam, dummy, derPointWeights );
+
+  if( curveData.isRational() )
+    this.applyRationalQuotient( curveData, pointWeights, pointIndices, derPointWeights );
+}
+
+inline CurvesStructure.bezier_getPointsAndWeights( Curves_data curveData, UInt32 spanIndex, Float32 spanParam, io UInt32 count, io UInt32 pointIndices<>,
+  io Float32 pointWeights<>, io Float32 derPointWeights<> ) {
+  this.bezier_getPoints( curveData, spanIndex, count, pointIndices );
+  this.bezier_getWeights( curveData, spanParam, count, pointIndices, pointWeights, derPointWeights );
+}
+
+CurvesStructure.bezier_getDerivativesAtParam( Curves_data curveData, Float32 param, io Vec3 dU, io Vec3 dUU, Boolean computeDUU ) {
+
+  Float32 spanParam;
+  UInt32 spanIndex;
+  this.unitUniform_getSpanParam( curveData, param, spanIndex, spanParam );
+
+  UInt32 pointIndices[8];
+  Float32 pointWeights[8];
+  UInt32 pointIndicesArray<> = pointIndices;
+  Float32 pointWeightsArray<> = pointWeights;
+
+  // First, get weights, normalized
+  UInt32 count;
+  this.bezier_getPointsAndWeights_nonRational( curveData, spanIndex, spanParam, count, pointIndicesArray, pointWeightsArray );
+
+  if( this.useDoubles ) {
+    // WARNING: this is an almost-duplicate of the float32 case; fixes should be done to both
+    // We want to keep all computations in Float64, and only convert to Float32 at the last minute
+    if( curveData.isRational() ) {
+      Vec4_d derivativeVectors[8];// curves_maxOrder. Contains homogeneous positions at first.
+
+      Vec3_d evalPos;
+      Float64 WSum, invWSum;
+      for( Size i = 0; i < count; ++i ) {
+        UInt32 pointIndex = pointIndices[i];
+        Float64 weight = pointWeights[i];
+
+        Float64 rationalWeight = this.weights[pointIndex];
+        Vec3_d position = this.positions_d[pointIndex] * rationalWeight;// Homogeneous coords
+        derivativeVectors[i] = Vec4_d( position.x, position.y, position.z, rationalWeight );
+
+        evalPos += position * weight;
+        WSum += rationalWeight * weight;
+      }
+      if( WSum > 1e-6 )
+        invWSum = 1.0f / WSum;
+      evalPos *= invWSum;
+
+      // Evaluate derivative
+      // The derivative is a Bezier of (order-1) applied to delta vectors:
+      //  (a', b', ...) = ( n*(b-a), n*(c-b), ... ) with n = order-1
+      UInt32 derOrder;
+      this.bezier_getWeights_nonRational( curveData.order - 1, spanParam, derOrder, pointWeightsArray );
+      Float64 n = derOrder;
+
+      // For rational case: we use Vec4s
+      Vec4_d evalPos4( evalPos.x, evalPos.y, evalPos.z, 1.0f );
+
+      // Evaluate 1st derivative
+      n *= invWSum;// Pre-apply, like in OpenNURBS
+      Vec4_d der;
+      for( Size i = 0; i < derOrder; ++i ) {
+        // Compute vector
+        Vec4_d vec = n*( derivativeVectors[i + 1] - derivativeVectors[i] );
+        derivativeVectors[i] = vec;
+        // Add to result
+        der += pointWeights[i] * vec;
+      }
+
+      // Follow the logic of OpenNURBS'a ON_EvaluateQuotientRule.
+      // 1rst derivative - faster special case 
+      // f = v;            // f = func(t)
+      // x = v + v_stride; // x = numerator'(t)/w
+      // wt = -x[dim];     // wt = -denominator'(t)/w
+      // j = dim; while( j-- ) *x++ += wt* *f++;
+      Float64 wt = -der.t;
+      der += wt * evalPos4;
+      dU = Vec3( Float32( der.x ), Float32( der.y ), Float32( der.z ) );
+
+      if( computeDUU ) {
+        // Evaluate 2nd derivative, same logic with delta vectors from 1nd derivative
+        this.bezier_getWeights_nonRational( curveData.order - 2, spanParam, derOrder, pointWeightsArray );
+        n = derOrder * invWSum;// Pre-apply, like in OpenNURBS
+
+        // Evaluate 2nd derivative
+        Vec4_d der2;
+        for( Size i = 0; i < derOrder; ++i )
+          der2 += (pointWeights[i] * n) * ( derivativeVectors[i + 1] - derivativeVectors[i] );
+
+        // Follow the logic of OpenNURBS'a ON_EvaluateQuotientRule.
+        // 2nd derivative - faster special case 
+        // f = v + v_stride; >>> der
+        // x = f + v_stride; >>> der2
+        // v = func(t), f = func'(t), x = numerator''(t)/w, 
+        // * wt = -2*denominator'(t)/w, w2 = denominator''(t)/w
+        //wt *= 2.0;
+        //w2 = -x[dim];
+        //j = dim; while( j-- ) *x++ += w2* *v++ + wt* *f++;
+        wt *= 2.0f;
+        Float64 w2 = -der2.t;
+        der2 += w2 * evalPos4 + wt * der;
+
+        dUU = Vec3( Float32( der2.x ), Float32( der2.y ), Float32( der2.z) );
+      }
+    } else {
+      Vec3_d evalPos;
+      for( Size i = 0; i < count; ++i )
+        evalPos += this.positions_d[pointIndices[i]] * pointWeights[i];
+
+      // Evaluate derivative
+      // The derivative is a Bezier of (order-1) applied to delta vectors:
+      //  (a', b', ...) = ( n*(b-a), n*(c-b), ... ) with n = order-1
+      UInt32 derOrder;
+      this.bezier_getWeights_nonRational( curveData.order - 1, spanParam, derOrder, pointWeightsArray );
+      Float64 n = derOrder;
+
+      // For non-rational case
+      Vec3_d derivativeVectors[7];// curves_maxOrder - 1
+
+      // Evaluate 1st derivative
+      Vec3_d der;
+      UInt32 ptIndex = pointIndices[0];
+      Vec3_d ptPos = this.positions_d[ptIndex];
+
+      for( Size i = 0; i < derOrder; ++i ) {
+        Vec3_d prevPtPos = ptPos;
+        ptIndex = pointIndices[i + 1];
+        ptPos = this.positions_d[ptIndex];
+
+        derivativeVectors[i] = n*( ptPos - prevPtPos );
+        der += pointWeights[i] * derivativeVectors[i];
+      }
+
+      dU = der.toVec3();
+
+      if( computeDUU ) {
+        // Evaluate 2nd derivative, same logic with delta vectors from 1nd derivative
+        this.bezier_getWeights_nonRational( curveData.order - 2, spanParam, derOrder, pointWeightsArray );
+        n = derOrder;
+
+        // Evaluate 2nd derivative
+        Vec3_d der2;
+        for( Size i = 0; i < derOrder; ++i )
+          der2 += (pointWeights[i] * n) * ( derivativeVectors[i + 1] - derivativeVectors[i] );
+
+        dUU = der2.toVec3();
+      }
+    }
+  } else {
+    // WARNING: this is an almost-duplicate of the float64 case; fixes should be done to both
+
+    if( curveData.isRational() ) {
+      Vec4 derivativeVectors[8];// curves_maxOrder. Contains homogeneous positions at first.
+
+      Vec3 evalPos;
+      Float32 WSum, invWSum;
+      for( Size i = 0; i < count; ++i ) {
+        UInt32 pointIndex = pointIndices[i];
+        Float32 weight = pointWeights[i];
+
+        Float32 rationalWeight = this.weights[pointIndex];
+        Vec3 position = this.positions[pointIndex] * rationalWeight;// Homogeneous coords
+        derivativeVectors[i] = Vec4( position.x, position.y, position.z, rationalWeight );
+
+        evalPos += position * weight;
+        WSum += rationalWeight * weight;
+      }
+      if( WSum > 1e-6 )
+        invWSum = 1.0f / WSum;
+      evalPos *= invWSum;
+
+      // Evaluate derivative
+      // The derivative is a Bezier of (order-1) applied to delta vectors:
+      //  (a', b', ...) = ( n*(b-a), n*(c-b), ... ) with n = order-1
+      UInt32 derOrder;
+      this.bezier_getWeights_nonRational( curveData.order - 1, spanParam, derOrder, pointWeightsArray );
+      Float32 n = derOrder;
+
+      // For rational case: we use Vec4s
+      Vec4 evalPos4( evalPos.x, evalPos.y, evalPos.z, 1.0f );
+
+      // Evaluate 1st derivative
+      n *= invWSum;// Pre-apply, like in OpenNURBS
+      Vec4 der;
+      for( Size i = 0; i < derOrder; ++i ) {
+        // Compute vector
+        Vec4 vec = n*( derivativeVectors[i + 1] - derivativeVectors[i] );
+        derivativeVectors[i] = vec;
+        // Add to result
+        der += pointWeights[i] * vec;
+      }
+
+      // Follow the logic of OpenNURBS'a ON_EvaluateQuotientRule.
+      // 1rst derivative - faster special case 
+      // f = v;            // f = func(t)
+      // x = v + v_stride; // x = numerator'(t)/w
+      // wt = -x[dim];     // wt = -denominator'(t)/w
+      // j = dim; while( j-- ) *x++ += wt* *f++;
+      Float32 wt = -der.t;
+      der += wt * evalPos4;
+      dU = Vec3( der.x, der.y, der.z);
+
+      if( computeDUU ) {
+        // Evaluate 2nd derivative, same logic with delta vectors from 1nd derivative
+        this.bezier_getWeights_nonRational( curveData.order - 2, spanParam, derOrder, pointWeightsArray );
+        n = derOrder * invWSum;// Pre-apply, like in OpenNURBS
+
+        // Evaluate 2nd derivative
+        Vec4 der2;
+        for( Size i = 0; i < derOrder; ++i )
+          der2 += (pointWeights[i] * n) * ( derivativeVectors[i + 1] - derivativeVectors[i] );
+
+        // Follow the logic of OpenNURBS'a ON_EvaluateQuotientRule.
+        // 2nd derivative - faster special case 
+        // f = v + v_stride; >>> der
+        // x = f + v_stride; >>> der2
+        // v = func(t), f = func'(t), x = numerator''(t)/w, 
+        // * wt = -2*denominator'(t)/w, w2 = denominator''(t)/w
+        //wt *= 2.0;
+        //w2 = -x[dim];
+        //j = dim; while( j-- ) *x++ += w2* *v++ + wt* *f++;
+        wt *= 2.0f;
+        Float32 w2 = -der2.t;
+        der2 += w2 * evalPos4 + wt * der;
+
+        dUU = Vec3( der2.x, der2.y, der2.z );
+      }
+    } else {
+      Vec3 evalPos;
+      for( Size i = 0; i < count; ++i )
+        evalPos += this.positions[pointIndices[i]] * pointWeights[i];
+
+      // Evaluate derivative
+      // The derivative is a Bezier of (order-1) applied to delta vectors:
+      //  (a', b', ...) = ( n*(b-a), n*(c-b), ... ) with n = order-1
+      UInt32 derOrder;
+      this.bezier_getWeights_nonRational( curveData.order - 1, spanParam, derOrder, pointWeightsArray );
+      Float32 n = derOrder;
+
+      // For non-rational case
+      Vec3 derivativeVectors[7];// curves_maxOrder - 1
+
+      // Evaluate 1st derivative
+      Vec3 der;
+      UInt32 ptIndex = pointIndices[0];
+      Vec3 ptPos = this.positions[ptIndex];
+
+      for( Size i = 0; i < derOrder; ++i ) {
+        Vec3 prevPtPos = ptPos;
+        ptIndex = pointIndices[i+1];
+        ptPos = this.positions[ptIndex];
+
+        derivativeVectors[i] = n*( ptPos - prevPtPos );
+        der += pointWeights[i] * derivativeVectors[i];
+      }
+
+      dU = der;
+
+      if( computeDUU ) {
+        // Evaluate 2nd derivative, same logic with delta vectors from 1nd derivative
+        this.bezier_getWeights_nonRational( curveData.order - 2, spanParam, derOrder, pointWeightsArray );
+        n = derOrder;
+
+        // Evaluate 2nd derivative
+        Vec3 der2;
+        for( Size i = 0; i < derOrder; ++i )
+          der2 += (pointWeights[i] * n) * ( derivativeVectors[i + 1] - derivativeVectors[i] );
+
+        dUU = der2;
+      }
+    }
+  }
+}
+
+inline CurvesStructure.bezier_getDerivativesAtParam( Curves_data curveData, Float32 param, io Vec3 dU, io Vec3 dUU ) {
+  this.bezier_getDerivativesAtParam( curveData, param, dU, dUU, true );
+}
+
+inline Vec3 CurvesStructure.bezier_getDerivativeAtParam( Curves_data curveData, Float32 param ) {
+  Vec3 dU, dUU;
+  this.bezier_getDerivativesAtParam( curveData, param, dU, dUU, false );
+  return dU;
+}

@@ -1,0 +1,37 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 2.6.0
+  
+  OpenAllGlobalOptionsTargetEditorCommand opens the options editors of all visible widgets.
+*/
+object OpenAllGlobalOptionsTargetEditorCommand : BaseCommand {
+};
+ 
+/// Implementation of Command.
+Boolean OpenAllGlobalOptionsTargetEditorCommand.doIt!( io String error )  {
+  if( !this.parent.doIt( error ) )
+    return false;
+
+  Ref<BaseOptionsTargetRegistry> optionsTargetRegistry = GetOptionsTargetRegistry();
+
+  OptionsTargetRegistryIterator it(optionsTargetRegistry);
+  Ref<OptionsTarget> target = null;
+  
+  while( target = it.next() ) 
+  {
+    Ref<BaseGlobalOptionsTarget> globalOptionsTarget = target;
+    if(globalOptionsTarget)
+      GetOptionsTargetRegistry().openAppOptionsEditor(
+        target);
+  }
+ 
+  return true;
+}
+
+/// Implementation of Command.
+String OpenAllGlobalOptionsTargetEditorCommand.getHelp() {
+  return "Opens the options editors of all visible widgets.";
+}

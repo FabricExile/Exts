@@ -1,0 +1,74 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+struct PathValue;
+
+/// Optional argument flag. See :kl-ref:`BaseScriptableCommand.declareArg` for more details.
+const UInt32 CommandArgFlag_NO_FLAG = 0;
+/// Optional argument flag. See :kl-ref:`BaseScriptableCommand.declareArg` for more details.
+const UInt32 CommandArgFlag_OPTIONAL = 1<<0;
+/// Optional argument flag. See :kl-ref:`BaseScriptableCommand.declareArg` for more details.
+const UInt32 CommandArgFlag_DONT_LOG = 1<<1;
+/// Optional argument flag. See :kl-ref:`BaseScriptableCommand.declareArg` for more details.
+const UInt32 CommandArgFlag_IN = 1<<2;
+/// Optional argument flag. See :kl-ref:`BaseScriptableCommand.declareArg` for more details.
+const UInt32 CommandArgFlag_OUT = 1<<3;
+/// Optional argument flag. See :kl-ref:`BaseScriptableCommand.declareArg` for more details.
+const UInt32 CommandArgFlag_IO = 1<<4;
+/// Optional argument flag. See :kl-ref:`BaseScriptableCommand.declareArg` for more details.
+const UInt32 CommandArgFlag_CREATE_IF_NULL = 1<<5;
+/// Optional argument flag. See :kl-ref:`BaseScriptableCommand.declareArg` for more details.
+const UInt32 CommandArgFlag_CLONE_FOR_UNDO = 1<<6;
+
+/**
+  \versionadded 2.6.0
+  
+  The ScriptableCommand defines the methods for commands that support arguments
+  logging and parsing. See BaseScriptableCommand for more information.
+*/
+interface ScriptableCommand {
+
+  /// Checks if the command has the argument.
+  Boolean hasArg( String key );
+
+  /// Checks if an arg has the input flag(s).
+  /// Flags can a combination of these: CommandArgFlag_OPTIONAL, CommandArgFlag_DONT_LOG, CommandArgFlag_IN, CommandArgFlag_OUT, CommandArgFlag_IO
+  Boolean hasArgFlag( String key, UInt32 flag );
+
+  /// Gets a description of the arguments.
+  String getArgsDescription();
+
+  /// Gets the value of an argument.
+  RTVal getArgValue( String key );
+
+  /// Gets the value of an argument.
+  String getArgPath( String key );
+
+  /// Gets the path+value pair of an argument.
+  PathValue getArg( String key );
+  
+  /// Gets the type of an argument.
+  Type getArgType( String key );
+
+  /// Gets the declared arguments.
+  String[] getArgKeys();
+
+  /// Sets the value of an argument.
+  /// Error if the key is empty or has not been declared.
+  setArgValue!( String key, RTVal value, io String error );
+
+  /// Sets an arg path, and maintains the current value if any.
+  /// Error if the key is empty or has not been declared.
+  setArgPath!( String key, String path, io String error );
+
+  /// \internal
+  /// This method should not be called from KL, as it is not validating the value.
+  /// Sets the value of an argument.
+  /// Error if the key is empty or has not been declared.
+  setArg!( String key, PathValue value, io String error );
+
+  /// Validates that all the argments have correctly been set.
+  validateSetArgs!( io String error );
+};
+

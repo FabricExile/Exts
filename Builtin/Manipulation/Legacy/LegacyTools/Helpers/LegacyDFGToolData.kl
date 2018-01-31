@@ -1,0 +1,128 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+
+/**
+  \versionadded 2.2.1
+  
+  :kl-ref:`LegacyDFGToolData` structure is used to propagates the manipulated values
+  to the DFG graph by using inputs ports.
+  
+  It contains a list of the name of the DFG ports to drive + 
+  the previous and new manipulated values of the tooltarget so users can create commands.
+
+  \dfgPresetOmit
+*/
+struct LegacyDFGToolData {
+  /// If true, bake the value into a command.
+  protected Boolean bake;
+  /// Lists of the ports to drive.
+  protected String portNames[];
+  /// Previous manipulated values.
+  protected RTVal prevRTVals[];
+  /// New manipulated values.
+  protected RTVal newRTVals[];
+};
+
+/// Inititializes a LegacyDFGToolData.
+/// \param portCount Number of port to drive.
+protected LegacyDFGToolData.init!(UInt32 portCount) {
+  this.bake = false;
+  this.prevRTVals.resize(portCount);
+  this.newRTVals.resize(portCount);
+}
+
+/// Constructs a LegacyDFGToolData.
+/// \param portName Name of the port to drive.
+LegacyDFGToolData(String portName) {
+  this.init(1);
+  this.portNames.push(portName);
+}
+
+/// Constructs a LegacyDFGToolData.
+/// \param portNames List of names of the ports to drive.
+LegacyDFGToolData(String portNames[]) {
+  this.init(portNames.size());
+  this.portNames = portNames;
+}
+
+/// Gets the number of ports to drive.
+UInt32 LegacyDFGToolData.getPortCount() {
+  return this.portNames.size();
+}
+
+/// Gets the name of the port at index.
+/// \param index Index of the port.
+String LegacyDFGToolData.getPortAtIndex(UInt32 index) {
+  return this.portNames[index];
+}
+
+/// Sets the name of the port at index.
+/// \param index Index of the port.
+/// \param name Name of the port.
+LegacyDFGToolData.setPortAtIndex!(UInt32 index, String name) {
+  this.portNames[index] = name;
+}
+
+/// Gets the index of the port.
+/// \param port Port's name.
+UInt32 LegacyDFGToolData.getPortIndex(String port) {
+  for(Index i=0; i<this.getPortCount(); ++i)
+    if(this.portNames[i] == port) return i;
+  return InvalidIndex;
+}
+
+/// Checks if the current values should be bake in commands.
+/// \param port Port's name.
+Boolean LegacyDFGToolData.bakeValue() {
+  return this.bake;
+}
+
+/// Gets the port variable.
+/// \param port Port's name.
+/// \param prev If true, gets the variable's value before manipulation, if false gets the new value.
+RTVal LegacyDFGToolData.getRTValAtPort(String port, Boolean prev) {
+  return (prev) ? this.prevRTVals[this.getPortIndex(port)] 
+                : this.newRTVals[this.getPortIndex(port)];
+}
+
+/// Gets the port variable.
+/// \param index Port's index.
+/// \param prev If true, gets the variable's value before manipulation, if false gets the new value.
+RTVal LegacyDFGToolData.getRTValAtPortIndex(UInt32 index, Boolean prev) {
+  return (prev) ? this.prevRTVals[index] 
+                : this.newRTVals[index];
+}
+
+/// Sets the port variable.
+/// \param port Port's name.
+/// \param val Variable value.
+/// \param prev If true, sets the variable's value before manipulation, if false sets the new value.
+/// \param bake If true, creates a commands.
+LegacyDFGToolData.setRTValAtPort!(
+  String port,
+  RTVal val, 
+  Boolean prev,
+  Boolean bake) 
+{
+  this.bake = bake;
+  if(prev) this.prevRTVals[this.getPortIndex(port)] = val;
+  else this.newRTVals[this.getPortIndex(port)] = val;
+}
+
+/// Sets the port variable.
+/// \param index Port's index.
+/// \param val Variable value.
+/// \param prev If true, sets the variable's value before manipulation, if false sets the new value.
+/// \param bake If true, creates a commands.
+LegacyDFGToolData.setRTValAtPortIndex!(
+  UInt32 index, 
+  RTVal val, 
+  Boolean prev,
+  Boolean bake) 
+{
+  this.bake = bake;
+  if(prev) this.prevRTVals[index] = val;
+  else this.newRTVals[index] = val;
+}

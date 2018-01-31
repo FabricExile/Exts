@@ -1,0 +1,142 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+
+/// A flag indicating that this bone is used as a deformer. 
+/// This flag is used to optimize the list of joints used in 
+/// skinning. Only bones with this flag set are used to build
+/// the skinning matrices array. 
+const UInt32 BONEFLAG_DEFORMER = 1<<3;
+
+/**
+  The Bone struct represents a joint or locator in a skeleton hierarchy.
+  The Bone represents a transform or coordinate space in the hierarchy and is 
+  often used to deform geometries. 
+  \brief An element in the Skeleton hierarchy.
+  \seealso Skeleton
+*/
+struct Bone {
+  // The name of the bone.
+  String name;
+
+  // the length of the bone. Used when displaying the bone, and solvers can 
+  // use this value to compute transforms.
+  Scalar length;
+
+  // The radius of the bone. Primaruly used to display the bone shape. For bones with
+  // lenght 0.0, the radiuse is used to determine the size of the displayed icon.
+  Scalar radius;
+
+  // The color of the bone when displayed. 
+  Color color;
+
+  // The index of the bone parent in the skeleton bones array. 
+  Integer parentIndex;
+
+  // The indices of child bones in the skeleton bones array.
+  Index childIndices[];
+
+  // The index of the bone on the opposite side of the character based on a symmetry axis. 
+  // Nte: computed in Skeleton.computeSymmetry
+  Integer mirrorBoneID;
+
+  // Bit flags for the bone. (see BONEFLAG_DEFORMER)
+  UInt32 flags;
+
+  // The type of shape used to display the bone. Note: the bone does not draw
+  // its self, so the code that displays the bone must utilize this value .
+  Integer shapeType;
+
+  // The model space transform of the bone in the reference skeleton hierarchy.
+  Xfo referencePose;
+
+  // A cached Mat44 containing the inverse of the reference pose. This is an optimization
+  // to speed up the computation of the skinning matrices. See: Character.getSkinningMatrices?()
+  Mat44 invRefPose;
+};
+
+function Bone() {
+  this.name = 'Bone'; 
+  this.referencePose.setIdentity(); 
+  this.parentIndex = -1; 
+  this.mirrorBoneID = -1; 
+  this.length = 3.0; 
+  this.radius = 1.0;
+  this.color = Color(1.0, 1.0, 0.0, 1.0);
+  this.flags = 0; 
+  this.invRefPose.setIdentity();
+}
+
+/// Sets a flag on the bone using bitwise operators
+function Bone.setFlag!(UInt32 flag) {
+  this.flags |= flag;
+}
+
+/// Clears a flag on the bone using bitwise operators
+function Bone.clearFlag!(UInt32 flag) {
+  this.flags &= ~flag;
+}
+
+/// Tests a flag on the bone using bitwise operators
+function Boolean Bone.testFlag(UInt32 flag) {
+  return this.flags & flag;
+}
+
+/// Computes the cached invRefPose. 
+function Bone.calcInvRefPose!() {
+  if(this.referencePose.sc.lengthSquared() > PRECISION)
+    this.invRefPose = this.referencePose.toMat44().inverse();
+  else
+    this.invRefPose.setIdentity();
+}
+
+
+/// Generates a Description string of this bone. Used when debugging skeleton hierarchies. 
+/// \param indent The indentation to use when generating the string.
+function String Bone.getDesc(String indent) {
+  String desc;
+  desc += indent + "Bone { \n";
+  desc += indent + "  name: " + this.name + "\n";
+  desc += indent + "  length: " + this.length + "\n";
+  desc += indent + "  radius: " + this.radius + "\n";
+  desc += indent + "  parent: " + this.parentIndex + "\n";
+  desc += indent + "  childIndices: " + this.childIndices + "\n";
+  desc += indent + "  mirrorBoneID: " + this.mirrorBoneID + "\n";
+  desc += indent + "  flags: " + this.flags + "\n";
+  desc += indent + "  color: " + unitTestPrint(this.color) + "\n";
+  desc += indent + "  referencePose: " + unitTestPrint(this.referencePose) + "\n";
+  desc += indent + "}";
+  return desc;
+}
+
+/// Generates a Description string of this bone. Used when debugging skeleton hierarchies. 
+function String Bone.getDesc() {
+  return this.getDesc("");
+}
+
+
+require InlineDrawing;
+require Geometry;
+
+// Generates an InlineShape to be used as the shape to display the bone with in the InlineDrawing system. 
+// The default bone shape is a prism shape aligned with the transform of the bone. The display of the bone
+// highlights the coordinate space which it defines. Joints in Maya are displayed to highlight the hierarchical
+// relationship with the parent joint in the hierarchy.
+function InlineShape constructBoneShape(UInt32 index, Bone bones[]) {
+  InlineShape shape = null;
+  Bone bone = bones[index];
+  if(bone.shapeType == 0 && bone.length > PRECISION){
+    PolygonMesh mesh();
+    mesh.drawBone(Xfo(), bone.length, bone.radius, true);
+    shape = InlineMeshShape(bone.name, mesh);
+  }
+  else{
+    Lines lines();
+    lines.addAxes(Xfo(), bone.radius);
+    shape = InlineLinesShape(bone.name, lines);
+  }
+  return shape;
+}
+

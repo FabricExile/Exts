@@ -1,0 +1,300 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/**
+The :kl-ref:`Vec2_c` type represents a vector with 2 components. The :kl-ref:`Vec2_c` is also used as the row type for the :kl-ref:`Mat22`.
+
+\rst
+  .. kl-example:: Vec2_c
+
+    Vec2_c v(0.0, 0.0);
+
+\endrst
+\seealso Vec3, Vec4
+\dfgTypeColor Color(255, 242, 0)
+\dfgPresetColor Color(99, 129, 92)
+*/
+struct Vec2_c
+{
+  Complex x;
+  Complex y;
+};
+
+/// Default constructor
+inline Vec2_c() {
+}
+
+/// Constructor from scalar components
+inline Vec2_c(Complex x, Complex y) {
+  this.set(x, y);
+}
+
+/// Constructor with same scalar for all components
+inline Vec2_c(Complex value) {
+  this.set(value);
+}
+
+/// Setter from scalar components
+inline Vec2_c.set!(Complex x, Complex y) {
+  this.x = x;
+  this.y = y;
+}
+
+/// Setter from same scalar for all components
+inline Vec2_c.set!(Complex value) {
+  this.x = value;
+  this.y = value;
+}
+
+
+/// Sets all components of this vec to 0.0
+inline Vec2_c.setNull!() {
+  this.x = this.y = Complex();
+}
+
+/// Returns true if this vector is the same as another one
+inline Boolean Vec2_c.equal(in Vec2_c other) {
+  return this.x == other.x && this.y == other.y;
+}
+
+/// Returns true if this vector is the same as another one
+/// (given a precision)
+inline Boolean Vec2_c.almostEqual(in Vec2_c other, Float32 precision) {
+  return this.x.almostEqual(other.x, precision)
+    && this.y.almostEqual(other.y, precision);
+}
+
+/// Returns true if this vector is the same as another one
+/// (using a default precision)
+inline Boolean Vec2_c.almostEqual(in Vec2_c other) {
+  return this.almostEqual(other, PRECISION);
+}
+
+/// Returns the component of this vector by index
+inline Complex Vec2_c.component( Size i ) {
+  if(i == 0)
+    return this.x;
+  else
+    return this.y;
+}
+
+/// Sets the component of this vector by index
+inline Vec2_c.setComponent!( Size i, Complex v ) {
+  if(i == 0)
+    this.x = v;
+  else
+    this.y = v;
+}
+
+/// Equals operator
+inline Boolean == (Vec2_c a, Vec2_c b) {
+  return a.x == b.x && a.y == b.y;
+}
+
+/// Not equals operator
+inline Boolean != (Vec2_c a, Vec2_c b) {
+  return a.x != b.x || a.y != b.y;
+}
+
+/// Hash for this value
+inline UInt32 Vec2_c.hash() {
+  return this.x.hash() ^ this.y.hash();
+}
+
+/// unary -
+inline Vec2_c -Vec2_c() {
+  return Vec2_c(-this.x, -this.y);
+}
+
+/// Adds to vectors
+inline Vec2_c + (Vec2_c a, Vec2_c b) {
+  return Vec2_c(a.x + b.x, a.y + b.y);
+}
+
+/// Adds a vector to this one
+inline Vec2_c. += (Vec2_c other) {
+  this = this + other;
+}
+
+/// Subtracts two vectors
+inline Vec2_c - (Vec2_c a, Vec2_c b) {
+  return Vec2_c(a.x - b.x, a.y - b.y);
+}
+
+/// Subtracts a vector from this one
+inline Vec2_c. -= (Vec2_c other) {
+  this = this - other;
+}
+
+/// Multiplies a scalar and a vector
+/// \dfgPresetDefault a 1
+inline Vec2_c * (Complex a, Vec2_c b) {
+  return Vec2_c(a * b.x, a * b.y);
+}
+
+/// Multiplies a vector and a scalar
+/// \dfgPresetDefault b 1
+inline Vec2_c * (Vec2_c a, Complex b) {
+  return Vec2_c(a.x * b, a.y * b);
+}
+
+/// Multiplies two vectors
+/// \dfgPresetDefault b {"x": 1, "y": 1}
+inline Vec2_c * (Vec2_c a, Vec2_c b) {
+  return Vec2_c(a.x * b.x, a.y * b.y);
+}
+
+/// Multiplies this vector with a scalar
+/// \dfgPresetDefault other 1
+inline Vec2_c. *= (Complex other) {
+  this = this * other;
+}
+
+/// Multiplies this vector with another one
+/// \dfgPresetDefault other {"x": 1, "y": 1}
+inline Vec2_c. *= (Vec2_c other) {
+  this = this * other;
+}
+
+/// Divides two vectors
+/// \dfgPresetDefault b {"x": 1, "y": 1}
+inline Vec2_c / (Vec2_c a, Vec2_c b) {
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( b.x ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( b.x, "Vec2_c.divide: b.x" );
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( b.y ) )
+    Math_reportBadDivisor( b.y, "Vec2_c.divide: b.y" );
+  return Vec2_c(a.x / b.x, a.y / b.y);
+}
+
+/// Divides a vector by a scalar
+/// \dfgPresetDefault b 1
+inline Vec2_c / (Vec2_c a, Complex b) {
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( b ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( b, "Vec2_c.divide" );
+  return Vec2_c(a.x / b, a.y / b);
+}
+
+/// Divides this vector with a scalar
+/// \dfgPresetDefault other 1
+inline Vec2_c. /= (Complex other) {
+  this = this / other;
+}
+
+/// Divides this vector with another one
+/// \dfgPresetDefault other {"x": 1, "y": 1}
+inline Vec2_c. /= (Vec2_c other) {
+  this = this / other;
+}
+
+/// Overload method for the add operator
+inline Vec2_c Vec2_c.add(Vec2_c other) {
+  return this + other;
+}
+
+/// Overload method for the subtract operator
+inline Vec2_c Vec2_c.subtract(Vec2_c other) {
+  return this - other;
+}
+
+/// Overload method for the multiply operator
+/// \dfgPresetDefault other {"x": 1, "y": 1}
+inline Vec2_c Vec2_c.multiply(Vec2_c other) {
+  return this * other;
+}
+
+/// Overload method for the divide operator
+/// \dfgPresetDefault other {"x": 1, "y": 1}
+inline Vec2_c Vec2_c.divide(Vec2_c other) {
+  return this / other;
+}
+
+/// Returns the product of this vector and a scalar
+/// \dfgPresetDefault other 1
+inline Vec2_c Vec2_c.multiplyComplex(Complex other) {
+  return this * other;
+}
+
+/// Returns the division of this vector and a scalar
+/// \dfgPresetDefault other 1
+inline Vec2_c Vec2_c.divideComplex(Complex other) {
+  return this / other;
+}
+
+/// Returns the negated version of this vector
+inline Vec2_c Vec2_c.negate() {
+  return Vec2_c(-this.x, - this.y);
+}
+
+/// Returns the inversed version of this vector
+inline Vec2_c Vec2_c.inverse() {
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( this.x ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( this.x, "Vec2_c.inverse: this.x" );
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( this.y ) )
+    Math_reportBadDivisor( this.y, "Vec2_c.inverse: this.y" );
+  return Vec2_c(1.0/this.x, 1.0/this.y);
+}
+
+/// Returns the dot product of this vector and another one
+inline Complex Vec2_c.dot(Vec2_c other) {
+  return this.x * other.x + this.y * other.y;
+}
+
+/// Returns the cross product of this vector and another one
+inline Complex Vec2_c.cross(in Vec2_c other) {
+  return this.x * other.y - this.y * other.x;
+}
+
+/// Returns the squared length of this vector
+inline Complex Vec2_c.lengthSquared() {
+  return this.dot(this);
+}
+
+/// Returns the length of this vector
+inline Complex Vec2_c.length() {
+  return sqrt(this.lengthSquared());
+}
+
+/// Returns the unit vector of this one, throws and exception if almost zero length
+inline Vec2_c Vec2_c.unit() {
+  Complex n = this.length();
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( n ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( n, "Vec2_c.unit" );
+  return this / n;
+}
+
+/// Returns the unit vector of this one, with an arbitrary value if almost zero length
+inline Vec2_c Vec2_c.unit_safe() {
+  Complex n = this.length();
+  if( !Math_badDivisor( n ) )//Perf: check first to avoid building the report string
+    return this / n;
+  else
+    return Vec2_c(0,1);
+}
+
+/// Sets this vector to its unit vector
+/// and returns its previous length
+inline Complex Vec2_c.setUnit!() {
+  Complex n = this.length();
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( n ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( n, "Vec2_c.setUnit" );
+  this /= n;
+  return n;
+}
+
+inline Vec2_c.normalize!() {
+  this.setUnit();
+}
+
+
+/// Returns the distance of this vector to another one
+inline Complex Vec2_c.distanceTo(in Vec2_c other) {
+  return (this - other).length();
+}
+
+/// Linearly interpolates this vector with another one
+/// based on a scalar blend value (0.0 to 1.0)
+inline Vec2_c Vec2_c.linearInterpolate(in Vec2_c other, in Complex t) {
+  return this + ((other - this) * t);
+}
+

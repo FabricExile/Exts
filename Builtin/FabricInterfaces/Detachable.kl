@@ -1,0 +1,70 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+/**
+The :kl-ref:`Detachable` interface is used to enable KL objects respond to being put on the DCC undo stack.
+
+The Detachable interface should be used on objects that cause side effects during evaluation 
+and need to cleanup the side effects when they are deleted. Typically, objects that cause side effects use
+the :ref:`singletons_extension` to define global singleton values. The :ref:`inline_drawing` and :ref:`manipulation_extension` use
+the :ref:`singletons_extension` to create side effects during evaluation.
+
+When an object is deleted in Maya or 3dsmax, it is not immediately destroyed. 
+Instead it is placed on the undo stack and is no longer evaluated. When the Splice container that 
+contains the object is moved onto the undo stack, the 'detach' method is invoked on the object to enable it to perform cleanup. 
+
+\rst
+
+Example
+---------
+
+A custom Manipulator can be defined that handles mouse events. Manipulators are 
+free to interpret mouse events in any way they require. 
+
+.. code-block:: kl
+
+  require Singletons;
+
+  object MyGlobalObject {
+    Scalar foo;
+  }
+
+  object MyObject : Detachable {
+    MyGlobalObject myGlobalObject;
+  }
+
+  // MyObject can be added as a port in the DCC, which then sets up the global object.
+  object MyObject() {
+    this.myGlobalObject = MyGlobalObject();
+    // Set the MyGlobalObject as a value managed by the singletons extension. 
+    // This is like creating a global variable that can then be accessed by anyone.
+    Singleton_set('MyGlobalObject', this.myGlobalObject);
+  }
+
+  object ~MyObject() {
+    // The object is destroyed only when the undo or redo stack is flushed or when it has reached the limit of undo steps.
+  }
+
+  // The object has been restored, and can re-instate its side effects.
+  function MyObject.attach!() {
+    Singleton_set('MyGlobalObject', this.myGlobalObject);
+  }
+
+  // The object has been deleted, and should clean up its side effects.
+  function MyObject.detach!() {
+    Singleton_remove('MyGlobalObject');
+  }
+
+\endrst
+\dfgPresetOmit
+*/
+
+interface Detachable {
+
+  /// called by the Splice when the owning splice container is deleted and moved onto the undo stack.
+  detach!();
+
+  /// Called by the Splice when the owning splice container is restored from then undo stack.
+  attach!();
+
+};

@@ -1,0 +1,63 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 2.6.0
+
+  AppCommandManager singleton is used to create the commands, to execute and to undo-redo them. 
+  It specializes the CommandManager by allowing synchronization with the app undo-redo stack.
+*/
+object AppCommandManager : CommandManager {
+  private Command appStack[];
+};
+
+/// Implementtion of CommandManager_virtual.
+/// Adds a command to the stack. The command will be executed later, once the control returns to the app.
+AppCommandManager.scheduleCommand!( Ref<Command> command, io String error ) {
+  this.appStack.push( command );
+}
+
+/// Gets the command manager (singleton).
+Ref<AppCommandManager> GetCommandManager() {
+  return GetOrCreateSingleton( "CommandManager", AppCommandManager );
+}
+
+/// \internal, C++ helper.
+Ref<AppCommandManager> AppCommandManager.getCommandManager() {
+  return GetCommandManager();
+}
+
+/// \internal, C++ helper.
+Command[] AppCommandManager.getAppStack() {
+  return this.appStack;
+}
+
+/// \internal, C++ helper.
+AppCommandManager.clearAppStack!() {
+  this.appStack.resize(0);
+}
+
+/// \internal
+AppCommandManager.clear!() {
+  this.clearAppStack();
+  this.parent.clear();
+}
+
+/// \internal
+/// Run the command but don't try to merge since it is being done externally (App/C++ CommandManager)
+AppCommandManager.doCommandForAppCommandManager!( Ref<Command> command, io String error ) {
+  this.parent._doCommand( command, error, true );
+}
+
+/// \internal, C++ helper.
+/// Sets a new interaction ID.
+UInt32 CommandManager.getCanMergeIDCounter( ) {
+  return this.canMergeIDCounter;
+}
+
+/// \internal, C++ helper.
+/// Sets a new interaction ID.
+CommandManager.setCanMergeIDCounter!( UInt32 canMergeIDCounter ) {
+  this.canMergeIDCounter = canMergeIDCounter;
+}

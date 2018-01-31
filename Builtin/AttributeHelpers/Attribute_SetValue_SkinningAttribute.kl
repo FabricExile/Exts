@@ -1,0 +1,77 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+function Boolean BaseGeometry.setSkinningAttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  UInt16 skinIdValue[],
+  Float32 skinWeightValue[]
+) {
+  if(!this.setAttributeValue_CheckIndex(mode, index))
+    return false;
+
+  SkinningAttribute cast = attr;
+  if(cast == null)
+    return false;
+
+  Ref<SkinningAttribute> castRef = cast;
+
+  LocalL16UInt32Array skinIdValueL;
+  LocalL16ScalarArray skinWeightValueL;
+  skinIdValueL.resize(skinIdValue.size());
+  skinWeightValueL.resize(skinWeightValue.size());
+  for(Size j=0;j<skinIdValue.size();j++)
+    skinIdValueL.set(j, skinIdValue[j]);
+  for(Size j=0;j<skinWeightValue.size();j++)
+    skinWeightValueL.set(j, skinWeightValue[j]);
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      PolygonMesh mesh = this;
+      if(mesh)
+      {
+        mesh.setPointAttribute(index, castRef, skinIdValueL, skinWeightValueL);
+      }
+      else
+      {
+        cast.setPairs(index, skinIdValueL, skinWeightValueL);
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++)
+        mesh.setPolygonAttribute( index, i, castRef, skinIdValueL, skinWeightValueL );
+      break;
+    }
+    case 2: // per face corner
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      mesh.setPolygonAttribute(index, faceCorner % size, castRef, skinIdValueL, skinWeightValueL);
+      break;
+    }
+    case 3: // all
+    {
+      for(Size i=0;i<cast.size();i++)
+        cast.setPairs(i, skinIdValueL, skinWeightValueL);
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport SetValue mode for SkinningAttribute.");
+      return false;
+    }
+  }  
+
+  cast.incrementVersion();
+  return true;
+}

@@ -1,0 +1,202 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// A PropertyContainer can hold various named properties.
+  /// These properties are RTVal, which implies that these can have any type.
+  /// A property can be propagated or not (local only).
+  /// See :ref:`TPG.hierarchy-properties` for more information about tool hierarchy and components.
+  interface PropertyContainer {
+
+    Boolean hasProperty( String name );
+    RTVal getProperty( String name );
+
+    // Returns a owned or inherited property if not localOnly.
+    Boolean hasPropagatedProperty( String name );
+    RTVal getPropagatedProperty( String name );
+
+    Boolean hasInheritedProperty( String name );
+    RTVal getInheritedProperty( String name );
+
+    /// Returns true if locally defined (versus inherited or default value)
+    Boolean hasLocalProperty( String name );
+
+    /// If localOnly, the property will not be inherited by children containers.
+    setPropertyAsLocalOnly!( String name, Boolean localOnly );
+    Boolean isPropertyLocalOnly( String name );
+
+    setProperty!( String name, RTVal value );
+    removeProperty!( String name );
+
+    Size localPropertyCount();
+    String getLocalPropertyName( Size index );
+
+    // TODO: add metadata methods
+  };
+
+  /// Helper method (note: we cannot add methods to interfaces). Returns default if not defined, or not a Boolean.
+  Boolean GetBooleanProperty( Ref<PropertyContainer> propertyContainer, String name, Boolean defaultValue ) {
+    RTVal value = propertyContainer.getProperty( name );
+    if( value.type() == Boolean )
+      return value;
+    return defaultValue;
+  }
+
+  /// Helper method (note: we cannot add methods to interfaces). Returns default if not defined, or not a Boolean.
+  Boolean GetInheritedBooleanProperty( Ref<PropertyContainer> propertyContainer, String name, Boolean defaultValue ) {
+    RTVal value = propertyContainer.getInheritedProperty( name );
+    if( value.type() == Boolean )
+      return value;
+    return defaultValue;
+  }
+
+  /// Helper method (note: we cannot add methods to interfaces). Returns default if not defined, or not a numerical type.
+  SInt32 GetSInt32Property( Ref<PropertyContainer> propertyContainer, String name, SInt32 defaultValue ) {
+    RTVal value = propertyContainer.getProperty( name );
+    Type type = value.type();
+    if( type == SInt32 || type == UInt32
+        || type == SInt64 || type == UInt64
+        || type == SInt16 || type == UInt16
+        || type == SInt8 || type == UInt8
+        || type == Float32 || type == Float64 )
+      return value;
+    return defaultValue;
+  }
+
+  /// Helper method (note: we cannot add methods to interfaces). Returns default if not defined, or not a numerical type.
+  SInt32 GetInheritedSInt32Property( Ref<PropertyContainer> propertyContainer, String name, SInt32 defaultValue ) {
+    RTVal value = propertyContainer.getInheritedProperty( name );
+    Type type = value.type();
+    if( type == SInt32 || type == UInt32
+        || type == SInt64 || type == UInt64
+        || type == SInt16 || type == UInt16
+        || type == SInt8 || type == UInt8
+        || type == Float32 || type == Float64 )
+      return value;
+    return defaultValue;
+  }
+
+  /// Helper method (note: we cannot add methods to interfaces). Returns default if not defined, or not a Boolean.
+  Float32 GetFloat32Property( Ref<PropertyContainer> propertyContainer, String name, Float32 defaultValue ) {
+    RTVal value = propertyContainer.getProperty( name );
+    Type type = value.type();
+    if( type == SInt32 || type == UInt32
+        || type == SInt64 || type == UInt64
+        || type == SInt16 || type == UInt16
+        || type == SInt8 || type == UInt8
+        || type == Float32 || type == Float64 )
+      return value;
+    return defaultValue;
+  }
+
+  /// Helper method (note: we cannot add methods to interfaces). Returns default if not defined, or not a Boolean.
+  Float32 GetInheritedFloat32Property( Ref<PropertyContainer> propertyContainer, String name, Float32 defaultValue ) {
+    RTVal value = propertyContainer.getInheritedProperty( name );
+    Type type = value.type();
+    if( type == SInt32 || type == UInt32
+        || type == SInt64 || type == UInt64
+        || type == SInt16 || type == UInt16
+        || type == SInt8 || type == UInt8
+        || type == Float32 || type == Float64 )
+      return value;
+    return defaultValue;
+  }
+
+  /// Helper method (note: we cannot add methods to interfaces). Returns default if not defined, or not a String.
+  String GetStringProperty( Ref<PropertyContainer> propertyContainer, String name ) {
+    RTVal value = propertyContainer.getProperty( name );
+    if( value.type() == String )
+      return value;
+    return String();
+  }
+
+  /// Helper method (note: we cannot add methods to interfaces). Returns default if not defined, or not a String.
+  String GetInheritedStringProperty( Ref<PropertyContainer> propertyContainer, String name ) {
+    RTVal value = propertyContainer.getInheritedProperty( name );
+    if( value.type() == String )
+      return value;
+    return String();
+  }
+
+  /// Helper method (note: we cannot add methods to interfaces). Returns default if not defined, or not a Color/RGB/RGBA.
+  Color GetColorProperty( Ref<PropertyContainer> propertyContainer, String name, Color defaultValue ) {
+    RTVal value = propertyContainer.getProperty( name );
+    Type type = value.type();
+    if( type == Color || type == RGB || type == RGBA )
+      return value;//RTVal will do the right conversion
+    return defaultValue;
+  }
+
+  /// Helper method (note: we cannot add methods to interfaces). Returns default if not defined, or not a Color/RGB/RGBA.
+  Color GetInheritedColorProperty( Ref<PropertyContainer> propertyContainer, String name, Color defaultValue ) {
+    RTVal value = propertyContainer.getInheritedProperty( name );
+    Type type = value.type();
+    if( type == Color || type == RGB || type == RGBA )
+      return value;//RTVal will do the right conversion
+    return defaultValue;
+  }
+
+  /// Helper method (note: we cannot add methods to interfaces). Returns identity if not defined, or not a Xfo/Mat44.
+  Xfo GetXfoProperty( Ref<PropertyContainer> propertyContainer, String name ) {
+    RTVal value = propertyContainer.getProperty( name );
+    Type type = value.type();
+    if( type == Xfo || type == Mat44 )
+      return value;//RTVal will do the right conversion
+    return Xfo();
+  }
+
+  /// Helper method (note: we cannot add methods to interfaces). Returns identity if not defined, or not a Xfo/Mat44.
+  Xfo GetInheritedXfoProperty( Ref<PropertyContainer> propertyContainer, String name ) {
+    RTVal value = propertyContainer.getInheritedProperty( name );
+    Type type = value.type();
+    if( type == Xfo || type == Mat44 )
+      return value;//RTVal will do the right conversion
+    return Xfo();
+  }
+
+  /// Helper method (note: we cannot add methods to interfaces). Returns identity if not defined, or not a Xfo/Mat33.
+  Mat33 GetMat33Property( Ref<PropertyContainer> propertyContainer, String name ) {
+    RTVal value = propertyContainer.getProperty( name );
+    Type type = value.type();
+    if( type == Mat33 )
+      return value;
+    return Mat33();
+  }
+
+  /// Helper method (note: we cannot add methods to interfaces). Returns identity if not defined, or not a Xfo/Mat33.
+  Mat33 GetInheritedMat33Property( Ref<PropertyContainer> propertyContainer, String name ) {
+    RTVal value = propertyContainer.getInheritedProperty( name );
+    Type type = value.type();
+    if( type == Mat33 )
+      return value;
+    return Mat33();
+  }
+
+  /// Helper method (note: we cannot add methods to interfaces). Returns identity if not defined, or not a Xfo/Mat44.
+  Mat44 GetMat44Property( Ref<PropertyContainer> propertyContainer, String name ) {
+    RTVal value = propertyContainer.getProperty( name );
+    Type type = value.type();
+    if( type == Mat44 )
+      return value;
+    else if( type == Xfo ) {
+      Xfo xfoValue = value;
+      return xfoValue.toMat44();
+    }
+    return Mat44();
+  }
+
+  /// Helper method (note: we cannot add methods to interfaces). Returns identity if not defined, or not a Xfo/Mat44.
+  Mat44 GetInheritedMat44Property( Ref<PropertyContainer> propertyContainer, String name ) {
+    RTVal value = propertyContainer.getInheritedProperty( name );
+    Type type = value.type();
+    if( type == Mat44 )
+      return value;
+    else if( type == Xfo ) {
+      Xfo xfoValue = value;
+      return xfoValue.toMat44();
+    }
+    return Mat44();
+  }
+}// namespace Tool

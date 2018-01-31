@@ -1,0 +1,233 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+  object PropertyOverride;
+
+  /// \internal
+  struct PropertyOverrideData {
+    UInt32 overrideKey;
+    BasePropertyContainerData data;
+  };
+
+  interface OverridablePropertyContainer {
+    PropertyOverride createPropertyOverride!( String name, RTVal value, Boolean localOnly );
+  };
+
+  object BaseOverridablePropertyContainer : BasePropertyContainer, OverridablePropertyContainer{
+
+    PropertyOverrideData propertyOverrides[String][];// If there are overrides, item #0 is the original value before overrides
+
+    UInt32 nextKey;
+  };
+
+  PropertyOverride BaseOverridablePropertyContainer.createPropertyOverride!( String name, RTVal value, Boolean localOnly ) {
+
+    if( !name )
+      throw( "BaseOverridablePropertyContainer.createPropertyOverride: unexpected: no name" );
+
+    PropertyOverride override();
+
+    override.overrideKey = this.nextKey++;
+    override.name = name;
+    override.container = this;
+
+    PropertyOverrideData stack[];
+    if( !this.propertyOverrides.has( name ) )
+      this.propertyOverrides[name] = stack;
+    else
+      stack = this.propertyOverrides[name];
+
+    // First, check if there is a base property value that should be saved
+    if( !stack.size() && this.hasLocalProperty( name ) ) {
+      PropertyOverrideData backupData;
+      backupData.overrideKey = InvalidIndex;
+      backupData.data.localOnly = this.isPropertyLocalOnly( name );
+      backupData.data.name = name;
+      backupData.data.value = this.getProperty( name );
+      if( !backupData.data.value.type() )
+        setError( "BaseOverridablePropertyContainer.createPropertyOverride: unexpected: prev value is null" );
+      stack.push( backupData );
+      this.parent.removeProperty( name );
+    }
+
+    PropertyOverrideData data;
+    data.overrideKey = override.overrideKey;
+    data.data.localOnly = localOnly;
+    data.data.name = name;
+    data.data.value = value;
+    stack.push( data );
+
+    this.parent.setProperty( name, value );
+    this.parent.setPropertyAsLocalOnly( name, localOnly );
+
+    return override;
+  }
+
+  /// \internal
+  UInt32 BaseOverridablePropertyContainer.findOverrideIndex( Ref<PropertyOverride> override ) {
+    PropertyOverrideData stack[] = this.getOverrideStack( override.name );
+    Size index = InvalidIndex;
+    if( override.overrideKey != InvalidIndex ) {
+      for( Size i = 0; i < stack.size(); ++i ) {
+        if( stack[i].overrideKey == override.overrideKey ) {
+          index = i;
+          break;
+        }
+      }
+    }
+    return index;
+  }
+
+  /// \internal
+  PropertyOverrideData[] BaseOverridablePropertyContainer.getOverrideStack( String name ) {
+    PropertyOverrideData data[];
+    return this.propertyOverrides.get( name, data );
+  }
+
+  BaseOverridablePropertyContainer.removeOverride!( io Ref<PropertyOverride> override ) {
+    BaseOverridablePropertyContainer keepMeAlive( this );
+
+    if( override.overrideKey != InvalidIndex ) {
+      // Find index
+      UInt32 index = this.findOverrideIndex( override );
+      if( index == InvalidIndex )
+        throw "BaseOverridablePropertyContainer.removeOverride: unexpected: key not found";
+
+      PropertyOverrideData stack[] = this.getOverrideStack( override.name );
+      PropertyOverrideData data = stack[index];
+
+      Boolean wasTop = true;
+      for( Size i = index + 1; i < stack.size(); ++i ) {
+        stack[i - 1] = stack[i];
+        wasTop = false;
+      }
+      stack.resize( stack.size() - 1 );
+
+      if( wasTop ) {
+        // Set next value as active
+        if( stack.size() ) {
+          UInt32 topIndex = stack.size() - 1;
+
+          this.parent.setProperty( override.name, stack[topIndex].data.value );
+          this.parent.setPropertyAsLocalOnly( override.name, stack[topIndex].data.localOnly );
+
+          if( stack[topIndex].overrideKey == InvalidIndex ) {
+            // Top was not storing an override, but the base value.
+            stack.resize( 0 );
+          }
+        } else {// Had no other values before; remove the property
+          this.parent.removeProperty( override.name );
+        }
+      }
+    }
+    override.overrideKey = InvalidIndex;
+    override.container = null;
+  }
+
+  BaseOverridablePropertyContainer.updateOverrideValue!( io Ref<PropertyOverride> override, RTVal value ) {
+    UInt32 index = this.findOverrideIndex( override );
+    if( index == InvalidIndex )
+      throw "BaseOverridablePropertyContainer.updateOverrideValue: override is not active";
+
+    PropertyOverrideData stack[] = this.getOverrideStack( override.name );
+    stack[index].data.value = value;
+    if( !value.type() )
+      setError( "BaseOverridablePropertyContainer.updateOverrideValue: unexpected: null value" );
+    if( index == stack.size() - 1 ) {
+      // Top value: needs to update current value also
+      this.parent.setProperty( override.name, value );
+    }
+  }
+
+  /// Note: this is assumed to be targeted to the "base" value, not overrides that currently exist.
+  BaseOverridablePropertyContainer.setProperty!( String name, RTVal value ) {
+    if( !value.type() )
+      setError( "BaseOverridablePropertyContainer.setProperty " + name + ": unexpected: null value" );
+
+    PropertyOverrideData stack[] = this.getOverrideStack( name );
+    if( Boolean( stack.size() ) && stack[0].overrideKey == InvalidIndex ) {
+      // There was a base value, but it is currently overriden.
+      // Update it.
+      stack[0].data.value = value;
+    } else if( stack.size() ) {
+      // There is currently an override, but no base value. Insert a base value.
+      stack.resize( stack.size() + 1 );
+      for( Size i = stack.size(); i--; )
+        stack[i] = stack[i - 1];
+
+      stack[0].overrideKey = InvalidIndex;
+      stack[0].data.name = name;
+      stack[0].data.value = value;
+
+    } else // No override
+      this.parent.setProperty( name, value );
+  }
+
+  /// Note: this is assumed to be targeted to the "base" value, not overrides that currently exist.
+  BaseOverridablePropertyContainer.setPropertyAsLocalOnly!( String name, Boolean localOnly ) {
+    PropertyOverrideData stack[] = this.getOverrideStack( name );
+    if( Boolean( stack.size() ) && stack[0].overrideKey == InvalidIndex ) {
+      // There was a base value, but it is currently overriden.
+      stack[0].data.localOnly = localOnly;
+    } else if( stack.size() ) {
+      // There is currently an override, but no base value. This is an error.
+      setError( "BaseOverridablePropertyContainer.setPropertyAsLocalOnly: property '" + name + "' not found" );
+    } else // No override
+      this.parent.setPropertyAsLocalOnly( name, localOnly );
+  }
+
+  /// Note: this is assumed to be targeted to the "base" value, not overrides that currently exist.
+  BaseOverridablePropertyContainer.removeProperty!( String name ) {
+    PropertyOverrideData stack[] = this.getOverrideStack( name );
+    if( Boolean( stack.size() ) && stack[0].overrideKey == InvalidIndex ) {
+      // There was a base value, but it is currently overriden.
+      // Remove the base value.
+      for( Size i = 1; i < stack.size(); ++i )
+        stack[i - 1] = stack[i];
+      stack.resize( stack.size() - 1 );
+
+    } else if( stack.size() ) {
+      // There is currently an override, but no base value. Silently do nothing.
+    } else // No override
+      this.parent.removeProperty( name );
+  }
+
+
+  object PropertyOverride : BaseComponent{
+    BaseOverridablePropertyContainer container;
+    UInt32 overrideKey;
+    String name;
+  };
+
+  PropertyOverride() {
+    this.overrideKey = InvalidIndex;
+  }
+
+  inline Boolean PropertyOverride.isActive() {
+    return this.overrideKey != InvalidIndex;
+  }
+
+  inline PropertyOverride.setValue!( RTVal value ) {
+    if( !this.isActive() )
+      throw( "PropertyOverride.setValue: unexpected: override is not active" );
+    this.container.updateOverrideValue( this, value );
+  }
+
+  /// \internal
+  /// Non-virtual version that can be safely called from the destructor
+  /// This can be removed once KL is fixed to not call specialized methods in destructors
+  PropertyOverride.invalidateInternal!( ) {
+    if( this.isActive() )
+      this.container.removeOverride( this );
+  }
+
+  PropertyOverride.invalidate!( ) {
+    this.invalidateInternal();
+  }
+
+  ~PropertyOverride() {
+    this.invalidateInternal();
+  }
+}// namespace Tool

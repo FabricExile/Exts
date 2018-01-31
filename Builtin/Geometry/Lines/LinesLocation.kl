@@ -1,0 +1,427 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+/// Returns the line segment index corresponding to the location.
+/// \category SpatialQueryable
+/// \dfgCreateArrayPreset
+inline Size Lines.getLocationSegmentIndex( GeometryLocation location ) {
+  return location.index;
+}
+
+/// Returns the line segment points' weights corresponding to the location, where
+/// `point0Weight` and `point1Weight` correspond to segment's start and end point.
+/// \seealso Lines.getLocationSegmentIndex
+/// \category SpatialQueryable
+/// \dfgCreateArrayPreset
+inline Lines.getLocationSegmentWeights( GeometryLocation location, out Scalar point0Weight, out Scalar point1Weight ) {
+  point0Weight = location.barycentric.x;
+  point1Weight = location.barycentric.y;
+}
+
+/// Returns the line segment point indices and weights corresponding to the location.
+/// \seealso Lines.getLocationSegmentIndex
+/// \category SpatialQueryable
+/// \dfgCreateArrayPreset
+inline Lines.getLocationAttributeIndicesAndWeights?( GeometryLocation location, out UInt32 attributeIndices[2], out Scalar weights[2] ) {
+  this.getLineAttributeIndices( location.index, attributeIndices[0], attributeIndices[1] );
+
+  weights[0] = location.barycentric.x;
+  weights[1] = location.barycentric.y;
+}
+
+/// \dfgCreateArrayPreset
+inline Lines.getLocationAttributeIndicesAndWeights?( GeometryLocation location, out LocalL16UInt32Array attributeIndices, out LocalL16ScalarArray weights ) {
+  UInt32 _attributeIndices[2];
+  Scalar _weights[2];
+  this.getLocationAttributeIndicesAndWeights( location, _attributeIndices, _weights );
+
+  attributeIndices.push(_attributeIndices[0]);
+  attributeIndices.push(_attributeIndices[1]);
+
+  weights.push(_weights[0]);
+  weights.push(_weights[1]);
+}
+
+/// \dfgCreateArrayPreset
+inline Vec3 Lines.getPositionAtLocation( GeometryLocation location ) {
+  if(!location.isValid())
+    return Vec3();
+  UInt32 attributeIndices[2];
+  Scalar weights[2];
+  this.getLocationAttributeIndicesAndWeights( location, attributeIndices, weights );
+
+  Ref<Vec3Attribute> positions = this.getAttributes().getPositions();
+  return positions.values[attributeIndices[0]]*weights[0] + positions.values[attributeIndices[1]]*weights[1];
+}
+
+/// \internal
+object LinesSpatialQueryCache {
+  Ref<Lines> lines; //Don't keep a hard ref, since this cache can be stored as a Lines shared user data
+  Scalar halfThickness;
+
+  Size linesVersion;
+  Size positionsVersion;
+  Ref<Vec3Attribute> posAttr;
+  Boolean dirtyPositions;
+
+  SpatialAccelerationChooser acceleration;
+  SimpleLock updateLock;
+
+  FewObjectsRecyclingAllocator queryAllocator;//LinesSpatialQuery objects
+};
+
+function LinesSpatialQueryCache() {
+  this.linesVersion = InvalidIndex;
+}
+
+/// \internal
+object LinesRaycastResult : RaycastResult {
+  Vec3 start;
+  Vec3 unitDir;
+  Scalar coneThreshold;
+  GeometryLocation location;
+  Ref<LinesSpatialQueryCache> queryCache;
+};
+
+function LinesRaycastResult(Ref<LinesSpatialQueryCache> queryCache) {
+  this.queryCache = queryCache;
+}
+
+function LinesRaycastResult.reset!( Vec3 start, Vec3 unitDir, Boolean doubleSided, Scalar coneThreshold ) {
+  this.start = start;
+  this.unitDir = unitDir;
+  this.coneThreshold = coneThreshold;
+  this.location = GeometryLocation();//Invalidate
+}
+
+function LinesRaycastResult.copyResultFrom!( Ref<RaycastResult> other ) {
+  Ref<LinesRaycastResult> otherResult = other;
+  this.location = otherResult.location;
+}
+
+function Boolean LinesRaycastResult.compareAndUpdate!( Size objectIndex, out Scalar maxDistance ) {
+  Size startIndex, endIndex;
+  this.queryCache.lines.getLineAttributeIndices( objectIndex, startIndex, endIndex );
+
+  Vec3 v0 = this.queryCache.posAttr.values[ startIndex ];
+  Vec3 v1 = this.queryCache.posAttr.values[ endIndex ];
+  Scalar rayLineSegDist, rayParam, segmentParam;
+  if( Ray( this.start, this.unitDir ).intersectLineSegment(v0, v1, rayLineSegDist, rayParam, segmentParam) ) {
+    //Ensure we are within ray's 'cone'
+    if( rayLineSegDist <= (rayParam * this.coneThreshold) + this.queryCache.halfThickness ) {
+      if( rayLineSegDist < this.queryCache.halfThickness && this.queryCache.halfThickness > 1e-4 ) {
+        //Consider the segment as a cylinder (and will give more stable results with thick segments)
+        //Still approximate however since it is not taking into account the angle between the segment and the ray.
+        //The goal is to intersect at cylinder's surface to lower the distance (is this really needed??)
+        Scalar height = sqrt(this.queryCache.halfThickness*this.queryCache.halfThickness - rayLineSegDist*rayLineSegDist);
+        rayParam -= height;
+        if(rayParam < 0)
+          rayParam = 0;
+      }
+      if( rayParam < maxDistance ) {
+        maxDistance = rayParam;
+        this.location.index = objectIndex;
+        this.location.barycentric.x = 1.0-segmentParam;
+        this.location.barycentric.y = segmentParam;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/// \internal
+object LinesClosestResult : ClosestResult {
+  Vec3 position;
+  Vec3 scaling;
+  Boolean hasScaling;
+  GeometryLocation location;
+  Ref<LinesSpatialQueryCache> queryCache;
+};
+
+function LinesClosestResult(Ref<LinesSpatialQueryCache> queryCache) {
+  this.queryCache = queryCache;
+}
+
+function LinesClosestResult.reset!( Vec3 position, Vec3 scaling, Boolean hasScaling ) {
+  this.position = position;
+  this.scaling = scaling;
+  this.hasScaling = hasScaling;
+  this.location = GeometryLocation();//Invalidate
+}
+
+function Boolean LinesClosestResult.compareAndUpdate!( Size objectIndex, out Scalar maxScaledSquaredDistance ) {
+  Size startIndex, endIndex;
+  this.queryCache.lines.getLineAttributeIndices( objectIndex, startIndex, endIndex );
+
+  Vec3 v0 = this.queryCache.posAttr.values[ startIndex ];
+  Vec3 v1 = this.queryCache.posAttr.values[ endIndex ];
+  Scalar ratio;
+  Vec3 result;
+
+  Scalar scaledSquaredDistance;
+  if( this.hasScaling ) {
+    //Scale the segment relatively to the intial position
+    v0 = (v0 - this.position) * this.scaling;
+    v1 = (v1 - this.position) * this.scaling;
+    closestSegmentPoint( Vec3(0,0,0), v0, v1, ratio );
+    scaledSquaredDistance = v0.linearInterpolate(v1, ratio).lengthSquared();
+  } else {
+    closestSegmentPoint( this.position, v0, v1, ratio );
+    scaledSquaredDistance = (v0.linearInterpolate(v1, ratio) - this.position).lengthSquared();
+  }
+
+  if( scaledSquaredDistance < maxScaledSquaredDistance ) {
+    maxScaledSquaredDistance = scaledSquaredDistance;
+    this.location.index = objectIndex;
+    this.location.barycentric.x = 1.0-ratio;
+    this.location.barycentric.y = ratio;
+    return true;
+  }
+
+  return false;
+}
+
+function LinesClosestResult.copyResultFrom!( Ref<ClosestResult> other ) {
+  Ref<LinesClosestResult> otherResult = other;
+  this.location = otherResult.location;
+}
+
+/// \internal
+object LinesSpatialQuery : SpatialQuery {
+  SpatialQueryData data;
+  GeometryLocationAccumulator locationAccumulator;//For query like intersectLines
+  LinesRaycastResult raycastResult;
+  LinesClosestResult closestResult;
+  Ref<LinesSpatialQueryCache> queryCache;
+};
+
+function LinesSpatialQuery( Ref<LinesSpatialQueryCache> queryCache ) {
+  this.queryCache = queryCache;
+  this.raycastResult = LinesRaycastResult(queryCache);
+  this.closestResult = LinesClosestResult(queryCache);
+}
+
+function LinesSpatialQueryCache( Lines lines ) {
+  this.lines = lines;
+  this.acceleration = SpatialAccelerationChooser( lines.autoStats );
+  this.updateLock = SimpleLock();
+  this.queryAllocator = FewObjectsRecyclingAllocator( LinesSpatialQuery(this), 1000, "Warning: Lines.beginSpatialQuery: called more than 1000 times, intentional or missing a matching 'endSpatialQuery'?" );
+  this.dirtyPositions = true;
+}
+
+/// \internal
+function Ref<LinesSpatialQueryCache> Lines.getQueryCache( Scalar thickness ) {
+  //Note: this is complex to avoid unrequired locking
+  Ref<LinesSpatialQueryCache> queryCache = null;
+  if( this.spatialAccelerationCache ) {
+    queryCache = this.spatialAccelerationCache;
+  } else {
+    Ref<ThreadsafeMetaDataContainer> mutableMetaData = this.metaData;//Make non-const
+    AutoLock AL(mutableMetaData.simpleLock);
+    //Another thread might have created it
+    queryCache = mutableMetaData.lockedGet("spatialAccel");
+    if( !queryCache ) {
+      LinesSpatialQueryCache newQueryCache = LinesSpatialQueryCache(this);
+      mutableMetaData.lockedSet("spatialAccel", newQueryCache);
+      newQueryCache.halfThickness = thickness*0.5;
+      queryCache = newQueryCache;
+    }
+  }
+  //Check if it is synchronized. Note: another thread might be synchronizing it at the same time.
+  Ref<Vec3Attribute> positions = this.getAttributes().getPositions();
+  if( this.structureVersion != queryCache.linesVersion ||
+      queryCache.posAttr !== positions || positions.getVersion() != queryCache.positionsVersion ||
+      thickness*0.5 != queryCache.halfThickness ) {
+    //We assume no lines changes during spatial queries. TODO: use a readers-writers lock here.
+    AutoLock AL(queryCache.updateLock);
+    //NOTE: conditions need to be checked again since another thread might have updated it
+    if( synchronizeVersion( this.structureVersion, queryCache.linesVersion ) ) {
+      queryCache.acceleration.setObjectCount( this.lineCount(), false );
+      queryCache.dirtyPositions = true;
+    }
+
+    if( synchronizeVersion( positions.getVersion(), queryCache.positionsVersion ) || positions !== queryCache.posAttr ) {
+      queryCache.posAttr = positions;
+      queryCache.dirtyPositions = true;
+    }
+
+    if( thickness*0.5 != queryCache.halfThickness ) {
+      queryCache.halfThickness = thickness*0.5;
+      queryCache.dirtyPositions = true;
+    }
+  }
+  return queryCache;
+}
+
+function Lines.prepareForSpatialQueries( Size approximateNumberOfQueries, GenericValueContainer options ) {
+  Ref<LinesSpatialQueryCache> queryCache = this.getQueryCache(this.raycastThickness);
+  if( queryCache.queryAllocator.allocatedCount() )
+    throw("Lines.prepareForSpatialQueries: preparing before all endSpatialQuery() were called");
+  {
+    AutoLock AL(queryCache.updateLock);//TODO: use readers-writers lock
+    Boolean accelerationChanged = queryCache.acceleration.synchronizeOptions( options );
+
+    if( accelerationChanged || queryCache.dirtyPositions ) {
+      queryCache.acceleration.setObjectCount( this.lineCount(), true );
+      for( Size i = 0; i < this.lineCount(); ++i ) {
+        LocalBoundingVolume bbox = this.getElementBoundingVolume(i);
+        queryCache.acceleration.updateObjectVolume( i, bbox.bBoxGetMin(), bbox.bBoxGetMax() );
+      }
+      queryCache.dirtyPositions = false;
+    }
+    queryCache.acceleration.prepare( approximateNumberOfQueries );
+  }
+}
+
+inline Lines.removeSpatialQueryAcceleration!() {
+  this.metaData.remove("spatialAccel");
+  this.spatialAccelerationCache = null;
+}
+
+inline Ref<SpatialQuery> Lines.beginSpatialQuery() {
+  return this.getQueryCache(this.raycastThickness).queryAllocator.allocate();
+}
+
+inline Lines.endSpatialQuery( Ref<SpatialQuery> query ) {
+  Ref<LinesSpatialQuery> linesQuery = query;
+  if( linesQuery.queryCache.lines !== this )
+    throw("Lines.endSpatialQuery: invalid query object for this");
+  this.getQueryCache(this.raycastThickness).queryAllocator.free(query);
+}
+
+inline GeometryLocation LinesSpatialQuery.raycast!( Ray ray, Boolean doubleSided, Scalar coneThreshold, Scalar maxDistance ) {
+  Ref<RaycastResult> result = this.raycastResult;
+  this.queryCache.acceleration.raycast( !this.queryCache.dirtyPositions, ray, doubleSided, abs(coneThreshold), maxDistance, this.data, result );
+  return this.raycastResult.location;
+}
+
+/// Raycasts the Lines geometry, taking into account the `Lines.raycastThickness` for the thickness of the line segments (if > 1e-4).
+/// See :kl-ref:`SpatialQueryable.raycast` for more details about this function and parameters.
+/// \category SpatialQueryable
+inline GeometryLocation Lines.raycast( Ray ray, Boolean doubleSided, Scalar coneThreshold, Scalar maxDistance ) {
+  Ref<LinesSpatialQuery> query = this.beginSpatialQuery();
+  GeometryLocation location = query.raycast( ray, doubleSided, coneThreshold, maxDistance );
+  this.endSpatialQuery(query);
+  return location;
+}
+
+inline GeometryLocation LinesSpatialQuery.getClosest!( Vec3 position, Vec3 scaling, Scalar maxUnscaledDistance ) {
+  Ref<ClosestResult> result = this.closestResult;
+  this.queryCache.acceleration.getClosest( !this.queryCache.dirtyPositions, position, scaling, maxUnscaledDistance, this.data, result );
+  return this.closestResult.location;
+}
+
+/// Gets the closest location on the Lines geometry, taking into account the `Lines.raycastThickness` for the thickness of the line segments.
+/// See :kl-ref:`SpatialQueryable.getClosest` for more details about this function and parameters.
+/// \category SpatialQueryable
+inline GeometryLocation Lines.getClosest( Vec3 position, Vec3 scaling, Scalar maxUnscaledDistance ) {
+  Ref<LinesSpatialQuery> query = this.beginSpatialQuery();
+  GeometryLocation location = query.getClosest( position, scaling, maxUnscaledDistance );
+  this.endSpatialQuery(query);
+  return location;
+}
+
+function Size LinesSpatialQuery.getElementsInBBox!( Vec3 min, Vec3 max ) {
+  return this.queryCache.acceleration.getElementsInBBox( this.queryCache.lines, !this.queryCache.dirtyPositions, min, max, this.data );
+}
+
+function Size LinesSpatialQuery.getElementsInBSphere!( Vec3 center, Scalar radius ) {
+  return this.queryCache.acceleration.getElementsInBSphere( this.queryCache.lines, !this.queryCache.dirtyPositions, center, radius, this.data );
+}
+
+function Size LinesSpatialQuery.getQueriedElement( Size index ) {
+  return this.data.getQueriedElement(index);
+}
+
+inline Boolean Lines.areGeometryLocationsEquivalent( GeometryLocation location0, GeometryLocation location1 ) {
+  UInt32 pts0[2];
+  Scalar w0[2];
+  this.getLocationAttributeIndicesAndWeights( location0, pts0, w0 );
+
+  Size max0 = w0[0] > w0[1] ? 0 : 1;
+  if( w0[max0] > 0.9999 ) {
+    UInt32 pts1[2];
+    Scalar w1[2];
+    this.getLocationAttributeIndicesAndWeights( location1, pts1, w1 );
+
+    Size max1 = w1[0] > w1[1] ? 0 : 1;
+    if( w1[max1] > 0.9999 && pts0[max0] == pts1[max1] )
+      return true;
+  }
+  return location0.index == location1.index && abs( location0.barycentric.x - location1.barycentric.x ) < 1e-5 && abs( location0.barycentric.y - location1.barycentric.y ) < 1e-5;
+}
+
+function Size LinesSpatialQuery.getLineIntersections!( Vec3 start, Vec3 end, UInt8 lineIntersectionType ) {
+  this.locationAccumulator.reset();
+  Size count = this.queryCache.acceleration.getLineIntersectedElements( this.queryCache.lines, !this.queryCache.dirtyPositions, start, end, lineIntersectionType, this.data );
+  if( !count )
+    return 0;
+
+  Scalar halfThickness = this.queryCache.halfThickness;
+
+  //Push intersections
+  for( Size i = 0; i < count; ++i ) {
+    Size segmentIndex = this.data.visitedItems.indices[i];
+    Size startIndex, endIndex;
+    this.queryCache.lines.getLineAttributeIndices( segmentIndex, startIndex, endIndex );
+    Vec3 v0 = this.queryCache.posAttr.values[ startIndex ];
+    Vec3 v1 = this.queryCache.posAttr.values[ endIndex ];
+
+    Scalar l1Param, l2Param;
+    Scalar dist = distanceFromLineToLine(
+      start, end,
+      v0, v1,
+      l1Param, l2Param);
+    if( dist > halfThickness )
+      continue;
+
+    //Clamp intersected segment if required
+    Boolean clampedTarget, clampedQuery;
+    Vec3 lineQueryPos;
+    Vec3 targetSegmentPos;
+    if( l2Param < 0 ) {
+      targetSegmentPos = v0;
+      clampedTarget = true;
+      l2Param  = 0;
+    } else if ( l2Param > 1.0 ) {
+      targetSegmentPos = v1;
+      clampedTarget = true;
+      l2Param = 1.0;
+    }
+    if( lineIntersectionType != SpatialQuery_lineIntersection && l1Param < 0 ) {
+      lineQueryPos = start;
+      clampedQuery = true;
+    } else if( lineIntersectionType == SpatialQuery_segmentIntersection && l1Param > 1.0 ) {
+      lineQueryPos = end;
+      clampedQuery = true;
+    }
+
+    Scalar squaredDist;
+    if(clampedTarget || clampedQuery) {
+      if( !clampedTarget )
+        targetSegmentPos = v0 + (v1 - v0) * l2Param;
+      if( !clampedQuery )
+        lineQueryPos = start + (end - start) * l1Param;
+
+      squaredDist = (targetSegmentPos - lineQueryPos).lengthSquared();
+      if( squaredDist > halfThickness * halfThickness )
+        continue;
+      dist = sqrt(squaredDist);
+    }
+    GeometryLocation location;
+    location.index = segmentIndex;
+    location.barycentric.x = 1.0-l2Param;
+    location.barycentric.y = l2Param;
+
+    //Note: we couldn't push 'squaredDist' because we might need to filter duplicates (compares distance differences)
+    this.locationAccumulator.push( location, dist );
+  }
+  this.locationAccumulator.sortAndFilterAccumulatedLocations( this.queryCache.lines, 1.0e-4 );
+  return this.locationAccumulator.size();
+}
+
+function GeometryLocation LinesSpatialQuery.getQueriedLocation( Size index ) {
+  return this.locationAccumulator.getSortedLocation( index );
+}

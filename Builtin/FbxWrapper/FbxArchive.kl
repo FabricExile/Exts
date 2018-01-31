@@ -1,0 +1,137 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+require Math;
+require Fbx:">=2.0.0";
+require FileIO;
+
+object FbxArchive
+{
+  private FbxManager manager;
+  private FbxScene scene;
+  private FbxImporter importer;
+  private FbxExporter exporter;
+  private String filePath;
+};
+
+function FbxArchive()
+{
+  this.manager = FbxManager_Create();
+  this.scene = FbxScene_Create(this.manager, "");
+}
+
+function FbxArchive.cloneMembersTo(io FbxArchive that)
+{
+  that.manager = FbxManager_Create();
+  that.scene = FbxScene_Create(that.manager, "");
+  if(this.isImporting())
+    that.ReadFromFile(this.filePath);
+}
+
+function ~FbxArchive()
+{
+  if(this.isExporting())
+  {
+    this.exporter.Export(this.scene);  
+  }
+  this.manager.Destroy();
+}
+
+function String FbxArchive.GetFilePath()
+{
+  return this.filePath;
+}
+
+function FbxScene FbxArchive.GetScene!()
+{
+  return this.scene;
+}
+
+function FbxManager FbxArchive.GetManager!()
+{
+  return this.manager;
+}
+
+function FbxNode FbxArchive.GetRootNode!()
+{
+  return this.scene.GetRootNode();
+}
+
+function Boolean FbxArchive.isImporting()
+{
+  return this.importer.cxx_isValid();
+}
+
+function Boolean FbxArchive.isExporting()
+{
+  return this.exporter.cxx_isValid();
+}
+
+function Boolean FbxArchive.ReadFromFile!(String filePath)
+{
+  if(this.isImporting() || this.isExporting())
+    return false;
+
+  FilePath path = filePath;
+  path = path.expandEnvVars();
+  if(!path.exists())
+  {
+    setError("File "+filePath+" does not exist.");
+    return false;
+  }
+
+  this.filePath = filePath;
+
+  this.importer = FbxImporter_Create(this.manager, "");
+  this.importer.Initialize(path.string(), -1, this.manager.GetIOSettings());
+  this.importer.SetEmbeddingExtractionFolder(path.parentPath().string());
+  this.importer.Import(this.scene);  
+  return true;
+}
+
+function Boolean FbxArchive.CreateFile!(String filePath)
+{
+  FilePath path = filePath;
+  path = path.expandEnvVars();
+
+  if(!path.parentPath().exists())
+  {
+    setError("Folder "+path.parentPath().string()+" does not exist!");
+    return false;
+  }
+
+  this.filePath = filePath;
+
+  this.exporter = FbxExporter_Create(this.manager, "");
+  this.exporter.Initialize(path.string(), -1, this.manager.GetIOSettings());
+  return true;
+}
+
+function FbxNode[] FbxArchive.getAllNodes!()
+{
+  FbxNode nodes[];
+
+  FbxCriteria nodeCriteria = FbxCriteria_ObjectType(FbxNode_ClassId());
+  Size nbLayers = this.scene.GetSrcObjectCount(nodeCriteria);
+  for(Size i=0;i<nbLayers;i++)
+  {
+    FbxNode node = this.scene.GetSrcObject(nodeCriteria, i);
+    nodes.push(node);
+  }
+  return nodes;
+}
+
+function FbxAnimLayer[] FbxArchive.getAnimationLayers!()
+{
+  FbxAnimLayer animLayers[];
+
+  FbxCriteria layerCriteria = FbxCriteria_ObjectType(FbxAnimLayer_ClassId());
+  Size nbLayers = this.scene.GetSrcObjectCount(layerCriteria);
+  for(Size i=0;i<nbLayers;i++)
+  {
+    FbxAnimLayer animLayer = this.scene.GetSrcObject(layerCriteria, i);
+    animLayers.push(animLayer);
+  }
+  return animLayers;
+}

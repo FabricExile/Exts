@@ -1,0 +1,285 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Geometry;
+
+/// \internal
+/// mode can be :
+///   Closest = 0
+///   Raycast along Normal = 1
+///   Raycast using direction = 2
+/// component can be :
+///   Per Vertex = 0
+///   Per Face = 1
+///   Per Face Corner = 2
+function Boolean BaseGeometry.transferAttributeFrom!(
+  BaseGeometry sourceGeo,
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  SInt32 component,
+  String source,
+  String target,
+  Xfo sourceXfo,
+  Xfo targetXfo,
+  Vec3 direction
+) {
+  if(!sourceGeo)
+    return false;
+
+  if(sourceGeo.uid() == this.uid()) {
+    report('Error: Transfer: Source and target geometry are the same.');
+    return false;
+  }
+
+  GeometryAttributes sourceAttributes = sourceGeo.attributes;
+  if(!sourceAttributes)
+    return false;
+
+  GeometryAttribute sourceAttr = sourceAttributes.getAttribute(source);
+  if(sourceAttr == null)
+  {
+    report('Error: Transfer: Source attribute "'+source+'" does not exist.');
+    return false;
+  }
+
+  switch(sourceAttr.type())
+  {
+    case IntegerAttribute:
+    {
+      if(!this.transferIntegerAttribute(
+        sourceGeo,
+        mode,
+        closestIfNotHit,
+        threshold,
+        component,
+        sourceAttr,
+        target,
+        sourceXfo,
+        targetXfo,
+        direction
+        ))
+        return false;
+      break;
+    }
+    case UInt32Attribute:
+    {
+      if(!this.transferUInt32Attribute(
+        sourceGeo,
+        mode,
+        closestIfNotHit,
+        threshold,
+        component,
+        sourceAttr,
+        target,
+        sourceXfo,
+        targetXfo,
+        direction
+        ))
+        return false;
+      break;
+    }
+    case ScalarAttribute:
+    {
+      if(!this.transferScalarAttribute(
+        sourceGeo,
+        mode,
+        closestIfNotHit,
+        threshold,
+        component,
+        sourceAttr,
+        target,
+        sourceXfo,
+        targetXfo,
+        direction
+        ))
+        return false;
+      break;
+    }
+    case Vec2Attribute:
+    {
+      if(!this.transferVec2Attribute(
+        sourceGeo,
+        mode,
+        closestIfNotHit,
+        threshold,
+        component,
+        sourceAttr,
+        target,
+        sourceXfo,
+        targetXfo,
+        direction
+        ))
+        return false;
+      break;
+    }
+    case Vec3Attribute:
+    {
+      if(!this.transferVec3Attribute(
+        sourceGeo,
+        mode,
+        closestIfNotHit,
+        threshold,
+        component,
+        sourceAttr,
+        target,
+        sourceXfo,
+        targetXfo,
+        direction
+        ))
+        return false;
+      break;
+    }
+    case Vec4Attribute:
+    {
+      if(!this.transferVec4Attribute(
+        sourceGeo,
+        mode,
+        closestIfNotHit,
+        threshold,
+        component,
+        sourceAttr,
+        target,
+        sourceXfo,
+        targetXfo,
+        direction
+        ))
+        return false;
+      break;
+    }
+    case QuatAttribute:
+    {
+      if(!this.transferQuatAttribute(
+        sourceGeo,
+        mode,
+        closestIfNotHit,
+        threshold,
+        component,
+        sourceAttr,
+        target,
+        sourceXfo,
+        targetXfo,
+        direction
+        ))
+        return false;
+      break;
+    }
+    case Mat33Attribute:
+    {
+      if(!this.transferMat33Attribute(
+        sourceGeo,
+        mode,
+        closestIfNotHit,
+        threshold,
+        component,
+        sourceAttr,
+        target,
+        sourceXfo,
+        targetXfo,
+        direction
+        ))
+        return false;
+      break;
+    }
+    case Mat44Attribute:
+    {
+      if(!this.transferMat44Attribute(
+        sourceGeo,
+        mode,
+        closestIfNotHit,
+        threshold,
+        component,
+        sourceAttr,
+        target,
+        sourceXfo,
+        targetXfo,
+        direction
+        ))
+        return false;
+      break;
+    }
+    case ColorAttribute:
+    {
+      if(!this.transferColorAttribute(
+        sourceGeo,
+        mode,
+        closestIfNotHit,
+        threshold,
+        component,
+        sourceAttr,
+        target,
+        sourceXfo,
+        targetXfo,
+        direction
+        ))
+        return false;
+      break;
+    }
+    case RGBAttribute:
+    {
+      if(!this.transferRGBAttribute(
+        sourceGeo,
+        mode,
+        closestIfNotHit,
+        threshold,
+        component,
+        sourceAttr,
+        target,
+        sourceXfo,
+        targetXfo,
+        direction
+        ))
+        return false;
+      break;
+    }
+    case RGBAAttribute:
+    {
+      if(!this.transferRGBAAttribute(
+        sourceGeo,
+        mode,
+        closestIfNotHit,
+        threshold,
+        component,
+        sourceAttr,
+        target,
+        sourceXfo,
+        targetXfo,
+        direction
+        ))
+        return false;
+      break;
+    }
+    case SkinningAttribute:
+    {
+      report('Error: Transfer: Skinning transfer is not yet implemented!');
+      return false;
+    }
+    default:
+    {
+      report('Error: Transfer: Unsupported source attribute type '+sourceAttr.type());
+      return false;
+    }
+  }
+
+  return true;
+}
+
+operator _PolygonMesh_getNormalizedPolygonPositions_Task<<<i>>>(io Vec3 result[], Vec3 positions[], PolygonMesh mesh) {
+  Size size = mesh.getPolygonSize(i);
+  result[i] = Vec3(0, 0, 0);
+  for(Size j=0;j<size;j++) {
+    Index point = mesh.getPolygonPoint(i, j);
+    result[i] += positions[point];
+  }
+  result[i] *= 1.0 / Scalar(size);
+}
+
+/// \internal
+function Vec3[] PolygonMesh.getNormalizedPolygonPositions() {
+  Vec3 result[](this.polygonCount());
+  GeometryAttributes attributes = this.getAttributes();
+  Vec3Attribute positions = attributes.getAttribute('positions');
+  _PolygonMesh_getNormalizedPolygonPositions_Task<<<result.size()>>>(result, positions.values, this);
+  return result;
+}

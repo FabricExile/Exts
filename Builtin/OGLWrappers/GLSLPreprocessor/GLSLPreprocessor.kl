@@ -1,0 +1,235 @@
+
+require Containers;
+require FileIO;
+
+// struct GLSLLineMapping;
+struct GLSLLineMapping {
+  String sourceFile;
+  UInt32 sourceFileLine; 
+  UInt32 outputFileLine; 
+  String includePath;
+  String resolvedPath;
+  UInt32 numLines;
+  // GLSLLineMapping includedFiles[];
+}; 
+
+function GLSLPreprocessor_debugPrintMappings( GLSLLineMapping mappings[] ) {
+  for( Size i = 0; i < mappings.size(); ++i )
+    report( i + ": numLi=" + mappings[i].numLines + " srcLi=" + mappings[i].sourceFileLine + " outLi=" + mappings[i].outputFileLine + " src=" + mappings[i].resolvedPath );
+}
+
+function GLSLPreprocessor_debugPrintLines( String lines[] ) {
+  for( Size i = 0; i < lines.size(); ++i )
+    report( "[" + (i+1) + "] " + lines[i] );
+}
+
+function Boolean GLSLPreprocessor_isIncluded(String glslFilePath, GLSLLineMapping mappings[]){
+  for(Integer i=0; i<mappings.size(); i++){
+    if(mappings[i].resolvedPath == glslFilePath)
+      return true;
+  }
+  return false;
+}
+
+function String[] GLSLPreprocessor_preProcess(
+  String glslFilePath,
+  String glslCode,
+  String searchPaths<>,
+  io GLSLLineMapping mappings[],
+  Integer outputLineIndex,
+  Boolean reportFilenamesOnly
+  )
+{
+
+  Integer parentMappingIndex = mappings.size()-1;
+
+  // Add glsl's file path (local) as first search path, if possible
+  String shaderPath;
+  FilePath fileP = FilePath(glslFilePath);
+  if( fileP.isRegularFile() )
+    shaderPath = fileP.parentPath().string();
+  else if( fileP.isDirectory() )
+    shaderPath = fileP.string();
+
+  if( !shaderPath )
+    shaderPath = '.';
+  String allSearchPaths[];
+  allSearchPaths.resize(searchPaths.size()+1);
+  allSearchPaths[0] = shaderPath;
+  for( Size i = 0; i < searchPaths.size(); ++i )
+    allSearchPaths[i+1] = searchPaths[i];
+
+  String lines[] = glslCode.split('\n');
+  mappings[parentMappingIndex].numLines = lines.size();
+
+  for(Integer i=0; i<lines.size(); i++){
+    String line = lines[i];
+    Integer pos = line.find('#include', 0);
+    if(pos != -1){
+      String parts[] = GLSLPreprocessor_splitOnWhitepspace_ignoreComments(line);
+      String includePath = GLSLPreprocessor_parseString(parts[1]);
+      FilePath includePathObj = null;
+      for(Integer j=allSearchPaths.size()-1; j>=0; j--){
+        includePathObj = FilePath(allSearchPaths[j]) / FilePath(includePath);
+        includePathObj.makePreferred();
+        if(includePathObj.exists())
+          break;
+      }
+
+      if(includePathObj == null || !includePathObj.exists()){
+        setError('Invalid include path. File not found:' + includePath + " in the following locations:"+allSearchPaths);
+      }
+      String resolvedInludePath = includePathObj.string();
+
+      // If the file has already been included, we can simply remove the inlude line and continue.
+      // Note: We don't support templating of included files using preprocessor definitions yet.
+      // To support this we could keep a stack of preprocessor directives and preform the replacements in this function.
+      // isIncluded could compare the directives used with the previous include to determing if the current directives would 
+      // cause a difference in generated source code. 
+      // Note: The preprocessorDirectives would need to modify function names to avoid name collsions on subsequent imports. 
+      // Leaving this feature for now untill we have a clearer use case. 
+      if(GLSLPreprocessor_isIncluded(resolvedInludePath, mappings)){
+        lines[i] = '';
+        continue;
+      }
+
+      TextReader reader(resolvedInludePath);
+      if(!reader.isOpen())
+        setError('Unable to open file:' + resolvedInludePath);
+
+      //Split current mapping in 2 parts: before and after include.
+      GLSLLineMapping remainingParentMapping;
+      remainingParentMapping = mappings[parentMappingIndex];
+      remainingParentMapping.numLines = lines.size() - i;
+      mappings[parentMappingIndex].numLines -= remainingParentMapping.numLines;
+      --remainingParentMapping.numLines;//Remove the #include line
+      remainingParentMapping.sourceFileLine = mappings[parentMappingIndex].sourceFileLine + mappings[parentMappingIndex].numLines + 1;
+
+      GLSLLineMapping mapping;
+      if ( reportFilenamesOnly )
+        mapping.sourceFile = FilePath(glslFilePath).fileName().string();
+      else
+        mapping.sourceFile = glslFilePath;
+      mapping.sourceFileLine = 0;
+      mapping.outputFileLine = outputLineIndex + i;
+      mapping.includePath = includePath;
+      if ( reportFilenamesOnly )
+        mapping.resolvedPath = FilePath(resolvedInludePath).fileName().string();
+      else
+        mapping.resolvedPath = resolvedInludePath;
+      UInt32 mappingIndex = mappings.size();
+      mappings.push(mapping);
+
+      // Now preProcess the code which might cause more files to be included.
+      String includedLines[] =
+        GLSLPreprocessor_preProcess(
+          resolvedInludePath,
+          reader.readAll(),
+          allSearchPaths,
+          mappings,
+          outputLineIndex + i,
+          reportFilenamesOnly
+          );
+
+      // Insert the included code into the current code at the line where the #include statement was.
+      lines.resize(lines.size() - 1 + includedLines.size()); // The #include like will be replaced by the first line in the included file. 
+      for(Integer j=lines.size()-includedLines.size(); j>i; j--){
+        lines[j+(includedLines.size()-1)] = lines[j];
+      }
+      for(Integer j=0; j<includedLines.size(); j++){
+        lines[i+j] = includedLines[j];
+      }
+
+      mappings[mappingIndex].numLines = includedLines.size();
+      // Note: -1 because we replaced the 'include' with the contents of the file
+      i += includedLines.size()-1;
+
+      // Insert the remaining of the parent mapping
+      remainingParentMapping.outputFileLine = outputLineIndex + i + 1;
+      parentMappingIndex = mappings.size();
+      mappings.push(remainingParentMapping);
+    }
+  }
+  return lines;
+}
+
+function String GLSLPreprocessor_preProcess(
+  String glslFilePath,
+  String glslCode,
+  String searchPaths<>,
+  io String glslVersion,
+  io GLSLLineMapping mappings[],
+  io String splitCodeLines[],
+  Boolean reportFilenamesOnly
+  ){
+
+  GLSLLineMapping mapping;
+  mapping.sourceFile = glslFilePath;
+  mapping.sourceFileLine = 0;// 1 based line number. 
+  mapping.outputFileLine = 0;
+  mapping.includePath = glslFilePath;
+  mapping.resolvedPath = glslFilePath;
+  mappings.push(mapping);
+  splitCodeLines = GLSLPreprocessor_preProcess(
+    glslFilePath,
+    glslCode,
+    searchPaths,
+    mappings,
+    0,
+    reportFilenamesOnly
+    );
+  Size targetMapping;
+  for( Size i = 0; i < mappings.size(); ++i ) {
+    if( mappings[i].numLines ) {
+      if( i != targetMapping )
+        mappings[targetMapping] = mappings[i];
+      ++targetMapping;
+    }
+  }
+  mappings.resize(targetMapping);
+  glslVersion = '';
+  for( Size i = 0; i < splitCodeLines.size(); ++i ) {
+    Integer pos = splitCodeLines[i].find('#version', 0);
+    if( pos != -1 ) {
+      pos += '#version'.length();
+      glslVersion = GLSLPreprocessor_readToken( splitCodeLines[i], pos );
+      break;
+    }
+  }
+  return '\n'.join(splitCodeLines);
+}
+
+inline String GLSLPreprocessor_preProcess(
+  String glslFilePath,
+  String glslCode,
+  String searchPaths<>,
+  io String glslVersion,
+  io GLSLLineMapping mappings[],
+  Boolean reportFilenamesOnly
+  )
+{
+  String splitCodeLines[];
+  return GLSLPreprocessor_preProcess(
+    glslFilePath,
+    glslCode,
+    searchPaths,
+    glslVersion,
+    mappings,
+    splitCodeLines,
+    reportFilenamesOnly
+    );
+}
+
+function GLSLPreprocessor_findSourceLocation(Integer lineNumber, GLSLLineMapping mappings[], io Integer mappingIndex, io Integer mappingLineIndex ){
+  // Find the last file mapping that spans the reported error line.
+  // Note: the first file mapping should cover all lines and will be the default if
+  // no included files match the line number.
+  mappingIndex = -1;
+  mappingLineIndex = -1;
+  for(UInt32 j=0; j<mappings.size(); j++){
+    if( lineNumber >= mappings[j].outputFileLine && lineNumber < mappings[j].outputFileLine + mappings[j].numLines ) {
+      mappingIndex = j;
+      mappingLineIndex = lineNumber - mappings[j].outputFileLine + mappings[j].sourceFileLine;
+    }
+  }
+}

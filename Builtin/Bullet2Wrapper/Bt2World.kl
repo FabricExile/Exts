@@ -1,0 +1,424 @@
+//
+// Copyright 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+require Math;
+require Bullet2;
+require Geometry;
+require InlineDrawing;
+
+struct Bt2Item;
+struct Bt2Shape;
+struct Bt2RigidBody;
+struct Bt2SoftBody;
+struct Bt2Constraint;
+struct Bt2IslandBodyInfo;
+struct Bt2World_DrawRbdInfo;
+struct Bt2World_DrawSbdInfo;
+
+const SInt32 Bt2World_WorldType_Default = 0;
+const SInt32 Bt2World_WorldType_Simple = 1;
+const SInt32 Bt2World_WorldType_RigidSoft = 2;
+const SInt32 Bt2World_WorldType_MultiBody = 3;
+const SInt32 Bt2World_WorldType_RigidSoftMultiBody = 4;
+const SInt32 Bt2World_Broadphase_Default = 0;
+const SInt32 Bt2World_Broadphase_AxisSweep = 1;
+const SInt32 Bt2World_Solver_Default = 0;
+const SInt32 Bt2World_Solver_NNCG = 1;
+const SInt32 Bt2World_Solver_GaussSeidel = 2;
+const SInt32 Bt2World_Solver_Dantzig = 3;
+const SInt32 Bt2World_Solver_Lemke = 4;
+const SInt32 Bt2World_Solver_MultiBody = 5;
+
+object Bt2World
+{
+  private btBroadphaseInterface broadphase;
+  private btCollisionConfiguration collisionConfiguration;
+  private btCollisionDispatcher dispatcher;
+  private btConstraintSolver constraintSolver;
+  private btMultiBodyConstraintSolver mbConstraintSolver;
+  private btDynamicsWorld dynamicsWorld;
+  private btSoftRigidDynamicsWorld softDynamicsWorld;
+  private btMultiBodyDynamicsWorld mbDynamicsWorld;
+  private btSoftBodyWorldInfo softBodyWorldInfo;
+  private btSoftMultiBodyDynamicsWorld mbSoftBodyWorld;
+  private Boolean gimpactEnabled;
+  private Boolean supportsSoftBodies;
+  private Float32 timeStep;
+  private SInt32 subSteps;
+  private Float32 startTime;
+  private Float32 currentTime;
+  private Bt2Shape shapes[];
+  private SInt32 shapeKeyToIndex[String];
+  private Bt2RigidBody rigidBodies[];
+  private Bt2SoftBody softBodies[];
+  private Bt2Constraint constraints[];
+  private Bt2IslandBodyInfo islandBodies[];
+
+
+  // debug drawing
+  private DrawingHandle handle;
+  private InlineShape drawShapes[SInt32];
+  private Bt2World_DrawRbdInfo drawRbdInfos[SInt32];
+  private Bt2World_DrawSbdInfo drawSbdInfos[SInt32];
+};
+
+function Bt2World()
+{
+  // report('Creating Bt2World '+this.uid());
+}
+
+/// \dfgPresetCombo worldType ("default", "simple", "rigidSoft", "multiBody", "rigidSoftMultiBody")
+/// \dfgPresetDefault worldType 0
+/// \dfgPresetCombo broadphase ("default", "axisSweep")
+/// \dfgPresetDefault broadphase 0
+/// \dfgPresetCombo constraintSolver ("default", "multiBody", "NNCG", "GaussSeidel", "Dantzig", "Lemke")
+/// \dfgPresetDefault constraintSolver 0
+/// \dfgPresetDefault enableGImpact false
+/// \dfgPresetDefault gravity {"x": 0.0, "y": -10.0, "z": 0.0}
+/// \dfgPresetDefault fps 24.0
+/// \dfgPresetDefault subSteps 3
+/// \dfgPresetDefault startTime 0.0
+function Bt2World.init!(
+  SInt32 worldType,
+  SInt32 broadphase,
+  SInt32 constraintSolver,
+  Boolean enableGImpact,
+  Vec3 gravity,
+  Float32 fps,
+  SInt32 subSteps,
+  Float32 startTime
+) {
+  this.clear();
+
+  this.supportsSoftBodies = false;
+  this.gimpactEnabled = false;
+
+  this.startTime = startTime;
+  this.currentTime = this.startTime;
+
+  switch(broadphase)
+  {
+    case Bt2World_Broadphase_AxisSweep:
+    {
+      btVector3 worldAabbMin(-10000,-10000,-10000);
+      btVector3 worldAabbMax(10000,10000,10000);
+      this.broadphase = btAxisSweep3 (worldAabbMin, worldAabbMax);
+      // report('Bt2World using btAxisSweep3');
+      break;
+    }
+    default:
+    {
+      this.broadphase = btDbvtBroadphase();
+      // report('Bt2World using btDbvtBroadphase');
+      break;
+    }
+  }
+
+  switch(worldType)
+  {
+    case Bt2World_WorldType_Simple:
+    {
+      this.collisionConfiguration = btDefaultCollisionConfiguration();
+      // report('Bt2World using btDefaultCollisionConfiguration');
+      break;
+    }
+    case Bt2World_WorldType_RigidSoft:
+    {
+      this.collisionConfiguration = btSoftBodyRigidBodyCollisionConfiguration();
+      // report('Bt2World using btSoftBodyRigidBodyCollisionConfiguration');
+      this.supportsSoftBodies = true;
+      break;
+    }
+    case Bt2World_WorldType_MultiBody:
+    {
+      this.collisionConfiguration = btDefaultCollisionConfiguration();
+      // report('Bt2World using btDefaultCollisionConfiguration');
+      break;
+    }
+    case Bt2World_WorldType_RigidSoftMultiBody:
+    {
+      this.collisionConfiguration = btSoftBodyRigidBodyCollisionConfiguration();
+      // report('Bt2World using btSoftBodyRigidBodyCollisionConfiguration');
+      this.supportsSoftBodies = true;
+      break;
+    }
+    default:
+    {
+      this.collisionConfiguration = btDefaultCollisionConfiguration();
+      // report('Bt2World using btDefaultCollisionConfiguration');
+      break;
+    }
+  }
+
+
+  this.dispatcher = btCollisionDispatcher(this.collisionConfiguration);
+
+  if(worldType == Bt2World_WorldType_MultiBody)
+  {
+    this.mbConstraintSolver = btMultiBodyConstraintSolver();
+    this.constraintSolver = this.mbConstraintSolver;
+  }
+  else
+  {
+    switch(constraintSolver)
+    {
+      case Bt2World_Solver_NNCG:
+      {
+        this.constraintSolver = btNNCGConstraintSolver();
+        // report('Bt2World using btNNCGConstraintSolver');
+        break;
+      }
+      case Bt2World_Solver_GaussSeidel:
+      {
+        this.constraintSolver = btMLCPSolver(btSolveProjectedGaussSeidel());
+        // report('Bt2World using btMLCPSolver');
+        break;
+      }
+      case Bt2World_Solver_Dantzig:
+      {
+        this.constraintSolver = btMLCPSolver(btDantzigSolver());
+        // report('Bt2World using btMLCPSolver');
+        break;
+      }
+      case Bt2World_Solver_Lemke:
+      {
+        this.constraintSolver = btMLCPSolver(btLemkeSolver());
+        // report('Bt2World using btMLCPSolver');
+        break;
+      }
+      case Bt2World_Solver_MultiBody:
+      {
+        this.mbConstraintSolver = btMultiBodyConstraintSolver();
+        this.constraintSolver = this.mbConstraintSolver;
+        // report('Bt2World using btMultiBodyConstraintSolver');
+        break;
+      }
+      default:
+      {
+        this.constraintSolver = btSequentialImpulseConstraintSolver();
+        // report('Bt2World using btSequentialImpulseConstraintSolver');
+        break;
+      }
+    }
+  }
+
+  switch(worldType)
+  {
+    case Bt2World_WorldType_Simple:
+    {
+      this.dynamicsWorld = btSimpleDynamicsWorld(this.dispatcher, this.broadphase, this.constraintSolver, this.collisionConfiguration);
+      // report('Bt2World using btSimpleDynamicsWorld');
+      break;
+    }
+    case Bt2World_WorldType_RigidSoft:
+    {
+      this.softDynamicsWorld = btSoftRigidDynamicsWorld(this.dispatcher, this.broadphase, this.constraintSolver, this.collisionConfiguration);
+      this.dynamicsWorld = this.softDynamicsWorld;
+      // report('Bt2World using btSoftRigidDynamicsWorld');
+      break;
+    }
+    case Bt2World_WorldType_MultiBody:
+    {
+      this.mbDynamicsWorld = btMultiBodyDynamicsWorld(this.dispatcher, this.broadphase, this.mbConstraintSolver, this.collisionConfiguration);
+      this.dynamicsWorld = this.mbDynamicsWorld;
+      // report('Bt2World using btMultiBodyDynamicsWorld');
+      break;
+    }
+    case Bt2World_WorldType_RigidSoftMultiBody:
+    {
+      this.mbSoftBodyWorld = btSoftMultiBodyDynamicsWorld(this.dispatcher, this.broadphase, this.mbConstraintSolver, this.collisionConfiguration);
+      this.mbDynamicsWorld = this.mbSoftBodyWorld;
+      this.dynamicsWorld = this.mbSoftBodyWorld;
+      // report('Bt2World using btSoftMultiBodyDynamicsWorld');
+      break;
+    }
+    default:
+    {
+      this.dynamicsWorld = btDiscreteDynamicsWorld(this.dispatcher, this.broadphase, this.constraintSolver, this.collisionConfiguration);
+      // report('Bt2World using btDiscreteDynamicsWorld');
+      break;
+    }
+  }
+
+  if(!this.softBodyWorldInfo.cxx_isValid())
+  {
+    this.softBodyWorldInfo = btSoftBodyWorldInfo();
+  }
+  this.softBodyWorldInfo.set_m_dispatcher(this.dispatcher);
+  this.softBodyWorldInfo.set_m_broadphase(this.broadphase);
+  btSoftBodyWorldInfo_sdf_Initialize(this.softBodyWorldInfo);
+  btSoftBodyWorldInfo_sdf_Reset(this.softBodyWorldInfo);
+
+  this.softBodyWorldInfo.set_m_gravity(gravity);
+  this.dynamicsWorld.setGravity(gravity);
+
+  if(enableGImpact)
+  {
+    btGImpactCollisionAlgorithm_registerAlgorithm(this.dispatcher);
+    this.gimpactEnabled = true;
+  }
+
+  if(fps <= 0.0)
+    this.timeStep = 1.0 / 24.0;
+  else
+    this.timeStep = 1.0 / fps;
+  if(subSteps <= 0)
+    this.subSteps = 1;
+  else
+    this.subSteps = subSteps;
+
+  this.timeStep /= Float32(this.subSteps);
+}
+
+function ~Bt2World()
+{
+  this.clear();
+}
+
+function Bt2World.clear!()
+{
+  if(this.dynamicsWorld.cxx_isValid())
+  {
+    for(SInt32 i=this.constraints.size()-1;i>=0;i--)
+    {
+      if(this.constraints[i].isValid())
+      {
+        this.dynamicsWorld.removeConstraint(this.constraints[i].constraint);
+        this.constraints[i].constraint.cxx_delete();
+      }
+    }
+    this.constraints.resize(0);
+
+    for(SInt32 i=this.rigidBodies.size()-1;i>=0;i--)
+    {
+      if(this.rigidBodies[i].isValid())
+      {
+        this.dynamicsWorld.removeRigidBody(this.rigidBodies[i].body);
+        btMotionState ms = this.rigidBodies[i].body.getMotionState();
+        if(ms.cxx_isValid())
+          ms.cxx_delete();
+        this.rigidBodies[i].body.cxx_delete();
+      }
+    }
+    this.rigidBodies.resize(0);
+
+    for(SInt32 i=this.softBodies.size()-1;i>=0;i--)
+    {
+      if(this.softBodies[i].isValid())
+      {
+        if(this.softDynamicsWorld.cxx_isValid())
+          this.softDynamicsWorld.removeSoftBody(this.softBodies[i].body);
+        if(this.mbSoftBodyWorld.cxx_isValid())
+          this.mbSoftBodyWorld.removeSoftBody(this.softBodies[i].body);
+        this.softBodies[i].body.cxx_delete();
+      }
+    }
+    this.softBodies.resize(0);
+  }
+  else
+  {
+    this.rigidBodies.resize(0);
+    this.softBodies.resize(0);
+    this.constraints.resize(0);
+  }
+
+  this.islandBodies.resize(0);
+
+  for(Size i=0;i<this.shapes.size();i++)
+  {
+    if(this.shapes[i].shape.cxx_isValid())
+      this.shapes[i].shape.cxx_delete();
+  }
+
+  this.shapes.resize(0);
+  this.shapeKeyToIndex.clear();
+
+  if(this.handle)
+  {
+    this.drawRbdInfos.clear();
+    this.drawSbdInfos.clear();
+    this.drawShapes.clear();
+    this.handle.clear();
+  }
+
+  if(this.dynamicsWorld.cxx_isValid())
+  {
+    // report('Destroying Bt2World '+this.uid());
+    this.dynamicsWorld.cxx_delete();
+  }
+  if(this.softBodyWorldInfo.cxx_isValid())
+  {
+    this.softBodyWorldInfo.cxx_delete();
+  }
+  if(this.constraintSolver.cxx_isValid())
+  {
+    this.constraintSolver.cxx_delete();
+  }
+  if(this.broadphase.cxx_isValid())
+  {
+    this.broadphase.cxx_delete();
+  }
+  if(this.dispatcher.cxx_isValid())
+  {
+    this.dispatcher.cxx_delete();
+  }
+  if(this.collisionConfiguration.cxx_isValid())
+  {
+    this.collisionConfiguration.cxx_delete();
+  }
+}
+
+function Bt2World.stepSimulation!()
+{
+  if(!this.dynamicsWorld.cxx_isValid())
+    return;
+  for(SInt32 i=0;i<this.subSteps;i++)
+  {
+    this.dynamicsWorld.stepSimulation(this.timeStep, 0, 0);
+    this.currentTime += this.timeStep;
+  }
+  this.updateDebugDrawing();
+}
+
+function Bt2World.seekSimulation!(Float32 time)
+{
+  if(!this.dynamicsWorld.cxx_isValid())
+    return;
+  while(this.currentTime < time)
+  {
+    this.dynamicsWorld.stepSimulation(this.timeStep, 0, 0);
+    this.currentTime += this.timeStep;
+  }
+  this.updateDebugDrawing();
+}
+
+/// \dfgPresetDefault gravity {"x": 0.0, "y": -10.0, "z": 0.0}
+function Bt2World.setGravity!(Vec3 gravity)
+{
+  if(!this.dynamicsWorld.cxx_isValid())
+    return;
+  this.dynamicsWorld.setGravity(gravity);
+  this.softBodyWorldInfo.set_m_gravity(gravity);
+}
+
+/// \dfgPresetDefault airDensity 1.2
+/// \dfgPresetDefault waterDensity 0.0
+/// \dfgPresetDefault waterOffset 0.0
+/// \dfgPresetDefault maxDisplacement 1000.0
+/// \dfgPresetDefault waterNormal {"x": 0.0, "y": 0.0, "z": 0.0}
+function Bt2World.setSoftBodySettings!(
+  Float32 airDensity,
+  Float32 waterDensity,
+  Float32 waterOffset,
+  Float32 maxDisplacement,
+  Vec3 waterNormal
+) {
+  if(!this.softBodyWorldInfo.cxx_isValid())
+    return;
+  this.softBodyWorldInfo.set_air_density(airDensity);
+  this.softBodyWorldInfo.set_water_density(waterDensity);
+  this.softBodyWorldInfo.set_water_offset(waterOffset);
+  this.softBodyWorldInfo.set_m_maxDisplacement(maxDisplacement);
+  this.softBodyWorldInfo.set_water_normal(waterNormal);
+}

@@ -1,0 +1,37 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+  // Drag interaction events are one of the following, and
+  // ToolEvent.customData contains the source DragInteraction.
+  const String ToolEvent_DragBegin = "dragBegin";
+  const String ToolEvent_DragMove = "dragMove";
+  const String ToolEvent_DragEnd = "dragEnd";
+  const String ToolEvent_DragBeginEndNoMove = "dragBeginEndNoMove";
+
+  /// A DragInteraction provides the context of a dragging movement, which is
+  /// often a mouse click-and-drag. It provides information about the initial
+  /// and current mouse positions.
+  ///
+  /// See :ref:`TPG.interactive-tools` for more information and examples related to tool interactions.
+  interface DragInteraction {
+    Boolean isDragging();
+
+    /// Initial context
+    Vec2 getInitialPixelPosition();
+    Vec2 getInitialNormalizedScreenSpacePosition();
+    RaycastResult getInitialRaycastResult();
+    Viewport getContextualViewport();
+
+    Boolean hasWorldSpacePosition();
+    Vec3 getInitialWorldSpacePosition();
+
+    Vec2 getCurrentPixelPosition();
+    Vec2 getCurrentNormalizedScreenSpacePosition();
+
+    Vec2 getLastPixelDelta();
+    Vec2 getLastNormalizedScreenSpaceDelta();
+  };
+
+}// namespace Tool

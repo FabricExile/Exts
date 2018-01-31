@@ -1,0 +1,129 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Singletons;
+
+/**
+  \versionadded 2.6.0
+  
+  BaseGlobalOptionsTarget defines a 'global' target which options are shared by the registered target.
+  GlobalOptionsTarget are created as singletons.
+
+  \example
+    
+    // Createa a global option targets
+    object MyGlobalOptionTarget : BaseGlobalOptionsTarget {
+    }
+    
+    MyGlobalOptionTarget() {
+      // Register the target.
+      Ref<OptionsTarget> target = this;
+      GetOptionsTargetRegistry().registerTarget(target);
+    }
+
+    ~MyGlobalOptionTarget() {
+      // Unregister the target.
+      Ref<OptionsTarget> target = this;
+      GetOptionsTargetRegistry().unregisterTarget(target);
+    }
+    
+    RTValMyGlobalOptionTarget.getOptions() {
+      RTVal options;
+      return options;
+    }
+
+    MyGlobalOptionTarget.setOptions!(RTVal options) {
+    }
+
+    Ref<OptionsTarget> MyGlobalOptionTarget.getGlobalOptions() {
+      // No global options
+      return null;
+    }
+
+
+    // Createa an option targets with global options
+    object MyTarget : OptionsTarget {
+    }
+    
+    MyTarget() {
+      // Register the target to the global options.
+      Ref<BaseOptionsTargetRegistry> globalTarget = this.getGlobalOptions();
+      globalTarget.unregisterTarget(target);
+    }
+
+    ~MyTarget() {
+      // Unregister the target to the global options.
+      Ref<OptionsTarget> target = this;
+      GetOptionsTargetRegistry().unregisterTarget(target);
+    }
+    
+    RTVal MyTarget.getOptions() {
+      RTVal options;
+      return options;
+    }
+
+    MyTarget.setOptions!(RTVal options) {
+    }
+
+    Ref<OptionsTarget> MyTarget.getGlobalOptions() {
+      // Create the global options singleton.
+      return GetGlobalOptionsTarget(MyGlobalOptionTarget, 'MyGlobal Options');
+    }
+
+  \endexample
+*/
+object BaseGlobalOptionsTarget : BaseOptionsTargetRegistry, OptionsTarget {
+};
+
+/// \internal
+BaseGlobalOptionsTarget.set!(String id) {
+  Ref<OptionsTarget> target = this;
+  GetOptionsTargetRegistry().registerTarget(target, id);
+}
+
+~BaseGlobalOptionsTarget() {
+  Ref<OptionsTarget> target = this;
+  GetOptionsTargetRegistry().unregisterTarget(target);
+}
+
+/// Implementation of OptionsTargetRegistry_virtuals.
+BaseGlobalOptionsTarget.unregisterTarget!(Ref<OptionsTarget> target) {
+  this.parent.unregisterTarget(target);
+  if(this.count() == 0)
+  {
+	  Ref<OptionsTarget> this_ = this;
+  	GetOptionsTargetRegistry().closeAppOptionsEditor(this_, true);
+  }
+}
+
+/// Implementation of OptionsTarget.
+Ref<OptionsTarget> BaseGlobalOptionsTarget.getGlobalOptions() {
+  return null;
+}
+
+/// Implementation of OptionsTarget.
+/// To override.
+RTVal BaseGlobalOptionsTarget.getOptions() {
+  throw("BaseGlobalOptionsTarget.getOptions must be overriden.");
+}
+
+/// Implementation of OptionsTarget.
+/// To override.
+BaseGlobalOptionsTarget.setOptions!(RTVal options) {
+  throw("BaseGlobalOptionsTarget.setOptions must be overriden.");
+}
+
+/// Gets the global options target (singleton).
+/// \param options type Type of global options target to construct.
+/// \param options id ID of the OptionsTarget in the registry.
+Ref<BaseGlobalOptionsTarget> GetGlobalOptionsTarget(Type type, String id) {
+	BaseGlobalOptionsTarget globalOptionsTarget = Singleton_get(id);
+	if(!globalOptionsTarget)
+	{
+		globalOptionsTarget = type.createNew();
+		globalOptionsTarget.set(id);
+		Singleton_set(id, globalOptionsTarget);
+	}
+  return globalOptionsTarget;
+}

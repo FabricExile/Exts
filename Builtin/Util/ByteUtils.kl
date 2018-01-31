@@ -1,0 +1,30 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+function CopyBytes( Data target, Data source, UInt64 dataSize ) = "CopyBytes";
+
+function Boolean BytesEqual( Data values1, Data values2, UInt64 dataSize ) = "BytesEqual";
+
+function Boolean CompareAndUpdateBytes( Data toUpdate, Data newValues, UInt64 dataSize ) = "CompareAndUpdateBytes";
+
+function Data OffsetByteData( Data base, SInt64 byteOffset ) = "OffsetByteData";
+
+function UInt8<> CastDataToUInt8Array( Data source, Size uint32count ) = "CastDataToUInt8Array";
+
+function UInt32<> CastDataToUInt32Array( Data source, Size uint32count ) = "CastDataToUInt32Array";
+
+function SInt32<> CastDataToSInt32Array( Data source, Size sint32count ) = "CastDataToSInt32Array";
+
+function Float32<> CastDataToFloat32Array( Data source, Size float32count ) = "CastDataToFloat32Array";
+
+function UInt64 CastDataToUInt64( Data data ) = "CastDataToUInt64";
+
+function Data CastUInt64ToData( UInt64 uint64 ) = "CastUInt64ToData";
+
+/// \internal
+function UInt32 Data.hash() {
+  UInt64 raw = CastDataToUInt64( this );
+  return UInt32( raw ) ^ UInt32( raw >> 32 );
+}
+ 

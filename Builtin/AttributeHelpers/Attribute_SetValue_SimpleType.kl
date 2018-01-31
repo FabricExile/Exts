@@ -1,0 +1,580 @@
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+function Boolean BaseGeometry.setIntegerAttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  SInt32 value
+) {
+  if(!this.setAttributeValue_CheckIndex(mode, index))
+    return false;
+
+  IntegerAttribute cast = attr;
+  if(cast == null)
+    return false;
+
+  Ref<IntegerAttribute> castRef = cast;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      PolygonMesh mesh = this;
+      if(mesh)
+      {
+        mesh.setPointAttribute(index, castRef, value);
+      }
+      else
+      {
+        cast.values[index] = value;
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++)
+        mesh.setPolygonAttribute( index, i, castRef, value );
+      break;
+    }
+    case 2: // per face corner
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      mesh.setPolygonAttribute(index, faceCorner % size, castRef, value);
+      break;
+    }
+    case 3: // all
+    {
+      for(Size i=0;i<cast.values.size();i++)
+        cast.values[i] = value;
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport SetValue mode for IntegerAttribute.");
+      return false;
+    }
+  }  
+
+  cast.incrementVersion();
+  return true;
+}
+
+/// \internal
+function Boolean BaseGeometry.setUInt32AttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  UInt32 value
+) {
+  if(!this.setAttributeValue_CheckIndex(mode, index))
+    return false;
+
+  UInt32Attribute cast = attr;
+  if(cast == null)
+    return false;
+
+  Ref<UInt32Attribute> castRef = cast;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      PolygonMesh mesh = this;
+      if(mesh)
+      {
+        mesh.setPointAttribute(index, castRef, value);
+      }
+      else
+      {
+        cast.values[index] = value;
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++)
+        mesh.setPolygonAttribute( index, i, castRef, value );
+      break;
+    }
+    case 2: // per face corner
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      mesh.setPolygonAttribute(index, faceCorner % size, castRef, value);
+      break;
+    }
+    case 3: // all
+    {
+      for(Size i=0;i<cast.values.size();i++)
+        cast.values[i] = value;
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport SetValue mode for UInt32Attribute.");
+      return false;
+    }
+  }  
+
+  cast.incrementVersion();
+  return true;
+}
+
+/// \internal
+function Boolean BaseGeometry.setScalarAttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  Float32 value
+) {
+  if(!this.setAttributeValue_CheckIndex(mode, index))
+    return false;
+
+  ScalarAttribute cast = attr;
+  if(cast == null)
+    return false;
+
+  Ref<ScalarAttribute> castRef = cast;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      PolygonMesh mesh = this;
+      if(mesh)
+      {
+        mesh.setPointAttribute(index, castRef, value);
+      }
+      else
+      {
+        cast.values[index] = value;
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++)
+        mesh.setPolygonAttribute( index, i, castRef, value );
+      break;
+    }
+    case 2: // per face corner
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      mesh.setPolygonAttribute(index, faceCorner % size, castRef, value);
+      break;
+    }
+    case 3: // all
+    {
+      for(Size i=0;i<cast.values.size();i++)
+        cast.values[i] = value;
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport SetValue mode for ScalarAttribute.");
+      return false;
+    }
+  }  
+
+  cast.incrementVersion();
+  return true;
+}
+
+/// \internal
+function Boolean BaseGeometry.setVec2AttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  Vec2 value
+) {
+  if(!this.setAttributeValue_CheckIndex(mode, index))
+    return false;
+
+  Vec2Attribute cast = attr;
+  if(cast == null)
+    return false;
+
+  Ref<Vec2Attribute> castRef = cast;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      PolygonMesh mesh = this;
+      if(mesh)
+      {
+        mesh.setPointAttribute(index, castRef, value);
+      }
+      else
+      {
+        cast.values[index] = value;
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++)
+        mesh.setPolygonAttribute( index, i, castRef, value );
+      break;
+    }
+    case 2: // per face corner
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      mesh.setPolygonAttribute(index, faceCorner % size, castRef, value);
+      break;
+    }
+    case 3: // all
+    {
+      for(Size i=0;i<cast.values.size();i++)
+        cast.values[i] = value;
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport SetValue mode for Vec2Attribute.");
+      return false;
+    }
+  }  
+
+  cast.incrementVersion();
+  return true;
+}
+
+/// \internal
+function Boolean BaseGeometry.setVec3AttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  Vec3 value
+) {
+  if(!this.setAttributeValue_CheckIndex(mode, index))
+    return false;
+
+  Vec3Attribute cast = attr;
+  if(cast == null)
+    return false;
+
+  Ref<Vec3Attribute> castRef = cast;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      PolygonMesh mesh = this;
+      if(mesh)
+      {
+        mesh.setPointAttribute(index, castRef, value);
+      }
+      else
+      {
+        cast.values[index] = value;
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++)
+        mesh.setPolygonAttribute( index, i, castRef, value );
+      break;
+    }
+    case 2: // per face corner
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      mesh.setPolygonAttribute(index, faceCorner % size, castRef, value);
+      break;
+    }
+    case 3: // all
+    {
+      for(Size i=0;i<cast.values.size();i++)
+        cast.values[i] = value;
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport SetValue mode for Vec3Attribute.");
+      return false;
+    }
+  }  
+
+  cast.incrementVersion();
+  return true;
+}
+
+/// \internal
+function Boolean BaseGeometry.setVec4AttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  Vec4 value
+) {
+  if(!this.setAttributeValue_CheckIndex(mode, index))
+    return false;
+
+  Vec4Attribute cast = attr;
+  if(cast == null)
+    return false;
+
+  Ref<Vec4Attribute> castRef = cast;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      PolygonMesh mesh = this;
+      if(mesh)
+      {
+        mesh.setPointAttribute(index, castRef, value);
+      }
+      else
+      {
+        cast.values[index] = value;
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++)
+        mesh.setPolygonAttribute( index, i, castRef, value );
+      break;
+    }
+    case 2: // per face corner
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      mesh.setPolygonAttribute(index, faceCorner % size, castRef, value);
+      break;
+    }
+    case 3: // all
+    {
+      for(Size i=0;i<cast.values.size();i++)
+        cast.values[i] = value;
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport SetValue mode for Vec4Attribute.");
+      return false;
+    }
+  }  
+
+  cast.incrementVersion();
+  return true;
+}
+
+/// \internal
+function Boolean BaseGeometry.setColorAttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  Color value
+) {
+  if(!this.setAttributeValue_CheckIndex(mode, index))
+    return false;
+
+  ColorAttribute cast = attr;
+  if(cast == null)
+    return false;
+
+  Ref<ColorAttribute> castRef = cast;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      PolygonMesh mesh = this;
+      if(mesh)
+      {
+        mesh.setPointAttribute(index, castRef, value);
+      }
+      else
+      {
+        cast.values[index] = value;
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++)
+        mesh.setPolygonAttribute( index, i, castRef, value );
+      break;
+    }
+    case 2: // per face corner
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      mesh.setPolygonAttribute(index, faceCorner % size, castRef, value);
+      break;
+    }
+    case 3: // all
+    {
+      for(Size i=0;i<cast.values.size();i++)
+        cast.values[i] = value;
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport SetValue mode for ColorAttribute.");
+      return false;
+    }
+  }  
+
+  cast.incrementVersion();
+  return true;
+}
+
+/// \internal
+function Boolean BaseGeometry.setRGBAttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  RGB value
+) {
+  if(!this.setAttributeValue_CheckIndex(mode, index))
+    return false;
+
+  RGBAttribute cast = attr;
+  if(cast == null)
+    return false;
+
+  Ref<RGBAttribute> castRef = cast;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      PolygonMesh mesh = this;
+      if(mesh)
+      {
+        mesh.setPointAttribute(index, castRef, value);
+      }
+      else
+      {
+        cast.values[index] = value;
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++)
+        mesh.setPolygonAttribute( index, i, castRef, value );
+      break;
+    }
+    case 2: // per face corner
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      mesh.setPolygonAttribute(index, faceCorner % size, castRef, value);
+      break;
+    }
+    case 3: // all
+    {
+      for(Size i=0;i<cast.values.size();i++)
+        cast.values[i] = value;
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport SetValue mode for RGBAttribute.");
+      return false;
+    }
+  }  
+
+  cast.incrementVersion();
+  return true;
+}
+
+/// \internal
+function Boolean BaseGeometry.setRGBAAttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  RGBA value
+) {
+  if(!this.setAttributeValue_CheckIndex(mode, index))
+    return false;
+
+  RGBAAttribute cast = attr;
+  if(cast == null)
+    return false;
+
+  Ref<RGBAAttribute> castRef = cast;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      PolygonMesh mesh = this;
+      if(mesh)
+      {
+        mesh.setPointAttribute(index, castRef, value);
+      }
+      else
+      {
+        cast.values[index] = value;
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++)
+        mesh.setPolygonAttribute( index, i, castRef, value );
+      break;
+    }
+    case 2: // per face corner
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      mesh.setPolygonAttribute(index, faceCorner % size, castRef, value);
+      break;
+    }
+    case 3: // all
+    {
+      for(Size i=0;i<cast.values.size();i++)
+        cast.values[i] = value;
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport SetValue mode for RGBAAttribute.");
+      return false;
+    }
+  }  
+
+  cast.incrementVersion();
+  return true;
+}

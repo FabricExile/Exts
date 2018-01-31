@@ -1,0 +1,76 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Quat.html",
+    "uiTooltip" : "Returns the Y axis of this quaternion\n\n Supported by Quat"
+    },
+  "title" : "GetYaxis[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 0,\n  \"g\" : 191,\n  \"b\" : 232\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Quat[]" : [
+          {
+            "v" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              },
+            "w" : 1
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Quat[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Vec3[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "DEA705339840EEC9A0A4C4C57737BE6E",
+  "code" : "require Math;
+
+operator Math_Quat_getYaxis_task<<<index>>>(
+  io Vec3[] result
+, in Quat[] this
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].getYaxis();
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  Size task_size = this.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Quat_getYaxis_task(index, result, this);
+    }
+  } else {
+    Math_Quat_getYaxis_task<<<task_size>>>(result, this);
+  }
+}
+"
+  }

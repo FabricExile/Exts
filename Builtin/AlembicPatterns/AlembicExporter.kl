@@ -1,0 +1,418 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+require AssetPatterns;
+require AlembicWrapper;
+require FileIO;
+require FTL;
+
+/// \dfgPresetOmit
+object AlembicExporter : BaseExporter {
+  String filePath;
+  Vec2 range;
+  SInt32 featureMask;
+  AlembicArchiveWriter archive;
+  AlembicObjectWriter writers[String];
+  AlembicPropertyWriter propWriters[String];
+  SInt32 numTimesToTimeSampling[SInt32];
+  SInt32 keyToTimeSampling[String];
+  ImporterContext keyToCtxt[String];
+};
+
+/// \dfgPresetOmit
+function AlembicExporter.cloneMembersTo(io AlembicExporter other) {
+  this.parent.cloneMembersTo(other);
+  other.archive = this.archive;
+  other.writers = this.writers;
+  other.propWriters = this.propWriters;
+  other.numTimesToTimeSampling = this.numTimesToTimeSampling;
+  other.keyToTimeSampling = this.keyToTimeSampling;
+}
+
+/// \dfgPresetOmit
+function AlembicExporter(String filePath, Vec2 range, SInt32 featureMask) {
+  this.filePath = filePath;
+  this.range = range;
+  this.archive = null;
+  this.featureMask = featureMask;
+}
+
+/// \dfgPresetOmit
+function AlembicExporter(String filePath, Vec2 range) {
+  this.filePath = filePath;
+  this.range = range;
+  this.archive = null;
+  this.featureMask = AlembicExportFeature_Complete;
+}
+
+/// \dfgPresetOmit
+function AlembicExporter(String filePath) {
+  this.filePath = filePath;
+  this.range = Vec2();
+  this.archive = null;
+  this.featureMask = AlembicExportFeature_Complete;
+}
+
+/// \dfgPresetOmit
+protected String AlembicExporter.getLookupKey(Ref<ImporterObject> obj) {
+  return obj.getInstancePath();
+}
+
+/// \dfgPresetOmit
+Boolean AlembicExporter.updateObjects!(ExporterContext ctxt, Ref<ImporterObject> objects[]) {
+  if(!this.archive) {
+    FilePath path = this.filePath;
+    path = path.expandEnvVars();
+    if(!path.string())
+      return false;
+    this.archive = AlembicArchiveWriter(path.string());
+  }
+
+  return this.parent.updateObjects(ctxt, objects);
+}
+
+/// \dfgPresetOmit
+Boolean AlembicExporter.visitObjectToExport!(ExporterContext ctxt, Ref<ImporterObject> obj, Ref<ImporterObject> parentObj) {
+
+  String key = this.getLookupKey(obj);
+
+  if(this.writers.has(key) && !ctxt.willCallUpdateForEachTimeSample)
+  {
+    return true;
+  }
+
+  if(this.keyToCtxt.get(key, ImporterContext(SCALAR_INFINITE)).equals(ctxt))
+  {
+    return true;
+  }
+
+  ExporterContext ctxtCopy = ctxt.clone();
+  AlembicObjectWriter writer = null;
+  SInt32 ts;
+  Float64 times[];
+
+  if(obj.isConstant(ctxt)) {
+
+    if(!ctxt.isAtStart())
+    {
+      return true;
+    }
+
+    if(ctxt.time > -SCALAR_INFINITE && ctxt.time < SCALAR_INFINITE)
+      times.push(ctxt.time); 
+    else
+      times.push(0.0);
+    ts = Alembic_kConstantTimeSampling;
+    this.keyToTimeSampling[key] = ts;
+
+  } else {
+
+    // if this is called for the first time
+    if(ctxt.isAtStart())
+    {
+      // if the export context has no time samples
+      // we can fall back on to the times samples from the
+      // source objects
+      if(ctxt.timeSamples.size() == 0)
+      {
+        Float32 timesSamples[] = obj.getTimeSamples(ctxt);
+        for(Size i=0;i<timesSamples.size();i++) {
+          if(timesSamples[i] >= this.range.x && timesSamples[i] <= this.range.y)
+            times.push(timesSamples[i]);
+        }
+      }
+      else
+      {
+        for(Size i=0;i<ctxt.timeSamples.size();i++)
+          times.push(ctxt.timeSamples[i]);
+      }
+
+      if(times.size() == 0) {
+        times.push(this.range.x);
+      } else if(times.size() > 1) {
+        if(this.numTimesToTimeSampling.has(times.size())) {
+          ts = this.numTimesToTimeSampling[times.size()];
+        } else {
+          ts = this.archive.addTimeSampling(times);
+          this.numTimesToTimeSampling[times.size()] = ts;
+        }
+      }
+
+      this.keyToTimeSampling[key] = ts;
+    }
+    else
+    {
+      ts = this.keyToTimeSampling[key];
+    }
+
+    // if we expect this to be called for every time sample
+    // then we should only process a single time step
+    if(ctxt.willCallUpdateForEachTimeSample)
+    {
+      times.resize(1);
+      times[0] = ctxt.time;
+    }
+  }
+
+  // for instances mark each instance exported
+  if(writer == null)
+  {
+    if(obj.getPath() != obj.getInstancePath())
+    {
+      // report('skipping instanced path '+key);
+      return true;
+    }
+  }
+
+  switch(obj.getType()) {
+    case 'Instance':
+    case 'Layer':
+    case 'Group':
+    case 'Transform': {
+
+      ImporterTransform transform(obj);
+
+      AlembicXformWriter xformWriter = this.archive.addXform(key, ts);
+      for(Size i=0;i<times.size();i++) {
+        ctxtCopy.time = Float32(times[i]);
+        Mat44 localTransform = transform.getLocalTransform(ctxtCopy);
+        xformWriter.writeSample(localTransform);
+      }
+
+      if(obj.getType() == 'Instance' && ctxt.isAtStart()) {
+        Ref<ImporterInstance> instance(obj);
+        Ref<ImporterObject> targetRef = instance.getMaster(ctxtCopy);
+        if(targetRef)
+        {
+          String targetKey = this.getLookupKey(targetRef);
+          AlembicObjectWriter targetWriter = this.writers.get(targetKey, null);
+          if(targetWriter)
+          {
+            AlembicOObject oObj = xformWriter.getOObject();
+            AlembicOObject oTarget = targetWriter.getOObject();
+            oObj.addChildInstance(oTarget, targetRef.getName());
+          }
+        }
+      }
+
+      writer = xformWriter;
+      break;
+    }
+    case 'Shape': {
+
+      ImporterShape shape(obj);
+      String geoKey = key;
+
+      Xfo xfo = shape.getLocalTransform(ctxt);
+      if(shape.hasLocalTransform()) {
+        AlembicXformWriter xformWriter = this.archive.addXform(key, ts);
+        for(Size i=0;i<times.size();i++) {
+          ctxtCopy.time = Float32(times[i]);
+          Mat44 localTransform = shape.getLocalTransform(ctxtCopy);
+          xformWriter.writeSample(localTransform);
+        }
+        geoKey = key + '/' + obj.getName() + 'Shape';
+      }
+
+      switch(shape.getGeometryType(ctxt)) {
+        case ImporterShape_Mesh: {
+          AlembicPolyMeshWriter geoWriter = this.archive.addPolyMesh(geoKey, ts);
+          for(Size i=0;i<times.size();i++) {
+            ctxtCopy.time = Float32(times[i]);
+            PolygonMesh geo = shape.getGeometry(ctxtCopy);
+            geoWriter.writeSample(geo, this.featureMask);
+          }
+          writer = geoWriter;
+          break;
+        }
+        case ImporterShape_Curves: {
+          AlembicCurvesWriter geoWriter = this.archive.addCurves(geoKey, ts);
+          for(Size i=0;i<times.size();i++) {
+            ctxtCopy.time = Float32(times[i]);
+            Curves geo = shape.getGeometry(ctxtCopy);
+            geoWriter.writeSample(geo, this.featureMask);
+          }
+          writer = geoWriter;
+          break;
+        }
+        case ImporterShape_Points: {
+          AlembicPointsWriter geoWriter = this.archive.addPoints(geoKey, ts);
+          for(Size i=0;i<times.size();i++) {
+            ctxtCopy.time = Float32(times[i]);
+            Points geo = shape.getGeometry(ctxtCopy);
+            geoWriter.writeSamplePoints(geo, this.featureMask);
+          }
+          writer = geoWriter;
+          break;
+        }
+        default: {
+          report('AlembicExporter: Geometry type '+shape.getGeometryType(ctxt)+' for object '+key+' is not supported yet.');
+          return true;
+        }
+      }
+      break;
+    }
+    case 'Camera': {
+
+      ImporterCamera camera(obj);
+      AlembicCameraWriter cameraWriter = this.archive.addCamera(key, ts);
+      for(Size i=0;i<times.size();i++) {
+        ctxtCopy.time = Float32(times[i]);
+
+        cameraWriter.setFocalLength(camera.getFocalLength(ctxtCopy));
+        cameraWriter.setFStop(camera.getFStop(ctxtCopy));
+        cameraWriter.setFocusDistance(camera.getFocusDistance(ctxtCopy));
+        cameraWriter.setNearClippingPlane(camera.getNear(ctxtCopy));
+        cameraWriter.setFarClippingPlane(camera.getFar(ctxtCopy));
+
+        cameraWriter.writeSample();
+      }
+      writer = cameraWriter;
+      break;
+    }
+    case 'Material':
+    case 'Texture':
+    case 'AnimCurve':
+    case 'Behavior': {
+      return true;
+    }
+    default: {
+      report('AlembicExporter: Type '+obj.getType()+' for object '+key+' is not supported yet.');
+      return true;
+    }
+  }
+
+  // report('created '+writer.type()+' for '+key);
+
+  this.writers[key] = writer;
+  this.keyToCtxt[key] = ctxt;
+
+  this.processUserAttributes(ctxt, obj, ts);
+  return true;
+}
+
+/// \dfgPresetOmit
+Boolean AlembicExporter.exportToDisk!(ExporterContext ctxt) {
+  if(this.archive == null)
+    return false;
+
+  if(!ctxt.isAtEnd())
+    return false;
+
+  this.writers.clear();
+  this.numTimesToTimeSampling.clear();
+  this.archive = null;
+  return true;
+}
+
+/// \dfgPresetOmit
+private AlembicExporter.processUserAttributes!(ExporterContext ctxt, Ref<ImporterObject> objRef, SInt32 ts)
+{
+  String key = this.getLookupKey(objRef);
+  ImporterObject obj = objRef;
+  String userProperties[] = obj.getUserProperties(ctxt);
+  if(userProperties.size() == 0)
+    return;
+
+  FTL_JSONEncoder encoder;
+  {
+    FTL_JSONObjectEncoder objEnc = encoder.getObject();
+
+    for(Size i=0;i<userProperties.size();i++)
+    {
+      String propName = userProperties[i];
+      String propKey = '.userProperties/' + propName;
+      String propType = obj.getPropertyType(propName);
+
+      switch(propType)
+      {
+        case "Boolean":
+        {
+          AlembicPropertyWriter propWriter = this.archive.addProperty(key, propKey, Alembic_kScalarProperty, Alembic_kBooleanPOD, 1, ts);
+          obj.updateProperty(propName, ctxt);
+          propWriter.writeBooleanSample(obj.getBooleanProperty(propName));
+          objEnc.setString(propName, "Boolean");
+          break;
+        }      
+        case "SInt32":
+        {
+          AlembicPropertyWriter propWriter = this.archive.addProperty(key, propKey, Alembic_kScalarProperty, Alembic_kInt32POD, 1, ts);
+          obj.updateProperty(propName, ctxt);
+          propWriter.writeSInt32Sample(obj.getSInt32Property(propName));
+          objEnc.setString(propName, "SInt32");
+          break;
+        }      
+        case "Float32":
+        {
+          AlembicPropertyWriter propWriter = this.archive.addProperty(key, propKey, Alembic_kScalarProperty, Alembic_kFloat32POD, 1, ts);
+          obj.updateProperty(propName, ctxt);
+          propWriter.writeFloat32Sample(obj.getFloat32Property(propName));
+          objEnc.setString(propName, "Float32");
+          break;
+        }      
+        case "String":
+        {
+          AlembicPropertyWriter propWriter = this.archive.addProperty(key, propKey, Alembic_kScalarProperty, Alembic_kStringPOD, 1, ts);
+          obj.updateProperty(propName, ctxt);
+          propWriter.writeStringSample(obj.getStringProperty(propName));
+          objEnc.setString(propName, "String");
+          break;
+        }      
+        case "Vec2":
+        {
+          AlembicPropertyWriter propWriter = this.archive.addProperty(key, propKey, Alembic_kScalarProperty, Alembic_kFloat32POD, 2, ts);
+          obj.updateProperty(propName, ctxt);
+          propWriter.writeVec2Sample(obj.getVec2Property(propName));
+          objEnc.setString(propName, "Vec2");
+          break;
+        }      
+        case "Vec3":
+        {
+          AlembicPropertyWriter propWriter = this.archive.addProperty(key, propKey, Alembic_kScalarProperty, Alembic_kFloat32POD, 3, ts);
+          obj.updateProperty(propName, ctxt);
+          propWriter.writeVec3Sample(obj.getVec3Property(propName));
+          objEnc.setString(propName, "Vec3");
+          break;
+        }      
+        case "Quat":
+        {
+          AlembicPropertyWriter propWriter = this.archive.addProperty(key, propKey, Alembic_kScalarProperty, Alembic_kFloat32POD, 4, ts);
+          obj.updateProperty(propName, ctxt);
+          propWriter.writeQuatSample(obj.getQuatProperty(propName));
+          objEnc.setString(propName, "Quat");
+          break;
+        }      
+        case "Color":
+        {
+          AlembicPropertyWriter propWriter = this.archive.addProperty(key, propKey, Alembic_kScalarProperty, Alembic_kFloat32POD, 4, ts);
+          obj.updateProperty(propName, ctxt);
+          propWriter.writeColorSample(obj.getColorProperty(propName));
+          objEnc.setString(propName, "Color");
+          break;
+        }      
+        case "Mat44":
+        {
+          AlembicPropertyWriter propWriter = this.archive.addProperty(key, propKey, Alembic_kScalarProperty, Alembic_kFloat32POD, 16, ts);
+          obj.updateProperty(propName, ctxt);
+          propWriter.writeMat44Sample(obj.getMat44Property(propName));
+          objEnc.setString(propName, "Mat44");
+          break;
+        }      
+        default:
+        {
+          report("User property '"+propName+"' of type '"+propType+"' is not support by the AlembicExporter.");
+          break;
+        }
+      }
+    }
+  }
+
+  if(ctxt.isAtStart())
+  {
+    AlembicObjectWriter writer = this.writers.get(key);
+    AlembicOObject writerObject = writer.getOObject();
+    AlembicMetaData metaData = writerObject.getMetaData();
+    metaData.set("userPropertyTypes", encoder.encode());        
+  }
+}

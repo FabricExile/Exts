@@ -1,0 +1,230 @@
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+function Boolean BaseGeometry.setUInt16ConstantArrayAttributeValueArray(
+  GeometryAttribute attr,
+  SInt32 mode,
+  UInt32 indices[],
+  UInt16 values[][]
+) {
+
+  Size vertexCount;
+  Size faceCount;
+  Size faceCornerTotalCount;
+  Size resultSize;
+  UInt32 idxs[] = indices;
+  if(!this.setAttributeValueArray_CheckIndex(mode, idxs,
+    vertexCount, faceCount, faceCornerTotalCount, resultSize))
+    return false;
+
+  if(values.size() < resultSize)
+    return false;
+
+  UInt16ConstantArrayAttribute cast = attr;
+  if(cast == null)
+    return false;
+  Ref<UInt16ConstantArrayAttribute> castRef = cast;
+
+  LocalL16UInt16Array valuesL;
+
+  Index idx = 0;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      PolygonMesh mesh = this;
+      if(mesh)
+      {
+        for(Size i=0;i<resultSize;i++) {
+          idx = idxs.size() > 0 ? idxs[i] : i;
+          if(idx >= vertexCount)
+            continue;
+
+          valuesL.resize(values[i].size());
+          for(Size k=0;k<values[i].size();k++)
+            valuesL.set(k, values[i][k]);
+
+          mesh.setPointAttribute(idx, castRef, valuesL);
+        }
+      }
+      else
+      {
+        for(Size i=0;i<resultSize;i++) {
+          idx = idxs.size() > 0 ? idxs[i] : i;
+          if(idx >= vertexCount)
+            continue;
+
+          valuesL.resize(values[i].size());
+          for(Size k=0;k<values[i].size();k++)
+            valuesL.set(k, values[i][k]);
+
+          cast.setValue(idx, valuesL);
+        }
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      PolygonMesh mesh = this;
+      for(Size i=0;i<resultSize;i++) {
+        idx = idxs.size() > 0 ? idxs[i] : i;
+        if(idx > faceCount)
+          continue;
+
+        valuesL.resize(values[i].size());
+        for(Size k=0;k<values[i].size();k++)
+          valuesL.set(k, values[i][k]);
+
+        Size size = mesh.getPolygonSize(idx);
+        for(Size j=0;j<size;j++)
+          mesh.setPolygonAttribute( idx, j, castRef, valuesL );
+      }
+      break;
+    }
+    case 2: // per face corner
+    {
+      PolygonMesh mesh = this;
+      resultSize = idxs.size() > 0 ? idxs.size() : faceCount;
+      Index offset = 0;
+      for(Size i=0;i<resultSize && offset<values.size();i++) {
+        idx = idxs.size() > 0 ? idxs[i] : i;
+        if(idx > faceCount)
+          continue;
+        Size size = mesh.getPolygonSize(idx);
+        for(Size j=0;j<size && offset<values.size();j++,offset++) {
+
+          valuesL.resize(values[offset].size());
+          for(Size k=0;k<values[i].size();k++)
+            valuesL.set(k, values[offset][k]);
+
+          mesh.setPolygonAttribute( idx, j, castRef, valuesL );
+        }
+      }
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport SetValueArray mode for UInt16ConstantArrayAttribute.");
+      return values;
+    }
+  }  
+
+  cast.incrementVersion();
+  return true;
+}
+
+/// \internal
+function Boolean BaseGeometry.setScalarConstantArrayAttributeValueArray(
+  GeometryAttribute attr,
+  SInt32 mode,
+  UInt32 indices[],
+  Float32 values[][]
+) {
+
+  Size vertexCount;
+  Size faceCount;
+  Size faceCornerTotalCount;
+  Size resultSize;
+  UInt32 idxs[] = indices;
+  if(!this.setAttributeValueArray_CheckIndex(mode, idxs,
+    vertexCount, faceCount, faceCornerTotalCount, resultSize))
+    return false;
+
+  if(values.size() < resultSize)
+    return false;
+
+  ScalarConstantArrayAttribute cast = attr;
+  if(cast == null)
+    return false;
+  Ref<ScalarConstantArrayAttribute> castRef = cast;
+
+  LocalL16ScalarArray valuesL;
+
+  Index idx = 0;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      PolygonMesh mesh = this;
+      if(mesh)
+      {
+        for(Size i=0;i<resultSize;i++) {
+          idx = idxs.size() > 0 ? idxs[i] : i;
+          if(idx >= vertexCount)
+            continue;
+
+          valuesL.resize(values[i].size());
+          for(Size k=0;k<values[i].size();k++)
+            valuesL.set(k, values[i][k]);
+
+          mesh.setPointAttribute(idx, castRef, valuesL);
+        }
+      }
+      else
+      {
+        for(Size i=0;i<resultSize;i++) {
+          idx = idxs.size() > 0 ? idxs[i] : i;
+          if(idx >= vertexCount)
+            continue;
+
+          valuesL.resize(values[i].size());
+          for(Size k=0;k<values[i].size();k++)
+            valuesL.set(k, values[i][k]);
+
+          cast.setValue(idx, valuesL);
+        }
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      PolygonMesh mesh = this;
+      for(Size i=0;i<resultSize;i++) {
+        idx = idxs.size() > 0 ? idxs[i] : i;
+        if(idx > faceCount)
+          continue;
+
+        valuesL.resize(values[i].size());
+        for(Size k=0;k<values[i].size();k++)
+          valuesL.set(k, values[i][k]);
+
+        Size size = mesh.getPolygonSize(idx);
+        for(Size j=0;j<size;j++)
+          mesh.setPolygonAttribute( idx, j, castRef, valuesL );
+      }
+      break;
+    }
+    case 2: // per face corner
+    {
+      PolygonMesh mesh = this;
+      resultSize = idxs.size() > 0 ? idxs.size() : faceCount;
+      Index offset = 0;
+      for(Size i=0;i<resultSize && offset<values.size();i++) {
+        idx = idxs.size() > 0 ? idxs[i] : i;
+        if(idx > faceCount)
+          continue;
+        Size size = mesh.getPolygonSize(idx);
+        for(Size j=0;j<size && offset<values.size();j++,offset++) {
+
+          valuesL.resize(values[offset].size());
+          for(Size k=0;k<values[i].size();k++)
+            valuesL.set(k, values[offset][k]);
+
+          mesh.setPolygonAttribute( idx, j, castRef, valuesL );
+        }
+      }
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport SetValueArray mode for ScalarConstantArrayAttribute.");
+      return values;
+    }
+  }  
+
+  cast.incrementVersion();
+  return true;
+}

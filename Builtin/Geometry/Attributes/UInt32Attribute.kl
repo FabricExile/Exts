@@ -1,0 +1,124 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  Specialized GeometryAttribute containing one UInt32 per element.
+  Values can be accessed with the UInt32Attribute.values array member, but its usage might be restricted by the owner Geometry.
+*/
+object UInt32Attribute : BaseAttribute {
+  /// Values array container
+  UInt32 values[];
+
+  /// If true, IntegerAttribute.linearCombine and IntegerAttribute.getLinearCombination
+  /// will average the values. Else, an arbitrary source value will be used.
+  Boolean canInterpolate;
+};
+
+function StatisticRecord[] UInt32Attribute.getStatistics() {
+  StatisticRecord stats[] = this.parent.getStatistics();
+  stats.push( StatisticRecord( Statistic_MemoryUsage, this.values.size()*4 ) );
+  return stats;
+}
+
+/// \dfgPresetOmit
+UInt32Attribute.cloneMembersTo( io UInt32Attribute that ) {
+  //The difference with default clone() is that new.parent.autoStat will point to 'new' (from constructor)
+  this.parent.cloneMembersTo(that);//Copies all but the values
+  that.copyFrom(this);
+  that.canInterpolate = this.canInterpolate;
+}
+
+inline UInt32Attribute.resize!(Size count) {
+  this.parent.resize(count);
+  this.values.resize(count);
+}
+
+inline Boolean UInt32Attribute.checkConsistency() {
+  if( this.size() != this.values.size() )
+    return false;
+  return this.parent.checkConsistency();
+}
+
+inline Data UInt32Attribute.data() {
+  return this.values.data();
+}
+
+inline UInt32 UInt32Attribute.getElementsMemType( ) {
+  return this.values.getElementsMemType();
+}
+
+inline UInt32Attribute.convertToGPU!( ) {
+  this.values.convertToGPU();
+  this.incrementVersion();
+}
+
+inline UInt32Attribute.convertToCPU!( ) {
+  this.values.convertToCPU();
+  this.incrementVersion();
+}
+
+
+inline UInt32Attribute.copyValue!( Size sourceIndex, Size targetIndex ) {
+  this.values[targetIndex] = this.values[sourceIndex];
+}
+
+inline UInt32Attribute.copyValue!( Ref<Object> sourceAttr, Size sourceIndex, Size targetIndex ) {
+  Ref<UInt32Attribute> source = sourceAttr;
+  this.values[targetIndex] = source.values[sourceIndex];
+}
+
+inline UInt32Attribute.copyFrom!( Ref<Object> otherAttr ) {
+  this.parent.copyFrom( otherAttr );
+  Ref<UInt32Attribute> other = otherAttr;
+  other.values.copyTo(this.values);
+}
+
+/** Returns a linear combination of source values. If IntegerAttribute.canInterpolate is false, an arbitrary source value will be returned.
+    \param sourceIndices The array of source indices
+    \param sourceWeights The array of source weights, which need to correspond to each sourceIndices. Normally the sum of the weights should be 1.0
+*/
+inline UInt32 UInt32Attribute.getLinearCombination( LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights ) {
+  if( this.canInterpolate ) {
+    Float64 result;//Minimize rounding errors
+    for( Size i = 0; i < sourceIndices.size(); ++i )
+      result += this.values[sourceIndices.get(i)]*sourceWeights.get(i);
+    return UInt32(result+0.5);//rounding
+  } else if(sourceIndices.size())
+    return this.values[sourceIndices.get(0)];
+  return 0;
+}
+
+inline UInt32Attribute.linearCombine!( Ref<Object> sourceAttr, LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights, Size targetIndex ) {
+  Ref<UInt32Attribute> source = sourceAttr;
+  this.values[targetIndex] = source.getLinearCombination( sourceIndices, sourceWeights );
+}
+
+inline UInt32Attribute.setFromScalar!( Size index, LocalL16ScalarArray value ) {
+  this.values[index] = UInt32(value.get(0));
+}
+
+inline Size UInt32Attribute.getScalarValueSize() {
+  return 1;
+}
+
+inline Boolean UInt32Attribute.equalValues( Size index1, Size index2 ) {
+  return this.values[index1] == this.values[index2];
+}
+
+function String UInt32Attribute.valueDesc( Size index ) {
+  return String(this.values[index]);
+}
+
+function String UInt32Attribute.unitTestPrint( Size index ) {
+  return this.valueDesc(index);
+}
+
+function String UInt32Attribute.truncateDecimalsPrint( Size index, UInt32 n ) {
+  return this.valueDesc(index);
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+function Ref<UInt32Attribute> GeometryAttributes.getOrCreateUInt32Attribute!( String name ) {
+  return this.getOrCreateAttribute( name, UInt32Attribute );
+}

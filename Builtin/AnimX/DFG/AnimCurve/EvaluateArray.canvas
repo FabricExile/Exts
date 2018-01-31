@@ -1,0 +1,65 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+    "uiNodeColor" : "{\n  \"r\" : 121,\n  \"g\" : 134,\n  \"b\" : 143\n  }",
+    "uiTooltip" : "Supported types:\n  this: AnimCurve\n  time: Float64\n  result: Float64\n"
+    },
+  "title" : "EvaluateArray",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Execute" : {}
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "AnimX::AnimCurve" : "{\n  \"keys\" : [\n    [\n      0.0,\n      0.0,\n      0,\n      7,\n      0.0822785,\n      0.0,\n      7,\n      0.0822785,\n      0.0,\n      1.0,\n      false\n      ],\n    [\n      1.0,\n      1.0,\n      1,\n      7,\n      0.0822785,\n      0.0,\n      7,\n      0.0822785,\n      0.0,\n      1.0,\n      false\n      ]\n    ],\n  \"weighted\" : true,\n  \"name\" : \"curve\",\n  \"color.r\" : 1.0,\n  \"color.g\" : 0.0,\n  \"color.b\" : 0.0,\n  \"color.a\" : 1.0\n  }"
+        },
+      "execPortType" : "In",
+      "typeSpec" : "AnimX::AnimCurve"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "values",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float64[]" : []
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float64[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "results",
+      "nodePortType" : "In",
+      "defaultValues" : {
+        "Float64[]" : []
+        },
+      "execPortType" : "Out",
+      "typeSpec" : "Float64[]"
+      }
+    ],
+  "extDeps" : {
+    "AnimX" : "*"
+    },
+  "presetGUID" : "B47ED85CC08C61AF1BF26EF622406D37",
+  "code" : "require AnimX;
+
+dfgEntry {
+  results.resize(values.size());
+  for(Index i=0; i<values.size(); i++)
+  {
+    results[i] = this.evaluate(values[i]);
+  }
+}
+"
+  }

@@ -1,0 +1,127 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+require Singletons;
+require Parameters;
+require FabricInterfaces;
+
+interface Viewport;
+
+object DrawContextGlobalOptionsTarget;
+
+/**
+\versionadded 1.12.0
+
+The DrawContext is used to provide contextual information during a custom draw. Please see the OGLInlineDrawing for an example of this.
+*/
+object DrawContext : InlineEntityBase {
+
+  /// the viewport used for this drawing
+  Viewport viewport;
+  /// the camera projection matrix
+  Mat44 projectionMat;
+  /// camera view matrix
+  Mat44 viewMat;
+  /// inverse view matrix as Mat44
+  Mat33 invViewMat;
+  /// Array of lights position
+  Vec3 lightPositions[];
+  /// Corresponding array of light colors
+  Color lightColors[];
+  /// The DCC's current time
+  Scalar time;
+  /// viewport parameters
+  RTVal[String] viewportParams[String];
+};
+
+/// standard constructor
+function DrawContext(){
+  this.viewport = InlineViewport();
+  Ref<BaseOptionsTargetRegistry> globalTarget = this.getGlobalOptions();
+}
+
+Ref<OptionsTarget> DrawContext.getGlobalOptions() {
+  return GetGlobalOptionsTarget(
+    DrawContextGlobalOptionsTarget, 
+    'Rendering Options');
+}
+
+/// Get the DrawContext singleton, or construct 
+/// it if it didn't already exist.
+/// \dfgPresetOmit
+function DrawContext DrawContext_GetInstance() {
+  SimpleLock simpleLock = SimpleLock("DrawContext_GetInstance_Lock");
+  AutoLock AL(simpleLock);
+  // check if we can get the singleton
+  Object context = Singleton_get('InlineDrawing_DrawContext');
+  if(context == null) {
+    context = DrawContext();
+    Singleton_set('InlineDrawing_DrawContext', context);
+  } else{
+    // We can only have one drawing system constructed(using the 'InlineDrawing' key).
+    if(context.type() != DrawContext){
+      setError("Error getting DrawContext instance. A context of a different type has already been constructed :" + context.type() );
+      return null;
+    }
+  }
+  return context;
+}
+
+/// Get the DrawContext singleton, but through a method
+function DrawContext DrawContext.getInstance(){
+  return DrawContext_GetInstance();
+}
+
+/// get the parameters for a given viewport
+function RTVal[String] DrawContext.getViewportParams!(String name) {
+  if(!this.viewportParams.has(name)) {
+    RTVal params[String];
+    this.viewportParams[name] = params;
+  }
+  return this.viewportParams[name];
+}
+
+/// set the parameters for a given viewport
+// TODO : dictionaries should be copied by reference. Remove this method when this is fixed.
+function DrawContext.setViewportParams!( String name, RTVal[String] params ) {
+  this.viewportParams[name] = params;
+}
+
+/// get the current viewport's parameters
+function RTVal[String] DrawContext.getCurrentViewportParams!() {
+  return this.getViewportParams(this.viewport.getName());
+}
+
+/// set the current viewport's parameters
+// TODO : dictionaries should be copied by reference. Remove this method when this is fixed.
+function DrawContext.setCurrentViewportParams!( RTVal[String] params ) {
+  this.viewportParams[this.viewport.getName()] = params;
+}
+
+/// resets all viewport parameters
+/// \dfgPresetOmit
+function DrawContext.resetAllViewportParams!() {
+  this.viewportParams.clear();  
+}
+
+object DrawContextGlobalOptionsTarget : BaseGlobalOptionsTarget {
+};
+ 
+/// Implementation of OptionsEditorTarget.
+RTVal DrawContextGlobalOptionsTarget.getOptions() {
+  return RTVal(DrawContext_GetInstance().viewportParams);
+}
+
+/// Implementation of OptionsEditorTarget.
+DrawContextGlobalOptionsTarget.setOptions!( RTVal options) {
+  RTVal viewportParams[String][String] = options;
+  DrawContext_GetInstance().viewportParams = viewportParams;
+}
+
+object DrawContextApp {};
+
+function DrawContext DrawContextApp.getInstance(){
+  return DrawContext_GetInstance();
+}

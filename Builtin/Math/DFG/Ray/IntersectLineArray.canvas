@@ -1,0 +1,121 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Ray.html",
+    "uiTooltip" : "Measures the distance between the ray and an infinite line.\nReturns the ray factor and line factor as a :kl-ref:`Vec2` value.\n\n Supported by Ray"
+    },
+  "title" : "IntersectLine[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Ray[]" : [
+          {
+            "start" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              },
+            "direction" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Ray[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "lineP0",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "lineP1",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Vec2[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "BDC20D252CFFAC0479115E8E017662A0",
+  "code" : "require Math;
+
+operator Math_Ray_intersectLine_task<<<index>>>(
+  io Vec2[] result
+, in Ray[] this
+, in Vec3[] lineP0
+, in Vec3[] lineP1
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].intersectLine(lineP0[index < lineP0.size() ? index : lineP0.size() - 1], lineP1[index < lineP1.size() ? index : lineP1.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( lineP0.size() == 0) return;
+  if( lineP1.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < lineP0.size()) task_size = lineP0.size();
+  if(task_size < lineP1.size()) task_size = lineP1.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Ray_intersectLine_task(index, result, this, lineP0, lineP1);
+    }
+  } else {
+    Math_Ray_intersectLine_task<<<task_size>>>(result, this, lineP0, lineP1);
+  }
+}
+"
+  }

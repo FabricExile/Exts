@@ -1,0 +1,72 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/PolygonMesh.html",
+    "uiTooltip" : "Merges two points into one, deleting `firstPointToDelete`. Polygons that were connected to `firstPointToDelete` will\nbe reconnected to `secondPoint`. If the points were connected through edge(s), these will be collapsed.\nAttribute values will be merged and averaged according to `attributeFirstToSecondRatio` if values are\ncontinuous relatively to each collapsed edge. Discontinuities will be preserved for all attributes, even if their configuration differs\namong attributes.\n\nFirst step: collect collapsed edges, and check for the exception of a polygon\nadjacent to first and second point\nBig exception: the polygon would have the second point twice, and needs to be split in 2 first.\nRecurse\nOptimized case: no discontinuities\nAttributes are bridged by an edge: merge all\nOnly merge the position attribute. TODO: have 'point' qualifiers for attr, in which case we should merge these too.\nThere is discontinuities, however that is the union of all attributes' discontinuities, so we need to\ndetermine actual discontinuity groups attribute by attribute\nAlready done, or not connected to first/secondAttribute\nPropagate to other values\nReplace with second index (do it only once)\nPropagate to other values\nDo the linear combination into secondIndex\nCopy to other compatible values\nNeed to mark as unordered points that are common to first and second points, since these might be\nforming a triangular hole, merging the points require these to be reordered.\nNote: we cannot get directly the adjacent point, since this requires points to be ordered.\nNote: we cannot get directly the adjacent point, since this requires points to be ordered.\nAdjacent: remove first point from polygon\nClear first polygon data\nNow size is actually 2\nRemove from 3rd point & delete polygon. Remember: first point was removed from polygon\nFor collapsed edges, points never need to be reordered if already ordered\nNOTE: don't delete the second point if it becomes empty, since it might get filled again\nNOTE: if the 2 points are adjacent by more than 2 polys or more than 2 wings, then\nit is currently possible that the wing grouping of polygons is inconsistant\nbetween the points, so we will play safe in that case.\nIn these conditions, we can more easily maintain point ordering, and there is no border data to recopy\nFind which edge is the 1st in wing\nInsert after since it was not deleted\nCopy polygon data\nCopy attribute index\nCopy polygon data\nCollapse edges' polygon data have been reset to 0 (deleted): skip\nCopy attribute index\nAttribute values update: remove unused attributes if any\nNeeds to remove from highest to lowest index, because 'freeUnsharedAttributeIndexAndRecompact' will replace with last one\nSkip in next iteration\nReplace any instance of firstPoint index, since it is reserved to that point.\nCreate an extra entry to backup the value\n\n Supported by PolygonMesh"
+    },
+  "title" : "MergePoints",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "PolygonMesh"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "firstPointToDelete",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Size"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "secondPoint",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Size"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "attributeFirstToSecondRatio",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Scalar"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "deleteOtherUnusedPoints",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Boolean"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "reorderPoints",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Boolean"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "34D73E96B3049036026E27AA76A51539",
+  "code" : "require Geometry;
+
+dfgEntry {
+  this.mergePoints(firstPointToDelete, secondPoint, attributeFirstToSecondRatio, deleteOtherUnusedPoints, reorderPoints);
+}
+"
+  }

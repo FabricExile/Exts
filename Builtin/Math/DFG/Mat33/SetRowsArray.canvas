@@ -1,0 +1,118 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Mat33.html",
+    "uiTooltip" : "Setter from vectors, row-wise\n\n Supported by Mat33"
+    },
+  "title" : "SetRows[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 249,\n  \"g\" : 157,\n  \"b\" : 28\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Mat33[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "row0",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "row1",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "row2",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "105CB4C6D59799ABFB35C346FEE6B21F",
+  "code" : "require Math;
+
+operator Math_Mat33_setRows_task<<<index>>>(
+  io Mat33[] this
+, in Vec3[] row0
+, in Vec3[] row1
+, in Vec3[] row2
+) {
+  this[index < this.size() ? index : this.size() - 1].setRows(row0[index < row0.size() ? index : row0.size() - 1], row1[index < row1.size() ? index : row1.size() - 1], row2[index < row2.size() ? index : row2.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( row0.size() == 0) return;
+  if( row1.size() == 0) return;
+  if( row2.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < row0.size()) task_size = row0.size();
+  if(task_size < row1.size()) task_size = row1.size();
+  if(task_size < row2.size()) task_size = row2.size();
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Mat33_setRows_task(index, this, row0, row1, row2);
+    }
+  } else {
+    Math_Mat33_setRows_task<<<task_size>>>(this, row0, row1, row2);
+  }
+}
+"
+  }

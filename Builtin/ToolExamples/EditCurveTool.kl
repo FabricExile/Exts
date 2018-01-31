@@ -1,0 +1,346 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+require Manipulation;
+
+const String EditCurveTool_onModeChanged = "crvTool_onModeChanged";
+const String EditCurveTool_onHelp = "crvTool_help";
+const String EditCurveTool_onDelete = "crvTool_del";
+
+const String EditCurveTool_moveOrSelectState = "crvTool_mvSelectState";
+const String EditCurveTool_addPointState = "crvTool_addState";
+
+object EditCurveTool : Tool::BaseTool{
+  Tool::MovePointsTool movePointsTool;
+  Tool::RadioButtonBehavior modeRadioButton;
+};
+
+EditCurveTool() {
+  this.movePointsTool = Tool::MovePointsTool();
+  this.addChild( "moveTool", this.movePointsTool );
+
+  this.movePointsTool.setHideAllIfNotActive( false );// When not active, we still want to see the geometries
+  this.movePointsTool.enableKeyHandling( false );//we handle it here
+
+  // Overwrite movePointsTool's target with a specialized one
+  this.movePointsTool.xfoTarget = MoveEditCurvePointsXfoTarget();
+
+  // Register to keystrokes
+  this.registerToRawEvents( true );
+
+  FilePath extPath = FilePath( fabricExtDirPath( "ToolExamples" ) );
+
+  Tool::IconShelfLayout shelf();
+  shelf.addCollapseAllIcon( true );
+  shelf.setAlignment( Tool::Alignment_upperLeft );
+  shelf.setSpacing( 15, Vec2( 30 ), 5 );
+
+  // Add in order of SelectionMode constants
+  Tool::CheckBoxWidget selPoints= Tool::CreateDefaultSelectCheckBox();
+  selPoints.setToolTip( "Select points" );
+  shelf.addIcon( selPoints, "selPointsIcon" );
+
+  Tool::CheckBoxWidget trPoints = Tool::CreateDefaultTranslateCheckBox();
+  trPoints.setToolTip( "Translate points" );
+  shelf.addIcon( trPoints, "trPointsIcon" );
+
+  Tool::CheckBoxWidget rotPoints = Tool::CreateDefaultRotateCheckBox();
+  rotPoints.setToolTip( "Rotate points" );
+  shelf.addIcon( rotPoints, "rotPointsIcon" );
+
+  Tool::CheckBoxWidget scPoints = Tool::CreateDefaultScaleCheckBox();
+  scPoints.setToolTip( "Scale points" );
+  shelf.addIcon( scPoints, "scPointsIcon" );
+
+  Tool::CheckBoxWidget addPoints( null, Vec2( 40 ),
+                                  Tool::ReadImageFromFile( extPath / "Plus.png" ),
+                                  Tool::ReadImageFromFile( extPath / "PlusHighlight.png" ),
+                                  Tool::ReadImageFromFile( extPath / "PlusChecked.png" ),
+                                  Tool::ReadImageFromFile( extPath / "PlusCheckedHighlight.png" ) );
+  addPoints.setToolTip( "Add points" );
+  shelf.addIcon( addPoints, "addPointsIcon" );
+
+  Tool::PushButtonWidget removePoints( Vec2( 40 ),
+                                 Tool::ReadImageFromFile( extPath / "Minus.png" ),
+                                 Tool::ReadImageFromFile( extPath / "MinusHighlight.png" ),
+                                 Tool::ReadImageFromFile( extPath / "MinusCheckedHighlight.png" ) );
+  removePoints.setToolTip( "Delete selected points" );
+  shelf.addIcon( removePoints, "removePointsIcon" );
+  removePoints.addListener( this, false, Tool::PushButtonWidget_onTrigger, EditCurveTool_onDelete );
+
+  Tool::PushButtonWidget help = Tool::CreateDefaultHelpPushButton();
+  help.setToolTip( "Show edit curve tool help" );
+  help.addListener( this, false, Tool::PushButtonWidget_onTrigger, EditCurveTool_onHelp );
+  shelf.addIcon( help, "helpIcon" );
+
+  this.modeRadioButton = Tool::RadioButtonBehavior();
+  this.modeRadioButton.addCheckBox( selPoints );
+  this.modeRadioButton.addCheckBox( trPoints );
+  this.modeRadioButton.addCheckBox( rotPoints );
+  this.modeRadioButton.addCheckBox( scPoints );
+  this.modeRadioButton.addCheckBox( addPoints );
+  this.modeRadioButton.setSelectedItem( 0 );
+  this.setMainState( EditCurveTool_moveOrSelectState );
+  this.modeRadioButton.addListener( this, false, Tool::RadioButtonBehavior_onItemChanged, EditCurveTool_onModeChanged );
+
+  this.addChild( "shelf", shelf );
+}
+
+Ref<Curves> EditCurveTool.getCurves() {
+  return this.movePointsTool.xfoTarget.geom;
+}
+
+Xfo EditCurveTool.getCurvesTransform() {
+  return this.movePointsTool.xfoTarget.geomXfo;
+}
+
+EditCurveTool.updateValues!( ItemReferences selection, Curves curves, Xfo xfo, Boolean drawGeometry ) {
+  this.movePointsTool.updateValues( selection, curves, xfo, drawGeometry );
+}
+
+EditCurveTool.setPortArgs!( String selectionPortPath, String curveEditDataPortPath ) {
+  this.movePointsTool.setPortArgs( selectionPortPath, "(unused)", "(unused)" );
+  Ref<MoveEditCurvePointsXfoTarget> xfoTarget = this.movePointsTool.xfoTarget;
+  xfoTarget.curveEditDataPortPath = curveEditDataPortPath;
+}
+
+/// \internal
+/// Checks the states of this and the move points tool and update the active mode / buttons
+EditCurveTool.synchronizeModes!() {
+  if( this.movePointsTool.isActive() )
+    this.modeRadioButton.setSelectedItem( this.movePointsTool.getActiveMode() );
+  else if( this.getMainState() == EditCurveTool_addPointState )
+    this.modeRadioButton.setSelectedItem( Tool::MovePointsTool_modeCount );// reflect in icons
+}
+
+/// \internal
+EditCurveTool.onEvent!( Tool::ToolEvent event, Tool::ToolEventUserID userID ) {
+  if( event.name == EditCurveTool_onHelp ) {
+    String text = "\
+This tool allows to edit a Curves object by adding, deleting and moving points.\n\n\
+ - to select, press 'Q'\n\
+ - to translate selected, press 'W'\n\
+ - to rotate selected, press 'E'\n\
+ - to scale selected, press 'R'\n\
+ - to add, press 'A'; shift-click to create a new subCurve\n\
+ - to delete selected press 'Delete'.";
+
+    ShowTextDialog( "Edit curve tool help", text );
+  } else if( event.name == Tool::Event_EnteredState ) {
+    this.synchronizeModes();
+  } else if( event.name == EditCurveTool_onModeChanged ) {
+
+    // Adjust mode from clicked icon
+    Size mode = this.modeRadioButton.getSelectedItem();
+
+    if( mode < Tool::MovePointsTool_modeCount ) {
+      this.setMainState( EditCurveTool_moveOrSelectState );
+      this.movePointsTool.activateMode( mode );
+      this.synchronizeModes();
+    } else if( mode == Tool::MovePointsTool_modeCount ) {
+      this.movePointsTool.deactivate();
+      this.setMainState( EditCurveTool_addPointState );
+    }
+  } else if( event.name == EditCurveTool_onDelete )
+    this.deleteSelected();
+
+  this.parent.onEvent( event, userID );
+}
+
+EditCurveTool.onEnterState!( String newState, Boolean mainState ) {
+  if( newState == EditCurveTool_addPointState ) {
+
+    DrawElements elts();
+    Tool::GeometricShape addPointLinesShape();
+    addPointLinesShape.setGeometry( elts );
+    addPointLinesShape.setRenderPass( Tool::MainRenderPass );// Don't draw on top, draw in World coords
+    addPointLinesShape.setVisibleToActiveViewportOnly( true );
+
+    Tool::AddChildAction addChild( "addPointLines", addPointLinesShape, true );
+    this.attachAndDoStateSpecificAction( newState, addChild );
+    return;
+  }
+}
+
+EditCurveTool.onRawEvent!( io Event event ) {
+  if( !this.isActive() )
+    return;
+  // TODO: use keymap global settings
+  Ref<KeyEvent> key = event;
+  if( Boolean( key ) && key.eventType == Event_KeyPress ) {
+
+    if( key.key == Key_Delete ) {
+      event.accept();
+      this.deleteSelected();
+      return;
+    }
+
+    if( key.key == Key_A ) {
+      event.accept();
+      this.movePointsTool.deactivate();
+      this.setMainState( EditCurveTool_addPointState );
+      return;
+    }
+
+    // Send it to movePointsTool, as it might be deactivated
+    this.movePointsTool.onKeyPressed( key );
+    this.synchronizeModes();
+  }
+
+  Ref<MouseEvent> mouseEvent = event;
+  if( Boolean( mouseEvent ) && this.getMainState() == EditCurveTool_addPointState ) {
+    // Make sure we refresh
+    Tool::ToolChanged();
+    // Draw dotted lines between closest neighbor points, and maybe add a point if clicked
+    // There is a lot of code here, but most are technical retails to get closest point and added point position
+    Ref<Tool::GeometricShape> addPointLinesShape = this.getChild( "addPointLines" );
+    Ref<DrawElements> elts = addPointLinesShape.getGeometry();
+    elts.clear();
+    elts.setPen( Color( 0.3, 0.7, 0.3 ), 1 );
+
+    if( mouseEvent.eventType() == Event_Leave )
+      return;
+
+    // Get the closest and closest neighbor points
+    Ref<Curves> curves = this.getCurves();
+    Mat44 curvesTransform = this.getCurvesTransform().toMat44();
+    Mat44 curvesInvTransform = curvesTransform.inverse();
+
+    Tool::DrawContext context = this.getManager().getCurrentEventContext();
+    Mat44 view = context.viewport.getViewMat();
+    Mat44 viewProj = context.viewport.getProjectionMat() * view;
+    Mat44 invViewProj = viewProj.inverse();
+
+    Ray mouseRay = context.viewport.calcRayFromScreenPos( mouseEvent.pos );
+    Ray mouseLocalRay = mouseRay;
+    mouseLocalRay.transform( curvesInvTransform );
+    Vec2 mouseNormalizedPos = PixelToNormalizedScreenSpace( context.viewport, mouseEvent.pos );
+
+    // Find the closest point to the line
+    Size closest = InvalidIndex;
+    Size closestNeighbor = InvalidIndex;
+
+    // Shift = create new subcurve
+    if( ( event.getModifiers() & ModiferKey_Shift ) == 0 )
+      FindCurveClosestNeighborsToRay( curves, mouseLocalRay, closest, closestNeighbor );
+
+    Vec3 worldPointPos;
+    if( closest == InvalidIndex )
+      worldPointPos = mouseRay.getPoint( context.viewport.getCamera().getFocalDistance() );
+    else {
+      // Get distances in pixel so we have a constant dotted line size
+      Vec3 closestPos = curvesTransform * curves.getPointPosition( closest );
+      Vec3 closestProjPos = viewProj * closestPos;
+      Vec2 closestPixPos = NormalizedScreenSpaceToPixel( context.viewport, Vec2( closestProjPos.x, closestProjPos.y ) );
+      Float32 pixDist = mouseEvent.pos.distanceTo( closestPixPos );
+      worldPointPos = invViewProj * Vec3( mouseNormalizedPos.x, mouseNormalizedPos.y, closestProjPos.z );
+
+      if( closestNeighbor != InvalidIndex ) {
+        Vec3 closestNeighborPos = curvesTransform * curves.getPointPosition( closestNeighbor );
+        Vec3 closestNeighborProjPos = viewProj * closestNeighborPos;
+        Vec2 closestNeighborPixPos = NormalizedScreenSpaceToPixel( context.viewport, Vec2( closestNeighborProjPos.x, closestNeighborProjPos.y ) );
+        Float32 closestNeighborPixDist = mouseEvent.pos.distanceTo( closestNeighborPixPos );
+        Vec3 neighborWorldPointPos = invViewProj * Vec3( mouseNormalizedPos.x, mouseNormalizedPos.y, closestNeighborProjPos.z );
+
+        // set world pos as a ratio between both
+        worldPointPos = worldPointPos.linearInterpolate( neighborWorldPointPos, pixDist / ( closestNeighborPixDist + pixDist ) );
+
+        elts.drawSegmentedLine( closestNeighborPos, worldPointPos, ( closestNeighborPixDist / 10 ) + 1, 0.7 );
+      }
+      elts.drawSegmentedLine( closestPos, worldPointPos, ( pixDist / 10 ) + 1, 0.7 );
+    }
+
+    if( mouseEvent.eventType() == Event_MouseButtonPress && !mouseEvent.isAccepted() && ( event.getModifiers() == 0 || event.getModifiers() == ModiferKey_Shift ) ) {
+
+      // Add a point
+      UInt32 curveIndex, curvePointIndex;
+      Vec3 pointPos = curvesInvTransform * worldPointPos;
+
+      if( closest != InvalidIndex ) {
+        if( closestNeighbor != InvalidIndex && closestNeighbor < closest )
+          Swap( closestNeighbor, closest );
+
+        curves.pointIndexToCurveIndex( closest, curveIndex, curvePointIndex );
+
+        // extremity: extend with a new last point
+        if( closestNeighbor != InvalidIndex || curvePointIndex != 0 )
+          ++curvePointIndex;//insert after
+      } else // create a new curve
+        curveIndex = curves.curveCount();
+
+      RTVal args[String];
+
+      Ref<MoveEditCurvePointsXfoTarget> xfoTarget = this.movePointsTool.xfoTarget;
+      args["curveEditData"] = PathValue( xfoTarget.curveEditDataPortPath );
+      args["curveIndex"] = curveIndex;
+      args["curvePointIndex"] = curvePointIndex;
+      args["position"] = pointPos;
+      args["selection"] = PathValue( this.movePointsTool.selectionTool.setSelectionCommandWrapper.targetPath );
+
+      Ref<CommandManager> commandManager = GetCommandManager();
+      commandManager.scheduleCommand(
+        "AddCurvePoint",
+        args );
+    }
+  }
+}
+
+EditCurveTool.deleteSelected!( ) {
+  Size selectedPoints[];
+  Vec3 selectedPointPositions[];
+  this.movePointsTool.getSelectedPointsAndPositions( selectedPoints, selectedPointPositions );
+
+  if( selectedPoints ) {
+    RTVal args[String];
+
+    Ref<MoveEditCurvePointsXfoTarget> xfoTarget = this.movePointsTool.xfoTarget;
+    args["curveEditData"] = PathValue( xfoTarget.curveEditDataPortPath );
+    args["selection"] = PathValue( this.movePointsTool.selectionTool.setSelectionCommandWrapper.targetPath );
+
+    // Sort point indices, required by the command
+    IndexSet sortedPoints;
+    sortedPoints.add( selectedPoints );
+    sortedPoints.sortIndices();
+
+    CurveAndPointIndex deletedPointIndices[];
+    Vec3 dummy[];
+    PointsToCurveIndices( this.getCurves(), sortedPoints.getIndices(), dummy, deletedPointIndices, dummy );
+
+    args["deletedPointIndices"] = deletedPointIndices;
+
+    Ref<CommandManager> commandManager = GetCommandManager();
+    commandManager.scheduleCommand(
+      "DeleteCurvePoints",
+      args );
+  }
+}
+
+
+// Specialization of MovePointsXfoTarget which puts the moved point data
+// in a member of the CurveEditData structure, as curve index/offset pairs.
+object MoveEditCurvePointsXfoTarget : Tool::MovePointsXfoTarget{
+  String curveEditDataPortPath;
+};
+
+MoveEditCurvePointsXfoTarget.createCommand!( Boolean endChanges ) {
+
+  RTVal args[String];
+  args["curveEditData"] = PathValue( this.curveEditDataPortPath );
+
+  CurveAndPointIndex movedPointIndices[];
+  Vec3 positions[];
+  PointsToCurveIndices( this.geom, this.movedPointIndices, this.getTransformedPointPositions(), movedPointIndices, positions );
+  args["movedPointIndices"] = movedPointIndices;
+  args["movedPointPositions"] = positions;
+
+  Ref<CommandManager> commandManager = GetCommandManager();
+  AddMoveCurvePointDeltasCommand moveCommand = commandManager.createCommand(
+    "AddMoveCurvePointDeltas",
+    args,
+    false,
+    this.canMergeID );
+  if( !endChanges )
+    moveCommand.blockLog();
+  commandManager.scheduleCommand( moveCommand );
+}

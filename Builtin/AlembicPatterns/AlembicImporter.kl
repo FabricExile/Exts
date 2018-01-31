@@ -1,0 +1,674 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+require AssetPatterns;
+require AlembicWrapper;
+require FileIO;
+require Util;
+
+// \dfgPresetOmit
+object AlembicImporter : BaseImporter, ImporterCallback {
+  AlembicArchiveReader archive;
+  AlembicBaseObjectReader readers[String];
+  String userPropertyTypes[String];
+  Boolean debug;
+};
+
+/// \dfgPresetOmit
+function AlembicImporter.cloneMembersTo(io AlembicImporter other) {
+  this.parent.cloneMembersTo(other);
+  other.archive = this.archive;
+  other.readers = this.readers;
+  other.debug = this.debug;
+}
+
+// \dfgPresetOmit
+function AlembicImporter(String filePath) {
+
+  FilePath path = filePath;
+  path = path.expandEnvVars();
+  if(!path.exists()) {
+    if(filePath)
+      report("AlembicImporter: filePath '"+filePath+"' does not exist.");
+    return;
+  }
+
+  this.debug = false;
+  this.archive = AlembicArchiveReader(path.string());
+
+  // parse all of the objects
+  String paths[] = this.archive.getAllPaths();
+
+  // we iterate backwards, so that we hit the shapes before the transforms
+  for(SInt32 i=paths.size()-1;i>=0;i--) {
+
+    String id = String(i);
+    String abcPath = paths[i];
+    String objectType = this.archive.getObjectType(abcPath);
+
+    Boolean isBelowInstanceRoot = false;
+    Ref<AlembicIObject> iObj = this.archive.getIObject(abcPath);
+
+    AlembicIObject iParent = iObj;
+    while(iParent.valid())
+    {
+      if(iParent.isInstanceRoot())
+      {
+        isBelowInstanceRoot = true;
+        break;
+      }
+      iParent = iParent.getParent();
+    }
+
+    if(isBelowInstanceRoot)
+      continue;
+
+    Ref<ImporterObject> obj = null;
+    switch(objectType)
+    {
+      case "Xform":
+      {
+        // check if this is an instance
+        String objType = 'Transform';
+        String masterPath;
+        for(UInt32 j=0;j<iObj.getNumChildren();j++)
+        {
+          if(iObj.isChildInstance(j))
+          {
+            objType = 'Instance';
+            AlembicIObject child = iObj.getChild(j);
+            masterPath = child.instanceSourcePath();
+            break;
+          }
+        }
+
+        AlembicXformReader reader = this.archive.getXform(abcPath);
+        Ref<ImporterTransform> cast = this.getOrCreateObject(objType, id, abcPath);
+        cast.setPropertyConstant('localTransform', reader.getNumSamples() <= 1);
+        cast.setLocalTransform(reader.readSample(-SCALAR_INFINITE).toMat44());
+        obj = cast;
+
+        if(masterPath)
+        {
+          ImporterInstance instance(cast);
+          instance.setMasterID(masterPath);
+        }
+
+        this.readers[id] = reader;
+        if(reader.getNumSamples() > 1) {
+          cast.callback = this;
+
+          KLEvaluator evaluator('AbcXform', false /* deformer */);
+          evaluator.addExtDep('AlembicWrapper');
+          evaluator.defineArg('filePath', 'String', Evaluator_PortType_In, RTVal(path.string()));
+          evaluator.defineArg('abcPath', 'String', Evaluator_PortType_In, RTVal(abcPath));
+          evaluator.defineArg('time', 'Float32', Evaluator_PortType_In, RTVal(Float32(0.0)));
+          evaluator.defineArg('translate', 'Vec3', Evaluator_PortType_Out);
+          evaluator.defineArg('rotate', 'Euler', Evaluator_PortType_Out);
+          evaluator.defineArg('scale', 'Vec3', Evaluator_PortType_Out);
+          evaluator.defineArg('archive', 'AlembicArchiveReader', Evaluator_PortType_IO);
+          evaluator.defineArg('xformReader', 'AlembicXformReader', Evaluator_PortType_IO);
+          evaluator.addKLCode("Boolean clearReaders = false;");
+          evaluator.addKLCode("if(!AlembicArchiveReader_getXform(filePath, abcPath, archive, xformReader, clearReaders))");
+          evaluator.addKLCode("  return;");
+          evaluator.addKLCode("Xfo xfo = xformReader.readSample(time);");
+          evaluator.addKLCode("translate = xfo.tr;");
+          evaluator.addKLCode("rotate = xfo.ori.toEulerAngles();");
+          evaluator.addKLCode("scale = xfo.sc;");
+
+          cast.evaluator = evaluator;
+
+          // report('assigned evaluator to '+abcPath);
+
+          this.storeTimes(obj, reader);
+        }
+
+        break;
+      }
+      case "Points":
+      {
+        AlembicPointsReader reader = this.archive.getPoints(abcPath);
+        Ref<ImporterShape> cast = this.getOrCreateObject('Shape', id, abcPath);
+        cast.setGeometryType(ImporterShape_Points);
+        obj = cast;
+
+        Boolean constant = true;
+        cast.setBounds(reader.getSelfBounds(-SCALAR_INFINITE, constant));
+        if(!constant) {
+          cast.setPropertyVarying('bounds');
+          cast.setPropertyVarying('geometry');
+          this.storeTimes(obj, reader);
+        }
+
+        this.readers[id] = reader;
+        cast.callback = this;
+
+        break;
+      }
+      case "Curves":
+      {
+        AlembicCurvesReader reader = this.archive.getCurves(abcPath);
+        Ref<ImporterShape> cast = this.getOrCreateObject('Shape', id, abcPath);
+        cast.setGeometryType(ImporterShape_Curves);
+        obj = cast;
+
+        Boolean constant = true;
+        cast.setBounds(reader.getSelfBounds(-SCALAR_INFINITE, constant));
+        if(!constant) {
+          cast.setPropertyVarying('bounds');
+          cast.setPropertyVarying('geometry');
+          this.storeTimes(obj, reader);
+
+        }
+
+        KLEvaluator evaluator('AbcCurves', false /* deformer */);
+        evaluator.addExtDep('AlembicWrapper');
+        evaluator.defineArg('filePath', 'String', Evaluator_PortType_In, RTVal(path.string()));
+        evaluator.defineArg('abcPath', 'String', Evaluator_PortType_In, RTVal(abcPath));
+        if(!constant)
+          evaluator.defineArg('time', 'Float32', Evaluator_PortType_In, RTVal(Float32(0.0)));
+        else
+          evaluator.addKLCode("Float32 time = 0.0;");
+        evaluator.defineArg('geometry', 'Curves', Evaluator_PortType_IO);
+        evaluator.defineArg('archive', 'AlembicArchiveReader', Evaluator_PortType_IO);
+        evaluator.defineArg('curvesReader', 'AlembicCurvesReader', Evaluator_PortType_IO);
+        if(this.debug)
+          evaluator.addKLCode("report('Evaluating '+abcPath);");
+        evaluator.addKLCode("Boolean clearReaders = false;");
+        evaluator.addKLCode("if(!AlembicArchiveReader_getCurves(filePath, abcPath, archive, curvesReader, clearReaders))");
+        evaluator.addKLCode("  return;");
+        evaluator.addKLCode("curvesReader.readSample(time, geometry);");
+
+        cast.evaluator = evaluator;
+
+        this.readers[id] = reader;
+        cast.callback = this;
+        break;
+      }
+      case "PolyMesh":
+      {
+        AlembicPolyMeshReader reader = this.archive.getPolyMesh(abcPath);
+        Ref<ImporterShape> cast = this.getOrCreateObject('Shape', id, abcPath);
+        cast.setGeometryType(ImporterShape_Mesh);
+        obj = cast;
+
+        Boolean constant = true;
+        cast.setBounds(reader.getSelfBounds(-SCALAR_INFINITE, constant));
+
+        if(!constant) {
+          cast.setPropertyVarying('bounds');
+          cast.setPropertyVarying('geometry');
+          this.storeTimes(obj, reader);
+        }
+
+        AlembicIPolyMeshSchema schema = reader.getSchema();
+        AlembicIVec2VfGeomParam uvsParam = schema.getUVsParam();
+        Boolean canUseDeformer = true;
+        if(uvsParam.valid())
+          canUseDeformer = canUseDeformer && (uvsParam.getNumSamples() <= 1);
+
+        KLEvaluator evaluator('AbcPolyMesh', canUseDeformer /* deformer */);
+        evaluator.addExtDep('AlembicWrapper');
+        evaluator.defineArg('filePath', 'String', Evaluator_PortType_In, RTVal(path.string()));
+        evaluator.defineArg('abcPath', 'String', Evaluator_PortType_In, RTVal(abcPath));
+        if(!constant)
+          evaluator.defineArg('time', 'Float32', Evaluator_PortType_In, RTVal(Float32(0.0)));
+        else
+          evaluator.addKLCode("Float32 time = 0.0;");
+
+        if(canUseDeformer)
+        {
+          evaluator.defineArg('meshes', 'PolygonMesh[]', Evaluator_PortType_IO);
+          evaluator.defineArg('archive', 'AlembicArchiveReader', Evaluator_PortType_IO);
+          evaluator.defineArg('meshReader', 'AlembicPolyMeshReader', Evaluator_PortType_IO);
+          if(this.debug)
+            evaluator.addKLCode("report('Evaluating '+abcPath);");
+          evaluator.addKLCode("Boolean clearReaders = false;");
+          evaluator.addKLCode("if(!AlembicArchiveReader_getPolyMesh(filePath, abcPath, archive, meshReader, clearReaders))");
+          evaluator.addKLCode("  return;");
+          evaluator.addKLCode("if(meshes.size() == 0)");
+          evaluator.addKLCode("  return;");
+          evaluator.addKLCode("if(meshes[0] == null)");
+          evaluator.addKLCode("  return;");
+          evaluator.addKLCode("meshReader.readSample(time, true, meshes[0]);");
+        }
+        else
+        {
+          evaluator.defineArg('geometry', 'PolygonMesh', Evaluator_PortType_IO);
+          evaluator.defineArg('archive', 'AlembicArchiveReader', Evaluator_PortType_IO);
+          evaluator.defineArg('meshReader', 'AlembicPolyMeshReader', Evaluator_PortType_IO);
+          if(this.debug)
+            evaluator.addKLCode("report('Evaluating '+abcPath);");
+          evaluator.addKLCode("Boolean clearReaders = false;");
+          evaluator.addKLCode("if(!AlembicArchiveReader_getPolyMesh(filePath, abcPath, archive, meshReader, clearReaders))");
+          evaluator.addKLCode("  return;");
+          evaluator.addKLCode("meshReader.readSample(time, true, geometry);");
+        }
+        cast.evaluator = evaluator;
+
+        this.readers[id] = reader;
+        cast.callback = this;
+
+        break;
+      }
+      case "SubD":
+      {
+        AlembicSubDReader reader = this.archive.getSubD(abcPath);
+        Ref<ImporterShape> cast = this.getOrCreateObject('Shape', id, abcPath);
+        cast.setGeometryType(ImporterShape_Mesh);
+        obj = cast;
+
+        Boolean constant = true;
+        cast.setBounds(reader.getSelfBounds(-SCALAR_INFINITE, constant));
+        if(!constant) {
+          cast.setPropertyVarying('bounds');
+          cast.setPropertyVarying('geometry');
+          this.storeTimes(obj, reader);
+        }
+
+        AlembicISubDSchema schema = reader.getSchema();
+        AlembicIVec2VfGeomParam uvsParam = schema.getUVsParam();
+        Boolean canUseDeformer = true;
+        if(uvsParam.valid())
+          canUseDeformer = canUseDeformer && (uvsParam.getNumSamples() <= 1);
+
+        KLEvaluator evaluator('AbcSubD', canUseDeformer /* deformer */);
+        evaluator.addExtDep('AlembicWrapper');
+        evaluator.defineArg('filePath', 'String', Evaluator_PortType_In, RTVal(path.string()));
+        evaluator.defineArg('abcPath', 'String', Evaluator_PortType_In, RTVal(abcPath));
+        if(!constant)
+          evaluator.defineArg('time', 'Float32', Evaluator_PortType_In, RTVal(Float32(0.0)));
+        else
+          evaluator.addKLCode("Float32 time = 0.0;");
+
+        if(canUseDeformer)
+        {
+          evaluator.defineArg('meshes', 'PolygonMesh[]', Evaluator_PortType_IO);
+          evaluator.defineArg('archive', 'AlembicArchiveReader', Evaluator_PortType_IO);
+          evaluator.defineArg('subdReader', 'AlembicSubDReader', Evaluator_PortType_IO);
+          if(this.debug)
+            evaluator.addKLCode("report('Evaluating '+abcPath);");
+          evaluator.addKLCode("Boolean clearReaders = false;");
+          evaluator.addKLCode("if(!AlembicArchiveReader_getSubD(filePath, abcPath, archive, subdReader, clearReaders))");
+          evaluator.addKLCode("  return;");
+          evaluator.addKLCode("if(meshes.size() == 0)");
+          evaluator.addKLCode("  return;");
+          evaluator.addKLCode("if(meshes[0] == null)");
+          evaluator.addKLCode("  return;");
+          evaluator.addKLCode("subdReader.readSample(time, meshes[0]);");
+        }
+        else
+        {
+          evaluator.defineArg('geometry', 'PolygonMesh', Evaluator_PortType_IO);
+          evaluator.defineArg('archive', 'AlembicArchiveReader', Evaluator_PortType_IO);
+          evaluator.defineArg('subdReader', 'AlembicSubDReader', Evaluator_PortType_IO);
+          if(this.debug)
+            evaluator.addKLCode("report('Evaluating '+abcPath);");
+          evaluator.addKLCode("Boolean clearReaders = false;");
+          evaluator.addKLCode("if(!AlembicArchiveReader_getSubD(filePath, abcPath, archive, subdReader, clearReaders))");
+          evaluator.addKLCode("  return;");
+          evaluator.addKLCode("subdReader.readSample(time, geometry);");
+        }
+        cast.evaluator = evaluator;
+
+        this.readers[id] = reader;
+        cast.callback = this;
+
+        break;
+      }
+      case "FaceSet":
+      {
+        // todo: to be implemented
+        continue;
+      }
+      case "Camera":
+      {
+        AlembicCameraReader reader = this.archive.getCamera(abcPath);
+        Ref<ImporterCamera> cast = this.getOrCreateObject('Camera', id, abcPath);
+        obj = cast;
+
+        this.storeTimes(obj, reader);
+
+        this.readers[id] = reader;
+        cast.callback = this;
+
+        Boolean constant = obj.isConstant(obj.defaultContext);
+
+        KLEvaluator evaluator('AbcCamera', false /* deformer */);
+        evaluator.addExtDep('AlembicWrapper');
+        evaluator.defineArg('filePath', 'String', Evaluator_PortType_In, RTVal(path.string()));
+        evaluator.defineArg('abcPath', 'String', Evaluator_PortType_In, RTVal(abcPath));
+        if(!constant)
+          evaluator.defineArg('time', 'Float32', Evaluator_PortType_In, RTVal(Float32(0.0)));
+        else
+          evaluator.addKLCode("Float32 time = 0.0;");
+        evaluator.defineArg('focalLength', 'Float32', Evaluator_PortType_Out);
+        evaluator.defineArg('focusDistance', 'Float32', Evaluator_PortType_Out);
+        evaluator.defineArg('near', 'Float32', Evaluator_PortType_Out);
+        evaluator.defineArg('far', 'Float32', Evaluator_PortType_Out);
+        evaluator.defineArg('archive', 'AlembicArchiveReader', Evaluator_PortType_IO);
+        evaluator.defineArg('cameraReader', 'AlembicCameraReader', Evaluator_PortType_IO);
+        if(this.debug)
+          evaluator.addKLCode("report('Evaluating '+abcPath);");
+        evaluator.addKLCode("Boolean clearReaders = false;");
+        evaluator.addKLCode("if(!AlembicArchiveReader_getCamera(filePath, abcPath, archive, cameraReader, clearReaders))");
+        evaluator.addKLCode("  return;");
+        evaluator.addKLCode("cameraReader.readSample(time);");
+        evaluator.addKLCode("focalLength = cameraReader.getFocalLength();");
+        evaluator.addKLCode("focusDistance = cameraReader.getFocusDistance();");
+        evaluator.addKLCode("near = cameraReader.getNearClippingPlane();");
+        evaluator.addKLCode("far = cameraReader.getFarClippingPlane();");
+        cast.evaluator = evaluator;
+
+        break;
+      }
+      case "Light":
+      default:
+      {
+        throw("Object type '"+objectType+"' not supported by AlembicImporter.");
+      }
+    }
+
+    // copy the metadata from alembic - could be useful
+    String mdKeys[] = this.archive.getMetaDataKeys(abcPath);
+    for(Size j=0;j<mdKeys.size();j++)
+      obj.setMetaData(mdKeys[j], this.archive.getMetaData(abcPath, mdKeys[j]));
+
+    // initialize the user properties
+    this.processUserProperties(abcPath, obj);
+  }
+
+  Ref<ImporterObject> objs[] = this.getAllObjectRefs();
+  for(Size i=0;i<objs.size();i++)
+  {
+    ImporterInstance instance = objs[i];
+    if(!instance)
+      continue;
+
+    String masterPath = instance.getMasterID(instance.defaultContext);
+    Ref<ImporterObject> masterRef = this.getObjectFromPath(masterPath);
+    if(masterRef)
+    {
+      instance.setMasterID(masterRef.getID());
+    }
+  }
+
+  // if we don't have any callbacks, clear the archive
+  if(this.readers.size() == 0)
+    this.archive = null;
+}
+
+private function AlembicImporter.storeTimes!(io Ref<ImporterObject> obj, AlembicBaseObjectReader reader) {
+  UInt32 numTimes = reader.getNumSamples();
+  if(numTimes == 0)
+    return;
+
+  AlembicTimeSampling ts = reader.getTimeSampling();
+  if(numTimes == 1)
+  {
+    Float32 time = Float32(ts.getSampleTime(0));
+    obj.initProperty('timeRange', ImporterVec2(Vec2(time, time)));
+    return;
+  }
+
+  obj.setProperty('isConstant', false);
+
+  Float32 first = Float32(ts.getSampleTime(0));
+  Float32 last = Float32(ts.getSampleTime(numTimes-1));
+  obj.initProperty('timeRange', ImporterVec2(Vec2(first, last)));
+  obj.initProperty('timeSamples', ImporterScalarArray());
+}
+
+// \dfgPresetOmit
+function Boolean AlembicImporter.updateProperty!(ImporterContext context, io Ref<ImporterObject> subject, String prop) {
+
+  AlembicBaseObjectReader baseReader = this.readers.get(subject.id, null);
+  if(baseReader == null)
+    return false;
+
+  if(prop == 'timeSamples')
+  {
+    if(subject.isConstant(context))
+      return false;
+
+    // only do this once - the alembic context time doesn't matter for this
+    if(subject.getScalarArrayProperty('timeSamples').size() > 0)
+      return true;
+
+    AlembicTimeSampling ts = baseReader.getTimeSampling();
+    Float32 timeSamples[](baseReader.getNumSamples());
+    for(Size i=0;i<timeSamples.size();i++)
+      timeSamples[i] = Float32(ts.getSampleTime(i));
+
+    subject.setTimeSamples(timeSamples);
+  }
+
+  if(prop == 'localTransform')
+  {
+    AlembicXformReader reader = null;
+    if(baseReader.type() == AlembicXformReader) {
+      reader = baseReader;
+      Xfo xfo = reader.readSample(context.time);
+      if(!xfo.tr.x.isNaN())
+        subject.setProperty(prop, xfo.toMat44());
+    }
+    return true;
+  }
+
+  String userPropertyType = this.userPropertyTypes.get(subject.id + '|' + prop, '');
+  if(userPropertyType)
+    return this.updateUserProperty(context, subject, prop, userPropertyType);
+
+  switch(baseReader.type())
+  {
+    case AlembicPointsReader:
+    {
+      AlembicPointsReader reader(baseReader);
+      if(prop == 'bounds') {
+        Boolean isConstant;
+        Box3 bounds = reader.getSelfBounds(context.time, isConstant);
+        subject.setProperty(prop, bounds);
+      } else if(prop == 'geometry') {
+        Points points = subject.getGeometryProperty(prop);
+        if(!points)
+          points = Points(subject.getPath());
+        reader.readSamplePoints(context.time, points);
+        subject.setProperty(prop, points);
+      }
+      break;
+    }
+    case AlembicCurvesReader:
+    {
+      AlembicCurvesReader reader(baseReader);
+      if(prop == 'bounds') {
+        Boolean isConstant;
+        Box3 bounds = reader.getSelfBounds(context.time, isConstant);
+        subject.setProperty(prop, bounds);
+      } else if(prop == 'geometry') {
+        Curves curves = subject.getGeometryProperty(prop);
+        if(!curves)
+          curves = Curves(subject.getPath());
+        reader.readSample(context.time, curves);
+        subject.setProperty(prop, curves);
+      }
+      break;
+    }
+    case AlembicPolyMeshReader:
+    {
+      AlembicPolyMeshReader reader(baseReader);
+      if(prop == 'bounds') {
+        Boolean isConstant;
+        Box3 bounds = reader.getSelfBounds(context.time, isConstant);
+        subject.setProperty(prop, bounds);
+      } else if(prop == 'geometry') {
+        PolygonMesh mesh = subject.getGeometryProperty(prop);
+        if(!mesh)
+          mesh = PolygonMesh(subject.getPath());
+        reader.readSample(context.time, true, mesh);
+        subject.setProperty(prop, mesh);
+      }
+      break;
+    }
+    case AlembicSubDReader:
+    {
+      AlembicSubDReader reader(baseReader);
+      if(prop == 'bounds') {
+        Boolean isConstant;
+        Box3 bounds = reader.getSelfBounds(context.time, isConstant);
+        subject.setProperty(prop, bounds);
+      } else if(prop == 'geometry') {
+        PolygonMesh mesh = subject.getGeometryProperty(prop);
+        if(!mesh)
+          mesh = PolygonMesh(subject.getPath());
+        reader.readSample(context.time, mesh);
+        subject.setProperty(prop, mesh);
+      }
+      break;
+    }
+    case AlembicCameraReader:
+    {
+      AlembicCameraReader reader(baseReader);
+      reader.readSample(context.time);
+
+      if(prop == 'focalLength') {
+        subject.setProperty(prop, Float32(reader.getFocalLength()));
+      } else if(prop == 'fovY') {
+        subject.setProperty(prop, Float32(reader.getFieldOfView()));
+      } else if(prop == 'fStop') {
+        subject.setProperty(prop, Float32(reader.getFStop()));
+      } else if(prop == 'focusDistance') {
+        subject.setProperty(prop, Float32(reader.getFocusDistance()));
+      } else if(prop == 'near') {
+        subject.setProperty(prop, Float32(reader.getNearClippingPlane()));
+      } else if(prop == 'far') {
+        subject.setProperty(prop, Float32(reader.getFarClippingPlane()));
+      }
+      break;
+    }
+    case AlembicXformReader:
+    {
+      // should be handled by localTransform case above.
+      break;
+    }
+    default:
+    {
+      throw('Reader of type '+baseReader.type()+' not supported.');
+    }
+  }
+
+  return true;
+}
+
+private AlembicImporter.processUserProperties!(String abcPath, io Ref<ImporterObject> objRef)
+{
+  AlembicBaseObjectReader mainReader = this.readers.get(objRef.id, null);
+  Ref<AlembicIObject> mainReaderObj = mainReader.getIObject();
+  if(!mainReaderObj.valid())
+    return;
+  AlembicMetaData metaData = mainReaderObj.getMetaData();
+  String json = metaData.get("userPropertyTypes");
+  if(!json)
+    return;
+
+  FTL_JSONDecoder jsonDecoder = FTL_JSONDecoder(json);
+  FTL_JSONObject userPropertyTypes = jsonDecoder.decode();
+
+  String keys[] = this.archive.getPropertyKeys(abcPath);
+  String userProperties[];
+  for(Size i=0;i<keys.size();i++)
+  {
+    if(!keys[i].startsWith('.userProperties/'))
+      continue;
+    String propName = keys[i].reversePartition('/')[2];
+
+    String propType;
+    FTL_CStrRef propTypeRef(propType);
+    if(!userPropertyTypes.cxx_maybeGetString(propName, propTypeRef))
+      continue;
+    propType = propTypeRef.string();
+    this.userPropertyTypes[objRef.id + '|' + propName] = propType;
+
+    if(!this.updateUserProperty(objRef.defaultContext, objRef, propName, propType))
+    {
+      report("UserProperty '"+propName+"' of type '"+propType+"' not supported by AlembicImporter.");
+      continue;
+    }
+
+    userProperties.push(propName);
+
+    KLEvaluator evaluator = objRef.evaluator;
+    if(evaluator)
+    {
+      evaluator.defineArg(propName, propType, Evaluator_PortType_Out);
+      evaluator.defineArg(propName+'PropReader', 'AlembicPropertyReader', Evaluator_PortType_IO);
+
+      evaluator.addKLCode("if(clearReaders)");
+      evaluator.addKLCode("  "+propName+"PropReader = null;");
+      evaluator.addKLCode("if("+propName+"PropReader == null && archive != null)");
+      evaluator.addKLCode("  "+propName+"PropReader = archive.getProperty(abcPath, '.userProperties/"+propName+"');");
+      evaluator.addKLCode(propName+" = "+propName+"PropReader.read"+propType+"Sample(time);");
+    }
+  }
+
+  objRef.setUserProperties(userProperties);
+}
+
+private Boolean AlembicImporter.updateUserProperty!(ImporterContext ctxt, io Ref<ImporterObject> objRef, String propertyName, String propertyType)
+{
+  String abcPath = objRef.getInstancePath();
+  AlembicPropertyReader propReader = this.archive.getProperty(abcPath, '.userProperties/'+propertyName);
+  switch(propertyType)
+  {
+    case 'Boolean':
+    {
+      objRef.setProperty(propertyName, propReader.readBooleanSample(ctxt.time));
+      break;
+    }
+    case 'SInt32':
+    {
+      objRef.setProperty(propertyName, propReader.readSInt32Sample(ctxt.time));
+      break;
+    }
+    case 'Float32':
+    {
+      objRef.setProperty(propertyName, propReader.readFloat32Sample(ctxt.time));
+      break;
+    }
+    case 'Vec2':
+    {
+      objRef.setProperty(propertyName, propReader.readVec2Sample(ctxt.time));
+      break;
+    }
+    case 'Vec3':
+    {
+      objRef.setProperty(propertyName, propReader.readVec3Sample(ctxt.time));
+      break;
+    }
+    case 'Quat':
+    {
+      objRef.setProperty(propertyName, propReader.readQuatSample(ctxt.time));
+      break;
+    }
+    case 'Color':
+    {
+      objRef.setProperty(propertyName, propReader.readColorSample(ctxt.time));
+      break;
+    }
+    case 'Mat44':
+    {
+      objRef.setProperty(propertyName, propReader.readMat44Sample(ctxt.time));
+      break;
+    }
+    case 'String':
+    {
+      objRef.setProperty(propertyName, propReader.readStringSample(ctxt.time));
+      break;
+    }
+    default:
+    {
+      return false;
+    }
+  }
+  return true;
+}

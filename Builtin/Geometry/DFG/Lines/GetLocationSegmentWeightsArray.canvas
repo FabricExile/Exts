@@ -1,0 +1,94 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/Lines.html",
+    "uiTooltip" : "Returns the line segment points' weights corresponding to the location, where\n`point0Weight` and `point1Weight` correspond to segment's start and end point.\n\n Supported by Lines"
+    },
+  "title" : "GetLocationSegmentWeights[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Lines[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "location",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "GeometryLocation[]" : [
+          {
+            "index" : -1,
+            "subIndex" : 0,
+            "barycentric" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "GeometryLocation[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "point0Weight",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "point1Weight",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "E0C0FED7DD6CED1ED06D2E5BB8558C64",
+  "code" : "require Geometry;
+
+operator Geometry_Lines_getLocationSegmentWeights_task<<<index>>>(
+  in Lines[] this
+, in GeometryLocation[] location
+, out Scalar[] point0Weight
+, out Scalar[] point1Weight
+) {
+  this[index < this.size() ? index : this.size() - 1].getLocationSegmentWeights(location[index < location.size() ? index : location.size() - 1], point0Weight[index < point0Weight.size() ? index : point0Weight.size() - 1], point1Weight[index < point1Weight.size() ? index : point1Weight.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( location.size() == 0) return;
+  if( point0Weight.size() == 0) return;
+  if( point1Weight.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < location.size()) task_size = location.size();
+  point0Weight.resize(task_size);
+  point1Weight.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Geometry_Lines_getLocationSegmentWeights_task(index, this, location, point0Weight, point1Weight);
+    }
+  } else {
+    Geometry_Lines_getLocationSegmentWeights_task<<<task_size>>>(this, location, point0Weight, point1Weight);
+  }
+}
+"
+  }

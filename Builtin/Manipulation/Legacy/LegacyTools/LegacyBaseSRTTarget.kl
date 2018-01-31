@@ -1,0 +1,67 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 2.0
+
+  :kl-ref:`LegacyBaseSRTTarget` is a base class for any :kl-ref:`SRTTarget`.
+
+  \seealso :kl-ref:`LegacySRTTool`.
+
+  \dfgPresetOmit
+*/
+interface SRTTarget {
+  /// Applies a new tranform on all the target.
+  /// A 'delta' tranform is computed from transform input and first transform.
+  /// Then, this delta is applied on each target's transform.
+  /// \param transform The tranform given by the tool.
+  transformChanged!(Mat44 transform);
+
+  /// Gets the target mean tranform as a Mat44.
+  /// This must be called only if isValid() == true.
+  Mat44 getTransform();
+};
+
+object LegacyBaseSRTTarget : LegacyBaseToolTarget, SRTTarget {
+  /// Array of tranforms (one transform for each target)
+  protected Mat44 transforms[]; 
+};
+
+/// Implementation of :kl-ref:`SRTTarget`.
+LegacyBaseSRTTarget.transformChanged!(Mat44 transform) {
+
+  if(this.transforms.size() == 0) return;
+
+  // We compute the delta transform to apply to all the targets.
+  // 'transform', is the NEW transform of the firt selected object.
+  // To compute the delta, we inverse 'transform' by the CURRENT transform of the firt selected object.
+  Mat44 delta = this.transforms[0].inverse()*transform;
+  
+  // To apply the delta correclty, we need to reinterprete it in right system of coordinates.
+  // The worldToRef matrix defines the transform from the world system of coordinates to the firt selected object one, i.e the rotation. 
+  Mat44 worldToRef(); worldToRef.setUpperLeft(this.transforms[0].upperLeft());
+  Vec3 worldTr = this.transforms[0].translation();
+  
+  // Transform each object
+  for(Index i=0; i<this.transforms.size(); ++i)
+  {
+    Mat44 worldToTarget(); worldToTarget.setUpperLeft(this.transforms[i].upperLeft());
+    Mat44 delta_i = delta;
+    
+    // Translate the center of rotation in absolute space.
+    // All the selected objects turn around the center of the first one selected.
+    Vec3 tr = worldToRef.inverse()*(worldTr - this.transforms[i].translation());
+    Mat44 Tp(); Tp.setTranslation(tr);
+    Mat44 Tpm(); Tpm.setTranslation(-1.0f*tr);
+    delta_i = Tp*delta_i*Tpm;
+
+    // We reinterprete the delta tranform in the local system of coordinates.
+    this.transforms[i] *= worldToTarget.inverse()*(worldToRef*delta_i*worldToRef.inverse())*worldToTarget;
+  }
+}
+
+/// Implementation of :kl-ref:`SRTTarget`.
+Mat44 LegacyBaseSRTTarget.getTransform() {
+  return this.transforms.size() ? this.transforms[0] : Mat44();
+}

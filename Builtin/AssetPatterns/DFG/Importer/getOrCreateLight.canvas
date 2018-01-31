@@ -1,0 +1,206 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+    "uiNodeColor" : "{\n  \"r\" : 132,\n  \"g\" : 106,\n  \"b\" : 97\n  }"
+    },
+  "title" : "getOrCreateLight",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Execute" : {}
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "importer",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Importer" : null
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Importer"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Ref<ImporterObject>"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "name",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String" : "light"
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "transform",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Xfo" : {
+          "ori" : {
+            "v" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              },
+            "w" : 1
+            },
+          "tr" : {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            },
+          "sc" : {
+            "x" : 1,
+            "y" : 1,
+            "z" : 1
+            }
+          }
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Xfo"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiCombo" : "(\"Point\", \"Directional\", \"Spot\")"
+        },
+      "name" : "lightType",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "SInt32" : 2
+        },
+      "execPortType" : "In",
+      "typeSpec" : "SInt32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "color",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Color" : {
+          "r" : 1,
+          "g" : 1,
+          "b" : 1,
+          "a" : 1
+          }
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Color"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "intensity",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float32" : 1
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiCombo" : "(\"Linear\", \"Cubic\", \"Quadratic\")"
+        },
+      "name" : "decayType",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "SInt32" : 2
+        },
+      "execPortType" : "In",
+      "typeSpec" : "SInt32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "castShadow",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Boolean" : true
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Boolean"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "coneAngle",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float32" : 70
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "penumbra",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float32" : 90
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "nearAttenuation",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float32" : 0
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "farAttenuation",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float32" : 0
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float32"
+      }
+    ],
+  "extDeps" : {
+    "AssetPatterns" : "*",
+    "Util" : "*"
+    },
+  "presetGUID" : "AD7D1814E1F164673C66AD48A71899AD",
+  "code" : "dfgEntry {
+  if(importer == null)
+    return;
+  if(name == '')
+    return;
+
+  String path = '/' + dfgNodePath.replace('.', '/') + '/' + name;
+  result = importer.getOrCreateObject('Light', path, '/'+name);
+  ImporterLight light(result);
+  if(light == null)
+    return;
+    
+  light.setLocalTransform(transform.toMat44());
+  light.setLightType(lightType);
+  light.setColor(color);
+  light.setIntensity(intensity);
+  light.setDecayType(decayType);
+  light.setCastShadow(castShadow);
+  light.setConeAngle(coneAngle);
+  light.setPenumbraAngle(penumbra);
+  light.setNearAttenuation(nearAttenuation);
+  light.setFarAttenuation(farAttenuation);
+}
+"
+  }

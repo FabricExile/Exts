@@ -1,0 +1,103 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+    "uiNodeColor" : "{\n  \"r\" : 87,\n  \"g\" : 119,\n  \"b\" : 143\n  }",
+    "uiTooltip" : "Interpolate the value at pos with a RBF solver.\n- pos: Position to interpolate\n- solver: The RBF solver\n- value : The interpolated data"
+    },
+  "title" : "RBFInterpolate",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Execute" : {}
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiPersistValue" : "true"
+        },
+      "name" : "pos",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Mat" : {
+          "rows" : 0,
+          "cols" : 0,
+          "vals" : []
+          },
+        "Vec" : {
+          "vals" : []
+          }
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiPersistValue" : "true"
+        },
+      "name" : "solver",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "RBF::Solver" : {
+          "C" : {
+            "rows" : 0,
+            "cols" : 0,
+            "vals" : []
+            },
+          "W" : {
+            "rows" : 0,
+            "cols" : 0,
+            "vals" : []
+            },
+          "V" : {
+            "rows" : 0,
+            "cols" : 0,
+            "vals" : []
+            },
+          "kernel" : {
+            "rbf" : 2,
+            "power" : 2,
+            "c" : -1
+            }
+          }
+        },
+      "execPortType" : "In",
+      "typeSpec" : "RBF::Solver"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiPersistValue" : "true"
+        },
+      "name" : "value",
+      "nodePortType" : "In",
+      "defaultValues" : {
+        "Mat" : {
+          "rows" : 0,
+          "cols" : 0,
+          "vals" : []
+          },
+        "Vec" : {
+          "vals" : []
+          }
+        },
+      "execPortType" : "Out",
+      "typeSpec" : "Vec"
+      }
+    ],
+  "extDeps" : {
+    "RBF" : "*"
+    },
+  "presetGUID" : "E154F0CE5A366BE5DCF5FD747F4653C6",
+  "code" : " dfgEntry {
+    value = solver.interpolate(pos);
+}
+"
+  }

@@ -1,0 +1,138 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+    "uiNodeColor" : "{\n  \"r\" : 121,\n  \"g\" : 134,\n  \"b\" : 143\n  }"
+    },
+  "title" : "ModifySoftBodies",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Execute" : {}
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "world",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Bt2World" : null
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Bt2World"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "bodies",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Bt2SoftBody[]" : []
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Bt2SoftBody[]"
+      }
+    ],
+  "blocks" : [
+    {
+      "objectType" : "ExecBlock",
+      "metadata" : {
+        "uiGraphPos" : "{\"x\":0.0,\"y\":0.0}"
+        },
+      "name" : "PerElement",
+      "ports" : [
+        {
+          "objectType" : "ExecBlockPort",
+          "name" : "exec",
+          "nodePortType" : "Out",
+          "outsidePortType" : "Out",
+          "typeSpec" : "Execute"
+          },
+        {
+          "objectType" : "ExecBlockPort",
+          "name" : "world",
+          "nodePortType" : "IO",
+          "outsidePortType" : "IO",
+          "typeSpec" : "Bt2World"
+          },
+        {
+          "objectType" : "ExecBlockPort",
+          "name" : "body",
+          "nodePortType" : "IO",
+          "outsidePortType" : "IO",
+          "typeSpec" : "Bt2SoftBody"
+          },
+        {
+          "objectType" : "ExecBlockPort",
+          "name" : "index",
+          "nodePortType" : "In",
+          "outsidePortType" : "In",
+          "typeSpec" : "SInt32"
+          },
+        {
+          "objectType" : "ExecBlockPort",
+          "name" : "count",
+          "nodePortType" : "In",
+          "outsidePortType" : "In",
+          "typeSpec" : "SInt32"
+          }
+        ],
+      "defaultExec" : {
+        "objectType" : "Graph",
+        "title" : "",
+        "ports" : [],
+        "fixedPorts" : [
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "exec",
+            "nodePortType" : "In",
+            "outsidePortType" : "Out"
+            },
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "world",
+            "nodePortType" : "IO",
+            "outsidePortType" : "IO"
+            },
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "body",
+            "nodePortType" : "IO",
+            "outsidePortType" : "IO"
+            },
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "index",
+            "nodePortType" : "Out",
+            "outsidePortType" : "In"
+            },
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "count",
+            "nodePortType" : "Out",
+            "outsidePortType" : "In"
+            }
+          ],
+        "extDeps" : {},
+        "nodes" : [],
+        "connections" : {}
+        }
+      }
+    ],
+  "extDeps" : {
+    "Bullet2Wrapper" : "*"
+    },
+  "presetGUID" : "B534B6EF5DF6C71C7E0BC7129457C1FA",
+  "code" : "dfgEntry {
+  for(SInt32 i=0;i<bodies.size();i++)
+  {
+    if(bodies[i].isValid())
+      dfgPullBlockPort('PerElement.exec', world, bodies[i], i, bodies.size());
+  }
+}
+"
+  }

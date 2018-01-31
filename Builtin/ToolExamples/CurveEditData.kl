@@ -1,0 +1,233 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+struct CurveAndPointIndex {
+  UInt32 curveIndex;
+  UInt32 curvePointIndex;
+};
+
+inline CurveAndPointIndex() {
+  this.curveIndex = InvalidIndex;
+  this.curvePointIndex = InvalidIndex;
+}
+
+inline Boolean == ( CurveAndPointIndex a, CurveAndPointIndex b ) {
+  return a.curveIndex == b.curveIndex && a.curvePointIndex == b.curvePointIndex;
+}
+
+inline Boolean < ( CurveAndPointIndex a, CurveAndPointIndex b ) {
+  return a.curveIndex < b.curveIndex || ( a.curveIndex == b.curveIndex && a.curvePointIndex < b.curvePointIndex );
+}
+
+inline Boolean > ( CurveAndPointIndex a, CurveAndPointIndex b ) {
+  return a.curveIndex > b.curveIndex || ( a.curveIndex == b.curveIndex && a.curvePointIndex > b.curvePointIndex );
+}
+
+inline Boolean <= ( CurveAndPointIndex a, CurveAndPointIndex b ) {
+  return a.curveIndex < b.curveIndex || ( a.curveIndex == b.curveIndex && a.curvePointIndex <= b.curvePointIndex );
+}
+
+inline Boolean >= ( CurveAndPointIndex a, CurveAndPointIndex b ) {
+  return a.curveIndex > b.curveIndex || ( a.curveIndex == b.curveIndex && a.curvePointIndex >= b.curvePointIndex );
+}
+
+alias CurveAndPointIndex CurveAndPointIndexArray[];
+
+// Curve "delta" edits that is being manipulated by the tool
+struct CurveEditData {
+  // Keep everything as curveIndex + curvePointIndex pairs, since global point indices are unstable under topological changes
+  // Also, it is expected that addedPointIndices + deletedPointIndices are sorted by curvePointIndex within a same curve.
+  CurveAndPointIndex addedPointIndices[];
+  CurveAndPointIndex movedPointIndices[];
+  Vec3 movedPointPositions[];
+  CurveAndPointIndex deletedPointIndices[];
+};
+
+Size[] CurveIndicesToPoints( Ref<Curves> curves, CurveAndPointIndex curveAndPointIndices<> ) {
+  Size points[];
+  points.resize( curveAndPointIndices.size() );
+  for( Size i = 0; i < curveAndPointIndices.size(); ++i )
+    points[i] = curves.getPointIndex( curveAndPointIndices[i].curveIndex, curveAndPointIndices[i].curvePointIndex );
+  return points;
+}
+
+PointsToCurveIndices( Ref<Curves> curves, Size pointIndices<>, Vec3 optionalPointPositions<>, io CurveAndPointIndex curveAndPointIndices[], io Vec3 filteredPointPositions[] ) {
+  curveAndPointIndices.reserve( pointIndices.size() );
+  if( optionalPointPositions )
+    filteredPointPositions.reserve( pointIndices.size() );
+
+  for( Size i = 0; i < pointIndices.size(); ++i ) {
+    // Some curve points are unused; filter
+    CurveAndPointIndex index;
+    curves.pointIndexToCurveIndex( pointIndices[i], index.curveIndex, index.curvePointIndex );
+    if( index.curveIndex != InvalidIndex ) {
+      curveAndPointIndices.push( index );
+      if( optionalPointPositions )
+        filteredPointPositions.push( optionalPointPositions[i] );
+    }
+  }
+}
+
+ApplyCurveEdits( io Curves curves, CurveEditData curveEditData ) {
+  //report( "APPLY EDITS " + curveEditData );
+  UInt8 curveType = curveType_NURBS;
+  if( curves.curveCount() )
+    curveType = curves.getCurveType( 0 );
+
+  for( Size i = 0; i < curveEditData.addedPointIndices.size(); ++i ) {
+    // Maybe create curves
+    while( curveEditData.addedPointIndices[i].curveIndex >= curves.curveCount() ) {
+      if( curveType == curveType_linear )
+        curves.addLinearCurveIndex( 0, false );
+      else if( curveType == curveType_bezier )
+        curves.addBezierIndex( 0, 3, false );
+      else if( curveType == curveType_NURBS )
+        curves.addNURBSIndex( 0, 3, curveForm_open );
+    }
+    curves.insertPoint( curveEditData.addedPointIndices[i].curveIndex, curveEditData.addedPointIndices[i].curvePointIndex, Vec3() );
+  }
+
+  Size pointIndices[] = CurveIndicesToPoints( curves, curveEditData.movedPointIndices );
+  for( Size i = 0; i < pointIndices.size(); ++i )
+    curves.setPointPosition( pointIndices[i], curveEditData.movedPointPositions[i] );
+
+  // Deletes have to be done in reverse order to avoid renaming issues
+  for( Size i = curveEditData.deletedPointIndices.size(); i--; )
+    curves.deletePoint( curveEditData.deletedPointIndices[i].curveIndex, curveEditData.deletedPointIndices[i].curvePointIndex );
+}
+
+// Internal curve edit logic, to update data indices upon removed curve points
+// Note: the following are technical details required to merge and restore curve edit operations in a robust manner
+// Returns true if deleted data
+Boolean UpdateDataUponDeletePoint(
+  CurveAndPointIndex deletedIndex,
+  io CurveAndPointIndex dataToUpdate[],
+  io Vec3 dataToUpdatePos[] ) {
+  Boolean found;
+
+  Size target;
+  for( Size i = 0; i < dataToUpdate.size(); ++i ) {
+    dataToUpdate[target] = dataToUpdate[i];
+    if( dataToUpdatePos )
+      dataToUpdatePos[target] = dataToUpdatePos[i];
+
+    if( dataToUpdate[target].curveIndex != deletedIndex.curveIndex )
+      continue;
+
+    if( dataToUpdate[target] == deletedIndex ) {
+      found = true;
+    } else {
+      if( dataToUpdate[target] > deletedIndex )
+        --dataToUpdate[target].curvePointIndex;//Move down index
+      ++target;
+    }
+  }
+  dataToUpdate.resize( target );
+  if( dataToUpdatePos )
+    dataToUpdatePos.resize(target);
+  return found;
+}
+
+// Internal curve edit logic, to update data indices as before removed curve points (since we collapse the deltas, deletes are last)
+TranslateIndexBeforeDeletePoints(
+  io CurveAndPointIndex index,
+  CurveAndPointIndex deletedPoints[] ) {
+
+  // deleted points are sorted
+  for( Size i = 0; i < deletedPoints.size(); ++i ) {
+    if( deletedPoints[i] > index )
+      break;
+
+    if( deletedPoints[i].curveIndex == index.curveIndex && deletedPoints[i] <= index )
+      ++index.curvePointIndex;
+  }
+}
+
+// Update move point data with the new position
+InsertMovedData( CurveAndPointIndex index, Vec3 position, io CurveEditData curveEditData ) {
+  Size movedIndex = InvalidIndex;
+  for( Size i = 0; i < curveEditData.movedPointIndices.size(); ++i ) {
+    if( curveEditData.movedPointIndices[i] == index ) {
+      movedIndex = i;
+      break;
+    }
+  }
+  if( movedIndex == InvalidIndex ) {
+    movedIndex = curveEditData.movedPointIndices.size();
+    curveEditData.movedPointIndices.resize( movedIndex + 1 );
+    curveEditData.movedPointPositions.resize( movedIndex + 1 );
+  }
+  curveEditData.movedPointIndices[movedIndex] = index;
+  curveEditData.movedPointPositions[movedIndex] = position;
+}
+
+// Internal curve edit logic, to update data indices upon removed curve points
+// Note: the following are technical details required to merge and restore curve edit operations in a robust manner
+UpdateDataUponAddedPoint(
+  CurveAndPointIndex addedIndex,
+  io CurveAndPointIndex dataToUpdate[] ) {
+
+  for( Size i = 0; i < dataToUpdate.size(); ++i ) {
+    if( dataToUpdate[i].curveIndex == addedIndex.curveIndex
+        && dataToUpdate[i].curvePointIndex >= addedIndex.curvePointIndex )
+      ++dataToUpdate[i].curvePointIndex;
+  }
+}
+
+// Internal curve edit logic, to update data indices upon removed curve points
+// Note: the following are technical details required to merge and restore curve edit operations in a robust manner
+InsertInSortedCurveEditData(
+  CurveAndPointIndex index,
+  io CurveAndPointIndex dataToUpdate[] ) {
+
+  Size prevSize = dataToUpdate.size();
+  dataToUpdate.resize( prevSize + 1 );
+
+  for( Size i = prevSize + 1; i--; ) {
+    if( i == 0 || dataToUpdate[i - 1] < index ) {
+      // Insert here
+      dataToUpdate[i] = index;
+      break;
+    }
+    dataToUpdate[i] = dataToUpdate[i - 1];
+  }
+}
+
+FindCurveClosestNeighborsToRay( Ref<Curves> curves, Ray mouseLocalRay, io Size closest, io Size closestNeighbor ) {
+  Scalar minDist = SCALAR_INFINITE;
+  Vec3 closestRayPos;
+  for( Size i = 0; i < curves.pointCount(); ++i ) {
+    Scalar rayParam;
+    Scalar distToPoint = mouseLocalRay.distanceToPoint( curves.getPointPosition( i ), rayParam );
+    if( distToPoint < minDist ) {
+      minDist = distToPoint;
+      closest = i;
+      closestRayPos = mouseLocalRay.getPoint( rayParam );
+    }
+  }
+  if( closest != InvalidIndex ) {
+    // Find closest neighbor
+    UInt32 curveIndex, curvePointIndex;
+    curves.pointIndexToCurveIndex( closest, curveIndex, curvePointIndex );
+    UInt32 curvePointCount = curves.getPointCount( curveIndex );
+    if( curvePointCount > 1 ) {
+      UInt32 curveFirstPointIndex = curves.getFirstPointIndex( curveIndex );
+      Boolean closed = curves.isClosed( curveIndex );
+
+      Size prevNeighbor = curvePointIndex == 0 ? ( closed ? curveFirstPointIndex + curvePointCount - 1 : InvalidIndex ) : curveFirstPointIndex + curvePointIndex - 1;
+      Size nextNeighbor = curvePointIndex == curvePointCount - 1 ? ( closed ? curveFirstPointIndex : InvalidIndex ) : curveFirstPointIndex + curvePointIndex + 1;
+
+      Scalar rayParam;
+      Scalar prevNeighborDist = prevNeighbor == InvalidIndex ? SCALAR_INFINITE : mouseLocalRay.distanceToPoint( curves.getPointPosition( prevNeighbor ), rayParam );
+      Scalar nextNeighborDist = nextNeighbor == InvalidIndex ? SCALAR_INFINITE : mouseLocalRay.distanceToPoint( curves.getPointPosition( nextNeighbor ), rayParam );
+      closestNeighbor = prevNeighborDist < nextNeighborDist ? prevNeighbor : nextNeighbor;
+
+      if( prevNeighbor == InvalidIndex || nextNeighbor == InvalidIndex ) {
+        // Extremity: extend the curve if beyond the extremity
+        if( ( closestRayPos - curves.getPointPosition( closest ) ).dot( curves.getPointPosition( closestNeighbor ) - curves.getPointPosition( closest ) ) < 0 )
+          closestNeighbor = InvalidIndex;
+      }
+    }
+  }
+}

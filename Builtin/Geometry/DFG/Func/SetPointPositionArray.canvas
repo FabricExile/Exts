@@ -1,0 +1,88 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/PolygonMesh.html",
+    "uiTooltip" : "Sets the position of the point.\n\n Supported by PolygonMesh"
+    },
+  "title" : "SetPointPosition[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "$TYPE$[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "point",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Size[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Size[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "value",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "874B0AFC6B0FBC2BFF5000FD6C29D923",
+  "code" : "require Geometry;
+
+operator Geometry_setPointPosition_task<<<index>>>(
+  io $TYPE$[] this
+, in Size[] point
+, in Vec3[] value
+) {
+  this[index < this.size() ? index : this.size() - 1].setPointPosition(point[index < point.size() ? index : point.size() - 1], value[index < value.size() ? index : value.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( point.size() == 0) return;
+  if( value.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < point.size()) task_size = point.size();
+  if(task_size < value.size()) task_size = value.size();
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Geometry_setPointPosition_task(index, this, point, value);
+    }
+  } else {
+    Geometry_setPointPosition_task<<<task_size>>>(this, point, value);
+  }
+}
+"
+  }

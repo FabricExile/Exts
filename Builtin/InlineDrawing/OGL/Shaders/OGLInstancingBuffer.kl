@@ -1,0 +1,62 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+
+/// \internal
+object OGLInstancingBuffer
+{
+  OGLBuffer mmBuffer;
+  UInt32 version;
+};
+
+Boolean OGLInstancingBuffer.updateXfos!(io DrawContext context, Xfo xfo[], UInt32 version)
+{
+  if(this.mmBuffer == null)
+  {
+    this.mmBuffer = OGLBuffer();
+    this.mmBuffer.bufferType = GL_ARRAY_BUFFER;
+    this.mmBuffer.bufferUsage = GL_DYNAMIC_DRAW;
+    this.mmBuffer.bufferElementComponentType = GL_FLOAT;
+    this.mmBuffer.numBufferElementComponents = 16;
+  }
+
+  if(this.version != version || this.mmBuffer.elementCount != xfo.size())
+  {
+    Mat44 mm[](xfo.size());
+    for(Size i=0;i<mm.size();i++)
+      mm[i] = xfo[i].toMat44().transpose();
+
+    this.mmBuffer.genBuffer( mm.data(), mm.dataSize(), mm.size() );
+    this.version = version;
+  }
+
+  return true;
+}
+
+OGLInstancingBuffer.disable!(Size locations[4])
+{
+  for(Size i=0;i<4;i++)
+  {
+    glVertexAttribDivisor(locations[i], 0);
+    glDisableVertexAttribArray(locations[i]);
+  }
+}
+
+OGLInstancingBuffer.enable!(Size locations[4])
+{
+  // enable model matrix
+  glBindBuffer(this.mmBuffer.bufferType, this.mmBuffer.bufferID);
+  for(Size i=0;i<4;i++)
+  {
+    UInt32 stride = UInt32(Mat44().dataSize());
+    UInt32 offset = UInt32(Vec4().dataSize() * i);
+    glVertexAttribPointer(locations[i], 4, GL_FLOAT, GL_FALSE, stride, offset);
+    glEnableVertexAttribArray(locations[i]);
+
+    // important to make this per instance
+    glVertexAttribDivisor(locations[i], 1);
+  }
+  glBindBuffer(this.mmBuffer.bufferType, 0);
+}

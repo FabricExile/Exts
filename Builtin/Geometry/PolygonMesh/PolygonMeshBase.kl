@@ -1,0 +1,2154 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+inline Size PolygonMeshTopology.pointCount() {
+  return this.pointData.itemCount();
+}
+
+/// Returns the number of points. 
+/// \note If within a :kl-ref:`PolygonMesh.beginStructureChanges` / :kl-ref:`PolygonMesh.endStructureChanges` bracket, this count will include any point that were deleted within this bracket, in which case :kl-ref:`PolygonMesh.isPointDeleted` will return true (see :ref:`modifyingpolygonmeshstructure`).
+/// \category point
+inline Size PolygonMesh.pointCount() {
+  return this.topology.pointCount();
+}
+
+/// Returns true if the mesh stores its positions in Float64 (double precision Vec3_d),
+/// otherwise they are stored in Float32 (single precision Vec3).
+inline Boolean PolygonMesh.hasFloat64Positions() {
+  return Boolean(this.positionsAttribute_d);
+}
+
+/// Returns the position of the point in single precision.
+/// \note If positions are stored as Vec3_d (Float64), a conversion will be applied.
+/// \seealso PolygonMesh.hasFloat64Positions, PolygonMesh.getPointPosition_d
+/// \category point
+/// \dfgCreateArrayPreset
+inline Vec3 PolygonMesh.getPointPosition( Size point ) {
+  if( Fabric_Guarded && !Fabric_OnGPU && point >= this.pointCount() )
+    throw("PolygonMesh.getPointPosition: out of range: "+point);
+
+  //NOTE: we don't use GeometryAttributes' getPosition, since it's less efficient (checks type + casts)
+  if( this.positionsAttribute )
+    return this.positionsAttribute.values[point];
+  else
+    return this.positionsAttribute_d.values[point].toVec3();
+}
+
+/// Returns the position of the point in double precision (Float64).
+/// \note If positions are stored as Vec3 (Float32), a conversion will be applied.
+/// \seealso PolygonMesh.hasFloat64Positions, PolygonMesh.getPointPosition
+/// \category point
+/// \dfgCreateArrayPreset
+inline Vec3_d PolygonMesh.getPointPosition_d( Size point ) {
+  if( Fabric_Guarded && !Fabric_OnGPU && point >= this.pointCount() )
+    throw("PolygonMesh.getPointPosition: out of range: "+point);
+
+  //NOTE: we don't use GeometryAttributes' getPosition, since it's less efficient (checks type + casts)
+  if( this.positionsAttribute ) {
+    Vec3_d vec;
+    vec.set(this.positionsAttribute.values[point]);
+    return vec;
+  } else
+    return this.positionsAttribute_d.values[point];
+}
+
+/// Returns all point positions
+inline Vec3[] PolygonMesh.getAllPointPositions() {
+
+  Vec3 result[];
+  if( this.positionsAttribute )
+  {
+    result = this.positionsAttribute.values.clone();
+    result.resize(this.pointCount());
+  }
+  else
+  {
+    result.resize(this.pointCount());
+    for(Size i=0;i<result.size();i++)
+    {
+      result[i] = this.positionsAttribute_d.values[i].toVec3();
+    }
+  }
+  return result;
+}
+
+/// Sets the position of the point.
+/// \note Once point positions have been set, call :kl-ref:`PolygonMesh.incrementPointPositionsVersion` (see :ref:`attributeversioning`)
+/// \note If positions are stored as Vec3_d (Float64), a conversion will be applied.
+//  \note This function is threadsafe if the mesh structure and attribute sharing layout is not modified by another thread.
+/// \seealso PolygonMesh.hasFloat64Positions, PolygonMesh.setPointPosition( Size, Vec3_d )
+/// \category point
+/// \dfgCreateArrayPreset
+inline PolygonMesh.setPointPosition!( Size point, Vec3 value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU && point >= this.pointCount() )
+    throw("PolygonMesh.setPointPosition: out of range: "+point);
+  
+  if( this.positionsAttribute_d ) {
+    Vec3_d vec;
+    vec.set(value);
+    this.setPointAttribute( point, this.positionsAttribute_d, vec );
+  } else {
+    this.setPointAttribute( point, this.positionsAttribute, value );
+  }
+}
+
+/// Sets the position of the point in double precision (Float64).
+/// \note If positions are stored as Vec3 (Float32), a conversion will be applied.
+/// \note Once point positions have been set, call :kl-ref:`PolygonMesh.incrementPointPositionsVersion` (see :ref:`attributeversioning`)
+//  \note This function is threadsafe if the mesh structure and attribute sharing layout is not modified by another thread.
+/// \seealso PolygonMesh.hasFloat64Positions, PolygonMesh.setPointPosition( Size, Vec3 )
+/// \category point
+/// \dfgCreateArrayPreset
+inline PolygonMesh.setPointPosition!( Size point, Vec3_d value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU && point >= this.pointCount() )
+    throw("PolygonMesh.setPointPosition: out of range: "+point);
+
+  if( this.positionsAttribute_d ) {
+    this.setPointAttribute( point, this.positionsAttribute_d, value );
+  } else {
+    this.setPointAttribute( point, this.positionsAttribute, value.toVec3() );
+  }
+}
+
+/// Sets all point positions
+inline PolygonMesh.setAllPointPositions!(Vec3 positions[]) {
+
+  Size size = positions.size();
+  if(size > this.pointCount())
+    size = this.pointCount();
+
+  for(Size i=0;i<size;i++)
+    this.setPointPosition(i, positions[i]);
+
+  this.incrementPointPositionsVersion();
+}
+
+/// Helper for incrementing the version of the positions attribute after value changes.
+/// See :ref:`attributeversioning` for more information.
+function PolygonMesh.incrementPointPositionsVersion!() {
+  if( this.positionsAttribute_d )
+    this.positionsAttribute_d.incrementVersion();
+  else
+    this.positionsAttribute.incrementVersion();
+}
+
+/// Helper for incrementing the version of the normals attribute after value changes.
+/// See :ref:`attributeversioning` for more information.
+/// \category normals
+function PolygonMesh.incrementNormalsVersion!() {
+  if( this.normalsAttribute )
+    this.normalsAttribute.incrementVersion();
+}
+
+/// Returns the stored normal for the point
+/// \note It might happen that normals around the point are split (unshared), in which case an arbitrary one will be returned. See :ref:`polygonmeshattributes` for more information about attribute sharing.
+/// \category normals
+/// \dfgCreateArrayPreset
+inline Vec3 PolygonMesh.getPointNormal( Size point ) {
+  Ref<Vec3Attribute> normals = this.attributes.getNormals();
+  if( normals )
+    return normals.values[point];
+  else
+    return Vec3(0,1,0);
+}
+
+/**
+  Returns the stored normal of the point, at a specific neighbor index.
+  \note This is equivalent to :kl-ref:`PolygonMesh.getPolygonPointNormal`, but done relative to the point.
+  \param point Point index
+  \param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+  \seealso :ref:`polygonmeshcomponents`, :ref:`polygonmeshattributes`
+  \category normals
+  \dfgCreateArrayPreset
+**/
+inline Vec3 PolygonMesh.getPointNormal( Size point, Size neighborPolygonIndex ) {
+  UInt32 index = this.topology.getPointIterAttributeIndex( this.topology.getPointIter( point ), neighborPolygonIndex );
+  Ref<Vec3Attribute> normals = this.attributes.getNormals();
+  if( normals )
+    return normals.values[index];
+  else
+    return Vec3(0,1,0);
+}
+
+/**
+  Sets a normal for a point (uniform / shared).
+  \note This will set the normal for all neighbor polygons even if the normal was previously split (unshared)
+  \note Once normals have been set, call :kl-ref:`PolygonMesh.incrementNormalsVersion` (see :ref:`attributeversioning`)
+  \note This function is threadsafe if the mesh structure and attribute sharing layout is not modified by another thread.
+  \seealso :ref:`polygonmeshcomponents`, :ref:`polygonmeshattributes`
+  \category normals
+  \dfgCreateArrayPreset
+*/
+inline PolygonMesh.setPointNormal!( Size point, Vec3 normal ) {
+  Ref<Vec3Attribute> normals = this.getOrCreateNormals();
+  this.setPointAttribute( point, normals, normal );
+}
+
+/**
+  Sets the normal for a point, at a specific neighbor index.
+  \note This is equivalent to :kl-ref:`PolygonMesh.setPolygonPointNormal`, but done relative to the point.
+  \note An attribute split will occur if the value differs from another neighbor polygon. See :ref:`polygonmeshattributes` for more information about attribute sharing.
+  \note Once normals have been set, call :kl-ref:`PolygonMesh.incrementNormalsVersion` (see :ref:`attributeversioning`)
+  \seealso :ref:`polygonmeshcomponents`
+  \category normals
+  \dfgCreateArrayPreset
+*/
+inline PolygonMesh.setPointNormal!( Size point, Size neighborPolygonIndex, Vec3 normal ) {
+  Ref<Vec3Attribute> normals = this.getOrCreateNormals();
+  this.setPointIterAttribute( this.topology.getPointIter( point ), neighborPolygonIndex, normals, normal );
+}
+
+/// \internal
+inline Size PolygonMeshTopology.getPointPolygonCount?( Size point ) {
+  return this.getPointIterPolygonCount( this.getPointIter( point ) );
+}
+
+/**
+  Returns the number of polygons connected to that point (neighbor polygons).
+  \seealso :ref:`polygonmeshcomponents`
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline Size PolygonMesh.getPointPolygonCount?( Size point ) {
+  return this.topology.getPointPolygonCount( point );
+}
+
+/// \internal
+inline Size PolygonMeshTopology.getPointPolygon?( Size point, Size neighborPolygonIndex ) {
+  return this.getPointIterPolygon( this.getPointIter( point ), neighborPolygonIndex );
+}
+
+/**
+  Returns the connected polygon at a specific `neighborPolygonIndex`.
+  \note An exception will be thrown if point polygons are unordered (see :ref:`delayedpointordering`)
+  \seealso :ref:`polygonmeshcomponents`
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline Size PolygonMesh.getPointPolygon?( Size point, Size neighborPolygonIndex ) {
+  if( Fabric_Guarded && !Fabric_OnGPU ) {
+    this.assertPointPolygonsAreOrdered( point );
+    this.topology.validatePointOffset( point, neighborPolygonIndex, "getPointPolygon" );
+  }
+  return this.topology.getPointPolygon( point, neighborPolygonIndex );
+}
+
+/// \internal
+inline PolygonMeshTopology.getPointPolygonAndIndex?( Size point, Size neighborPolygonIndex, out Size polygon, out Size polygonPointIndex ) {
+  IterOff iterOff = this.pointData.getArrayItemIdxOff( this.getPointIter( point ), neighborPolygonIndex );
+  polygon = this.getPolyIterIndex(iterOff.index);
+  polygonPointIndex = iterOff.offset;
+}
+
+/**
+  For a point and a specific neighborPolygonIndex, returns the polygon and associated polygonPointIndex
+  \param point Point index
+  \param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+  \param polygon Index of the connected polygon
+  \param polygonPointIndex Index of this point within polygon's points, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range
+  \note An exception will be thrown if point polygons are unordered (see :ref:`delayedpointordering`)
+  \seealso :ref:`polygonmeshcomponents`, PolygonMesh.getPolygonPointAndNeighborIndex
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline PolygonMesh.getPointPolygonAndIndex?( Size point, Size neighborPolygonIndex, out Size polygon, out Size polygonPointIndex ) {
+  if( Fabric_Guarded && !Fabric_OnGPU ) {
+    this.assertPointPolygonsAreOrdered( point );
+    this.topology.validatePointOffset( point, neighborPolygonIndex, "getPointPolygonAndIndex" );
+  }
+  this.topology.getPointPolygonAndIndex( point, neighborPolygonIndex, polygon, polygonPointIndex );
+}
+
+/// \internal
+inline PolygonMeshTopology.getPointPolygonAndIndex_noCheck?( Size point, Size neighborPolygonIndex, io Size polygon, io Size polygonPointIndex ) {
+  IterOff iterOff = this.pointData.getArrayItemIdxOff( this.getPointIter( point ), neighborPolygonIndex );
+  polygon = this.getPolyIterIndex(iterOff.index);
+  polygonPointIndex = iterOff.offset;
+}
+
+/// \internal
+function PolygonMeshTopology.getPointPolygons?( Size point, io LocalL8UInt32Array polygons ) {
+
+  DataIter ptIter = this.getPointIter(point);
+  UInt32 size = this.getPointIterPolygonCount(ptIter);
+  polygons.resize(size);
+  for( Size i = 0; i < size; ++i )
+    polygons.set(i, this.getPolyIterIndex(this.pointData.getArrayItemIndex(ptIter, i)));
+}
+
+/**
+  For a point, returns all adjacent polygons, in neighbor order (by neighborPolygonIndex).
+  \note Neighbor polygons are always in adjacency and wing order (see :ref:`borderAndWings`)
+  \note An exception will be thrown if point polygons are unordered (see :ref:`delayedpointordering`)
+  \seealso :ref:`polygonmeshcomponents`
+  \category point
+*/
+function PolygonMesh.getPointPolygons?( Size point, out LocalL8UInt32Array polygons ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.assertPointPolygonsAreOrdered( point );
+  this.topology.getPointPolygons( point, polygons );
+}
+
+/// \internal
+function PolygonMeshTopology.getPointPolygonsAndIndices?( Size point, out LocalL8UInt32Array polygons, out LocalL8UInt32Array polygonPointIndices ) {
+
+  DataIter ptIter = this.getPointIter(point);
+  UInt32 size = this.getPointIterPolygonCount(ptIter);
+  polygons.resize(size);
+  polygonPointIndices.resize(size);
+  for( Size i = 0; i < size; ++i ) {
+    IterOff iterOff = this.pointData.getArrayItemIdxOff( ptIter, i );
+    polygons.set(i, this.getPolyIterIndex(iterOff.index));
+    polygonPointIndices.set(i, iterOff.offset);
+  }
+}
+
+
+/// \internal
+inline Boolean PolygonMeshTopology.isPointDeleted?( Size point ) {
+  return !this.pointData.isItemValid(point);
+}
+/**
+  For a point, returns all adjacent polygons and their associated polygonPointIndex, in neighbor order (by neighborPolygonIndex).
+  \param point Point index
+  \param polygons Indices of the adjacent polygons
+  \param polygonPointIndices Indices of this point within polygon's points, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range
+  \note Neighbor polygons are always in adjacency and wing order (see :ref:`borderAndWings`)
+  \note An exception will be thrown if point polygons are unordered (see :ref:`delayedpointordering`)
+  \seealso :ref:`polygonmeshcomponents`
+  \category point
+*/
+function PolygonMesh.getPointPolygonsAndIndices?( Size point, out LocalL8UInt32Array polygons, out LocalL8UInt32Array polygonPointIndices ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.assertPointPolygonsAreOrdered( point );
+  this.topology.getPointPolygonsAndIndices( point, polygons, polygonPointIndices );
+}
+
+
+/**
+  Returns true if a point has been deleted (before it is replaced at last :kl-ref:`PolygonMesh.endStructureChanges`).
+  \seealso :ref:`deletedcomponentsreplacement`, :ref:`polygonmeshcomponents`, PolygonMesh.pointCount
+  \category modeling
+  \dfgCreateArrayPreset
+*/
+inline Boolean PolygonMesh.isPointDeleted?( Size point ) {
+  return this.topology.isPointDeleted(point);
+}
+
+/// \internal
+inline PolygonMeshTopology.getPointBorderInfo?( Size point, Size neighborPolygonIndex, out Boolean precededByBorder, out Boolean atClosedWingStart ) {
+  this.getPointIterBorderInfo( this.getPointIter(point), neighborPolygonIndex, precededByBorder, atClosedWingStart );
+}
+
+/**
+  For a point neighbor polygon, returns border and wing information (see :ref:`borderAndWings`
+  for definitions and an example of usage)
+  \param point Point index
+  \param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+  \param precededByBorder True if the neighbor polygon is preceded by a border (in counter-clockwise order)
+  \param atClosedWingStart True if the neighbor polygon is the first of a closed wing (see :ref:`borderAndWings`)
+  \note An exception will be thrown if point polygons are unordered (see :ref:`delayedpointordering`)
+  \seealso :ref:`polygonmeshcomponents`, PolygonMesh.getPointPrevNeighborPolygonIndexInWing, PolygonMesh.getPointNextNeighborPolygonIndexInWing, PolygonMesh.getPointPolygonFullBorderInfo
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline PolygonMesh.getPointBorderInfo?( Size point, Size neighborPolygonIndex, out Boolean precededByBorder, out Boolean atClosedWingStart ) {
+  if( Fabric_Guarded && !Fabric_OnGPU ) {
+    this.topology.validatePointOffset( point, neighborPolygonIndex, "getPointBorderInfo" );
+    this.assertPointPolygonsAreOrdered( point );
+  }
+  this.topology.getPointBorderInfo( point, neighborPolygonIndex, precededByBorder, atClosedWingStart );
+}
+
+/// \internal
+inline PolygonMeshTopology.getPointPolygonFullBorderInfo?( Size point, Size neighborPolygonIndex, out Size wingPolygonPointIndexBegin, out Size wingPolygonPointIndexEnd, out Boolean isClosedWing ) {
+  this.getPointIterPolygonFullBorderInfo( this.getPointIter(point), neighborPolygonIndex, wingPolygonPointIndexBegin, wingPolygonPointIndexEnd, isClosedWing );
+}
+/**
+  For a point neighbor polygon, returns the start and end neighbor indices of its containing wing,
+  and if that wing is closed (see :ref:`borderAndWings` for definitions and an example of usage)
+  \param point Point index
+  \param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+  \param wingPolygonPointIndexBegin neighborPolygonIndex of the first polygon of the wing
+  \param wingPolygonPointIndexEnd End neighborPolygonIndex for the wing (wing contains neighbors wingPolygonPointIndexBegin to wingPolygonPointIndexEnd-1)
+  \param isClosedWing True if the wing is closed (contains no border)
+  \note An exception will be thrown if point polygons are unordered (see :ref:`delayedpointordering`)
+  \seealso :ref:`polygonmeshcomponents`, PolygonMesh.getPointBorderInfo, PolygonMesh.getPointPrevNeighborPolygonIndexInWing, PolygonMesh.getPointNextNeighborPolygonIndexInWing
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline PolygonMesh.getPointPolygonFullBorderInfo?( Size point, Size neighborPolygonIndex, out Size wingPolygonPointIndexBegin, out Size wingPolygonPointIndexEnd, out Boolean isClosedWing ) {
+  if( Fabric_Guarded && !Fabric_OnGPU ) {
+    this.topology.validatePointOffset( point, neighborPolygonIndex, "getPointPolygonFullBorderInfo" );
+    this.assertPointPolygonsAreOrdered( point );
+  }
+  this.topology.getPointPolygonFullBorderInfo( point, neighborPolygonIndex, wingPolygonPointIndexBegin, wingPolygonPointIndexEnd, isClosedWing );
+}
+
+/// Flag for :kl-ref:`PolygonMesh.getPointPolygonsBorderInfo` 's neighborPolygonsInfo output
+const UInt32 PolygonMesh_precededByBorder = 1;
+/// Flag for :kl-ref:`PolygonMesh.getPointPolygonsBorderInfo` 's neighborPolygonsInfo output
+const UInt32 PolygonMesh_atClosedWingStart = 2;
+
+/// \internal
+inline PolygonMeshTopology.getPointPolygonsBorderInfo!( Size point, out LocalL8UInt32Array neighborPolygonsInfo ) {
+  this.getPointIterPolygonsBorderInfo( this.getPointIter(point), neighborPolygonsInfo );
+}
+
+/**
+  Equivalent to :kl-ref:`PolygonMesh.getPointBorderInfo`, where all neighbor polygon border and wing information is packed in the neighborPolygonsInfo array.
+  The neighborPolygonsInfo will have a size of :kl-ref:`PolygonMesh.getPointPolygonCount`.
+
+  For each neighbor value (UInt32):
+
+  - if the :kl-ref:`PolygonMesh_precededByBorder` bit is set, the neighbor polygon is preceded by a border
+
+  - if the :kl-ref:`PolygonMesh_atClosedWingStart` bit is set, the neighbor is the first polygon of a closed wing
+
+  \seealso :ref:`borderAndWings`
+  \note Calling this function is faster than calling :kl-ref:`PolygonMesh.getPointBorderInfo` for each neighbor.
+  \category point
+*/
+inline PolygonMesh.getPointPolygonsBorderInfo!( Size point, out LocalL8UInt32Array neighborPolygonsInfo ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.assertPointPolygonsAreOrdered( point );
+
+  this.getPointPolygonsBorderInfo( point, neighborPolygonsInfo );
+}
+
+
+/**
+  Returns points's previous `neighborPolygonIndex` in the wing. This follows polygon adjacency around the point:
+
+  - closed wings will be treated as a circular array (previous of wing's start index is wing's end index)
+
+  - at open wing's start (border), returned value will be InvalidIndex
+
+  The returned `neighborPolygonIndex` is in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range,
+  or `InvalidIndex` if `neighborPolygonIndex` is after a border.
+
+  See :ref:`borderAndWings` for definitions and an example of usage.
+
+  \param point Point index
+  \param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+  \seealso :ref:`polygonmeshcomponents`, PolygonMesh.getPointNextNeighborPolygonIndexInWing, PolygonMesh.getPointBorderInfo, PolygonMesh.getPointPolygonFullBorderInfo
+  \category point
+*/
+inline Size PolygonMesh.getPointPrevNeighborPolygonIndexInWing?( Size point, Size neighborPolygonIndex ) {
+  DataIter pointIter = this.topology.getPointIter(point);
+  Boolean extendedBit;
+  UInt32 neiCount = this.topology.pointData.getOffsetAndBit( pointIter, extendedBit );
+  if( Fabric_Guarded && !Fabric_OnGPU ) {
+    this.topology.validatePointOffset( point, neighborPolygonIndex, neiCount, "getPointPrevNeighborPolygonIndexInWing" );
+    this.assertPointPolygonsAreOrdered( point );
+  }
+  DataIter borderDataIter = this.topology.getBorderDataIter(pointIter, extendedBit, neiCount);
+  return this.topology.getPointIterPrevOffInWing( pointIter, neighborPolygonIndex, neiCount, borderDataIter );
+}
+
+
+/**
+  Returns points's next `neighborPolygonIndex` in the wing. This follows polygon adjacency around the point:
+
+  - closed wings will be treated as a circular array (next of wing's end index is wing's start index)
+
+  - at open wing's end (border), returned value will be InvalidIndex
+
+  The returned `neighborPolygonIndex` is in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range,
+  or `InvalidIndex` if `neighborPolygonIndex` is before a border.
+
+  See :ref:`borderAndWings` for definitions and an example of usage.
+
+  \param point Point index
+  \param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+  \seealso :ref:`borderAndWings`, :ref:`polygonmeshcomponents`, PolygonMesh.getPointPrevNeighborPolygonIndexInWing, PolygonMesh.getPointBorderInfo, PolygonMesh.getPointPolygonFullBorderInfo
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline Size PolygonMesh.getPointNextNeighborPolygonIndexInWing?( Size point, Size neighborPolygonIndex ) {
+  DataIter pointIter = this.topology.getPointIter(point);
+  Boolean extendedBit;
+  UInt32 neiCount = this.topology.pointData.getOffsetAndBit( pointIter, extendedBit );
+  if( Fabric_Guarded && !Fabric_OnGPU ) {
+    this.topology.validatePointOffset( point, neighborPolygonIndex, neiCount, "getPointNextNeighborPolygonIndexInWing" );
+    this.assertPointPolygonsAreOrdered( point );
+  }
+  DataIter borderDataIter = this.topology.getBorderDataIter(pointIter, extendedBit, neiCount);
+  return this.getPointIterNextOffInWing( pointIter, neighborPolygonIndex, neiCount, borderDataIter );
+}
+
+/// \internal
+function PolygonMeshTopology.getPointSurroundingPoints?( Size point, Boolean includeAllPolygonPoints, io LocalL16UInt32Array surroundingPoints ) {
+  this.getPointIterSurroundingPointIters( this.getPointIter(point), includeAllPolygonPoints, surroundingPoints );
+  for( Size i = 0; i < surroundingPoints.size(); ++i )
+    surroundingPoints.set(i, this.getPointIterIndex( surroundingPoints.get(i) ) );
+}
+/**
+  Returns all adjacent points, in counter clockwise order (neighbor order).
+  For the example below, you can refer to the 2X2 grid component figure presented in :ref:`polygonmeshcomponents` .
+  \param point Point index
+  \param includeAllPolygonPoints Option to include other non-adjacent points of the connected polygons (contour points of the polygon ring). 
+  \param surroundingPoints Array containing the resulting adjacent points.
+  \note Even if `includeAllPolygonPoints` is false, the number of returned points will be more than :kl-ref:`PolygonMesh.getPointPolygonCount` if there are some borders (see :ref:`borderAndWings`).
+  \example
+    PolygonMesh p();
+    p.addPlane(Xfo(), 2.0, 2.0, 2, 2);
+
+    LocalL16UInt32Array surroundingPoints;
+    p.getPointSurroundingPoints(1, false, surroundingPoints);
+    report("Connected surrounding points: " + surroundingPoints.getString() );
+
+    p.getPointSurroundingPoints(1, true, surroundingPoints);
+    report("Connected surrounding points, including other polygon points: " + surroundingPoints.getString() );
+  \endexample
+  \category point
+*/
+function PolygonMesh.getPointSurroundingPoints?( Size point, Boolean includeAllPolygonPoints, out LocalL16UInt32Array surroundingPoints ) {
+  this.topology.getPointSurroundingPoints( point, includeAllPolygonPoints, surroundingPoints );
+}
+
+/// \internal
+inline Size PolygonMeshTopology.polygonCount() {
+  return this.polyData.itemCount();
+}
+
+/// Returns the number of polygons.
+/// \note If within a :kl-ref:`PolygonMesh.beginStructureChanges` / :kl-ref:`PolygonMesh.endStructureChanges` bracket, this count will include any polygon that were deleted within this bracket, in which case :kl-ref:`PolygonMesh.isPolygonDeleted` will return true (see :ref:`modifyingpolygonmeshstructure`).
+/// \category polygon
+inline Size PolygonMesh.polygonCount() {
+  return this.topology.polygonCount();
+}
+
+/// Returns the sum of all polygon points of the PolygonMesh.
+/// \note This sum is cached, so no traversal of the polygons will be required.
+/// \category polygon
+inline Size PolygonMesh.polygonPointsCount() {
+  return this.totalPolygonPoints;
+}
+
+/// \internal
+inline Size PolygonMeshTopology.getPolygonSize?( Size polygon ) {
+  return this.getPolyIterSize( this.getPolygonIter( polygon ) );
+}
+
+/**
+  Returns the size of the polygon, which is number of points connected to this polygon (== the polygonPointIndex range for this polygon)
+  \seealso :ref:`polygonmeshcomponents`
+  \category polygon
+  \dfgCreateArrayPreset
+*/
+inline Size PolygonMesh.getPolygonSize?( Size polygon ) {
+  return this.topology.getPolygonSize( polygon );
+}
+
+/// Computes and returns the polygon normal. This is a geometric computation that doesn't 
+/// take into account stored point normals. It returns the normalized sum of cross products
+/// of polygon's first point with all edges (area vector).
+/// \note the polygon normal is **not cached** by the PolygonMesh, and will be recomputed at each call.
+/// \category normals
+function Vec3 PolygonMesh.generatePolygonNormal?( Size polygon ) {
+  DataIter polyIter = this.topology.getPolygonIter( polygon );
+  UInt32 count = this.topology.getPolyIterSize( polyIter );
+
+  if( count > 2 ) {
+    if( this.positionsAttribute_d ) {
+      if( count == 4 ) {//Optimization for quads
+        Vec3_d seg0 = this.attributes.getPosition_d( this.topology.getPolyIterAttributeIndex( polyIter, 2 ) ) - this.attributes.getPosition_d( this.topology.getPolyIterAttributeIndex( polyIter, 0 ) );
+        Vec3_d seg1 = this.attributes.getPosition_d( this.topology.getPolyIterAttributeIndex( polyIter, 3 ) ) - this.attributes.getPosition_d( this.topology.getPolyIterAttributeIndex( polyIter, 1 ) );
+        return seg0.cross( seg1 ).toVec3().unit_safe();
+      } else {
+        Vec3_d pos0 = this.attributes.getPosition_d( this.topology.getPolyIterAttributeIndex( polyIter, 0 ) );
+        Vec3_d prevSeg = this.attributes.getPosition_d( this.topology.getPolyIterAttributeIndex( polyIter, 1 ) ) - pos0;
+        Vec3_d sum(0, 0, 0);
+        for( Size i = 2; i < count; ++i ) {
+          Vec3_d seg = this.attributes.getPosition_d( this.topology.getPolyIterAttributeIndex( polyIter, i ) ) - pos0;
+          sum += prevSeg.cross( seg );
+          prevSeg = seg;
+        }
+        return sum.toVec3().unit_safe();
+      }
+    } else {
+      if( count == 4 ) {//Optimization for quads
+        Vec3 seg0 = this.attributes.getPosition( this.topology.getPolyIterAttributeIndex( polyIter, 2 ) ) - this.attributes.getPosition( this.topology.getPolyIterAttributeIndex( polyIter, 0 ) );
+        Vec3 seg1 = this.attributes.getPosition( this.topology.getPolyIterAttributeIndex( polyIter, 3 ) ) - this.attributes.getPosition( this.topology.getPolyIterAttributeIndex( polyIter, 1 ) );
+        return seg0.cross( seg1 ).unit_safe();
+      } else {
+        Vec3 pos0 = this.attributes.getPosition( this.topology.getPolyIterAttributeIndex( polyIter, 0 ) );
+        Vec3 prevSeg = this.attributes.getPosition( this.topology.getPolyIterAttributeIndex( polyIter, 1 ) ) - pos0;
+        Vec3 sum(0, 0, 0);
+        for( Size i = 2; i < count; ++i ) {
+          Vec3 seg = this.attributes.getPosition( this.topology.getPolyIterAttributeIndex( polyIter, i ) ) - pos0;
+          sum += prevSeg.cross( seg );
+          prevSeg = seg;
+        }
+        return sum.unit_safe();
+      }
+    }
+  }
+  else
+    return Vec3( 0, 1, 0 );
+}
+
+/// \internal
+operator generatePolygonNormals<<<index>>>(io Ref<PolygonMesh> mesh, io Vec3 results[]) {
+  results[index] = mesh.generatePolygonNormal( index );
+}
+
+/**
+  Sets the normal at a specific polygon point.
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \note This is equivalent to :kl-ref:`PolygonMesh.setPointNormal` `( Size point, Size neighborPolygonIndex, Vec3 normal )`, but done relative to the polygon.
+  \note An attribute split will occur if the value differs from another neighbor polygon. See :ref:`polygonmeshattributes` for more information about attribute sharing.
+  \seealso :ref:`polygonmeshcomponents`
+  \category normals
+*/
+inline PolygonMesh.setPolygonPointNormal!( Size polygon, Size polygonPointIndex, Vec3 normal ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePolygonOffset( polygon, polygonPointIndex, "setPolygonPointNormal" );
+  Ref<Vec3Attribute> normals = this.getOrCreateNormals();
+  this.setPolyIterAttribute( this.topology.getPolygonIter( polygon ), polygonPointIndex, normals, normal );
+}
+
+/**
+  Returns the stored normal at a polygon point.
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \note This is equivalent to :kl-ref:`PolygonMesh.getPointNormal` `( Size point, Size neighborPolygonIndex )`, but done relative to the polygon.
+  \seealso :ref:`polygonmeshcomponents`, :ref:`polygonmeshattributes`
+  \category normals
+*/
+function Vec3 PolygonMesh.getPolygonPointNormal( Size polygon, Size polygonPointIndex ) {
+  Size attrIndex = this.getPolygonAttributeIndex( polygon, polygonPointIndex );
+  Ref<Vec3Attribute> normals = this.attributes.getNormals();
+  if( normals )
+    return normals.values[attrIndex];
+  else
+    return Vec3(0,1,0);
+}
+
+/// \internal
+inline Size PolygonMeshTopology.getPolygonPoint?( Size polygon, Size polygonPointIndex ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.validatePolygonOffset( polygon, polygonPointIndex, "getPolygonPoint" );
+  return this.getPolyIterPoint( this.getPolygonIter( polygon ), polygonPointIndex );
+}
+
+/**
+  Returns the Nth polygon point.
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \seealso :ref:`polygonmeshcomponents`, PolygonMesh.getPolygonPoints, PolygonMesh.getPolygonPointIndex
+  \category polygon
+*/
+inline Size PolygonMesh.getPolygonPoint?( Size polygon, Size polygonPointIndex ) {
+  return this.topology.getPolygonPoint( polygon, polygonPointIndex );
+}
+
+/// \internal
+inline Size PolygonMeshTopology.getPolygonPointIndex?( Size polygon, Size point ) {
+  return this.getPolyIterPointIndex( this.getPolygonIter( polygon ), point );
+}
+
+/**
+  Searches for a point among polygon points, and returns its polygonPointIndex if found, `InvalidIndex` otherwise.
+  \seealso :ref:`polygonmeshcomponents`, PolygonMesh.getPolygonPoint
+  \category polygon
+*/
+inline Size PolygonMesh.getPolygonPointIndex?( Size polygon, Size point ) {
+  return this.topology.getPolygonPointIndex( polygon, point );
+}
+
+
+/// \internal
+inline PolygonMeshTopology.getPolygonPointAndNeighborIndex?( Size polygon, Size polygonPointIndex, out Size point, out Size pointNeighborIndex ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.validatePolygonOffset( polygon, polygonPointIndex, "getPolygonPointAndNeighborIndex" );
+  IterOff iterOff = this.polyData.getArrayItemIdxOff( this.getPolygonIter( polygon ), polygonPointIndex );
+  point = this.getPointIterIndex(iterOff.index);
+  pointNeighborIndex = iterOff.offset;
+}
+
+/**
+  For a polygon and a specific polygonPointIndex, returns the point and associated neighborPolygonIndex
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \param point Index of the connected point
+  \param pointNeighborIndex Index of this polygon within point's neighbor polygons (0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1)
+  \note An exception will be thrown if point polygons are unordered (see :ref:`delayedpointordering`)
+  \seealso :ref:`polygonmeshcomponents`, PolygonMesh.getPointPolygonAndIndex
+  \category polygon
+*/
+inline PolygonMesh.getPolygonPointAndNeighborIndex?( Size polygon, Size polygonPointIndex, out Size point, out Size pointNeighborIndex ) {
+  this.topology.getPolygonPointAndNeighborIndex( polygon, polygonPointIndex, point, pointNeighborIndex );
+}
+
+
+/// \internal
+inline PolygonMeshTopology.getPolygonPoints?( Size polygon, out LocalL8UInt32Array points ) {
+  DataIter polIter = this.getPolygonIter(polygon);
+  UInt32 size = this.getPolyIterSize(polIter);
+  points.resize(size);
+  for( Size i = 0; i < size; ++i )
+    points.set(i, this.getPointIterIndex(this.polyData.getArrayItemIndex(polIter, i)));
+}
+
+/**
+  Returns all polygon's adjacent points. Returned array's size will be :kl-ref:`PolygonMesh.getPolygonSize` .
+  \note Calling this function is faster than getting points one by one
+  \seealso :ref:`polygonmeshcomponents`, PolygonMesh.getPolygonPointsAndNeighborIndices, PolygonMesh.getPolygonPoint
+  \category polygon
+*/
+inline PolygonMesh.getPolygonPoints?( Size polygon, out LocalL8UInt32Array points ) {
+  this.topology.getPolygonPoints( polygon, points );
+}
+
+/**
+  Returns the polygonPoint indices for a given polygon and sub-triangle index.
+  A polygon with N points has N-2 sub-triangles.
+  \note Currently, polygons are always triangulated as simple fans.
+  \category triangles
+*/
+function UInt32[3] PolygonMesh.getPolygonSubTrianglePolygonPoints?( Size polygon, Size subTriangleIndex ) {
+  //For now we just triangulate as a simple fan
+  if( Fabric_Guarded && !Fabric_OnGPU ) {
+    UInt32 size = this.getPolygonSize(polygon);
+    if( subTriangleIndex+2 >= size )
+      throw("PolygonMesh.getPolygonSubTrianglePolygonPoints: subTriangleIndex out of range (triangle count == " + (size-2) + ")");
+  }
+
+  UInt32 polyPoints[3];
+  polyPoints[0] = 0;
+  polyPoints[1] = subTriangleIndex+1;
+  polyPoints[2] = subTriangleIndex+2;
+  return polyPoints;
+}
+
+/**
+  Returns the number of sub-triangles for a polygon.
+  \category triangles
+*/
+function Size PolygonMesh.getPolygonSubTriangleCount ? (Size polygon) {
+  UInt32 size = this.getPolygonSize(polygon);
+  if( size < 3 )
+    return 0;
+  else
+    return size-2;
+}
+
+/// \internal
+function PolygonMeshTopology.getPolygonPointsAndNeighborIndices?( Size polygon, out LocalL8UInt32Array points, out LocalIndexArray polygonPointIndices ) {
+  DataIter polIter = this.getPolygonIter(polygon);
+  UInt32 size = this.getPolyIterSize(polIter);
+  points.resize(size);
+  polygonPointIndices.resize(size);
+  for( Size i = 0; i < size; ++i ) {
+    IterOff iterOff = this.polyData.getArrayItemIdxOff( polIter, i );
+    points.set(i, this.getPointIterIndex(iterOff.index));
+    polygonPointIndices.set(i, iterOff.offset);
+  }
+}
+
+/**
+  Returns all polygon's adjacent points, along with the neighborPolygonIndex relative to each point.
+  \param polygon Polygon index
+  \param points  Point index array, with a size of :kl-ref:`PolygonMesh.getPolygonSize` .
+  \param polygonPointIndices  neighborPolygonIndex array, with a size of :kl-ref:`PolygonMesh.getPolygonSize` .
+  \seealso :ref:`polygonmeshcomponents`, PolygonMesh.getPolygonPoints
+  \category polygon
+*/
+function PolygonMesh.getPolygonPointsAndNeighborIndices?( Size polygon, out LocalL8UInt32Array points, out LocalIndexArray polygonPointIndices ) {
+  this.topology.getPolygonPointsAndNeighborIndices( polygon, points, polygonPointIndices );
+}
+
+/// \internal
+inline Size PolygonMeshTopology.nextPolygonPointIndex?( Size polygon, Size polygonPointIndex ) {
+  DataIter polIter = this.getPolygonIter(polygon);
+  UInt32 size = this.getPolyIterSize(polIter);
+  return NextOff( polygonPointIndex, size );
+}
+
+/**
+  Returns polygon's next `polygonPointIndex`, treating the polygon point indices as a circular array.
+  The returned `polygonPointIndex` is in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \note When calling this multiple times (eg: within a loop), caching the size and using :kl-ref:`NextOff` `( polygonPointIndex, size )` will be faster.
+  \seealso :ref:`polygonmeshcomponents`, PolygonMesh.previousPolygonPointIndex
+  \category polygon
+*/
+inline Size PolygonMesh.nextPolygonPointIndex?( Size polygon, Size polygonPointIndex ) {
+  return this.topology.nextPolygonPointIndex( polygon, polygonPointIndex );
+}
+
+/// \internal
+inline Size PolygonMeshTopology.previousPolygonPointIndex?( Size polygon, Size polygonPointIndex ) {
+  DataIter polIter = this.getPolygonIter(polygon);
+  UInt32 size = this.getPolyIterSize(polIter);
+  return PrevOff( polygonPointIndex, size );
+}
+
+/**
+  Returns polygon's previous `polygonPointIndex`, treating the polygon point indices as a circular array.
+  The returned `polygonPointIndex` is in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \note When calling this multiple times (eg: within a loop), caching the size and using :kl-ref:`PrevOff` `( polygonPointIndex, size )` will be faster.
+  \seealso :ref:`polygonmeshcomponents`, PolygonMesh.nextPolygonPointIndex
+  \category polygon
+*/
+inline Size PolygonMesh.previousPolygonPointIndex?( Size polygon, Size polygonPointIndex ) {
+  return this.topology.previousPolygonPointIndex( polygon, polygonPointIndex );
+}
+
+/// \internal
+function Size PolygonMeshTopology.getPolygonAdjacentPolygon?( Size polygon, Size polygonPointIndex ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.validatePolygonOffset( polygon, polygonPointIndex, "getPolygonPoint" );
+  Size adjPolyIter = this.getPolyIterAdjacentPolyIter( this.getPolygonIter( polygon ), polygonPointIndex );
+  if( adjPolyIter == 0 )
+    return InvalidIndex;
+  else
+    return this.getPolyIterIndex( adjPolyIter );
+}
+
+/**
+  Returns polygon's adjacent polygon, at the polygon edge formed by polygon point indices `polygonPointIndex` and :kl-ref:`PolygonMesh.nextPolygonPointIndex` `(polygonPointIndex)`.
+  If that edge is a border, there is no adjacent polygon, and `InvalidIndex` will be returned.
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \seealso :ref:`polygonmeshcomponents`, :ref:`borderAndWings`, PolygonMesh.isPolygonBorder, PolygonMesh.getPolygonAdjacentPolygonAndIndex
+  \category polygon
+*/
+function Size PolygonMesh.getPolygonAdjacentPolygon?( Size polygon, Size polygonPointIndex ) {
+  return this.topology.getPolygonAdjacentPolygon( polygon, polygonPointIndex );
+}
+
+/// \internal
+function PolygonMeshTopology.getPolygonAdjacentPolygonAndIndex?( Size polygon, Size polygonPointIndex, io Size adjacentPolygon, io Size adjacentPolygonPointIndex ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.validatePolygonOffset( polygon, polygonPointIndex, "getPolygonPoint" );
+  IdxOff adjPolyIdxOff = this.getPolyIterAdjacentPolyIterOff( this.getPolygonIter( polygon ), polygonPointIndex );
+  adjacentPolygonPointIndex = adjPolyIdxOff.offset;
+  if( adjPolyIdxOff.index == 0 )
+    adjacentPolygon = InvalidIndex;
+  else
+    adjacentPolygon = this.getPolyIterIndex( adjPolyIdxOff.index );
+}
+
+/**
+  Returns polygon's adjacent polygon, at the polygon edge formed by polygon point indices `polygonPointIndex` and :kl-ref:`PolygonMesh.nextPolygonPointIndex` `(polygonPointIndex)`.
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \param adjacentPolygon Adjacent polygon index. If the edge is a border, there is no adjacent polygon, and `InvalidIndex` will be returned.
+  \param adjacentPolygonPointIndex Edge's first `polygonPointIndex` relative to the adjacent polygon.
+  \seealso :ref:`polygonmeshcomponents`, :ref:`borderAndWings`, PolygonMesh.isPolygonBorder, PolygonMesh.getPolygonAdjacentPolygonAndIndex
+  \category polygon
+*/
+function PolygonMesh.getPolygonAdjacentPolygonAndIndex?( Size polygon, Size polygonPointIndex, io Size adjacentPolygon, io Size adjacentPolygonPointIndex ) {
+  this.topology.getPolygonAdjacentPolygonAndIndex( polygon, polygonPointIndex, adjacentPolygon, adjacentPolygonPointIndex );
+}
+
+/// \internal
+inline Boolean PolygonMeshTopology.isPolygonBorder?( Size polygon, Size polygonPointIndex ) {
+  return this.isPolyIterBorder( this.getPolygonIter(polygon), polygonPointIndex );
+}
+
+/**
+  Returns true if the polygon has a border (no adjacent polygon) 
+  at the polygon edge formed by polygon point indices `polygonPointIndex` and :kl-ref:`PolygonMesh.nextPolygonPointIndex` `(polygonPointIndex)`.
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \seealso :ref:`polygonmeshcomponents`, :ref:`borderAndWings`, PolygonMesh.isPolygonBorder, PolygonMesh.getPolygonAdjacentPolygonAndIndex
+  \category polygon
+  \dfgCreateArrayPreset
+*/
+inline Boolean PolygonMesh.isPolygonBorder?( Size polygon, Size polygonPointIndex ) {
+  return this.topology.isPolygonBorder( polygon, polygonPointIndex );
+}
+
+/// \internal
+inline Boolean PolygonMeshTopology.isPolygonDeleted?( Size polygon ) {
+  return !this.polyData.isItemValid(polygon);
+}
+
+/**
+  Returns true if a polygon has been deleted (before it is replaced at last :kl-ref:`PolygonMesh.endStructureChanges`).
+  \seealso :ref:`deletedcomponentsreplacement`, :ref:`polygonmeshcomponents`, PolygonMesh.polygonCount
+  \category modeling
+  \dfgCreateArrayPreset
+*/
+inline Boolean PolygonMesh.isPolygonDeleted?( Size polygon ) {
+  return this.topology.isPolygonDeleted( polygon );
+}
+
+
+/// Computes and returns the bounding box of a polygon.
+/// \category polygon
+function LocalBoundingVolume PolygonMesh.computePolygonBBox(Size polygon) {
+  LocalIndexArray polyPoints;
+  this.topology.getPolygonPoints( polygon, polyPoints );
+  LocalBoundingVolume bbox;
+  bbox.bBoxInit();
+  for( Size i = 0; i < polyPoints.size(); ++i )
+    bbox.bBoxAdd( this.getPointPosition( polyPoints.get(i) ) );
+  return bbox;
+}
+
+/// Geometry interface implementation. For a PolygonMesh, an element is a polygon.
+function Size PolygonMesh.elementCount() {
+  return this.polygonCount();
+}
+
+/// Geometry interface implementation: computes and returns the bounding box of a polygon. For a PolygonMesh, an element is a polygon.
+/// \seealso PolygonMesh.computePolygonBBox
+function LocalBoundingVolume PolygonMesh.getElementBoundingVolume(Size index) {
+  return this.computePolygonBBox(index);
+}
+
+/**
+  Signals the beginning of structural changes for the polygon mesh, like adding or removing polygons.
+  Some methods, such as :kl-ref:`PolygonMesh.addPolygon` and :kl-ref:`PolygonMesh.deletePolygon`, need to be called
+  between :kl-ref:`PolygonMesh.beginStructureChanges` and :kl-ref:`PolygonMesh.endStructureChanges` brackets.
+  See :ref:`modifyingpolygonmeshstructure` for more details.
+  \note The :kl-ref:`PolygonMeshStructureChangeBracket` wraps a being/endStructureChanges using its constructor and destructor, which can reduce unbalanced bracket errors.
+  \note Structure change brackets can be nested, in which case only the outer :kl-ref:`PolygonMesh.endStructureChanges` will compile the changes.
+  \category modeling
+  \seealso PolygonMesh.endStructureChanges
+*/
+inline PolygonMesh.beginStructureChanges!() {
+  ++this.topoChangesBracket;
+}
+
+/**
+  Local bracket wrapper for :kl-ref:`PolygonMesh.beginStructureChanges` and :kl-ref:`PolygonMesh.endStructureChanges`.
+  Using this mechanism allows to avoid potential unbalanced bracket errors.
+  \example
+    PolygonMesh p();
+    {
+      PolygonMeshStructureChangeBracket changeBracket(p);
+      p.createPoints(3);
+      p.addPolygon(0,1,2);
+    } // At destruction, changeBracket ends the structure changes
+    //The following is legal since changes are done
+    report( "Point 0's first polygon = " + p.getPointPolygon(0, 0) );
+  \endexample
+*/
+struct PolygonMeshStructureChangeBracket {
+  Ref<PolygonMesh> mesh;
+};
+
+/// \internal
+inline PolygonMeshStructureChangeBracket() {
+  throw "PolygonMeshStructureChangeBracket: default constructor not supported";
+}
+
+/// Construct a local structure change bracket for the mesh.
+/// See PolygonMeshStructureChangeBracket for an example of usage.
+inline PolygonMeshStructureChangeBracket( Ref<PolygonMesh> mesh ) {
+  this.mesh = mesh;
+  if( this.mesh )
+    this.mesh.beginStructureChanges();
+}
+
+/// \internal
+inline ~PolygonMeshStructureChangeBracket() {
+  if( this.mesh )
+    this.mesh.endStructureChanges();
+}
+
+/**
+  Forces an update of point polygon ordering for all points that need it.
+  See :ref:`delayedpointordering` for more about `point polygon ordering`.
+  \note The PolygonMesh maintains flags for unordered points, so only potentially unordered points will be processed
+  \seealso PolygonMesh.updatePointPolygonOrder
+  \category modeling
+*/
+function PolygonMesh.updatePointsPolygonOrder!() {
+  if( this.unorderedPointsCount == 0 )
+    return;
+
+  if( this.unorderedPointsCount > PolygonMesh_minUnorderedPointCountPerThreadBatch*2 ) {
+    UInt32 pointsToProcess[];
+    pointsToProcess.resize(this.unorderedPointsCount);
+    UInt32 index = 0;
+    BitVectorIterator ptBitIter = this.unorderedPoints.begin();
+    while( this.unorderedPoints.getNext(ptBitIter) )
+      pointsToProcess[index++] = ptBitIter.index;
+
+    Size numBatches, batchSize;
+    GetBatchSizeAndCountForParallel(this.unorderedPointsCount, 1, PolygonMesh_minUnorderedPointCountPerThreadBatch, numBatches, batchSize);
+    UInt32 remainingWork[][];
+    remainingWork.resize(numBatches);
+
+    ParallelOrderMeshPoints<<<numBatches>>>(this.topology, batchSize, pointsToProcess, remainingWork );
+    //Process remaining work (postponed because not threadsafe)
+    for( Size i = 0; i < numBatches; ++i ) {
+      Size iter = 0;
+      while( iter < remainingWork[i].size() ) {
+        //See ParallelOrderMeshPoints for data protocol used here
+        UInt32 ptIndex = remainingWork[i][iter++];
+        UInt32 count = remainingWork[i][iter++];
+
+        if( count == InvalidIndex )
+          this.topology.reorderPoint(ptIndex);
+        else {
+          LocalIndexArray newBorderWingDataBits;
+          Boolean removeBorderWingDataBits;
+          if( count == 0 )
+            removeBorderWingDataBits = true;
+          for( Size j = 0; j < count; ++j )
+            newBorderWingDataBits.push( remainingWork[i][iter++] );
+
+          this.topology.updatePointBorderData( ptIndex, newBorderWingDataBits, removeBorderWingDataBits );
+        }
+      }
+    }
+    this.unorderedPoints.clearAll();
+  } else {
+    BitVectorIterator iter = this.unorderedPoints.begin();
+    while( this.unorderedPoints.getNext(iter) ) {
+      this.topology.reorderPoint(iter.index);
+      this.unorderedPoints.clear(iter.index);
+    }
+  }
+  this.unorderedPointsCount = 0;
+}
+
+/**
+  Forces an update of point's polygon ordering if required.
+  See :ref:`delayedpointordering` for more about `point polygon ordering`.
+  \note The PolygonMesh maintains flags for unordered points, so only potentially unordered points will be processed
+  \seealso PolygonMesh.updatePointsPolygonOrder
+  \category modeling
+*/
+inline PolygonMesh.updatePointPolygonOrder!( Size point ) {
+  if( this.unorderedPointsCount == 0 || !this.unorderedPoints.getThenClear(point) )
+    return;
+
+  this.topology.reorderPoint(point);
+  --this.unorderedPointsCount;
+}
+
+
+
+
+/**
+  Marks the ends structural changes for the polygon mesh, like adding or removing polygons.
+  Some methods, such as :kl-ref:`PolygonMesh.addPolygon` and :kl-ref:`PolygonMesh.deletePolygon`, need to be made
+  between calls to :kl-ref:`PolygonMesh.beginStructureChanges` and :kl-ref:`PolygonMesh.endStructureChanges`.
+  See :ref:`modifyingpolygonmeshstructure` for more details.
+  \note The :kl-ref:`PolygonMeshStructureChangeBracket` wraps a being/endStructureChanges using its constructor and destructor, which can reduce unbalanced bracket errors.
+  \note Structure change brackets can be nested, in which case only the outer :kl-ref:`PolygonMesh.endStructureChanges` will compile the changes.
+  \seealso PolygonMesh.beginStructureChanges
+  \category modeling
+*/
+inline PolygonMesh.endStructureChanges!() {
+  if( Fabric_Guarded && !Fabric_OnGPU && this.topoChangesBracket == 0 )
+    throw("PolygonMesh.endStructureChanges: no corresponding Begin");
+  --this.topoChangesBracket;
+  if( this.topoChangesBracket == 0 ) {
+    if( this.maintainOrderedPointPolygons )
+      this.updatePointsPolygonOrder();
+
+    //Replace deleted components if applicable
+    this.recompactItemIndices( this.topology.polyData, this.topology.pointData, false );
+    this.recompactItemIndices( this.topology.pointData, this.topology.polyData, true );
+
+    this.recompactDataIfRequired( this.topology.polyData, this.topology.pointData, false );
+    this.recompactDataIfRequired( this.topology.pointData, this.topology.polyData, true );
+  }
+}
+
+
+inline Size PolygonMesh.createPoints!( Size nb ) {
+  UInt32 first = this.topology.pointData.createItems(nb);
+  this._incrementStructureVersion();
+
+  this.unorderedPoints.resize( first + nb );
+  this.insertPointAttributes( first, nb );
+
+  return first;
+}
+
+
+/**
+  Creates new points and returns the index of the first point. The first point index is always equal to the previous value of :kl-ref:`PolygonMesh.pointCount`.
+  \note In specific cases, the position and attributes values for these new points might contain `garbage` values until these are initialized.
+  \category modeling
+  \dfgPresetOmit
+*/
+function Size PolygonMesh._addPolygon!( LocalL8UInt32Array points, Boolean updateStructure ) {
+  if( !updateStructure && this.topoChangesBracket == 0 )
+    throw("PolygonMesh.addPolygon: must be called within a begin/endStructureChanges() bracket");
+
+  Size size = points.size();
+  if( Fabric_Guarded && !Fabric_OnGPU ) {
+    if( size < 3 )
+      throw("PolygonMesh.addPolygon: not enough points: "+size);//Note: we enforce this but there is not intrinsic limitation
+    for( Size i = 0; i < size; ++i ) {
+      UInt32 pt = points.get(i);
+      if(pt >= this.pointCount())
+        throw("PolygonMesh.addPolygon: point out of range: "+i);
+      if( this.isPointDeleted(i) )
+        throw("PolygonMesh.addPolygon: deleted point: "+i);
+    }
+    //TODO: check if some points are repeated?
+  }
+
+  UInt32 index = this.topology.polyData.createItem();
+  UInt32 polyDataIter = this.topology.polyData.allocateArray(index, size, 0, 0, false );
+  this.totalPolygonPoints += size;
+
+  for( Size i = 0; i < size; ++i ) {
+    UInt32 ptIndex = points.get(i);
+    DataIter pointDataIter = this.topology.pointData.getItemIter(ptIndex);
+    UInt32 ptPolCount;
+    if( pointDataIter == 0 )//Create, reserve 4 extra UInt32s.
+      pointDataIter = this.topology.pointData.allocateArray( ptIndex, 1, 0, 4, false );
+    else {
+      Boolean extendedData;
+      ptPolCount = this.topology.pointData.arrayDataIterSizeAndBit(pointDataIter, extendedData);
+      UInt32 extraUInt32;
+
+      UInt32 prevNumExtraUInt32, numExtraUInt32;
+      this.topology.prepareBorderDataRemoval(pointDataIter, ptPolCount, extendedData, prevNumExtraUInt32, numExtraUInt32);
+      if( numExtraUInt32 )//There is unsharedAttributeData
+        ++numExtraUInt32;//New unsharedAttributeData entry
+
+      //Just reserve 1/8th of potential growth, so it kicks-in for degenerate cases (points with tens of neighbors)
+      pointDataIter = this.topology.resizePointArrayAndRemapPolygons( ptIndex, pointDataIter, ptPolCount, prevNumExtraUInt32, ptPolCount+1, numExtraUInt32, (ptPolCount>>3) );
+
+      if(numExtraUInt32) {
+        //Initialize last unshared attribute index as the point attribute value
+        DataIter unsharedAttributeIter = this.topology.pointData.getArrayExtraUInt32Iter(pointDataIter, ptPolCount+1, ptPolCount);
+        PolygonMesh_SetUnsharedAttributeIndex( this.topology.pointData.data.data[unsharedAttributeIter], ptIndex );
+      }
+    }
+    UInt32 pointPolyIter = this.topology.pointData.getArrayItemIter( pointDataIter, ptPolCount );
+    this.topology.pointData.initIdxOff( pointPolyIter, polyDataIter, i );
+    
+    UInt32 polyPointIter = this.topology.polyData.getArrayItemIter( polyDataIter, i );
+    this.topology.polyData.initIdxOff( polyPointIter, pointDataIter, ptPolCount );
+    if( !updateStructure )
+      this.markUnorderedPoint(ptIndex);
+  }
+
+  if( updateStructure ) {
+    for( Size i = 0; i < size; ++i )
+      this.topology.reorderPoint( points.get(i) );
+  }
+
+  this._incrementStructureVersion();
+  return index;
+}
+
+
+
+/**
+  Creates a new polygon connecting the points in the specified order (counter-clockwise), and returns new polygon's index.
+  For performance reasons, this function must be called between a :kl-ref:`PolygonMesh.beginStructureChanges` 
+  / :kl-ref:`PolygonMesh.endStructureChanges` bracket (see :ref:`modifyingpolygonmeshstructure` for more details).
+  \note Point indices must be valid (previously created with :kl-ref:`PolygonMesh.createPoints`)
+  \note The :kl-ref:`PolygonMesh.addPolygonAndUpdateStructure` variants can be slower when adding multiple polygons, but doesn't require a change bracket
+  \example
+    PolygonMesh p();
+
+    // Create a polygon made of 8 points
+    p.beginStructureChanges();
+    p.createPoints(8);
+
+    LocalL8UInt32Array points;
+    for( Size i = 0; i < 8; ++i )
+      points.push(i);
+
+    Size polygonIndex = p.addPolygon(points);
+    p.endStructureChanges();
+
+    report("polygon size = " + p.getPolygonSize( polygonIndex ) );
+  \endexample
+  \category modeling
+  \seealso PolygonMesh.addPolygons
+*/
+inline Size PolygonMesh.addPolygon!( LocalL8UInt32Array points ) {
+  return this._addPolygon( points, false );
+}
+
+/**
+  Similar to :kl-ref:`PolygonMesh.addPolygon`, but doesn't require to be within a :kl-ref:`PolygonMesh.beginStructureChanges`
+  / :kl-ref:`PolygonMesh.endStructureChanges` bracket (see :ref:`modifyingpolygonmeshstructure` for more details).
+  \note Point indices must be valid (previously created with :kl-ref:`PolygonMesh.createPoints`)
+  \note This method can be slower than :kl-ref:`PolygonMesh.addPolygon` if adding multiple polygons
+  \example
+    PolygonMesh p();
+
+    // Create a polygon made of 8 points
+    p.createPoints(8);
+    LocalL8UInt32Array points;
+    for( Size i = 0; i < 8; ++i )
+      points.push(i);
+
+    Size polygonIndex = p.addPolygonAndUpdateStructure(points);
+    report("polygon size = " + p.getPolygonSize( polygonIndex ) );
+  \endexample
+  \category modeling
+  \seealso PolygonMesh.addPolygons
+*/
+inline Size PolygonMesh.addPolygonAndUpdateStructure!( LocalL8UInt32Array points ) {
+  return this._addPolygon( points, true );
+}
+
+
+/**
+  Creates a new triangle connecting the points in the specified order (counter-clockwise), and returns new polygon's index.
+  This is a simple wrapper of the more generic `PolygonMesh.addPolygon( LocalL8UInt32Array )`.
+  For performance reasons, this function must be called between a :kl-ref:`PolygonMesh.beginStructureChanges` 
+  / :kl-ref:`PolygonMesh.endStructureChanges` bracket (see :ref:`modifyingpolygonmeshstructure` for more details).
+  \note Point indices must be valid (previously created with :kl-ref:`PolygonMesh.createPoints`)
+  \note The :kl-ref:`PolygonMesh.addPolygonAndUpdateStructure` variants can be slower when adding multiple polygons, but doesn't require a change bracket
+  \example
+    PolygonMesh p();
+
+    p.beginStructureChanges();
+    p.createPoints(3);
+    Size polygonIndex = p.addPolygon(0, 1, 2);
+    p.endStructureChanges();
+
+    report("polygon size = " + p.getPolygonSize( polygonIndex ) );
+  \endexample
+  \category modeling
+  \seealso PolygonMesh.addPolygons
+*/
+inline Size PolygonMesh.addPolygon!( Size ptIdx1, Size ptIdx2, Size ptIdx3 ) {
+  LocalIndexArray indexArray;
+  indexArray.push(ptIdx1);
+  indexArray.push(ptIdx2);
+  indexArray.push(ptIdx3);
+  return this._addPolygon(indexArray, false);
+}
+
+/**
+  Similar to :kl-ref:`PolygonMesh.addPolygon`, but doesn't require to be within a :kl-ref:`PolygonMesh.beginStructureChanges`
+  / :kl-ref:`PolygonMesh.endStructureChanges` bracket (see :ref:`modifyingpolygonmeshstructure` for more details).
+  This is a simple wrapper of the more generic `PolygonMesh.addPolygonAndUpdateStructure( LocalL8UInt32Array )`.
+  \note Point indices must be valid (previously created with :kl-ref:`PolygonMesh.createPoints`)
+  \note This method can be slower than :kl-ref:`PolygonMesh.addPolygon` if adding multiple polygons
+  \example
+    PolygonMesh p();
+
+    // Create a polygon made of 8 points
+    p.createPoints(3);
+    Size polygonIndex = p.addPolygonAndUpdateStructure(0, 1, 2);
+    report("polygon size = " + p.getPolygonSize( polygonIndex ) );
+  \endexample
+  \category modeling
+  \seealso PolygonMesh.addPolygons
+*/
+inline Size PolygonMesh.addPolygonAndUpdateStructure!( Size ptIdx1, Size ptIdx2, Size ptIdx3 ) {
+  LocalIndexArray indexArray;
+  indexArray.push(ptIdx1);
+  indexArray.push(ptIdx2);
+  indexArray.push(ptIdx3);
+  return this._addPolygon(indexArray, true);
+}
+
+
+/**
+  Creates a new quadrilateral connecting the points in the specified order (counter-clockwise), and returns new polygon's index.
+  This is a simple wrapper of the more generic `PolygonMesh.addPolygon( LocalL8UInt32Array )`.
+  For performance reasons, this function must be called between a :kl-ref:`PolygonMesh.beginStructureChanges` 
+  \note Point indices must be valid (previously created with :kl-ref:`PolygonMesh.createPoints`)
+  \note The :kl-ref:`PolygonMesh.addPolygonAndUpdateStructure` variants can be slower when adding multiple polygons, but doesn't require a change bracket
+  / :kl-ref:`PolygonMesh.endStructureChanges` bracket (see :ref:`modifyingpolygonmeshstructure` for more details).
+  \example
+    PolygonMesh p();
+
+    p.beginStructureChanges();
+    p.createPoints(4);
+    Size polygonIndex = p.addPolygon(0, 1, 2, 3);
+    p.endStructureChanges();
+
+    report("polygon size = " + p.getPolygonSize( polygonIndex ) );
+  \endexample
+  \category modeling
+  \seealso PolygonMesh.addPolygons
+*/
+inline Size PolygonMesh.addPolygon!( Size ptIdx1, Size ptIdx2, Size ptIdx3, Size ptIdx4 ) {
+  LocalIndexArray indexArray;
+  indexArray.push(ptIdx1);
+  indexArray.push(ptIdx2);
+  indexArray.push(ptIdx3);
+  indexArray.push(ptIdx4);
+  return this._addPolygon(indexArray, false);
+}
+
+
+/**
+  Similar to :kl-ref:`PolygonMesh.addPolygon`, but doesn't require to be within a :kl-ref:`PolygonMesh.beginStructureChanges`
+  / :kl-ref:`PolygonMesh.endStructureChanges` bracket (see :ref:`modifyingpolygonmeshstructure` for more details).
+  This is a simple wrapper of the more generic `PolygonMesh.addPolygonAndUpdateStructure( LocalL8UInt32Array )`.
+  \note Point indices must be valid (previously created with :kl-ref:`PolygonMesh.createPoints`)
+  \note This method can be slower than :kl-ref:`PolygonMesh.addPolygon` if adding multiple polygons
+  \example
+    PolygonMesh p();
+
+    // Create a polygon made of 8 points
+    p.createPoints(4);
+    Size polygonIndex = p.addPolygonAndUpdateStructure(0, 1, 2, 3);
+    report("polygon size = " + p.getPolygonSize( polygonIndex ) );
+  \endexample
+  \category modeling
+  \seealso PolygonMesh.addPolygons
+*/
+inline Size PolygonMesh.addPolygonAndUpdateStructure!( Size ptIdx1, Size ptIdx2, Size ptIdx3, Size ptIdx4 ) {
+  LocalIndexArray indexArray;
+  indexArray.push(ptIdx1);
+  indexArray.push(ptIdx2);
+  indexArray.push(ptIdx3);
+  indexArray.push(ptIdx4);
+  return this._addPolygon(indexArray, true);
+}
+
+
+/**
+  Adds many polygons in batch, using a packed size and points array.
+
+  For example, if a triangle T and a quadrilateral Q are added, the following array layout should be used:
+
+  - `polygonSizes` = [size of T = 3, size of Q = 4]
+
+  - `packedPolygonPointIndices` = [T.point0, T.point1, T.point2, Q.point0, Q.point1, Q.point2]
+
+  \note Point indices in `packedPolygonPointIndices` must be valid (previously created with :kl-ref:`PolygonMesh.createPoints`)
+  \example
+    PolygonMesh p();
+    p.createPoints(8);
+
+    //Define a quad, then a triangle, then a pentagon
+    Size polygonSizes[];
+    Size packedPolygonPointIndices[];
+
+    polygonSizes.push(4);
+    packedPolygonPointIndices.push(0);
+    packedPolygonPointIndices.push(1);
+    packedPolygonPointIndices.push(2);
+    packedPolygonPointIndices.push(3);
+
+    polygonSizes.push(3);
+    packedPolygonPointIndices.push(0);
+    packedPolygonPointIndices.push(4);
+    packedPolygonPointIndices.push(1);
+
+    polygonSizes.push(5);
+    packedPolygonPointIndices.push(0);
+    packedPolygonPointIndices.push(3);
+    packedPolygonPointIndices.push(5);
+    packedPolygonPointIndices.push(6);
+    packedPolygonPointIndices.push(7);
+
+    p.addPolygons( polygonSizes, packedPolygonPointIndices );
+    for( Size i = 0; i < p.polygonCount(); ++i )
+      report("Polygon " + i + ": size = " + p.getPolygonSize(i) );
+  \endexample
+  \category modeling
+*/
+function PolygonMesh.addPolygons!( Size polygonSizes<>, Size packedPolygonPointIndices<> ) {
+  this.beginStructureChanges();
+
+  LocalIndexArray indexArray;
+  UInt32 ptIndexIter = 0;
+
+  for( Size i = 0; i < polygonSizes.size(); ++i ) {
+    UInt32 polSize = polygonSizes[i];
+    indexArray.resize(0);
+    for( Size j = 0; j < polSize; ++j )
+      indexArray.push( packedPolygonPointIndices[ptIndexIter++] );
+    this.addPolygon( indexArray );
+  }
+
+  this.endStructureChanges();
+}
+
+
+/// Recomputes all point normals. All previously stored point normals will be overwritten.
+/// The computed normal value is the average of neighbor polygons' :kl-ref:`PolygonMesh.generatePolygonNormal`.
+/// \note Normals will usually will be shared per point, unless there are multiple wings, in which case there might be one distinct normal per wing (see :ref:`borderAndWings`).
+/// \category normals
+function PolygonMesh.recomputePointNormals!() {
+  this.updatePointsPolygonOrder();
+  Ref<Vec3Attribute> normals = this.getOrCreateNormals();
+  normals.incrementVersion();
+
+  UInt32 pointCount = this.pointCount();
+  UInt32 polygonCount = this.polygonCount();
+  
+  Vec3 polyNormals[];
+  polyNormals.resize(polygonCount);
+  generatePolygonNormals<<<polygonCount>>>(this, polyNormals);
+
+  //Set all normals as initialized; we are mixing 'uniform' and per polygon point values...
+  this.attrInitializedBits[normals.getContainerIndex( this.attributes )].vertexAttrInitialized.setAll();
+
+  UInt8 multiWingPolys[];
+  multiWingPolys.resize(pointCount);
+  Boolean hasMultiWingPolys;
+
+  generatePointNormals<<<pointCount>>>(this.topology, polyNormals, multiWingPolys, hasMultiWingPolys, normals.values);
+
+  if( hasMultiWingPolys && false ) {
+    for( Size i = 0; i < pointCount; ++i ) {
+      if( !multiWingPolys[i] )
+        continue;
+      //Compute normals that had splits because of multiple wings (not thread safe)
+      DataIter pointIter = this.topology.getPointIter(i);
+      Boolean extendedBit;
+      UInt32 count = this.topology.pointData.getOffsetAndBit( pointIter, extendedBit );
+
+      DataIter borderDataIter = this.topology.getBorderDataIter(pointIter, extendedBit, count);
+      Size j = 1;
+      while( true ) {//1st wing has been set already: skip
+        Boolean precededByBorder, atClosedWingStart;
+        this.topology.getBorderInfo( borderDataIter, j, precededByBorder, atClosedWingStart );
+        if( precededByBorder || atClosedWingStart )
+          break;
+        ++j;
+      }
+      while(j < count) {
+        Size start = j;
+        Vec3 sum(0, 0, 0);
+        for( ; j < count; ++j ) {
+          UInt32 poly = this.topology.getPointIterPolygon( pointIter, j );
+          sum += polyNormals[ poly ];
+
+          if(j != start) {
+            Boolean precededByBorder, atClosedWingStart;
+            this.topology.getBorderInfo( borderDataIter, j, precededByBorder, atClosedWingStart );
+            if( precededByBorder || atClosedWingStart )
+              break;
+          }
+        }
+        sum.unit_safe();
+        while( start != j )
+          this.setPointIterAttribute( this.topology.getPointIter( i ), start++, normals, sum );
+      }
+    }
+  }
+  if( this.positionsAttribute_d )
+    this.normals_lastPositionsVersion = this.positionsAttribute_d.getVersion();
+  else
+    this.normals_lastPositionsVersion = this.positionsAttribute.getVersion();
+  this.normals_lastHardAngle = TWO_PI;
+}
+
+/// Same as :kl-ref:`PolygonMesh.recomputePointNormals`, but will do nothing if point positions didn't change since last call.
+/// \category normals
+/// \versionadded 1.13.0
+inline PolygonMesh.recomputePointNormalsIfRequired!() {
+  //TODO: should check normals version too, in case was changed manually?
+  UInt32 positionsVersion = this.positionsAttribute_d ? this.positionsAttribute_d.getVersion() : this.positionsAttribute.getVersion();
+  if( positionsVersion == this.normals_lastPositionsVersion && this.normals_lastHardAngle == TWO_PI )
+      return;
+  this.recomputePointNormals();
+}
+
+/// Recomputes all point normals and introduces normal splits if adjacent polygons' normals differ by more than `hardAngleRadians` radians.
+/// All previously stored point normals will be overwritten.
+/// The computed normal value is the average of neighbor polygons' :kl-ref:`PolygonMesh.generatePolygonNormal` (or a subset of these if there is a split).
+/// \category normals
+function PolygonMesh.recomputePointNormals!( Scalar hardAngleRadians ) {
+  Ref<Vec3Attribute> normals = this.getOrCreateNormals();
+  normals.incrementVersion();
+//  this.updatePointsPolygonOrder();
+
+  UInt32 pointCount = this.pointCount();
+  UInt32 polygonCount = this.polygonCount();
+  Vec3 polyNormals[];
+  polyNormals.resize(polygonCount);
+  generatePolygonNormals<<<polygonCount>>>(this, polyNormals);
+
+  //Set all normals as initialized; we are mixing 'uniform' and per polygon point values...
+  this.attrInitializedBits[normals.getContainerIndex( this.attributes )].vertexAttrInitialized.setAll();
+
+  UInt16 splitBitsOrMaxIfNonTrivial[];
+  splitBitsOrMaxIfNonTrivial.resize(pointCount);
+  Scalar cosHardAngle = cos(hardAngleRadians);
+  generateMeshPointNormalOrSplits<<<pointCount>>>( this, polyNormals, cosHardAngle, false, splitBitsOrMaxIfNonTrivial );
+
+  //Compute normals that had splits (not thread safe)
+  for( Size i = 0; i < pointCount; ++i ) {
+    UInt16 splitBits = splitBitsOrMaxIfNonTrivial[i];
+    if( !splitBits )
+      continue;
+    if( splitBits == 65535 ) {
+      generateMeshPointNormalOrSplits( i, this, polyNormals, cosHardAngle, true, splitBitsOrMaxIfNonTrivial );
+    } else {
+      DataIter pointIter = this.topology.getPointIter(i);
+      Size count = this.topology.getPointIterPolygonCount(pointIter);
+
+      //First wing value has already been set: goto 2nd
+      Size start;
+      Size nbToSet = count;
+      while( (splitBits & (1<<start)) == 0 ) {
+        ++start;
+        --nbToSet;
+      }
+
+      if( (splitBits & (1<<count)) == 0 ) {
+        //Wing wraps: goto next (1st wrapping portion will be set later)
+        nbToSet = count;
+        while( (splitBits & (1<<start)) == 0 ) {
+          ++start;
+          --nbToSet;
+        }
+      }
+      Vec3 sum;
+      Size curr = start;
+      Boolean first = true;
+      for( Size j = 0; j < nbToSet; ++j ) {
+        sum += polyNormals[this.topology.getPointIterPolygon(pointIter, curr)];
+        ++curr;
+        if( (splitBits & (1<<curr)) ) {
+          //wing end
+          if(!first)//optimize for faceted polys, important since single threaded here.
+            sum = sum.unit_safe();
+          Size normCurr = start;
+          while( normCurr != curr ) {
+            if( normCurr == count )
+              normCurr = 0;
+            this.setPointAttribute( i, normCurr, normals, sum );
+            pointIter = this.topology.getPointIter(i);//Refresh iterator
+            ++normCurr;
+          }
+          sum.set(0,0,0);
+          start = curr;
+          first = true;
+        } else
+          first = false;
+
+        if( curr == count )
+          curr = 0;
+      }
+    }
+  }
+  if( this.positionsAttribute_d )
+    this.normals_lastPositionsVersion = this.positionsAttribute_d.getVersion();
+  else
+    this.normals_lastPositionsVersion = this.positionsAttribute.getVersion();
+  this.normals_lastHardAngle = hardAngleRadians;
+}
+
+/// Same as :kl-ref:`PolygonMesh.recomputePointNormals`, but will do nothing if point positions' version didn't change since last call (see :ref:`attributeversioning`).
+/// \category normals
+/// \versionadded 1.13.0
+inline PolygonMesh.recomputePointNormalsIfRequired!( Scalar hardAngleRadians ) {
+  //TODO: should check normals version too, in case was changed manually?
+  UInt32 positionsVersion = this.positionsAttribute_d ? this.positionsAttribute_d.getVersion() : this.positionsAttribute.getVersion();
+  if( positionsVersion == this.normals_lastPositionsVersion && this.normals_lastHardAngle == hardAngleRadians )
+      return;
+  this.recomputePointNormals( hardAngleRadians );
+}
+
+/// \internal
+struct PolygonMeshTopology_computeTangentsTopologyWorkingData {
+  // compute the offset for each polygon
+  UInt32 polyOffsets[];
+  UInt32 polyOffsetsEnd;
+};
+
+/// \internal
+operator polygonMesh_recomputeTangents_countPolygonsTask<<<index>>>(
+  PolygonMeshTopology meshTopology,
+  Size nbPolys,
+  io UInt32 polyOffsets[],
+  io UInt32 polyOffsetsEnd
+) {
+  Size polyOffset = 0;
+  for(Size i=0;i<nbPolys;i++) {
+    polyOffsets[i] = polyOffset;
+    polyOffset += meshTopology.getPolygonSize( i );
+  }
+  polyOffsets[nbPolys] = polyOffset;
+  polyOffsetsEnd = polyOffset;
+}
+
+/// \internal
+function PolygonMeshTopology_computeTangentsTopologyWorkingData( PolygonMesh mesh ) {
+  
+  UInt32 nbPolys = mesh.polygonCount();
+
+  // compute the offset for each polygon, +1 for last polygon count
+  this.polyOffsets.resize(nbPolys+1);
+  Boolean useGPU = mesh.getMemType() != 0;
+  if( useGPU != 0 )
+    this.polyOffsets.convertToGPU();
+  polygonMesh_recomputeTangents_countPolygonsTask<<<1@useGPU>>>( mesh.topology, nbPolys, this.polyOffsets, this.polyOffsetsEnd );
+}
+
+/// \internal
+/// the object we can store in the meta data.
+object PolygonMeshTopology_computeTangentsTopologyWorkingData_Object {
+  PolygonMeshTopology_computeTangentsTopologyWorkingData data;
+  UInt32 structureVersion;
+};
+
+function PolygonMeshTopology_computeTangentsTopologyWorkingData_Object( PolygonMesh mesh ){
+  this.data = PolygonMeshTopology_computeTangentsTopologyWorkingData(mesh);
+  this.structureVersion = mesh.structureVersion;
+}
+
+/// \internal
+struct PolygonMeshTopology_tanST {
+  Vec3 tanS;
+  Vec3 tanT;
+};
+
+/// \internal
+struct PolygonMeshTopology_computeTangentsWorkingData {
+  // compute the offset for each polygon
+  PolygonMeshTopology_tanST polyTan[];
+};
+
+/// \internal
+function PolygonMeshTopology_computeTangentsWorkingData( PolygonMesh mesh, PolygonMeshTopology_computeTangentsTopologyWorkingData computeTangentsTopologyWorkingData ) {
+  
+  UInt32 nbAttributes = mesh.getAttributes().size();
+
+  // allocate the data to store the binormals
+  this.polyTan.resize( computeTangentsTopologyWorkingData.polyOffsetsEnd );
+  
+  Boolean useGPU = mesh.getMemType() != 0;
+  if(useGPU)
+    this.polyTan.convertToGPU();
+}
+
+/// \internal
+/// the object we can store in the meta data.
+object PolygonMeshTopology_computeTangentsWorkingData_Object {
+  PolygonMeshTopology_computeTangentsWorkingData data;
+};
+
+/// \internal
+function PolygonMeshTopology_computeTangentsWorkingData_Object( PolygonMesh mesh, PolygonMeshTopology_computeTangentsTopologyWorkingData_Object computeTangentsTopologyWorkingData ){
+  this.data = PolygonMeshTopology_computeTangentsWorkingData(mesh, computeTangentsTopologyWorkingData.data);
+}
+
+/// \internal
+operator polygonMesh_recomputeTangents_ComputeBiNormTask<<<index>>>(
+  PolygonMeshTopology meshTopology,
+  UInt32 polyOffsets[],
+  io PolygonMeshTopology_tanST polyTan[],
+  Vec3 pos[],
+  Vec2 uvs[]
+) {
+  UInt32 polyIter = meshTopology.getPolygonIter( index );
+  UInt32 offset = polyOffsets[index];
+  UInt32 count = polyOffsets[index + 1] - offset;
+  
+  Integer i0, i1, i2;
+  i0 = meshTopology.getPolyIterAttributeIndex( polyIter, 0 );
+  i1 = meshTopology.getPolyIterAttributeIndex( polyIter, 1 );
+  
+  Vec3 p0 = pos[ i0 ];
+  Vec3 p1 = pos[ i1 ];
+  
+  Vec2 t0 = uvs[ i0 ];
+  Vec2 t1 = uvs[ i1 ];
+
+  Vec3 pe10 = p1 - p0;
+  Vec2 te10 = t1 - t0;
+  for( Size i = 2; i < count; ++i ) {
+    i2 = meshTopology.getPolyIterAttributeIndex( polyIter, i );
+    Vec3 p2 = pos[ i2 ];
+    Vec2 t2 = uvs[ i2 ];
+    
+    Vec3 pe20 = p2 - p0;
+    Vec2 te20 = t2 - t0;
+    
+    Scalar r = 1.0 / te10.cross(te20);
+    
+    Vec3 sdir((te20.y * pe10.x - te10.y * pe20.x) * r, (te20.y * pe10.y - te10.y * pe20.y) * r, (te20.y * pe10.z - te10.y * pe20.z) * r);
+    polyTan[offset + i - 2].tanS += sdir;
+    polyTan[offset + i - 1].tanS += sdir;
+    polyTan[offset + i].tanS += sdir;
+    
+    Vec3 tdir((te10.x * pe20.x - te20.x * pe10.x) * r, (te10.x * pe20.y - te20.x * pe10.y) * r, (te10.x * pe20.z - te20.x * pe10.z) * r);
+    polyTan[offset + i - 2].tanT += tdir;
+    polyTan[offset + i - 1].tanT += tdir;
+    polyTan[offset + i].tanT += tdir;
+
+    pe10 = pe20;
+    te10 = te20;
+  }
+}
+
+/// \internal
+operator polygonMesh_recomputeTangents_computeVertexTanTask<<<index>>>(
+  PolygonMeshTopology meshTopology,
+  UInt32 polyOffsets[],
+  io PolygonMeshTopology_tanST polyTan[],
+  Vec3 nrmAttr[],
+  Vec2 uvs[],
+  io Vec4 result[]
+) {
+  Vec3 n = nrmAttr[index];
+  Vec2 uv = uvs[index];
+
+  // Compute the tangent for this attribute.
+  // Accumulate tangents from all polygon offsets around this point that have attribute "index"
+  Size pointIndex = meshTopology.getPointFromAttributeIndex( index );
+  UInt32 pointIter = meshTopology.getPointIter( pointIndex );
+  Vec3 s, t;
+
+  UInt32 polyCount = meshTopology.getPointIterPolygonCount( pointIter );
+  for( Size i = 0; i < polyCount; ++i ) {
+    UInt32 attrIndex = meshTopology.getPointIterAttributeIndex( pointIter, i );
+
+    // Only keep if it's the same normal and UV (no disc).
+    // Note that we can't simply check the attribute index since discontinuities
+    // could come from other attributes such as colors
+    if( n == nrmAttr[attrIndex] && uv == uvs[attrIndex] ) {
+      // Same attribute; no discontinuity with this point.
+      IterOff iterOff = meshTopology.getPointIterPolyIterOff( pointIter, i );
+      UInt32 polygonIndex = meshTopology.getPolyIterIndex( iterOff.index );
+      UInt32 polygonDataOffset = polyOffsets[polygonIndex] + iterOff.offset;
+      s += polyTan[polygonDataOffset].tanS;
+      t += polyTan[polygonDataOffset].tanT;
+    }
+  }
+
+  //Vec3 s = tan[index].tanS;
+  Vec3 tangent;
+  Boolean handedness;
+
+  tangent = (s - n * n.dot(s));
+  Scalar lengthSquared = tangent.lengthSquared();
+  if(lengthSquared > DIVIDEPRECISION) //To check: we are getting many zero-length tangents...
+    tangent /= sqrt(lengthSquared);
+  handedness = (t.dot(n.cross(s)) < 0.0);
+
+  result[index].set(tangent.x, tangent.y, tangent.z, (handedness ? - 1.0 : 1.0));
+}
+
+/// \internal
+function PolygonMeshTopology.recomputeTangents(
+  Vec3 positions[],
+  Vec3 normals[],
+  Vec2 uvs[],
+  io Vec4 tangents[],
+  PolygonMeshTopology_computeTangentsTopologyWorkingData computeTangentsTopologyWorkingData,
+  io PolygonMeshTopology_computeTangentsWorkingData computeTangentsWorkingData,
+  Boolean useGPU
+  ) {
+  UInt32 nbPolys = this.polygonCount();
+
+  // Iterate over the polygons and generate vertex tangent values
+  polygonMesh_recomputeTangents_ComputeBiNormTask<<<nbPolys@useGPU>>>(
+    this,
+    computeTangentsTopologyWorkingData.polyOffsets,
+    computeTangentsWorkingData.polyTan,
+    positions,
+    uvs
+  );
+
+  UInt32 nbAttributes = positions.size();
+
+  // Iterate over the attributes (points) and generate vertex tangent values
+  polygonMesh_recomputeTangents_computeVertexTanTask<<<nbAttributes@useGPU>>>(
+    this,
+    computeTangentsTopologyWorkingData.polyOffsets,
+    computeTangentsWorkingData.polyTan,
+    normals,
+    uvs,
+    tangents
+  );
+}
+
+/// \internal
+function PolygonMesh.recomputeTangents!( Boolean onlyIfVersionsChanged ) {
+
+  Ref<Vec3Attribute> normals = this.getNormals();
+  if( !normals ){
+    this.recomputePointNormals();
+    normals = this.getNormals();
+  }
+  Ref<Vec2Attribute> uvs = this.getAttribute( "uvs0" );
+  if( !uvs ) // We often need to compute tangents on a geometry library, where some geometries will not have UVs. This warning can be disabled. 
+    return;
+
+  if( onlyIfVersionsChanged && uvs.getVersion() == this.tangents_lastUvsVersion && normals.getVersion() == this.tangents_lastNormalsVersion )
+    return; //Trust attribute versioning
+
+  Ref<Vec3Attribute> positions = this.getAttributes().getPositions();
+  if(positions.size() == 0)
+    return;
+
+  Ref<Vec4Attribute> tangents = this.getOrCreateVec4Attribute("tangents");
+
+  Boolean useGPU = this.memType != Fabric_MemType_CPU;
+  if(useGPU){
+    if(uvs.getElementsMemType() == Fabric_MemType_CPU)
+      uvs.convertToGPU();
+    if(positions.getElementsMemType() == Fabric_MemType_CPU)
+      positions.convertToGPU();
+    if(normals.getElementsMemType() == Fabric_MemType_CPU)
+      normals.convertToGPU();
+    if(tangents.getElementsMemType() == Fabric_MemType_CPU)
+      tangents.convertToGPU();
+  }
+
+  // Here we generate and cache working data used in tengent computation.
+  // this avoids costly allocations every time tangents are computed.
+  // Caching the eorking data also means that when recomputing tangents on the GPU
+  // the data deosn't need to be allocated on the CPU stack and re-uploaded to the GPU each evaluation.
+  AutoLock AL(this.metaData.simpleLock);
+  PolygonMeshTopology_computeTangentsTopologyWorkingData_Object computeTangentsTopologyWorkingData = this.metaData.lockedGet("computeTangentsTopologyWorkingData");
+  PolygonMeshTopology_computeTangentsWorkingData_Object computeTangentsWorkingData = this.metaData.lockedGet("computeTangentsWorkingData");
+  if( computeTangentsTopologyWorkingData == null || computeTangentsTopologyWorkingData.structureVersion != this.structureVersion ) {
+    computeTangentsTopologyWorkingData = PolygonMeshTopology_computeTangentsTopologyWorkingData_Object(this);
+    this.metaData.lockedSet("computeTangentsTopologyWorkingData", computeTangentsTopologyWorkingData);
+
+    computeTangentsWorkingData = PolygonMeshTopology_computeTangentsWorkingData_Object(this, computeTangentsTopologyWorkingData);
+    this.metaData.lockedSet("computeTangentsWorkingData", computeTangentsWorkingData);
+  }
+
+  this.topology.recomputeTangents(positions.values, normals.values, uvs.values, tangents.values, computeTangentsTopologyWorkingData.data, computeTangentsWorkingData.data, useGPU);
+
+  //Set all tangents as initialized
+  this.attrInitializedBits[tangents.getContainerIndex( this.attributes )].vertexAttrInitialized.setAll();
+
+  this.tangents_lastNormalsVersion = normals.getVersion();
+  this.tangents_lastUvsVersion = uvs.getVersion();
+  tangents.incrementVersion();
+}
+
+/// Computes tangents for shading, based on normals and uvs attributes.
+/// \category tangents
+function PolygonMesh.recomputeTangents!() {
+  this.recomputeTangents( false );
+}
+
+/// Computes tangents for shading, based on normals and uvs attributes.
+/// Will recompute only if attribute version of normals or uvs has changed (see :ref:`attributeversioning`).
+/// \category tangents
+/// \versionadded 1.13.0
+function PolygonMesh.recomputeTangentsIfRequired!() {
+  this.recomputeTangents( true );
+}
+
+
+/**
+  Generates a packed list of triangle attributeIndex triplets, for rendering directly into the GeometryAttributes buffers (eg: OpenGL).
+  An **attributeIndex is not a point index**, and this is true as soon there is at least one attribute value split for any attribute.
+
+  The generated list has the following layout, where polygon triangles form index triplets:
+\rst
+
+::
+
+  [
+    Polygon0_Triangle0_attributeIndex0, Polygon0_Triangle0_attributeIndex1, Polygon0_Triangle0_attributeIndex2, 
+    Polygon0_Triangle1_attributeIndex0, Polygon0_Triangle1_attributeIndex1, Polygon0_Triangle1_attributeIndex2,
+    Polygon1_Triangle0_attributeIndex0, Polygon0_Triangle0_attributeIndex1, Polygon0_Triangle0_attributeIndex2...
+  ]
+
+\endrst
+  See :ref:`polygonmeshattributes` for detailed information about attribute indices.
+  \note A current limitation is that all polygons will be triangulated as a simple triangle fan, where `triangles' polygonPointIndex = [0, 1, 2], [ 0, 2, 3], ..., [0, N-2, N-1]`
+  \seealso PolygonMesh.generateTriangleList
+  \category triangles
+*/
+function UInt32[] PolygonMesh.generateAttributesTriangleList?() {
+  UInt32 triangles[];
+  UInt32 polygonCount = this.topology.polygonCount();
+  triangles.resize(this.triangleCount()*3);
+  Size index;
+
+  // If the topolgy has been moved to the GPU, then temporarily move it back
+  // so we can generate a triangles list from it. 
+  // Note: this will be expensive if topology changes frequently, while also being
+  // used in GPU compute. 
+  UInt32 memType = this.memType;
+  if(memType != Fabric_MemType_CPU)
+    this.topology.convertToCPU();
+
+  //TODO: Use proper triangulation algo for concave polygons (and use MR since it will be more costly)
+  //      Until then we don't use the positions
+  for( UInt32 i = 0; i < polygonCount; ++i ) {
+    DataIter polyIter = this.topology.getPolygonIter( i );
+    UInt32 count = this.topology.getPolyIterSize( polyIter );
+    if( count >= 3 ) {
+      UInt32 start = this.topology.getPolyIterAttributeIndex( polyIter, 0 );
+      UInt32 prev = this.topology.getPolyIterAttributeIndex( polyIter, 1 );
+      for( UInt32 j = 2; j < count; ++j ) {
+        UInt32 next = this.topology.getPolyIterAttributeIndex( polyIter, j );
+        triangles[index++] = start;
+        triangles[index++] = prev;
+        triangles[index++] = next;
+        prev = next;
+      }
+    }
+  }
+  if(memType != Fabric_MemType_CPU)
+    this.topology.convertToGPU();
+  return triangles;
+}
+
+/// Returns the total number of triangles in this mesh (a polygon of size N generates N-2 triangles).
+/// \note This call uses cached values and doesn't require to traverse all polygons
+/// \seealso PolygonMesh.generateTriangleList, PolygonMesh.generateAttributesTriangleList
+/// \category triangles
+function Size PolygonMesh.triangleCount() {
+  return this.totalPolygonPoints - this.polygonCount()*2;
+}
+
+/**
+  Generates a packed list of triangle point triplets.
+  
+  The generated list has the following layout, where polygon triangles form index triplets:
+\rst
+
+::
+
+  [
+    Polygon0_Triangle0_point0, Polygon0_Triangle0_point1, Polygon0_Triangle0_point2, 
+    Polygon0_Triangle1_point0, Polygon0_Triangle1_point1, Polygon0_Triangle1_point2,
+    Polygon1_Triangle0_point0, Polygon0_Triangle0_point1, Polygon0_Triangle0_point2...
+  ]
+
+\endrst
+  \note point indices are not the same as attribute indices; see :ref:`polygonmeshattributes` for more details.
+  \note A current limitation is that all polygons will be triangulated as a simple triangle fan, where `triangles' polygonPointIndex = [0, 1, 2], [ 0, 2, 3], ..., [0, N-2, N-1]`
+  \seealso PolygonMesh.generateAttributesTriangleList
+  \category triangles
+*/
+function UInt32[] PolygonMesh.generateTriangleList?() {
+  UInt32 triangles[];
+  UInt32 polygonCount = this.polygonCount();
+  triangles.resize(this.triangleCount()*3);
+  Size index;
+
+  //TODO: Use proper triangulation algo for concave polygons (and use MR since it will be more costly)
+  //      Until then we don't use the positions
+  for( UInt32 i = 0; i < polygonCount; ++i ) {
+    DataIter polyIter = this.topology.getPolygonIter( i );
+    UInt32 count = this.topology.getPolyIterSize( polyIter );
+    if( count >= 3 ) {
+      UInt32 start = this.topology.getPolyIterPoint( polyIter, 0 );
+      UInt32 prev = this.topology.getPolyIterPoint( polyIter, 1 );
+      for( UInt32 j = 2; j < count; ++j ) {
+        UInt32 next = this.topology.getPolyIterPoint( polyIter, j );
+        triangles[index++] = start;
+        triangles[index++] = prev;
+        triangles[index++] = next;
+        prev = next;
+      }
+    }
+  }
+  return triangles;
+}
+
+/// \internal Implementation of StatisticSource interface's 'getStatistics()'.
+function StatisticRecord[] PolygonMesh.getStatistics() {
+  StatisticRecord stats[] = this.parent.getStatistics();
+  stats.push( StatisticRecord( "Polygons", this.polygonCount() ) );
+  stats.push( StatisticRecord( Statistic_MemoryUsage, this.memUsage() ) );
+  return stats;
+}
+
+/**
+  Returns a description of the mesh, which includes:
+
+  \rst
+- for each point
+
+  - number of connected polygons (:kl-ref:`PolygonMesh.getPointPolygonCount`)
+
+  - if `withAttributes`, attribute values for attributes that are not split for this point (shared)
+
+  - for each `neighborPolygonIndex`:
+
+    - The associated pair of [polygon, polygonPointIndex] (see :ref:`polygonmeshcomponents`)
+
+    - if `withAttributes`, attribute value and `attributeIndex` for attributes that are split for this point (unshared)
+
+    - A **|** if the polygon is preceded by a border (see :ref:`borderAndWings`)
+
+    - A **<<** if the polygon is the first of a closed wing (see :ref:`borderAndWings`)
+
+- for each polygon
+
+  - number of points (:kl-ref:`PolygonMesh.getPolygonSize`)
+
+  - for each `polygonPointIndex`:
+
+    - The associated pair of [point, neighborPolygonIndex] (see :ref:`polygonmeshcomponents`)
+
+    - A **|** if the edge formed by that `polygonPointIndex` and :kl-ref:`PolygonMesh.nextPolygonPointIndex` `(polygonPointIndex)` is a border
+\endrst
+
+  \example
+    //Add a 2X2 grid if size 2.0
+    PolygonMesh p();
+    p.addPlane(Xfo(), 2.0, 2.0, 2, 2);
+    report( p.getDesc(false) );
+  \endexample
+
+  \note Must be called outside of :kl-ref:`PolygonMesh.beginStructureChanges` / :kl-ref:`PolygonMesh.endStructureChanges` brackets.
+  \param withAttributes Include the attribute values in the description. If a value is split (unshared), each `neighborPolygonIndex` will print its value and `attributeIndex`. See :ref:`polygonmeshattributes` for more details about attribute indices.
+  \param useUnitTestPrint use the unitTestPrint method to ensure that the values are consistent accross platforms (used in unit testing).
+  \category debugging
+*/
+function String PolygonMesh.getDesc?( Boolean withAttributes, Boolean useUnitTestPrint ) {
+  String desc;
+  desc += "Mesh: pointCount: " + this.pointCount() + " polygonCount: " + this.polygonCount() + " nbAttributeVectors: " + this.attributes.size() + '\n';
+  desc +=   "  Points (adjacent polygons as 'polygon.neighborPolygonIndex', \n";
+  desc +=   "          borders as '|', closed wing starts as '<<'"
+          + (withAttributes ? ",\n          unshared attribute as value@attributeIndex " : "") + "):\n";
+  UInt32 i, j, k;
+  for( i = 0; i < this.pointCount(); ++i ) {
+    String str;
+    if( this.isPointDeleted(i) )
+      str = "    " + i + ": (deleted)";
+    else {
+      UInt32 count = this.getPointPolygonCount(i);
+      str = "    " + i + ": "+count+" polygons: ";
+      for( j = 0; j < count; ++j ) {
+        if( j != 0 )
+          str += ", ";
+
+        Boolean border, closedWingStart;
+        this.getPointBorderInfo( i, j, border, closedWingStart );
+        if( border )
+          str+=" |";
+        if( closedWingStart )
+          str+=" <<";
+
+        UInt32 poly, offset;
+        this.getPointPolygonAndIndex( i, j, poly, offset);
+        str += poly + "." + offset;
+      }
+      desc += str + '\n';
+      if( withAttributes ) {
+        //Check "uninitialized" bit?
+        for( j = 0; j < this.attributes.attributes.size(); ++j ) {
+          Ref<GeometryAttribute> attr = this.attributes.attributes[j];
+          if( attr ) {
+            Boolean shared = this.isPointAttributeUniform( i, attr );
+            str = "      Attr " + attr.getName() + ":";
+            if( !shared ) {
+              for( k = 0; k < count; ++k ) {
+                UInt32 attrIndex = this.getPointAttributeIndex( i, k );
+                if(useUnitTestPrint)
+                  str += attr.unitTestPrint( attrIndex );
+                else
+                  str += attr.valueDesc( attrIndex );
+                str+="@"+attrIndex+" ";
+              }
+            } else {
+              UInt32 attrIndex = this.getPointAttributeIndex( i );
+              if(useUnitTestPrint)
+                str += attr.unitTestPrint( attrIndex );
+              else
+                str += attr.valueDesc( attrIndex );
+            }
+            desc += str + '\n';
+          }
+        }
+      }
+    }
+  }
+  desc += "  Polygons (connected points as 'point.polygonPointIndex', borders as '|'):\n";
+  for( i = 0; i < this.polygonCount(); ++i ) {
+    String str;
+    if( this.isPolygonDeleted(i) )
+      str = "    " + i + ": (deleted)";
+    else {
+      UInt32 count = this.getPolygonSize(i);
+      str = "    " + i + ": "+count+" points: ";
+      for( j = 0; j < count; ++j ) {
+        if( j != 0 )
+          str += ", ";
+        UInt32 point, offset;
+        this.getPolygonPointAndNeighborIndex( i, j, point, offset);
+        str += point + "." + offset;
+
+        if( this.isPolygonBorder( i, j ) )
+          str += " |";
+      }
+    }
+    desc += str + '\n';
+  }
+  return desc;
+}
+
+/// Returns a description of the mesh/
+/// \param withAttributes Prints all attribute values
+/// See `PolygonMesh.getDesc?( Boolean, Boolean )` for more details.
+/// \category debugging
+function String PolygonMesh.getDesc?( Boolean withAttributes ) {
+  return this.getDesc(withAttributes, false);
+}
+
+/// Validates the mesh structure, and reports structural errors. Reported errors might indicate a bug in some of the mesh methods, or data corruption.
+/// \category debugging
+/// \dfgPresetOmit
+function PolygonMesh._validate!() {
+  Size totalPolygonPoints;
+  for(Size i = 0; i < this.polygonCount(); ++i) {
+    if( this.isPolygonDeleted(i) )
+      continue;
+    totalPolygonPoints += this.getPolygonSize(i);
+    for(Size j = 0; j < this.getPolygonSize(i); ++j) {
+      UInt32 point, ptOffset;
+      this.topology.getPolygonPointAndNeighborIndex(i,j,point,ptOffset);
+      UInt32 poly, polOffset;
+      this.topology.getPointPolygonAndIndex_noCheck(point,ptOffset,poly,polOffset);
+      if( poly != i || polOffset != j )
+        throw("PolygonMesh.validate: corrupt structure: polygon ["+i+","+j+"] has point ["+point+","+ptOffset+"] but point has polygon ["+poly+","+polOffset+"]");
+    }
+  }
+  if( totalPolygonPoints != this.totalPolygonPoints )
+    throw("PolygonMesh.validate: totalPolygonPoints doesn't match actual total polygon points count");
+  BitVector usedUnsharedAttributes;
+  Size attrCount = this.attributes.size();
+  usedUnsharedAttributes.resize(attrCount);
+
+  for(Size i = 0; i < this.pointCount(); ++i) {
+    if( this.isPointDeleted(i) )
+      continue;
+    for(Size j = 0; j < this.getPointPolygonCount(i); ++j) {
+      UInt32 poly, polOffset;
+      this.topology.getPointPolygonAndIndex_noCheck(i,j,poly,polOffset);
+      UInt32 point, ptOffset;
+      this.topology.getPolygonPointAndNeighborIndex(poly,polOffset,point,ptOffset);
+      if( point != i || ptOffset != j )
+        throw("PolygonMesh.validate: corrupt structure: point ["+i+","+j+"] has polygon ["+poly+","+polOffset+"] but polygon has point ["+point+','+ptOffset+"]");
+
+      UInt32 attrIndex = this.getPointAttributeIndex( i, j );
+      if( attrIndex >= this.pointCount() ) {
+        if( attrIndex >= attrCount )
+          throw("PolygonMesh.validate: point "+i+" has out of range attribute index: "+attrIndex);
+        usedUnsharedAttributes.set(attrIndex);
+        UInt32 backPointIndex = this.topology.unsharedAttrToPointSlidingArray[this.topology.unsharedAttrToPointSlidingArrayBegin + attrIndex - this.pointCount()];
+        if( backPointIndex != i )
+          throw("PolygonMesh.validate: corrupt unshared attribute indices");
+      } else if( attrIndex != i )
+        throw("PolygonMesh.validate: point "+i+" has an attribute index from another point: "+attrIndex);
+    }
+    //Validate that extended data is ok
+    DataIter pointIter = this.topology.getPointIter(i);
+    Boolean extendedBit;
+    Size count = this.topology.pointData.arrayDataIterSizeAndBit(pointIter, extendedBit);
+    if( extendedBit ) {
+      DataIter extendedDataIter = this.topology.pointData.getArrayExtraUInt32Iter(pointIter, count, 0);
+      UInt32 extendedData = this.topology.pointData.data.data[extendedDataIter];
+      if( (extendedData & (PolygonMesh_borderDataBit|PolygonMesh_unsharedAttributesBit)) == 0 )
+        throw("PolygonMesh.validate: point "+i+": inconsistant extended bits");
+    }
+  }
+  for(Size i = this.pointCount(); i < attrCount; ++i) {
+    if( !usedUnsharedAttributes.get(i) )
+      throw("PolygonMesh.validate: unused unshared attribute index: "+i);
+  }
+}

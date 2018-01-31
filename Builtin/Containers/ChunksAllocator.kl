@@ -1,0 +1,265 @@
+/*
+ *  Copyright 2010-2015 Fabric Software Inc. All rights reserved.
+ */
+
+require Util, FabricSynchronization;
+
+/// Allocated index from a ChunkAllocatorBase allocator.
+struct ChA_ID {
+  UInt32 chunkAndIndex;
+};
+
+/// \internal
+inline ChA_ID() {
+  this.chunkAndIndex = InvalidIndex;
+}
+
+inline Boolean ChA_ID.isValid() {
+  return this.chunkAndIndex != InvalidIndex;
+}
+
+inline Boolean == (ChA_ID a, ChA_ID b) {
+  return a.chunkAndIndex == b.chunkAndIndex;
+}
+
+inline Boolean != (ChA_ID a, ChA_ID b) {
+  return a.chunkAndIndex != b.chunkAndIndex;
+}
+
+inline UInt8 ChA_ID.chunk() {
+  return UInt8(this.chunkAndIndex >> 27);
+}
+
+inline UInt32 ChA_ID.index() {
+  return this.chunkAndIndex & 0x07FFFFFF;
+}
+
+/// \internal
+inline ChA_ID( UInt8 chunk, UInt32 index ) {
+  this.chunkAndIndex = (UInt32(chunk) << 27) | index;
+}
+
+/// \internal
+private inline ChA_ID.set!( UInt32 chunk, UInt32 index ) {
+  this.chunkAndIndex = (chunk << 27) | index;
+}
+
+/// \internal
+inline UInt32 ChA_getChunkSize( UInt8 chunk ) {
+  return chunk < 21 ? (1 << (UInt32(chunk)+6)) : 0x08000000;
+}
+
+/// \internal
+inline UInt32 ChA_getChunkFirstAbsIndex( UInt32 chunk ) {
+  return (chunk < 21) ? (((1 << chunk) - 1) << 6) : (0x07FFFFC0 | ((chunk-21) << 27));
+}
+
+/// \internal
+const UInt8 ByteToHighestBitTable[] = [
+  0,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,
+  4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,
+  5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,
+  5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,
+  6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
+  6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
+  6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
+  6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
+  7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+  7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+  7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+  7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+  7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+  7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+  7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+  7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7];
+
+// From a ChA_ID, returns a UInt32 absolute index, which will be in the range
+// [0..ChunkAllocatorBase.totalAllocated()]. This can be useful to map the
+// index to a contiguous storage table.
+inline UInt32 ChA_ID.toAbsoluteIndex() {
+  if( this.chunkAndIndex == InvalidIndex )
+    return InvalidIndex;
+  UInt32 chunk = this.chunk();
+  UInt32 index = this.index();
+  return ChA_getChunkFirstAbsIndex(chunk) + index;
+}
+
+inline ChA_ID ChA_ID.nextID() {
+  if( this.chunkAndIndex == InvalidIndex )
+    return ChA_ID();
+  UInt8 chunk = this.chunk();
+  UInt32 index = this.index()+1;
+  if( index == ChA_getChunkSize( chunk ) ) {
+    index = 0;
+    ++chunk;
+  }
+  return ChA_ID( chunk, index );
+}
+
+// From an absolute index returned by ChA_ID.toAbsoluteIndex(),
+// converts to the corresponding ChA_ID.
+inline ChA_ID.fromAbsoluteIndex!( UInt32 absIndex ) {
+  if( absIndex < 0x07FFFFC0 ) {
+    UInt32 chunkBits = (absIndex >> 6) + 1;//Minimal chunk size is 64
+    UInt32 chunk;
+    if( chunkBits & 0xFF0000 ) {
+      chunk = ByteToHighestBitTable[UInt8( chunkBits >> 16 )] | 0x10;
+    } else if( chunkBits & 0xFF00 ) {
+      chunk = ByteToHighestBitTable[UInt8( chunkBits >> 8 )] | 0x8;
+    } else
+      chunk = ByteToHighestBitTable[UInt8( chunkBits )];
+    UInt32 firstChunkIndex = (((1 << chunk) - 1) << 6);
+    UInt32 index = absIndex - firstChunkIndex;
+    this.set( chunk, index );
+  } else {
+    if( absIndex == InvalidIndex )
+      this.chunkAndIndex = InvalidIndex;
+    else {
+      UInt32 index = (absIndex - 0x07FFFFC0);
+      UInt32 chunk = (index >> 27) + 21;
+      this.set( chunk, index & 0x07FFFFFF );
+    }
+  }
+}
+
+/**
+  This is a low-level, base allocator class that doesn't contain the allocated values, but rather
+  manages the indices. It provides memory-stable storage: an allocated value won't move
+  in memory. Allocated values are identified with a ChA_ID structure, which can convert
+  relatively efficiently from and to an absolute UInt32 index.
+  
+  This allocator is intended to be used when many items are expected to be allocated,
+  as it takes some memory even when empty (about 400 bytes). Item IDs are encoded
+  as chunk/index pairs and take 32 bits (ChA_ID).
+
+  Allocated chunk sizes are 64, then 128, then 256, until 2^27 for the last 12 chunks.
+  The maximum number of stored entries is 1610612672.
+
+  Since there is no template in KL, to allocate values for a specific type, you need to 
+  copy the following and replace "MyType" with the type you want to allocate with:
+
+  .. code-block:: kl
+
+    struct MyTypeAllocator : ChunkAllocatorBase {
+      MyType[32][] values;//NOTE: important that this is exactly [32].
+    };
+
+    inline ChA_ID MyTypeAllocator.allocate!() {
+      Boolean resizeNewChunkThenCallPostChunkAllocate;
+      ChA_ID ID = this.allocate_internal( resizeNewChunkThenCallPostChunkAllocate );
+      if( resizeNewChunkThenCallPostChunkAllocate ) {
+        this.values[this.nextChunk].resize(this.nextChunkSize);
+        this.postChunkAllocate();
+      }
+      return ID;
+    }
+
+  Then, use the following to allocate and access a value:
+
+  .. code-block:: kl
+    MyTypeAllocator alloc;
+    // allocate a value
+    ChA_ID id = alloc.allocate();
+
+    // use the allocated value:
+    alloc.values[id.chunk][id.index] = MyType();
+
+    // release the value
+    alloc.release( id );
+*/
+struct ChunkAllocatorBase {
+  private ChA_ID freeIds[];
+  private UInt32 lastFreeID;
+
+  UInt8 nextChunk;
+  UInt32 nextChunkSize;
+
+  private UInt32 nextChunkSubIndex;
+  private LightLock lock;
+
+  // Begin - uncomment to debug
+  // private BitVector debugAllocBits;
+  // End - uncomment to debug
+};
+
+// Begin - uncomment to debug
+//private ChunkAllocatorBase.debugCheckAllocated!( ChA_ID ID ) {
+//  UInt32 absIndex = ID.toAbsoluteIndex();
+//  if( absIndex >= this.debugAllocBits.size() )
+//    this.debugAllocBits.resize( absIndex+1 );
+//  if( this.debugAllocBits.get(absIndex) )
+//    report("Error: " + this.type() + " item + " + absIndex + " already allocated");
+//  this.debugAllocBits.set(absIndex);
+//}
+//
+//private ChunkAllocatorBase.debugCheckReleased!( ChA_ID ID ) {
+//  UInt32 absIndex = ID.toAbsoluteIndex();
+//  if( !this.debugAllocBits.get(absIndex) )
+//    report("Error: " + this.type() + " item + " + absIndex + " already released");
+//  this.debugAllocBits.clear(absIndex);
+//}
+// End - uncomment to debug
+
+ChA_ID ChunkAllocatorBase.allocate_internal!( io Boolean resizeNewChunkThenCallPostChunkAllocate ) {
+  this.lock.acquire();
+  if( this.lastFreeID ) {
+    --this.lastFreeID;
+    ChA_ID ID = this.freeIds[this.lastFreeID];
+    // Begin - uncomment to debug
+    //this.debugCheckAllocated(ID);
+    // End - uncomment to debug
+    this.lock.release();
+    return ID;
+  }
+  UInt32 chunkSubIndex = this.nextChunkSubIndex++;
+  if( chunkSubIndex != this.nextChunkSize ) {
+    ChA_ID ID( this.nextChunk, chunkSubIndex );
+    // Begin - uncomment to debug
+    //this.debugCheckAllocated(ID);
+    // End - uncomment to debug
+    this.lock.release();
+    return ID;
+  }
+  resizeNewChunkThenCallPostChunkAllocate = true;
+  if( this.nextChunkSize ) //Else: initial chunk (still to allocate)
+    ++this.nextChunk;
+  this.nextChunkSize = ChA_getChunkSize( this.nextChunk );
+  this.nextChunkSubIndex = 1;
+  ChA_ID ID( this.nextChunk, 0 );
+  // Begin - uncomment to debug
+  //this.debugCheckAllocated(ID);
+  // End - uncomment to debug
+  return ID;
+}
+
+inline ChunkAllocatorBase.postChunkAllocate!() {
+  this.lock.release();
+}
+
+inline UInt32 ChunkAllocatorBase.totalAllocated() {
+  return ChA_ID( this.nextChunk, this.nextChunkSubIndex ).toAbsoluteIndex();
+}
+
+inline UInt32 ChunkAllocatorBase.totalUsed() {
+  return this.totalAllocated() - this.lastFreeID;
+}
+
+inline Boolean ChunkAllocatorBase.isInRange( ChA_ID ID ) {
+  return ID.chunk() < this.nextChunk || ID.index() < this.nextChunkSubIndex;
+}
+
+ChunkAllocatorBase.release!( ChA_ID ID ) {
+  this.lock.acquire();
+
+  if( this.lastFreeID == this.freeIds.size() )
+    this.freeIds.push(ID);
+  else
+    this.freeIds[this.lastFreeID] = ID;
+  ++this.lastFreeID;
+
+  // Begin - uncomment to debug
+  //this.debugCheckReleased(ID);
+  // End - uncomment to debug
+
+  this.lock.release();
+}

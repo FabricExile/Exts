@@ -1,0 +1,108 @@
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+function UInt16[] BaseGeometry.getUInt16ConstantArrayAttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  io String type
+) {
+  type = "";
+  UInt16 value[];
+
+  if(!this.getAttributeValue_CheckIndex(mode, index))
+    return value;
+
+  UInt16ConstantArrayAttribute cast = attr;
+  if(cast == null)
+    return value;
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      type = "UInt16[]";
+      value.resize(cast.arraySize);
+      for(Size i=0;i<value.size();i++)
+        value[i] = cast.get(index, i);
+      break;
+    }
+    case 2: // per face corner
+    {
+      type = "UInt16[]";
+      Size size = mesh.getPolygonSize(index);
+      Size idx = mesh.getPolygonAttributeIndex(index, faceCorner % size);
+      value.resize(cast.arraySize);
+      for(Size i=0;i<value.size();i++)
+        value[i] = cast.get(idx, i);
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValue mode for UInt16ConstantArrayAttribute.");
+      return value;
+    }
+  }  
+
+  return value;
+}
+
+/// \internal
+function Float32[] BaseGeometry.getScalarConstantArrayAttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  io String type
+) {
+  type = "";
+  Float32 value[];
+
+  if(!this.getAttributeValue_CheckIndex(mode, index))
+    return value;
+
+  ScalarConstantArrayAttribute cast = attr;
+  if(cast == null)
+    return value;
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      type = "Float32[]";
+      value.resize(cast.arraySize);
+      for(Size i=0;i<value.size();i++)
+        value[i] = cast.get(index, i);
+      break;
+    }
+    case 2: // per face corner
+    {
+      type = "Float32[]";
+      Size size = mesh.getPolygonSize(index);
+      Size idx = mesh.getPolygonAttributeIndex(index, faceCorner % size);
+      value.resize(cast.arraySize);
+      for(Size i=0;i<value.size();i++)
+        value[i] = cast.get(idx, i);
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValue mode for ScalarConstantArrayAttribute.");
+      return value;
+    }
+  }  
+
+  return value;
+}

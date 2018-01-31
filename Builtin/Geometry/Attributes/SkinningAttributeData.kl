@@ -1,0 +1,253 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Containers;
+
+/**
+  A simple struct that holds the data for the SkinningAttribute. This struct can be moved to the GPU 
+  wholesale, and its methods will also continue to work on the GPU.
+  This is a workaround until objects are supported on the GPU. Currently only structs are supported,
+  so we move the data and important functions to the struct, and add the struct to the object as a member.
+  \internal
+*/
+struct SkinningAttributeData : ArrayAttributeData {
+  UInt16 ids[];
+};
+
+function SkinningAttributeData() {
+  //Size of ids array should always be synchronized to allocator's size (which starts at 1)
+  this.ids.resize( this.dataAllocator.data.size() );
+}
+
+function SkinningAttributeData.copyFrom!( SkinningAttributeData other ) {
+  // Copy in place to avoid mallocs
+  this.parent.copyFrom( other );
+  other.ids.copyTo( this.ids );
+}
+
+/// \internal Internal method to defrag memory buffers
+function Boolean SkinningAttributeData._recompact!() {
+  UInt32 oldIndexToNewIndex[];
+  Boolean result = this._recompact( oldIndexToNewIndex );
+
+  if( result ) {
+    //Update the 'ids' data accordingly
+    //'recompact' does an 'in-order' shuffle so there is no overlap issue
+    //if processing from 0 and up
+    Size prevDataSize = oldIndexToNewIndex.size();
+    for( Size i = 0; i < prevDataSize; ++i )
+      this.ids[oldIndexToNewIndex[i]] = this.ids[i];
+    this.ids.resize( this.dataAllocator.data.size() );
+  }
+  return result;
+}
+
+/// \internal Will defrag memory buffers if more than 1/3 is free
+/// Note: _recompact() is not a virtual function, so we need to have our own copy here too
+inline Boolean SkinningAttributeData._recompactIfRequired!( ) {
+  //Allow 25% free data
+  if( this.dataAllocator.data.size() < this.dataAllocator.freeDataCount * 3 )
+    return this._recompact();
+  else
+    return false;
+}
+
+function SkinningAttributeData.resize!( Size count ) {
+  this._resizeNoRecompact( count );
+  this._recompactIfRequired();// We have our own specialized method
+}
+
+inline Size SkinningAttributeData.memUsage() {
+  return this.parent.memUsage() + this.ids.size()*2;
+}
+
+/// \dfgPresetOmit
+function  SkinningAttributeData.cloneMembersTo(io SkinningAttributeData that) {
+  this.parent.cloneMembersTo( that );
+  that.ids = this.ids.clone();
+}
+
+/// \internal Resizes the number of id-weight pairs and returns the offset of the resized item. If copyData, the previous data will be preserved.
+inline Size SkinningAttributeData._resizeItem!( Size index, UInt32 newCount, Boolean copyData ) {
+  UInt32 toCopyCount, copyFrom, copyTo;
+  Size offset = this._resizeItemNoRecompact( index, newCount, copyData, toCopyCount, copyFrom, copyTo );
+  this.ids.resize( this.dataAllocator.data.size() );
+
+  if( toCopyCount ) {
+    for( Size i = 0; i < toCopyCount; ++i )
+      this.ids[copyTo + i] = this.ids[copyFrom + i];
+  }
+
+  if( this._recompactIfRequired() )
+    offset = this.offsets[index];
+  return offset;
+}
+
+inline SkinningAttributeData.copyValue!( Size sourceIndex, Size targetIndex ) {
+  if( sourceIndex == targetIndex )
+    return;
+
+  UInt32 sOffset;
+  UInt32 sCount;
+  this._getOffsetAndCount( sourceIndex, sOffset, sCount );
+  UInt32 tOffset = this._resizeItem( targetIndex, sCount, false );
+  for( Size i = 0; i < sCount; ++i ) {
+    this.dataAllocator.data[tOffset + i] = this.dataAllocator.data[sOffset + i];
+    this.ids[tOffset + i] = this.ids[sOffset + i];
+  }
+}
+
+inline SkinningAttributeData.copyValue!( SkinningAttributeData source, Size sourceIndex, Size targetIndex ) {
+
+  UInt32 sOffset;
+  UInt32 sCount;
+  source._getOffsetAndCount( sourceIndex, sOffset, sCount );
+  UInt32 tOffset = this._resizeItem( targetIndex, sCount, false );
+  for( Size i = 0; i < sCount; ++i ) {
+    this.dataAllocator.data[tOffset + i] = source.dataAllocator.data[sOffset + i];
+    this.ids[tOffset + i] = source.ids[sOffset + i];
+  }
+}
+
+/// Sets the number of id-weight pairs for the item (resizes item)
+inline SkinningAttributeData.setPairCount!( UInt32 index, UInt32 pairCount ) {
+  this._resizeItem( index, pairCount, true );
+}
+
+
+/// Returns for item 'index', sets the id-weight values for pair 'offset'
+inline SkinningAttributeData.setPair!( UInt32 index, UInt32 offset, UInt16 id, Scalar weight ) {
+  UInt32 storageStart = this.offsets[index];
+  this.dataAllocator.data[storageStart + offset] = bitcastFloatToUInt( weight );
+  this.ids[storageStart + offset] = id;
+}
+
+/// Returns for item 'index', returns the id-weight values for pair 'offset'
+inline SkinningAttributeData.getPair( UInt32 index, UInt32 offset, out UInt16 id, out Scalar weight ) {
+  UInt32 storageStart = this.offsets[index];
+  weight = bitcastUIntToFloat( this.dataAllocator.data[storageStart + offset] );
+  id = this.ids[storageStart + offset];
+}
+
+/// For an item, returns ids and weights arrays (1 to 1 correspondence)
+inline SkinningAttributeData.getPairs( UInt32 index, out LocalL16UInt32Array skinIds, out LocalL16ScalarArray skinWeights ) {
+  UInt32 offset;
+  UInt32 count;
+  this._getOffsetAndCount( index, offset, count );
+  skinIds.resize( count );
+  skinWeights.resize( count );
+  for( Size i = 0; i < count; ++i ) {
+    skinWeights.set( i, bitcastUIntToFloat( this.dataAllocator.data[offset + i] ) );
+    skinIds.set( i, this.ids[offset + i] );
+  }
+}
+
+/// For an item, set ids and weights arrays (1 to 1 correspondence)
+inline SkinningAttributeData.setPairs!( UInt32 index, LocalL16UInt32Array skinIds, LocalL16ScalarArray skinWeights ) {
+  UInt32 count = skinIds.size();
+  UInt32 offset = this._resizeItem( index, count, false );
+  for( UInt32 i = 0; i < count; ++i ) {
+    this.dataAllocator.data[offset + i] = bitcastFloatToUInt( skinWeights.get( i ) );
+    this.ids[offset + i] = UInt16( skinIds.get( i ) );
+  }
+}
+
+/**
+Returns the ids and weights arrays (1 to 1 correspondence) resulting from the linear combination of source items (sourceWeights: factors per source, not the same as id-weight values)
+\param sourceIndices The array of source indices
+\param sourceWeights The array of source weights, which need to correspond to each sourceIndices. Normally the sum of the weights should be 1.0
+*/
+inline SkinningAttributeData.getLinearCombination( LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights, out LocalL16UInt32Array skinIds, out LocalL16ScalarArray skinWeights ) {
+  skinIds.resize( 0 );
+  skinWeights.resize( 0 );
+
+  for( Size i = 0; i < sourceIndices.size(); ++i ) {
+    UInt32 sOffset;
+    UInt32 sCount;
+    this._getOffsetAndCount( sourceIndices.get( i ), sOffset, sCount );
+
+    for( Size j = 0; j < sCount; ++j ) {
+      UInt16 id = this.ids[sOffset + j];
+      Scalar weight = bitcastUIntToFloat( this.dataAllocator.data[sOffset + j] );
+
+      Size k;
+      for( ; k < skinIds.size(); ++k ) {
+        if( skinIds.get( k ) == id ) {
+          skinWeights.set( k, skinWeights.get( k ) + weight );
+          break;
+        }
+      }
+      if( k == skinIds.size() ) {
+        skinIds.push( id );
+        skinWeights.push( weight );
+      }
+    }
+  }
+}
+
+//Sets the target item as the the linear combination of source attribute's items (sourceWeights: factors per source, not the same as id-weight values)
+inline SkinningAttributeData.linearCombine!( Ref<Object> sourceAttr, LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights, Size targetIndex ) {
+  LocalL16UInt32Array skinIds;
+  LocalL16ScalarArray skinWeights;
+  Ref<SkinningAttribute> source = sourceAttr;
+  source.getLinearCombination( sourceIndices, sourceWeights, skinIds, skinWeights );
+  this.setPairs( targetIndex, skinIds, skinWeights );
+}
+
+/// Normalizes the weights of the item so it sums to 1.0. If the sum is almost 0, will set equal weights.
+inline SkinningAttributeData.normalize!( Size index ) {
+  UInt32 offset;
+  UInt32 count;
+  this._getOffsetAndCount( index, offset, count );
+  Scalar sum;
+  for( Size i = 0; i < count; ++i )
+    sum += bitcastUIntToFloat( this.dataAllocator.data[offset + i] );
+
+  if( sum > DIVIDEPRECISION ) {
+    Scalar invSum = 1.0 / sum;
+    for( Size i = 0; i < count; ++i ) {
+      Scalar normalizedWeight = bitcastUIntToFloat( this.dataAllocator.data[offset + i] ) * invSum;
+      this.dataAllocator.data[offset + i] = bitcastFloatToUInt( normalizedWeight );
+    }
+  } else if( count ) {
+    //Just put equal weights; ensures sum is 1.0
+    Scalar weight = 1.0 / Scalar( count );
+    for( Size i = 0; i < count; ++i )
+      this.dataAllocator.data[offset + i] = bitcastFloatToUInt( weight );
+  }
+}
+
+
+/// Returns true if id-weight pair values are the same, considering it is an unordered set (it will return 'true' even if pair order differs, as long as values are the same).
+inline Boolean SkinningAttributeData.equalValues( Size index1, Size index2 ) {
+  UInt32 offset1, offset2;
+  UInt32 count1, count2;
+  this._getOffsetAndCount( index1, offset1, count1 );
+  this._getOffsetAndCount( index2, offset2, count2 );
+
+  if( count1 != count2 )
+    return false;
+
+  //We can't assume bone ids are in same order
+  for( UInt32 i = 0; i < count1; ++i ) {
+    //Search for same id
+    UInt16 id1 = this.ids[offset1 + i];
+    UInt32 subOffset2 = InvalidIndex;
+    if( this.ids[offset2 + i] == id1 )
+      subOffset2 = i;
+    else {
+      for( UInt32 j; j < count1; ++j ) {
+        if( this.ids[offset2 + j] == id1 ) {
+          subOffset2 = j;
+          break;
+        }
+      }
+      if( subOffset2 == InvalidIndex )
+        return false;
+    }
+    if( this.dataAllocator.data[offset1 + i] != this.dataAllocator.data[offset2 + subOffset2] )
+      return false;
+  }
+  return true;
+}

@@ -1,0 +1,627 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+/**
+  \versionadded 2.0.1
+
+  :kl-ref:`LegacyBaseHandlerDispatcher` manages a set of handler and dispatches events to the currently active handler. 
+  Handlers are registered in a LegacyHandlerDispatcher that manages their activation. 
+  The active handler receives events as they are propagated from the host application.
+  It provides a registration system to add/remove handlers.
+
+  \seealso :kl-ref:`LegacyEventHandler`, :kl-ref:`LegacyToolDispatcher`
+  
+  \dfgPresetOmit
+*/
+object LegacyBaseHandlerDispatcher : LegacyBaseHandler, LegacyHandlerDispatcher{
+  /// Dictionary of reference to all the registered handlers.
+  protected Ref<LegacyBaseHandler> handlers[String];
+  /// Dictionary of owned  handlers.
+  protected LegacyBaseHandler ownedHandlers[String];
+};
+ 
+/// Initializes a LegacyBaseHandlerDispatcher, independent and doesn't take all the events.
+/// \param enableKey Key that enables/disables the dispatcher.
+/// \param isOwnedByDispatcher If true, owned by the dispatcher when registered.
+protected LegacyBaseHandlerDispatcher.init!(Key enableKey, Boolean isOwnedByDispatcher) {
+  this.init(
+    enableKey,
+    LegacyHandlerDisableAll,
+    true,
+    false,
+    isOwnedByDispatcher);
+}
+
+/// Constructs a LegacyBaseHandlerDispatcher with LegacyHandlerDisableOther exclusivity and no key to activate.
+/// \param isOwnedByDispatcher If true, owned by the dispatcher when registered.
+LegacyBaseHandlerDispatcher(Boolean isOwnedByDispatcher) {
+  this.init(0, LegacyHandlerDisableNone, isOwnedByDispatcher);
+}
+
+/// Constructs a LegacyBaseHandlerDispatcher with LegacyHandlerDisableNone exclusivity.
+/// \param enableKey Key that enables/disables the dispatcher.
+/// \param isOwnedByDispatcher If true, owned by the dispatcher when registered.
+LegacyBaseHandlerDispatcher(Key enableKey, Boolean isOwnedByDispatcher) {
+  this.init(
+    enableKey, 
+    LegacyHandlerDisableNone,
+    isOwnedByDispatcher);
+}
+
+/// Destructor.
+~LegacyBaseHandlerDispatcher() {
+  for(name, handler_ in this.handlers)
+    this.unregisterHandler(name);
+}
+ 
+/// Gets the root dispatcher.
+private Ref<LegacyHandlerDispatcher> LegacyBaseHandlerDispatcher.getRootDispatcher() {
+  // To properly enable dispatchers, 
+  // the call has to be done from the root dispatcher.
+  // We recursively access to it.
+  Ref<LegacyBaseHandlerDispatcher> dispatcher = this;
+  Ref<LegacyHandlerDispatcher> rootDispatcher = null;
+  while(dispatcher)
+  {
+    dispatcher = dispatcher.getDispatcher();
+    if(dispatcher) 
+      rootDispatcher = dispatcher;
+  }
+  if(!rootDispatcher)
+    rootDispatcher = this;
+
+  return rootDispatcher;
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyBaseHandlerDispatcher.enable!() {
+  this.disable();
+
+  Ref<LegacyHandlerDispatcher> rootDispatcher = this.getRootDispatcher();
+  if(rootDispatcher)
+  {
+    Boolean isAccepted = false;
+    rootDispatcher.activateDispatcher(this.getEnableKey(), isAccepted);
+  }
+
+  if(!this.isEnabled())
+    this.parent.enable();
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyBaseHandlerDispatcher.disable!() {
+  this.parent.disable();
+  // Deactivate recursively all the children.
+  for(name, handler in this.handlers)
+    handler.disable();
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyHandlerDescription LegacyBaseHandlerDispatcher.getDescription() {
+  LegacyBaseHandlerDescription descIn = this.parent.getDescription();
+  LegacyDispatcherDescription desc(descIn);
+  for(name, handler in this.handlers)
+    desc.handlers.push(handler.getDescription());
+  return desc;
+}
+
+/// Checks if 
+private LegacyBaseHandlerDispatcher.checkHandlersEnableKeyAndName(
+  String name,
+  Key key, 
+  Boolean fromDispatcher, 
+  io Boolean hasKey,
+  io Boolean hasName) 
+{
+  hasKey = fromDispatcher && key == this.getEnableKey();
+  hasName = this.hasHandler(name);
+
+  if(hasKey || hasName)
+    return;
+
+  for(name_, handler in this.handlers)
+  {
+    Ref<LegacyBaseHandlerDispatcher> dispatcher = handler;
+    if(dispatcher) 
+      dispatcher.checkHandlersEnableKeyAndName(
+        name, 
+        key,
+        fromDispatcher, 
+        hasKey,
+        hasName);
+    else
+    {
+      if(handler.getExclusivity() == LegacyHandlerDisableAll)
+      {
+        hasKey = !fromDispatcher && key == handler.getEnableKey();
+        if(key)
+          break;
+      }
+    }
+  }
+}
+
+/// Implementation of :kl-ref:`HandlerDispatcher`.
+LegacyBaseHandlerDispatcher.registerHandler!(String name, io Ref<LegacyEventHandler> handler) {
+
+  Ref<LegacyBaseHandlerDispatcher> rootDispatcher = this.getRootDispatcher();
+  Boolean hasKey = false;
+  Boolean hasName = false;  
+  Boolean fromDispatcher = false;
+  if(rootDispatcher)
+  {
+    Ref<LegacyHandlerDispatcher> dispatcher = handler;
+    fromDispatcher = Boolean(dispatcher); 
+    rootDispatcher.checkHandlersEnableKeyAndName(
+      name, 
+      handler.getEnableKey(),
+      fromDispatcher,
+      hasKey,
+      hasName);
+  }
+
+  if(hasName)
+  {
+    if(fromDispatcher)
+      report("Can't register, a dispatcher named " + name + " already exists");
+    else
+      report("Can't register, a handler of type LegacyHandlerDisableAll and named " + name + " already exists");
+    return;
+  }
+
+  if(hasKey)
+  {
+    if(fromDispatcher)
+      report("Can't register, a dispatcher with enabled key " + handler.getEnableKey() + " already exists");
+    else
+      report("Can't register, a handler of type LegacyHandlerDisableAll with enabled key  " + handler.getEnableKey() + " already exists");
+    return;
+  }
+
+  if(handler.isOwnedByDispatcher())
+    this.ownedHandlers[name] = handler;
+
+  this.handlers[name] = handler;
+  handler.setDispatcher(this);
+}
+
+/// Implementation of :kl-ref:`LegacyHandlerDispatcher`.
+LegacyBaseHandlerDispatcher.registerHandler!(String name, io LegacyEventHandler handler) {
+  Ref<LegacyEventHandler> handlerRef = handler;
+  this.registerHandler(name, handlerRef);
+}
+
+/// Implementation of :kl-ref:`LegacyHandlerDispatcher`.
+LegacyBaseHandlerDispatcher.unregisterHandler!(String name) {
+  if(this.handlers.has(name)) 
+  {
+    Ref<LegacyBaseHandler> handler = this.handlers[name];
+    if(handler)
+    {
+      handler.disable();
+      if(handler.isOwnedByDispatcher()) 
+        this.ownedHandlers.delete(name);
+      this.handlers.delete(name); 
+    }
+  }
+}
+
+/// Implementation of :kl-ref:`LegacyHandlerDispatcher`.
+LegacyBaseHandlerDispatcher.unregisterHandler!(Ref<LegacyEventHandler> handler) {
+  for(name, handler_ in this.handlers)
+  {
+    if(handler_ === handler)
+    {
+      this.unregisterHandler(name);
+      break;
+    }
+  }
+}
+
+/// Implementation of :kl-ref:`LegacyHandlerDispatcher`.
+Boolean LegacyBaseHandlerDispatcher.hasHandler(String name) {
+  return this.handlers.has(name);
+}
+
+/// Implementation of :kl-ref:`LegacyHandlerDispatcher`.
+String LegacyBaseHandlerDispatcher.getHandlerName(Ref<LegacyEventHandler> handler) {
+  for(name, handler_ in this.handlers)
+  {
+    if (handler_ == handler)
+      return name;
+  }
+  return "";
+}
+ 
+/// Gets the handler registered under with the given name. 
+/// \param name Handler's name.
+Ref<LegacyEventHandler> LegacyBaseHandlerDispatcher.getHandler(String name) {
+  if(!this.hasHandler(name)) return null;
+  return this.handlers[name];
+}
+
+/// Implementation of :kl-ref:`LegacyHandlerDispatcher`.
+Ref<LegacyEventHandler> LegacyBaseHandlerDispatcher.getActiveHandler() {
+  for(name, handler in this.handlers)
+  {
+    Ref<LegacyHandlerDispatcher> dispatcher = handler;
+    if(!Boolean(dispatcher) && handler.isEnabled())
+      return handler;
+  }
+  return null;
+}
+
+/// Implementation of :kl-ref:`LegacyHandlerDispatcher`.
+LegacyBaseHandlerDispatcher.setActiveHandler!(String name) {
+  for(name_, handler in this.handlers)
+  {
+    if(name_ == name)
+    {
+      this.enable();
+      Ref<LegacyHandlerDispatcher> dispatcher = handler;
+      if(dispatcher) 
+      {
+        Boolean isAccepted = false;
+        this.activateDispatcher(
+          handler.getEnableKey(), 
+          isAccepted);
+      }
+      else 
+      {
+        Boolean switchDisableNone = false;
+        Boolean switchDisableOthers = false;
+        Boolean switchDisableAll = false;
+        Boolean isAccepted = false;
+        Key key = handler.getEnableKey();
+        this.activateHandlers(
+          key, 
+          switchDisableNone,
+          switchDisableOthers,
+          switchDisableAll,
+          isAccepted);
+      }
+    }
+    else 
+      handler.disable();
+  }
+}
+
+/// Implementation of :kl-ref:`LegacyHandlerDispatcher`.
+LegacyBaseHandlerDispatcher.setActiveHandler!(Ref<LegacyEventHandler> handler) {
+  this.setActiveHandler(this.getHandlerName(handler));
+}
+
+/// Implementation of :kl-ref:`LegacyHandlerDispatcher`.
+LegacyBaseHandlerDispatcher.sceneChanged!() {
+  for(name, handler in this.handlers) 
+  {
+    Ref<LegacyHandlerDispatcher> dispatcher = handler;
+    if(dispatcher) dispatcher.sceneChanged();
+  }
+}
+
+/// Activates the DisableNoneHandlers exlusivity type handlers.
+/// \note This is applied to the manipulation tree leaves, e.g. the tools.
+/// \param key A enable key-stroke. 
+private LegacyBaseHandlerDispatcher.activateHandlertype_DisableNoneHandlers!(Key key) {
+  for(name, handler in this.handlers)
+  {
+    // If others shared handlers have the same enable key and are disable, enable them.
+    // It ensures the coherance of the states.
+    if(handler.getExclusivity() == LegacyHandlerDisableNone)
+    {
+      if(!handler.isEnabled() && key == handler.getEnableKey()) 
+        handler.enable();
+    }
+  }
+} 
+
+/// Activates the DisableOthersHandlers exlusivity type handlers.
+/// \note This is applied to the manipulation tree leaves, e.g. the tools.
+/// \param key A enable key-stroke. 
+private LegacyBaseHandlerDispatcher.activateHandlertype_DisableOthersHandlers!(Key key) {
+
+  for(name, handler in this.handlers)
+  {
+    if(!handler.isIndependent())
+    {
+      // Disable other fully exclusive and shared handlers.
+      if(handler.getExclusivity() == LegacyHandlerDisableAll)
+      {
+        if(handler.isEnabled())
+          handler.disable();
+      }
+
+      else if(handler.getExclusivity() == LegacyHandlerDisableOthers)
+      {
+        if(handler.isEnabled() && key != handler.getEnableKey())
+          handler.disable();
+
+        // If others shared handlers have the same enable key and are disable, enable them.
+        // It ensures the coherance of the states.
+        else if(!handler.isEnabled() && key == handler.getEnableKey())
+          handler.enable();
+      }
+    }
+  }
+} 
+
+/// Activates the DisableAllHandlers exlusivity type handlers.
+/// \note This is applied to the manipulation tree leaves, e.g. the tools.
+/// \param key A enable key-stroke. 
+private LegacyBaseHandlerDispatcher.activateHandlertype_DisableAllHandlers!(Key key) {
+  Boolean setOneHandlerOnly = true;
+  for(name, handler in this.handlers)
+  {
+    if(!handler.isIndependent())
+    {
+      // Disable other mutually exclusive and shared handlers.
+      if(handler.getExclusivity() == LegacyHandlerDisableOthers)
+      {
+        if(handler.isEnabled()) 
+          handler.disable();
+      }
+
+      else if(handler.getExclusivity() == LegacyHandlerDisableAll)
+      {
+        if(handler.isEnabled() && key != handler.getEnableKey())
+          handler.disable();
+
+        else if(key == handler.getEnableKey())
+        {
+          if(handler.isEnabled())
+          {
+            if(setOneHandlerOnly)
+              setOneHandlerOnly = false;
+            else handler.disable();
+          }
+        }
+      }
+    }
+  }
+}  
+
+/// Implementation of :kl-ref:`LegacyHandlerDispatcher`.
+LegacyBaseHandlerDispatcher.activateHandlers!(
+  io Key key, 
+  io Boolean switchDisableNone,
+  io Boolean switchDisableOthers,
+  io Boolean switchDisableAll,
+  io Boolean isAccepted) 
+{
+  // We find the deepest handler (tool) that is activated by this key.
+  // Once reached, we recursively inspect the WHOLE tree to activate others handlers with the same enabled key,
+  // To do-so, we have to propagate through the activated handler's parent and children dispatchers.
+  // Because the other tools can be in different branchs, we have to inspect each dispatcher's children.
+
+  if(!this.isEnabled())
+    return;
+
+  // Finds the deepest handler is the tree that accepts the key.
+  for(name, handler in this.handlers)
+  {
+    Ref<LegacyHandlerDispatcher> dispatcher = handler;
+    if(dispatcher)
+      dispatcher.activateHandlers(
+        key, 
+        switchDisableNone,
+        switchDisableOthers,
+        switchDisableAll,
+        isAccepted);
+  }
+
+  // If a handler hasn't been activated yet, check it.
+  if(!isAccepted)
+  {
+    for(name, handler in this.handlers)
+    {
+      //  We just want the leaves.
+      Ref<LegacyHandlerDispatcher> dispatcher = handler;
+      if(!dispatcher)
+      {
+        if(key == handler.getEnableKey())
+        {
+          isAccepted = true;
+          if(handler.isEnabled()) handler.disable();
+          else handler.enable();
+
+          // Get the type of the new activated handler.
+          // It will be used to enable/disable the others handlers.
+          if(handler.isEnabled()) //handler.isEnabled()) 
+          {
+            if(!switchDisableNone && !switchDisableOthers && !switchDisableNone)
+            {
+              if(handler.getExclusivity() == LegacyHandlerDisableNone)
+                switchDisableNone = true;
+
+              if(handler.getExclusivity() == LegacyHandlerDisableOthers)
+                switchDisableOthers = true;
+
+              if(handler.getExclusivity() == LegacyHandlerDisableAll)
+                switchDisableAll = true;
+            }
+          }     
+        }  
+      }
+    }
+  }
+
+  // If a handler has been activated, changes the toher handlers 
+  // according to the exclusivity.
+  else
+  {
+    if(switchDisableNone)
+      this.activateHandlertype_DisableNoneHandlers(key);
+
+    if(switchDisableOthers) 
+      this.activateHandlertype_DisableOthersHandlers(key);
+
+    if(switchDisableAll) 
+      this.activateHandlertype_DisableAllHandlers(key);
+
+    // Finallly, updates this dispatchers' children.
+    for(name, handler in this.handlers)
+    {
+      Ref<LegacyHandlerDispatcher> dispatcher = handler;
+      if(dispatcher)
+        dispatcher.activateHandlers(
+          key, 
+          switchDisableNone,
+          switchDisableOthers,
+          switchDisableAll,
+          isAccepted);
+    }
+  }
+}
+
+/// Implementation of :kl-ref:`LegacyHandlerDispatcher`.
+LegacyBaseHandlerDispatcher.activateDispatcher!(Key key, io Boolean isAccepted) {
+    
+  if(key == this.enableKey)
+  {
+    if(!isAccepted)
+    {
+      isAccepted = true;
+      if(!this.isEnabled())
+      { 
+        Ref<LegacyEventHandler> rootDispatcher = this.getRootDispatcher();
+        rootDispatcher.disable();
+
+        Ref<LegacyBaseHandlerDispatcher> dispatcher = this;
+        while(dispatcher)
+        {
+          dispatcher = dispatcher.getDispatcher();
+          if(dispatcher) 
+            dispatcher.enabled = true;
+        }
+
+        this.enabled = true;
+      }
+      else 
+        this.disable();
+    }
+  }
+
+  if(isAccepted)
+  {
+    if(this.enabled)
+    {
+      for(name, handler in this.handlers)
+      {
+        Ref<LegacyBaseHandlerDispatcher> dispatcher = handler;
+        if(dispatcher) 
+        {
+          dispatcher.enabled = true;
+          dispatcher.activateDispatcher(key, isAccepted); 
+        }
+      }
+    }
+  }
+
+  else
+  {
+    for(name, handler in this.handlers)
+    {
+      Ref<LegacyHandlerDispatcher> dispatcher = handler;
+      if(dispatcher) dispatcher.activateDispatcher(key, isAccepted); 
+      if(isAccepted) break;   
+    }
+  }
+}
+
+/// Implementation of :kl-ref:`LegacyHandlerDispatcher`.
+protected LegacyBaseHandlerDispatcher.processKeyEvent!(io Event event) {
+  KeyEvent keyEvent = event;
+  if(!keyEvent.isAutoRepeat && keyEvent.eventType == Event_KeyPress)
+  {
+    // Enable/disable the dispatchers.
+    if(keyEvent.getModifiers() == ModiferKey_Shift) 
+    {
+      Boolean isAccepted = false;
+      this.activateDispatcher(keyEvent.key, isAccepted);
+      keyEvent.setAccepted(isAccepted);
+    }
+    
+    else
+    {
+      // Enable/disable the handlers leaves (e.g. the tools).
+      Boolean switchDisableNone = false;
+      Boolean switchDisableOthers = false;
+      Boolean switchDisableAll = false;
+      Boolean isAccepted = false;
+      
+      Key key = keyEvent.key;
+      this.activateHandlers(
+        key, 
+        switchDisableNone,
+        switchDisableOthers,
+        switchDisableAll,
+        isAccepted);
+
+      keyEvent.setAccepted(isAccepted);
+
+      // Others keys -> Tool modes, etc...
+      if(!keyEvent.isAccepted())
+      {
+        for(name, handler in this.handlers)
+        {
+          Ref<LegacyHandlerDispatcher> dispatcher = handler;
+          if(!dispatcher)
+          {
+            if(handler.hasKey(keyEvent.key) && keyEvent.key != handler.getEnableKey())
+            {
+              if(!handler.isEnabled() && handler.isAlwaysEnabled())
+              {
+                key = handler.getEnableKey();
+                this.activateHandlers(
+                  key, 
+                  switchDisableNone,
+                  switchDisableOthers,
+                  switchDisableAll,
+                  isAccepted);
+              }
+ 
+              if(handler.isEnabled())
+                handler.onEvent(event);
+            }
+          }
+          else
+          {
+            if(handler.isEnabled())
+              dispatcher.processKeyEvent(event);
+          }
+        }
+
+        // Don't know why the event isn't accepted before.
+        // To check.
+        keyEvent.setAccepted(true);
+      }
+    }
+  }
+}
+
+/// Implementation of :kl-ref:`LegacyHandlerDispatcher`.
+protected LegacyBaseHandlerDispatcher.processMouseEvent!(io Event event) {
+  if(!this.isEnabled()) 
+    return;
+
+  for(name, handler in this.handlers)
+  {
+    Ref<LegacyHandlerDispatcher> dispatcher = handler;
+    if(dispatcher)
+    {
+      if(handler.isEnabled())
+        handler.onEvent(event);
+    }
+  }
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyBaseHandlerDispatcher.onEvent!(io Event event) {
+  if(event.eventType() != Event_KeyPress)
+    this.processMouseEvent(event);
+  
+  else if(event.eventType() == Event_KeyPress)
+    this.processKeyEvent(event);
+} 

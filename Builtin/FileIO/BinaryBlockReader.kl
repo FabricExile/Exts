@@ -1,0 +1,179 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+/**
+\versionadded 1.12.0
+
+The BinaryBlockReader provides a block based hierarchical binary file writing layer on top of the lower level BinaryReader object.
+It should be used to read files written using the BinaryBlockWriter. 
+
+\seealso BinaryBlockWriter, BinaryBlockIO
+
+\example
+  FilePath path = FilePath('${TEMP}/binaryBlockWriter.bin').expandEnvVars();
+  {
+    BinaryBlockWriter blockWriter(path.string());
+    blockWriter.setNumBlocks(3);
+
+    BinaryBlockWriter section1Writer = blockWriter.beginWriteBlock('section1');
+
+    String text = "some text";
+    SInt32 textLength = text.length();
+
+    report('section1:' + text);
+    section1Writer.write(textLength.data, textLength.dataSize);
+    section1Writer.write(text.data, text.dataSize);
+
+    BinaryBlockWriter section2Writer = blockWriter.beginWriteBlock('section2');
+    Float64 floats[];
+    floats.resize(10);
+    for(SInt32 i=0;i<floats.size();i++)
+      floats[i] = Float64(i) * 17 + 1;
+    SInt32 floatsSize = floats.size();
+
+    report('section2:' + floats);
+    section2Writer.write(floatsSize.data, floatsSize.dataSize);
+    section2Writer.write(floats.data, floats.dataSize);
+
+
+    BinaryBlockWriter section3Writer = blockWriter.beginWriteBlock('section3', 3);
+    BinaryBlockWriter section3subSection1Writer = section3Writer.beginWriteBlock('subSection1');
+    SInt32 ints[];
+    ints.resize(10);
+    for(SInt32 i=0;i<ints.size();i++)
+      ints[i] = SInt32(i) * 17 + 1;
+    SInt32 intsSize = ints.size();
+
+    report('section3:' + ints);
+    section2Writer.write(intsSize.data, intsSize.dataSize);
+    section2Writer.write(ints.data, ints.dataSize);
+
+    BinaryBlockWriter section3subSection2Writer = section3Writer.beginWriteBlock('subSection2');
+    BinaryBlockWriter section3subSection3Writer = section3Writer.beginWriteBlock('subSection3');
+
+    report('Binary file written.');
+  }
+
+  if(path.exists())
+  {
+    BinaryBlockReader blockReader(path.string());
+    report("blocks:" + blockReader.getBlockNames());
+    // Now read the data back in in an arbitrary order. 
+
+    BinaryBlockReader section3Reader = blockReader.beginReadBlock('section3');
+    report("blocks:" + section3Reader.getBlockNames());
+    BinaryBlockReader section3subSection1Reader = section3Reader.beginReadBlock('subSection1');
+    SInt32 intsSize = 0;
+    section3subSection1Reader.read(intsSize.data, intsSize.dataSize);
+    SInt32 ints[];
+    ints.resize(intsSize);
+    section3subSection1Reader.read(ints.data, ints.dataSize);
+
+    report('section3:' + ints);
+
+    BinaryBlockReader section1Reader = blockReader.beginReadBlock('section1');
+    SInt32 textLength;
+    section1Reader.read(textLength.data, textLength.dataSize);
+    String text = '';
+    for(Size i=0;i<textLength;i++)
+      text += ' ';
+    section1Reader.read(text.data, text.dataSize);
+    report('section1:' + text);
+
+    BinaryBlockReader section2Reader = blockReader.beginReadBlock('section2');
+
+    Float64 floats[];
+    SInt32 floatsSize = 0;
+    section2Reader.read(floatsSize.data, floatsSize.dataSize);
+    floats.resize(0);
+    floats.resize(floatsSize);
+    section2Reader.read(floats.data, floats.dataSize);
+    report('section2:' + floats);
+
+    report('Binary file read.');
+  }
+\endexample
+*/
+object BinaryBlockReader {
+  /// \internal
+  UInt64 toc[String];
+  /// \internal
+  BinaryReader reader;
+};
+
+/// standard constructor from filePath
+function BinaryBlockReader(String filePath){
+  this.reader = BinaryReader(filePath);
+  this.readToc();
+}
+
+/// constructor taking an existing BinaryReader
+function BinaryBlockReader(out BinaryReader reader){
+  if(!reader.isOpen()){
+    setError("BinaryBlockReader constructed with BinaryReader that is not open");
+    return;
+  }
+  this.reader = reader;
+  this.readToc();
+}
+
+/// performs a read on the table of contents of the blocks.
+/// \internal
+function BinaryBlockReader.readToc!(){
+  String names[];
+  this.reader.readStringArray(names);
+  UInt64 offsets[];
+  offsets.resize(names.size());
+  this.reader.read(offsets.data(), offsets.dataSize());
+  for(Integer i=0; i<names.size(); i++){
+    this.toc[names[i]] = offsets[i];
+  }
+}
+
+/// returns the numbers of blocks this reader contains
+function UInt64 BinaryBlockReader.getNumBlocks(){
+  return this.toc.size();
+}
+
+/// returns all of the binary block names
+function String[] BinaryBlockReader.getBlockNames(){
+  String names[];
+  for(key, value in this.toc)
+    names.push(key);
+  return names;
+}
+
+/// returns the wrapped BinaryReader
+function BinaryReader BinaryBlockReader.getReader(){
+  return this.reader;
+}
+
+/// returns a new BinaryBlockReader which is initialized at the right place for a given block.
+function BinaryBlockReader BinaryBlockReader.beginReadBlock!(String name){
+  BinaryBlockReader blockReader = null;
+  if(this.toc.has(name)){
+    if(this.toc[name] == -1){
+      report("WARNING: block contents not written:" + name);
+      return blockReader;
+    }
+    this.reader.seek(this.toc[name]);
+    BinaryReader reader = this.reader;
+    blockReader = BinaryBlockReader(reader);
+    return blockReader;
+  }
+  setError("Cannot find Block:" + name);
+  return blockReader;
+}
+
+/// reads all of the binary content of a block into a prepared array
+/// \param data The data pointer of the array
+/// \param dataSize The dataSize result of the array
+function BinaryBlockReader.read!(Data data, UInt64 dataSize){
+  this.reader.read(data, dataSize);
+}
+
+/// closes the BinaryBlockReader and releases the file handle
+function BinaryBlockReader.close!(){
+  this.reader.close();
+}
+

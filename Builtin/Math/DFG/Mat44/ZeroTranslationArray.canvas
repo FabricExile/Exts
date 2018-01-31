@@ -1,0 +1,49 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Mat44.html",
+    "uiTooltip" : "Sets the translation components\nof this matrix to 0.0\n\n Supported by Mat44,Mat44_d,Mat44_i"
+    },
+  "title" : "ZeroTranslation[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "$TYPE$[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "60B55FA56D0296EA034B0B54C8A55811",
+  "code" : "require Math;
+
+operator Math_Mat44_zeroTranslation_task<<<index>>>(
+  io $TYPE$[] this
+) {
+  this[index < this.size() ? index : this.size() - 1].zeroTranslation();
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Mat44_zeroTranslation_task(index, this);
+    }
+  } else {
+    Math_Mat44_zeroTranslation_task<<<task_size>>>(this);
+  }
+}
+"
+  }

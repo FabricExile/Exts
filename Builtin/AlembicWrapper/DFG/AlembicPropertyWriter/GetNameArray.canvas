@@ -1,0 +1,52 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "returns the full path of the wrapped AlembicIPoints\n\nSupported types:\n  this: AlembicPropertyWriter\n  result: String\n"
+    },
+  "title" : "GetName[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "AlembicPropertyWriter[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "String[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "ABC780B8BC6671C8A9C8926CEA7B50AB",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicPropertyWriter_getName_task<<<index>>>(
+  io String[] result
+, in AlembicPropertyWriter[] this
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].getName();
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  Size task_size = this.size();
+  result.resize(task_size);
+  for(Size index = 0; index < task_size; index++) {
+    AlembicWrapper_AlembicPropertyWriter_getName_task(index, result, this);
+  }
+}
+"
+  }

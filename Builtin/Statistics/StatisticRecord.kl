@@ -1,0 +1,106 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+//Standard statistic columns
+const String Statistic_Name = "Name";
+const String Statistic_Category = "Category";
+const String Statistic_SubCategory = "SubCategory";
+const String Statistic_Comments = "Comments";
+const String Statistic_Type = "Type";
+
+const String Statistic_MemoryUsage = "Memory";
+const String Statistic_GPUMemoryUsage = "GPUMemory";
+
+//Constant for record types (used temporarily until kl2edk Type bug is fixed)
+/// \internal
+const Size _StatisticRecordType_None = 0;
+/// \internal
+const Size _StatisticRecordType_SInt64 = 1;
+/// \internal
+const Size _StatisticRecordType_Float64 = 2;
+/// \internal
+const Size _StatisticRecordType_String = 3;
+
+//Represents a statistics name-value pair. The value can be a ``String``, a ``SInt64`` or a ``Float64``.
+
+/**
+
+A ``StatisticRecord`` embeds a name-value statistic pair (eg: "Memory" = 156)
+for returning statistics in the context of :kl-ref:`StatisticSource.getStatistics`.
+See :ref:`fabricstatistics` for information about common statistic records.
+
+*/
+struct StatisticRecord {
+  /// \internal
+  Size valueType;
+  /// name of the statistic
+  String name;
+
+  /// \internal
+  SInt64 intValue;
+  /// \internal
+  Float64 floatValue;
+  /// \internal
+  String stringValue;
+};
+
+/// Construct as a `SInt64` statistic record named `name`
+function StatisticRecord( String name, SInt64 value ) {
+  this.valueType = _StatisticRecordType_SInt64;
+  this.name = name;
+  this.intValue = value;
+}
+
+/// Construct as a `Float64` statistic record named `name`
+function StatisticRecord( String name, Float64 value ) {
+  this.name = name;
+  if( Float64(SInt64(value)) == value ) {
+    this.valueType = _StatisticRecordType_SInt64;
+    this.intValue = value;
+  } else {
+    this.valueType = _StatisticRecordType_Float64;
+    this.floatValue = value;
+  }
+}
+
+/// Construct as a `String` statistic record named `name`
+function StatisticRecord( String name, String value ) {
+  this.valueType = _StatisticRecordType_String;
+  this.name = name;
+  this.stringValue = value;
+}
+
+/// \internal Writes the value-pair as a single `String`.
+function String StatisticRecord.toString( Boolean includeName ) {
+  String result;
+  if( includeName )
+    result = this.name+"=";
+  if(this.valueType == _StatisticRecordType_SInt64)
+    result += this.intValue;
+  else if(this.valueType == _StatisticRecordType_Float64)
+    result += Scalar(this.floatValue);//Limit printing to Scalar for now; Float64 has too many numbers!
+  else if(this.valueType == _StatisticRecordType_String)
+    result += '"'+this.stringValue+'"';
+  else
+    result += "?";
+  return result;
+}
+
+/// \internal Adds two ``StatisticRecord``, if the types are compatible (``SInt64`` or ``Float64``, ``None`` types absorb the other value). This is used for computing statistic sums.
+function StatisticRecord.add!( StatisticRecord other ) {
+  if( this.valueType == _StatisticRecordType_None && (other.valueType == _StatisticRecordType_SInt64 || other.valueType == _StatisticRecordType_Float64) ) {
+    this.valueType = other.valueType;
+    this.intValue = other.intValue;
+    this.floatValue = other.floatValue;
+  } else if( this.valueType == _StatisticRecordType_SInt64 && other.valueType == _StatisticRecordType_SInt64 )
+    this.intValue += other.intValue;
+  else if( this.valueType == _StatisticRecordType_Float64 && other.valueType == _StatisticRecordType_Float64 )
+    this.floatValue += other.floatValue;
+  else if( this.valueType == _StatisticRecordType_Float64 && other.valueType == _StatisticRecordType_SInt64 )
+    this.floatValue += other.intValue;
+  else if( this.valueType == _StatisticRecordType_SInt64 && other.valueType == _StatisticRecordType_Float64 ) {
+    this.floatValue = this.intValue + other.floatValue;
+    this.valueType = _StatisticRecordType_Float64;
+  }
+}

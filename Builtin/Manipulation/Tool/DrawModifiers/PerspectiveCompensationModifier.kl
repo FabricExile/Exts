@@ -1,0 +1,134 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /**
+  \versionadded 2.6.0
+
+  The PerspectiveCompensationModifier, when attached to a BaseTool (:kl-ref:`Tool::BaseTool.addDrawModifier` ),
+  will scale and translate the tool so it looks like it has a constant size when moving the camera.
+
+  The approximate scaling is defined as pixelsPerUnit (1 world 3D unit -> N pixels) or viewportRatioPerUnit
+  (1 world 3D unit -> fraction of max( screen width, screen height) ).
+
+  See :ref:`TPG.tooldrawmodifier` for more information about draw modifiers.
+  */
+  object PerspectiveCompensationModifier : BaseDrawModifier{
+    Scalar pixelsPerUnit;
+    Boolean usePixelsPerUnit;
+
+    Scalar viewportRatioPerUnit;
+    Boolean useViewportRatioPerUnit;
+
+    /// Apply a fixed camera distance (avoids Z fighting in some cases)
+    Scalar fixedCameraDistance;
+    Boolean useFixedCameraDistance;
+    Scalar localBoundingRadiusForMinDistance;
+
+    //TODO: optionally have an explicit 'global center' so the same transform applies to all related instances
+  };
+
+  /// One instance global space unit will be scaled such that it approximatively covers 'pixelsPerUnit' pixels
+  PerspectiveCompensationModifier.setPixelsPerUnit!( Scalar pixelsPerUnit ) {
+    this.pixelsPerUnit = pixelsPerUnit;
+    this.usePixelsPerUnit = true;
+    this.useViewportRatioPerUnit = false;
+  }
+
+  /// One instance global space unit will be scaled such that it approximatively covers a 'viewportRatioPerUnit' fraction of the viewport
+  PerspectiveCompensationModifier.setViewportRatioPerUnit!( Scalar viewportRatioPerUnit ) {
+    this.viewportRatioPerUnit = viewportRatioPerUnit;
+    this.useViewportRatioPerUnit = true;
+    this.usePixelsPerUnit = false;
+  }
+
+  /// Apply a fixed distance to camera (avoids Z fighting in some cases)
+  /// \param localBoundingRadiusForMinDistance If > 0, additional translation will be applied to avoid collision with the near plane
+  PerspectiveCompensationModifier.setFixedCameraDistance!( Scalar fixedCameraDistance, Scalar localBoundingRadiusForMinDistance ) {
+    this.fixedCameraDistance = fixedCameraDistance;
+    this.localBoundingRadiusForMinDistance = localBoundingRadiusForMinDistance;
+    this.useFixedCameraDistance = true;
+  }
+
+  Mat44 PerspectiveCompensationModifier.computeTransform( Ref<Viewport> viewport, Mat44 transform ) {
+    Mat44 actualTransform = transform;
+    Mat44 camMat = viewport.getViewMat().inverse();
+    Mat44 viewProjMat = viewport.getProjectionMat() * viewport.getViewMat();
+    Mat44 invViewProjMat = viewProjMat.inverse();
+
+    Ref<Camera> camera = viewport.getCamera();
+
+    Vec3 fixedDistanceMoveDir;
+    if( Boolean( camera ) && this.useFixedCameraDistance ) {
+
+      Vec3 camPos = camMat.translation();
+      Vec3 farPos = invViewProjMat * Vec3( 0, 0, 1 );
+      Vec3 camDir = ( farPos - camPos ).unit_safe();
+
+      Vec3 objPos = actualTransform.translation();
+      Vec3 delta = objPos - camPos;
+      if( camera.isOrthographic() )
+        delta = camDir * camDir.dot( delta );//Set along camera direction
+      fixedDistanceMoveDir = delta.unit_safe();
+
+      Scalar near = camera.getNearDistance();
+      Scalar far = camera.getFarDistance();
+      Scalar distance = delta.length() - near;
+      if( distance > 0 ) {
+        Vec3 moveVec = fixedDistanceMoveDir * -( distance - this.fixedCameraDistance );
+        actualTransform.setTranslation( objPos + moveVec );
+      }
+    }
+
+    if( Boolean( camera ) && ( this.usePixelsPerUnit || this.useViewportRatioPerUnit ) ) {
+
+      Vec2 dimensions = viewport.getDimensions();
+      if( dimensions.x <= 1 ) dimensions.x = 1;
+      if( dimensions.y <= 1 ) dimensions.y = 1;
+
+      Mat44 objectToPixel = viewProjMat * actualTransform;
+      Vec3 projObjectCenter = objectToPixel * Vec3();
+      Vec3 pixelDistanceForUnit;
+      if( this.usePixelsPerUnit ) {
+        pixelDistanceForUnit = Vec3( 0.7071069f, 0.7071069f, 0.0f ) * this.pixelsPerUnit;
+      } else {
+        Size maxSize = dimensions.x > dimensions.y ? dimensions.x : dimensions.y;
+        pixelDistanceForUnit = Vec3( this.viewportRatioPerUnit * maxSize, 0, 0 );
+      }
+      // In normalized screen space
+      pixelDistanceForUnit = pixelDistanceForUnit * Vec3( 2.0f / dimensions.x, 2.0f / dimensions.y, 0 );
+      Vec3 projObjectCenterPlusPixel = projObjectCenter + pixelDistanceForUnit;
+      Vec3 objectCenterPlusPixel = objectToPixel.inverse() * projObjectCenterPlusPixel;
+
+      Scalar distanceToCenter = objectCenterPlusPixel.length();
+      Mat44 scaledMat;
+      scaledMat.setDiagonal( Vec3( distanceToCenter ) );
+
+      if( this.useFixedCameraDistance && this.localBoundingRadiusForMinDistance > 0 && distanceToCenter > 1 ) {
+        // Compensate the scaling increase with more translation
+        // This is not perfect, but needed to avoid intersecting the near plane
+        Scalar deltaClosestPoint = this.localBoundingRadiusForMinDistance * ( distanceToCenter - 1.0 );
+        actualTransform.setTranslation( actualTransform.translation() + fixedDistanceMoveDir*deltaClosestPoint );
+      }
+      actualTransform = actualTransform * scaledMat;
+    }
+    return actualTransform;
+  }
+
+  PerspectiveCompensationModifier.updateDrawData!( io DrawContext context, Ref<Object> target ) {
+
+    Mat44 transform = GetTransform( context.contextualProperties );
+    String space = GetParentTransformSpace( context.contextualProperties );
+
+    if( space != WorldSpace )
+      return;//No compensation required
+
+    transform = this.computeTransform( context.viewport, transform );
+    SetTransform( context.contextualProperties, transform );
+
+    // Update the renderTransform (viewport space) accordingly
+    UpdateRenderTransform( context );
+  }
+}// namespace Tool

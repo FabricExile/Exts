@@ -1,0 +1,124 @@
+/*
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require FabricOGL, FabricStatistics;
+
+interface OGLObject {
+  String getName();
+  UInt32 getGLID();// 0 if not allocated
+
+  Boolean created();
+
+  /// Returns true if it succeeded. Some Objects can only be created
+  /// with specialized methods, in which case this will return false.
+  Boolean create!( io Ref<OGLContext> context );
+
+  UInt64 getApproximateGPUMemoryUsage();
+
+  releaseGL!();
+
+  /// \internal
+  releaseGL_contextValidated!( UInt32 bufferID );
+};
+
+/// \internal
+object OGLBaseObject : BaseVersioned, OGLObject, StatisticSourceWithAutoRegisterMember {
+  String name;
+  UInt32 bufferID;
+  UInt32 unactiveBufferID;//When 'deactivate', keep same bufferID association, but set bufferID to 0
+  
+  Boolean externallyOwned;//If externally owned, then we won't release the bufferID upon destruction
+
+  OGLWrapperGlobals wrapperGlobals;//Cache for fast access
+
+  //Statistics
+  StatisticsAutoRegisterMember autoStats;
+};
+  
+inline OGLBaseObject() {
+  this.wrapperGlobals = GetOGLWrapperGlobals();
+  if(FabricStatisticsEnabled())
+    this.autoStats = StatisticsAutoRegisterMember(this);
+}
+
+inline Boolean OGLBaseObject.tracingEnabled() {
+  return Boolean(Fabric_Guarded) && this.wrapperGlobals.tracingEnabled;
+}
+
+inline UInt32 OGLBaseObject.getGLID() {
+  return this.bufferID;
+}
+
+inline Boolean OGLBaseObject.created() {
+  return this.bufferID != 0;
+}
+
+inline OGLBaseObject.deactivate!() {
+  if( this.unactiveBufferID == 0 ) {
+    this.unactiveBufferID = this.bufferID;
+    this.bufferID = 0;
+  }
+}
+
+inline Boolean OGLBaseObject.activate!() {
+  if( this.unactiveBufferID ) {
+    this.bufferID = this.unactiveBufferID;
+    this.unactiveBufferID = 0;
+    return true;
+  } else
+    return false;
+}
+
+// If the GL object is externally owned (attached), then
+// we won't release it upon destruction (releaseGL).
+inline OGLBaseObject.setAsExternallyOwned!() {
+  this.externallyOwned = true;
+}
+
+inline Boolean OGLBaseObject.create!( io Ref<OGLContext> context ) {
+  return false;
+}
+
+/// \internal
+function OGLBaseObject.releaseGL!() {
+  if( !this.externallyOwned ) {
+    UInt32 bufferID = this.bufferID ? this.bufferID : this.unactiveBufferID;
+    if( bufferID ) {
+      if( cpglHaveContext() ) {
+        if( this.tracingEnabled() )
+          report( this.type() + " " + this.name + " .releaseGL: " + this.bufferID );
+        this.releaseGL_contextValidated( bufferID );
+      } else {
+        if( this.tracingEnabled() )
+          report( this.type() + " " + this.name + " unable to .releaseGL: " + bufferID );
+      }
+      this.bufferID = 0;
+      this.unactiveBufferID = 0;
+    }
+  }
+}
+
+inline String OGLBaseObject.getName() {
+  return this.name;
+}
+
+inline String OGLBaseObject.getTraceName() {
+  return this.type() + '_' + this.name + '_' + this.bufferID;
+}
+
+inline OGLBaseObject.releaseGL_contextValidated!( UInt32 bufferID ) {
+  setError("OGLBaseObject.releaseGL_contextValidated: needs to be overriden");
+}
+
+inline UInt64 OGLBaseObject.getApproximateGPUMemoryUsage() {
+  return 0;
+}
+
+function StatisticRecord[] OGLBaseObject.getStatistics() {
+  StatisticRecord stats[];
+  stats.push( StatisticRecord( Statistic_Name, this.name ? this.name : this.getTraceName() ) );
+  stats.push( StatisticRecord( Statistic_Category, "OGL" ) );
+  stats.push( StatisticRecord( Statistic_GPUMemoryUsage, this.getApproximateGPUMemoryUsage() ) );
+  return stats;
+}

@@ -1,0 +1,272 @@
+/*
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+require FabricOGL;
+
+/// \internal
+object OGLBuffer_ : OGLBaseObject {
+  UInt32 componentsPerElement;
+  Boolean normalize;
+  UInt32 bufferType;
+  UInt32 elementGLType;
+
+  UInt32 bufferUsage;
+  UInt32 elementCount;
+};
+  
+inline OGLBuffer_() {
+  this.componentsPerElement = 1;
+  this.bufferType = GL_ARRAY_BUFFER;
+  this.bufferUsage = GL_STATIC_DRAW;
+}
+
+inline ~OGLBuffer_() {
+  this.releaseGL();
+}
+
+inline OGLBuffer_.releaseGL_contextValidated!( UInt32 bufferID ) {
+  UInt32 bufferIDs[1];
+  bufferIDs[0] = bufferID;
+  glDeleteBuffers(1, bufferIDs);
+}
+
+inline OGLBuffer_.setType!( UInt32 componentsPerElement, Boolean normalize, UInt32 bufferType, UInt32 elementGLType ) {
+  Boolean changed;
+  updateValue( componentsPerElement, this.componentsPerElement, changed );
+  updateValue( normalize, this.normalize, changed );
+  updateValue( bufferType, this.bufferType, changed );
+  updateValue( elementGLType, this.elementGLType, changed );
+  if( changed ) {
+    this.deactivate();
+    this.parent.incrementStructureVersion();
+  }
+}
+
+function OGLBuffer_.load!(
+  Data data,
+  UInt64 dataSize,
+  UInt64 elementCount,
+  io Ref<OGLContext> context
+) {
+  if( !CheckOGLContextValidity( context ) ) {
+    setError("OGLBuffer.load: OpenGL context not bound");
+    return;
+  }
+  Boolean typeChanged = this.activate();
+  if (this.bufferID == 0) {
+    UInt32 bufferIDs[1];
+    UInt32 bufferIDsExt<> = bufferIDs;
+    glGenBuffers(1, bufferIDsExt);
+    this.bufferID = UInt32(bufferIDs[0]);
+    typeChanged = true;
+    if( this.tracingEnabled() )
+      report( "OGLBuffer.create " + this.getTraceName() );
+  }
+
+  if( this.tracingEnabled() )
+    report( "OGLBuffer.load " + this.getTraceName() + ": bytes=" + dataSize );
+
+  // Now fill the buffer with the data
+  context.stateCache.bindBuffer(this.bufferType, this.bufferID);
+  if( typeChanged || this.elementCount != elementCount )
+    glBufferData(this.bufferType, UInt32(dataSize), data, this.bufferUsage);
+  else
+    glBufferSubData(this.bufferType, 0, UInt32(dataSize), data);
+  context.stateCache.bindBuffer(this.bufferType, 0);
+
+  this.elementCount = UInt32(elementCount);
+  this.parent.incrementValueVersion();
+}
+
+/// \internal
+function UInt64 OGLBuffer_.getApproximateGPUMemoryUsage() {
+  if( !this.bufferID )
+    return 0;
+
+  switch(this.elementGLType) {
+    case GL_BYTE: case GL_UNSIGNED_BYTE:
+      return this.elementCount*this.componentsPerElement;
+    case GL_SHORT: case GL_UNSIGNED_SHORT: case GL_HALF_FLOAT:
+      return this.elementCount*this.componentsPerElement*2;
+    case GL_INT: case GL_UNSIGNED_INT: case GL_FLOAT: case GL_INT_2_10_10_10_REV: case GL_UNSIGNED_INT_2_10_10_10_REV:
+      return this.elementCount*this.componentsPerElement*4;
+    case GL_DOUBLE:
+      return this.elementCount*this.componentsPerElement*8;
+    case GL_INT_2_10_10_10_REV: case GL_UNSIGNED_INT_2_10_10_10_REV:
+      return this.elementCount*4;
+  }
+  return 0;
+}
+
+///Implementation of StatisticSource interface's 'getStatistics()'.
+/// \internal
+function StatisticRecord[] OGLBuffer_.getStatistics() {
+  StatisticRecord stats[] = this.parent.getStatistics();
+  stats.push( StatisticRecord( "Size", this.elementCount ) );
+  stats.push( StatisticRecord( Statistic_MemoryUsage, 20*4 ) );
+  return stats;
+}
+
+inline Boolean OGLBuffer_.isElementArray() {
+  return this.bufferType == GL_ELEMENT_ARRAY_BUFFER;
+}
+
+function OGLBuffer_.loadElementArray!( UInt32 elementIndices<>, UInt32 indexRangeEnd, io Ref<OGLContext> context ) {
+  if( indexRangeEnd <= UInt8Max ) {
+    //To investigate: could we load directly using some unpack params?
+    this.setType( 1, false, GL_ELEMENT_ARRAY_BUFFER, GL_UNSIGNED_BYTE );
+    this.elementGLType = GL_UNSIGNED_BYTE;
+    UInt8 elements[];
+    elements.resize( elementIndices.size() );
+    for( Size i = 0; i < elementIndices.size(); ++i ) {
+      UInt32 index = elementIndices[i];
+      if( Boolean(Fabric_Guarded) && index >= indexRangeEnd )
+        setError("OGLBuffer.loadElementArray: " + index + " out of range " + indexRangeEnd);
+      elements[i] = UInt8( index );
+    }
+    this.load( elements.data(), elements.dataSize(), elements.size(), context );
+  } else if( indexRangeEnd <= UInt16Max ) {
+    //To investigate: could we load directly using some unpack params?
+    this.setType( 1, false, GL_ELEMENT_ARRAY_BUFFER, GL_UNSIGNED_SHORT );
+    UInt16 elements[];
+    elements.resize( elementIndices.size() );
+    for( Size i = 0; i < elementIndices.size(); ++i ) {
+      UInt32 index = elementIndices[i];
+      if( Boolean(Fabric_Guarded) && index >= indexRangeEnd )
+        setError("OGLBuffer.loadElementArray: " + index + " out of range " + indexRangeEnd);
+      elements[i] = UInt16( index );
+    }
+    this.load( elements.data(), elements.dataSize(), elements.size(), context );
+  } else {
+    this.setType( 1, false, GL_ELEMENT_ARRAY_BUFFER, GL_UNSIGNED_INT );
+    this.load( elementIndices.data(), elementIndices.dataSize(), elementIndices.size(), context );
+  }
+}
+
+inline OGLBuffer_.loadElementArray!( UInt32 elementIndices<>, io Ref<OGLContext> context ) {
+  this.loadElementArray( elementIndices, UInt32Max, context );
+}
+
+inline OGLBuffer_.load!( UInt32 values<>, io Ref<OGLContext> context ) {
+  this.setType( 1, false, GL_ARRAY_BUFFER, GL_UNSIGNED_INT );
+  this.load( values.data(), values.dataSize(), values.size(), context );
+}
+
+inline OGLBuffer_.load!( SInt32 values<>, io Ref<OGLContext> context ) {
+  this.setType( 1, false, GL_ARRAY_BUFFER, GL_INT );
+  this.load( values.data(), values.dataSize(), values.size(), context );
+}
+
+inline OGLBuffer_.load!( Float32 values<>, io Ref<OGLContext> context ) {
+  this.setType( 1, false, GL_ARRAY_BUFFER, GL_FLOAT );
+  this.load( values.data(), values.dataSize(), values.size(), context );
+}
+
+inline UInt16 FloatToNormalizedUInt16( Float32 value ) {
+  Float32 scaled = value * 65536.0f;
+  if( scaled < 0 )
+    return 0;
+  else if( scaled >= 65536.0f )
+    return UInt16Max;
+  else
+    return UInt16(scaled);
+}
+
+function OGLBuffer_.loadAsNormalizedUInt16!( Float32 values<>, io Ref<OGLContext> context ) {
+  UInt16 converted[];
+  converted.resize(values.size());
+  for( Size i = 0; i < values.size(); ++i )
+    converted[i] = FloatToNormalizedUInt16(values[i]);
+  this.setType( 1, true, GL_ARRAY_BUFFER, GL_UNSIGNED_SHORT );
+  this.load( converted.data(), converted.dataSize(), values.size(), context );
+}
+
+inline OGLBuffer_.load!( Vec2 vectors<>, io Ref<OGLContext> context ) {
+  this.setType( 2, false, GL_ARRAY_BUFFER, GL_FLOAT );
+  this.load( vectors.data(), vectors.dataSize(), vectors.size(), context );
+}
+
+function OGLBuffer_.loadAsNormalizedUInt16!( Vec2 vectors<>, io Ref<OGLContext> context ) {
+  UInt16 converted[];
+  converted.resize(vectors.size()*2);
+  Size index;
+  for( Size i = 0; i < vectors.size(); ++i ) {
+    converted[index++] = FloatToNormalizedUInt16(vectors[i].x);
+    converted[index++] = FloatToNormalizedUInt16(vectors[i].y);
+  }
+  this.setType( 2, true, GL_ARRAY_BUFFER, GL_UNSIGNED_SHORT );
+  this.load( converted.data(), converted.dataSize(), vectors.size(), context );
+}
+
+inline OGLBuffer_.load!( Vec3 vectors<>, io Ref<OGLContext> context ) {
+  this.setType( 3, false, GL_ARRAY_BUFFER, GL_FLOAT );
+  this.load( vectors.data(), vectors.dataSize(), vectors.size(), context );
+}
+
+function OGLBuffer_.loadAsNormalizedUInt16!( Vec3 vectors<>, io Ref<OGLContext> context ) {
+  UInt16 converted[];
+  converted.resize(vectors.size()*3);
+  Size index;
+  for( Size i = 0; i < vectors.size(); ++i ) {
+    converted[index++] = FloatToNormalizedUInt16(vectors[i].x);
+    converted[index++] = FloatToNormalizedUInt16(vectors[i].y);
+    converted[index++] = FloatToNormalizedUInt16(vectors[i].z);
+  }
+  this.setType( 3, true, GL_ARRAY_BUFFER, GL_UNSIGNED_SHORT );
+  this.load( converted.data(), converted.dataSize(), vectors.size(), context );
+}
+
+inline OGLBuffer_.load!( Vec4 vectors<>, io Ref<OGLContext> context ) {
+  this.setType( 4, false, GL_ARRAY_BUFFER, GL_FLOAT );
+  this.load( vectors.data(), vectors.dataSize(), vectors.size(), context );
+}
+
+function OGLBuffer_.loadAsNormalizedUInt16!( Vec4 vectors<>, io Ref<OGLContext> context ) {
+  UInt16 converted[];
+  converted.resize(vectors.size()*4);
+  Size index;
+  for( Size i = 0; i < vectors.size(); ++i ) {
+    converted[index++] = FloatToNormalizedUInt16(vectors[i].x);
+    converted[index++] = FloatToNormalizedUInt16(vectors[i].y);
+    converted[index++] = FloatToNormalizedUInt16(vectors[i].z);
+    converted[index++] = FloatToNormalizedUInt16(vectors[i].t);
+  }
+  this.setType( 4, true, GL_ARRAY_BUFFER, GL_UNSIGNED_SHORT );
+  this.load( converted.data(), converted.dataSize(), vectors.size(), context );
+}
+
+inline OGLBuffer_.load!( Color colors<>, io Ref<OGLContext> context ) {
+  this.setType( 4, false, GL_ARRAY_BUFFER, GL_FLOAT );
+  this.load( colors.data(), colors.dataSize(), colors.size(), context );
+}
+
+inline OGLBuffer_.load!( Quat quats<>, io Ref<OGLContext> context ) {
+  this.setType( 4, false, GL_ARRAY_BUFFER, GL_FLOAT );
+  this.load( quats.data(), quats.dataSize(), quats.size(), context );
+}
+
+function OGLBuffer_.loadAsNormalizedUInt16!( Color colors<>, io Ref<OGLContext> context ) {
+  UInt16 converted[];
+  converted.resize(colors.size()*4);
+  Size index;
+  for( Size i = 0; i < colors.size(); ++i ) {
+    converted[index++] = FloatToNormalizedUInt16(colors[i].r);
+    converted[index++] = FloatToNormalizedUInt16(colors[i].g);
+    converted[index++] = FloatToNormalizedUInt16(colors[i].b);
+    converted[index++] = FloatToNormalizedUInt16(colors[i].a);
+  }
+  this.setType( 4, true, GL_ARRAY_BUFFER, GL_UNSIGNED_SHORT );
+  this.load( converted.data(), converted.dataSize(), colors.size(), context );
+}
+
+inline OGLBuffer_.load!( RGB colors<>, io Ref<OGLContext> context ) {
+  this.setType( 3, true, GL_ARRAY_BUFFER, GL_UNSIGNED_BYTE );
+  this.load( colors.data(), colors.dataSize(), colors.size(), context );
+}
+
+inline OGLBuffer_.load!( RGBA colors<>, io Ref<OGLContext> context ) {
+  this.setType( 4, true, GL_ARRAY_BUFFER, GL_UNSIGNED_BYTE );
+  this.load( colors.data(), colors.dataSize(), colors.size(), context );
+}
+

@@ -1,0 +1,133 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Geometry;
+
+/**
+  \versionadded 2.0
+  
+  :kl-ref:`LegacyBaseSculptTool` is a based class for sculpting tools.
+
+  \note This is a work in progress, needs to be generalized to abstract the type of attribute being painted.
+  
+  \seealso LegacyBasePaintTool
+ 
+  \dfgPresetOmit
+*/
+object LegacyBaseSculptTool : LegacyBasePaintTool {
+  /// Strength of the sculpt.
+  /// The more it's high, the more the mesh is deformed.
+  protected Float32 strength;
+};
+
+/// Initializes a LegacyBaseSculptTool.
+/// \param target Tool target.
+/// \param enableKey Key to enable to tool.
+/// \param resetKey Key to reset the painting.
+/// \param initialRadius Initial sculpt-tool radius.
+/// \param initialStrength Initial sculpt-tool strength.
+protected LegacyBaseSculptTool.init!(
+  LegacyBasePaintTarget target,
+  Key enableKey, 
+  Key resetKey,
+  Float32 initialRadius, 
+  Float32 initialStrength) 
+{
+  this.parent.init(
+	  target, 
+	  enableKey, 
+	  resetKey,
+	  "positions",
+	  initialRadius);
+  this.strength = initialStrength;
+}
+
+/// Gets the sculpt strength.
+Float32 LegacyBaseSculptTool.getStrength() {
+  return this.strength;
+}
+
+/// Sets the sculpt strength.
+/// \param strength The tool new strengh.
+LegacyBaseSculptTool.setStrength!(Float32 strength) {
+  this.strength = strength;
+}
+
+/// Implementation of :kl-ref:`LegacyPaintTool`.
+LegacyBaseSculptTool.ensureAttributeExists!(io Ref<Geometry> geometry, Boolean resetValues) {
+  this.attributeStack = LegacyPaintToolAttributeStrokeData(geometry, this.attributeName, true);
+  this.parent.ensureAttributeExists(geometry, resetValues);
+}
+
+/// Implementation of :kl-ref:`LegacyPaintTool`.
+protected LegacyBaseSculptTool.paintPolygons!(io Ref<PolygonMesh> mesh, GeometryLocation location) {
+  this.parent.paintPolygons(mesh, location);
+  mesh.recomputePointNormalsIfRequired();
+}
+
+/// Implementation of :kl-ref:`LegacyPaintTool`.
+protected Vec3 LegacyBaseSculptTool.computeDisplacementDir(Ref<PolygonMesh> mesh) {
+  Vec3 normal;
+  for(UInt32 i=0; i<this.tempPointSet.size(); i++) 
+    normal += mesh.getPointNormal(this.tempPointSet.get(i));
+  return normal.unit();
+}
+
+/// Implementation of :kl-ref:`LegacyPaintTool`.
+protected LegacyBaseSculptTool.setPointAttribute!(
+  Index i, 
+  Float32 weight, 
+  Vec3 displacementDir, 
+  io Ref<PolygonMesh> mesh) 
+{
+  Float32 strength = weight*this.strength*0.1;
+  Vec3 dir = this.mode == PaintMode_Paint ? displacementDir*strength : -1*displacementDir*strength;
+  Index index = this.tempPointSet.get(i);
+
+  Vec3 prePos = mesh.getPointPosition(index);
+  Vec3 newPos = prePos + dir;
+
+  mesh.setPointPosition(index, newPos);
+}
+
+/// Implementation of :kl-ref:`LegacyPaintTool`.
+protected LegacyBaseSculptTool.smoothPointAttribute!(
+  Index i, 
+  Float32 weight, 
+  Vec3 displacementDir, 
+  io Ref<PolygonMesh> mesh) 
+{
+
+  LocalL16UInt32Array neigbors;
+  Index index = this.tempPointSet.get(i);
+  
+  Ref<Vec3Attribute> attribute = mesh.getAttributes().getAttribute(this.attributeName);
+  Ref<Vec3Attribute> tempAttribute = this.tempAttribute;
+
+  mesh.getPointSurroundingPoints(index, false, neigbors);
+ 
+  if(neigbors.size()) 
+  {
+    Vec3 position;
+    for(Index k=0; k<neigbors.size(); ++k) 
+      position += mesh.getPointPosition(neigbors.get(k));
+    position /= (neigbors.size());
+
+    tempAttribute.values[i] = mesh.getPointPosition(index).linearInterpolate( (mesh.getPointPosition(index) + position) * 0.5, weight);
+  }
+  else tempAttribute.values[i] = mesh.getPointPosition(index);
+}
+
+/// Implementation of :kl-ref:`Tool`.
+protected LegacyBaseSculptTool.release!(io MouseEvent mouseEvent) {
+  if(this.performing)
+  {    
+    Ref<Geometry> geometry = this.paint(mouseEvent);
+    if(geometry) {
+      this.target.bakeValue();
+      this.attributeStack = LegacyPaintToolAttributeStrokeData(geometry, this.attributeName, true);
+    }
+  }
+  this.parent.release(mouseEvent);
+}

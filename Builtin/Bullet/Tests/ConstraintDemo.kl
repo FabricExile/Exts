@@ -1,0 +1,898 @@
+
+require Bullet;
+require Math;
+
+// #include "BulletBulletDynamicsCommon.h"
+// #include "LinearMath/BulletIDebugDraw.h"
+
+// #include "GLDebugDrawer.h"
+
+// #include "GLDebugFont.h"
+// #include <stdio.h> //prIntegerf debugging
+
+// #include "ConstraintDemo.h"
+// #include "GL_ShapeDrawer.h"
+// #include "GlutStuff.h"
+
+// #include "GLDebugDrawer.h"
+// static GLDebugDrawer	gDebugDrawer;
+
+
+
+// const Integer numObjects = 3;
+
+
+
+
+
+
+// Xfo sliderTransform;
+// const Vec3 lowerSliderLimit(-10,0,0);
+// const Vec3 hiSliderLimit(10,0,0);
+
+// BulletRigidBody* d6body0 =0;
+
+// BulletHingeConstraint* spDoorHinge = NULL;
+// BulletHingeConstraint* spHingeDynAB = NULL;
+// BulletGeneric6DofConstraint* spSlider6Dof = NULL;
+
+// static Boolean s_bTestConeTwistMotor = false;
+
+
+
+function drawLimit()
+{
+	// Vec3 from = sliderTransform*lowerSliderLimit;
+	// Vec3 to = sliderTransform*hiSliderLimit;
+	// Vec3 color(255,0,0);
+	// glBegin(GL_LINES);
+	// glColor3f(color.getX(), color.getY(), color.getZ());
+	// glVertex3d(from.getX(), from.getY(), from.getZ());
+	// glVertex3d(to.getX(), to.getY(), to.getZ());
+	// if (d6body0)
+	// {
+	// 	from = d6body0.getWorldTransform().tr;
+	// 	to = from + d6body0.getWorldTransform().getBasis() * Vec3(0,0,10);
+	// 	glVertex3d(from.getX(), from.getY(), from.getZ());
+	// 	glVertex3d(to.getX(), to.getY(), to.getZ());
+	// }
+	// glEnd();
+}
+
+
+
+function BulletRigidBody localCreateRigidBody(Scalar  mass, Xfo xfo, BulletCollisionShape shape)
+{
+	//rigidbody is dynamic if and only if mass is non zero, otherwise static
+	Boolean isDynamic = (mass != 0.0);
+
+	Vec3 localInertia(0,0,0);
+	if (isDynamic)
+		shape.calculateLocalInertia(mass, localInertia);
+
+	//using motionstate is recommended, it provides interpolation capabilities, and only synchronizes 'active' objects
+	BulletDefaultMotionState myMotionState = BulletDefaultMotionState(xfo);
+	BulletRigidBodyConstructionInfo rbInfo(mass, myMotionState, shape, localInertia);
+	BulletRigidBody body = BulletRigidBody(rbInfo);
+	return body;
+}
+
+object ConstraintDemo {
+	BulletDefaultCollisionConfiguration collisionConfiguration;
+	BulletCollisionDispatcher dispatcher;
+	BulletDbvtBroadphase overlappingPairCache;
+	BulletSequentialImpulseConstraintSolver constraIntegerSolver;
+	BulletDiscreteDynamicsWorld dynamicsWorld;
+
+	BulletCollisionShape collisionShapes[];
+
+	Scalar time;
+};
+
+function ConstraintDemo()
+{
+	this.initPhysics();
+}
+
+function ConstraintDemo.setupEmptyDynamicsWorld()
+{
+	this.collisionConfiguration = BulletDefaultCollisionConfiguration();
+	this.dispatcher = BulletCollisionDispatcher(this.collisionConfiguration);
+	this.overlappingPairCache = BulletDbvtBroadphase();
+	this.constraIntegerSolver = BulletSequentialImpulseConstraintSolver();
+	this.dynamicsWorld = BulletDiscreteDynamicsWorld(this.dispatcher, this.overlappingPairCache, this.constraIntegerSolver, this.collisionConfiguration);
+}
+
+function ConstraintDemo.clientResetScene()
+{
+	this.exitPhysics();
+	this.initPhysics();
+}
+function ConstraintDemo.initPhysics()
+{
+	// setTexturing(true);
+	// setShadows(true);
+
+	// setCameraDistance(26.0);
+	this.time = 0;
+
+	this.setupEmptyDynamicsWorld();
+
+	// this.dynamicsWorld.setDebugDrawer(&gDebugDrawer);
+
+
+	//BulletCollisionShape groundShape = new BulletBoxShape(Vec3(Scalar(50.),Scalar(40.),Scalar(50.)));
+	BulletCollisionShape groundShape = BulletStaticPlaneShape(Vec3(0,1,0),40);
+
+	this.collisionShapes.push(groundShape);
+	Xfo groundTransform;
+	groundTransform.setIdentity();
+	groundTransform.tr = Vec3(0,-56,0);
+	BulletRigidBody groundBody;
+	groundBody = localCreateRigidBody(0, groundTransform, groundShape);
+
+
+	Scalar THETA = PI/4.0;
+	Scalar L_1 = (2.0 - tan(THETA));
+	Scalar L_2 = (1.0 / cos(THETA));
+	Scalar RATIO = L_2 / L_1;
+	Scalar CUBE_HALF_EXTENTS = 1.0;
+
+	BulletCollisionShape shape = BulletBoxShape(Vec3(CUBE_HALF_EXTENTS,CUBE_HALF_EXTENTS,CUBE_HALF_EXTENTS));
+	this.collisionShapes.push(shape);
+	Xfo trans;
+	trans.setIdentity();
+	trans.tr = Vec3(0,20,0);
+
+	Scalar mass = 1.0;
+
+// #if ENABLE_ALL_DEMOS
+///gear constraInteger demo
+
+
+	BulletRigidBody bodyA;
+	BulletRigidBody bodyB;
+
+	{
+		BulletCollisionShape cylA = BulletCylinderShape(Vec3(0.2, 0.25, 0.2));
+		BulletCollisionShape cylB = BulletCylinderShape(Vec3(L_1, 0.025, L_1));
+		BulletCompoundShape cyl0 = BulletCompoundShape();
+		cyl0.addChildShape(Xfo(), cylA);
+		cyl0.addChildShape(Xfo(), cylB);
+
+		mass = 6.28;
+		Vec3 localInertia;
+		cyl0.calculateLocalInertia(mass, localInertia);
+		BulletRigidBodyConstructionInfo ci(mass, null, cyl0, localInertia);
+		ci.startWorldTransform.tr = Vec3(-8,1,-8);
+
+		BulletRigidBody body = BulletRigidBody(ci);//1,0,cyl0,localInertia);
+		this.dynamicsWorld.addRigidBody(body);
+		body.setLinearFactor(Vec3(0,0,0));
+		body.setAngularFactor(Vec3(0,1,0));
+		bodyA = body;
+	}
+
+	{
+		BulletCollisionShape cylA = BulletCylinderShape(Vec3(0.2,0.26,0.2));
+		BulletCollisionShape cylB = BulletCylinderShape(Vec3(L_2,0.025,L_2));
+		BulletCompoundShape cyl0 = BulletCompoundShape();
+		cyl0.addChildShape(Xfo(),cylA);
+		cyl0.addChildShape(Xfo(),cylB);
+
+		mass = 6.28;
+		Vec3 localInertia;
+		cyl0.calculateLocalInertia(mass, localInertia);
+		BulletRigidBodyConstructionInfo ci(mass, null, cyl0, localInertia);
+		ci.startWorldTransform.tr = Vec3(-10,2,-8);
+
+
+		Quat orn(Vec3(0,0,1),-THETA);
+		ci.startWorldTransform.setRotation(orn);
+
+		BulletRigidBody body = BulletRigidBody(ci);//1,0,cyl0,localInertia);
+		body.setLinearFactor(Vec3(0,0,0));
+		BulletHingeConstraint hinge = BulletHingeConstraint(body, Vec3(0,0,0),Vec3(0,1,0),true);
+		this.dynamicsWorld.addConstraint(hinge);
+		bodyB = body;
+		body.setAngularVelocity(Vec3(0,3,0));
+
+		this.dynamicsWorld.addRigidBody(body);
+	}
+
+	Vec3	axisA(0,1,0);
+	Vec3	axisB(0,1,0);
+	Quat orn(Vec3(0,0,1),-THETA);
+	Mat33 mat(orn);
+	axisB = mat.getRow(1);
+
+	BulletGearConstraint gear = BulletGearConstraint(bodyA, bodyB, axisA, axisB, RATIO);
+	this.dynamicsWorld.addConstraint(gear,true);
+/*
+
+#endif
+
+
+#if ENABLE_ALL_DEMOS
+	//poInteger to poInteger constraInteger with a breaking threshold
+	{
+		trans.setIdentity();
+		trans.tr = Vec3(1,30,-5));
+		localCreateRigidBody( mass,trans,shape);
+		trans.tr = Vec3(0,0,-5));
+
+		BulletRigidBody* body0 = localCreateRigidBody( mass,trans,shape);
+		trans.tr = Vec3(2*CUBE_HALF_EXTENTS,20,0));
+		mass = 1.0;
+	//	BulletRigidBody* body1 = 0;//localCreateRigidBody( mass,trans,shape);
+		Vec3 pivotInA(CUBE_HALF_EXTENTS,CUBE_HALF_EXTENTS,0);
+		BulletTypedConstraint* p2p = new BulletPoInteger2PoIntegerConstraint(*body0,pivotInA);
+		this.dynamicsWorld.addConstraint(p2p);
+		p2p .setBreakingImpulseThreshold(10.2);
+		p2p.setDbgDrawSize(Scalar(5.0));
+	}
+#endif
+
+
+
+#if ENABLE_ALL_DEMOS
+	//poInteger to poInteger constraInteger (ball socket)
+	{
+		BulletRigidBody* body0 = localCreateRigidBody( mass,trans,shape);
+		trans.tr = Vec3(2*CUBE_HALF_EXTENTS,20,0));
+
+		mass = 1.0;
+//		BulletRigidBody* body1 = 0;//localCreateRigidBody( mass,trans,shape);
+//		BulletRigidBody* body1 = localCreateRigidBody( 0.0,trans,0);
+		//body1.setActivationState(DISABLE_DEACTIVATION);
+		//body1.setDamping(0.3,0.3);
+
+		Vec3 pivotInA(CUBE_HALF_EXTENTS,-CUBE_HALF_EXTENTS,-CUBE_HALF_EXTENTS);
+		Vec3 axisInA(0,0,1);
+
+	//	Vec3 pivotInB = body1 ? body1.getCenterOfMassTransform().inverse()(body0.getCenterOfMassTransform()(pivotInA)) : pivotInA;
+//		Vec3 axisInB = body1?
+//			(body1.getCenterOfMassTransform().getBasis().inverse()*(body1.getCenterOfMassTransform().getBasis() * axisInA)) :
+		body0.getCenterOfMassTransform().getBasis() * axisInA;
+
+#define P2P
+#ifdef P2P
+		BulletTypedConstraint* p2p = new BulletPoInteger2PoIntegerConstraint(*body0,pivotInA);
+		//BulletTypedConstraint* p2p = new BulletPoInteger2PoIntegerConstraint(*body0,*body1,pivotInA,pivotInB);
+		//BulletTypedConstraint* hinge = new BulletHingeConstraint(*body0,*body1,pivotInA,pivotInB,axisInA,axisInB);
+		this.dynamicsWorld.addConstraint(p2p);
+		p2p.setDbgDrawSize(Scalar(5.0));
+#else
+		BulletHingeConstraint* hinge = new BulletHingeConstraint(*body0,pivotInA,axisInA);
+		
+		//use zero targetVelocity and a small maxMotorImpulse to simulate joInteger friction
+		//Scalar	targetVelocity = 0.0;
+		//Scalar	maxMotorImpulse = 0.01;
+		Scalar	targetVelocity = 1.0;
+		Scalar	maxMotorImpulse = 1.0;
+		hinge.enableAngularMotor(true,targetVelocity,maxMotorImpulse);
+		this.dynamicsWorld.addConstraint(hinge);
+		hinge.setDbgDrawSize(Scalar(5.0));
+#endif //P2P
+		
+
+		
+
+	}
+#endif
+
+	
+#if ENABLE_ALL_DEMOS
+	{
+		Xfo trans;
+	trans.setIdentity();
+	Vec3 worldPos(-20,0,30);
+	trans.tr = worldPos);
+
+	Xfo frameInA, frameInB;
+	frameInA = Xfo();
+	frameInB = Xfo();
+
+	BulletRigidBody* pRbA1 = localCreateRigidBody(mass, trans, shape);
+//	BulletRigidBody* pRbA1 = localCreateRigidBody(0.0, trans, shape);
+	pRbA1.setActivationState(DISABLE_DEACTIVATION);
+
+	// add dynamic rigid body B1
+	worldPos.setValue(-30,0,30);
+	trans.tr = worldPos);
+	BulletRigidBody* pRbB1 = localCreateRigidBody(mass, trans, shape);
+//	BulletRigidBody* pRbB1 = localCreateRigidBody(0.0, trans, shape);
+	pRbB1.setActivationState(DISABLE_DEACTIVATION);
+
+	// create slider constraInteger between A1 and B1 and add it to world
+	
+	BulletSliderConstraint* spSlider1 = new BulletSliderConstraint(*pRbA1, *pRbB1, frameInA, frameInB, true);
+//	spSlider1 = new BulletSliderConstraint(*pRbA1, *pRbB1, frameInA, frameInB, false);
+	spSlider1.setLowerLinLimit(-15.0F);
+	spSlider1.setUpperLinLimit(-5.0F);
+//	spSlider1.setLowerLinLimit(5.0F);
+//	spSlider1.setUpperLinLimit(15.0F);
+//	spSlider1.setLowerLinLimit(-10.0F);
+//	spSlider1.setUpperLinLimit(-10.0F);
+
+	spSlider1.setLowerAngLimit(-PI / 3.0F);
+	spSlider1.setUpperAngLimit( PI / 3.0F);
+
+
+	this.dynamicsWorld.addConstraint(spSlider1, true);
+	spSlider1.setDbgDrawSize(Scalar(5.0));
+	}
+#endif
+
+#if ENABLE_ALL_DEMOS	
+	//create a slider, using the generic D6 constraInteger
+	{
+		mass = 1.0;
+		Vec3 sliderWorldPos(0,10,0);
+		Vec3 sliderAxis(1,0,0);
+		Scalar angle=0.0;//SIMD_RADS_PER_DEG * 10.0;
+		Mat33 sliderOrientation(Quat(sliderAxis ,angle));
+		trans.setIdentity();
+		trans.tr = sliderWorldPos);
+		//trans.setBasis(sliderOrientation);
+		sliderTransform = trans;
+
+		d6body0 = localCreateRigidBody( mass,trans,shape);
+		d6body0.setActivationState(DISABLE_DEACTIVATION);
+		BulletRigidBody* fixedBody1 = localCreateRigidBody(0,trans,0);
+		this.dynamicsWorld.addRigidBody(fixedBody1);
+
+		Xfo frameInA, frameInB;
+		frameInA = Xfo();
+		frameInB = Xfo();
+		frameInA.tr = Vec3(0., 5., 0.));
+		frameInB.tr = Vec3(0., 5., 0.));
+
+//		Boolean useLinearReferenceFrameA = false;//use fixed frame B for linear llimits
+		Boolean useLinearReferenceFrameA = true;//use fixed frame A for linear llimits
+		spSlider6Dof = new BulletGeneric6DofConstraint(*fixedBody1, *d6body0,frameInA,frameInB,useLinearReferenceFrameA);
+		spSlider6Dof.setLinearLowerLimit(lowerSliderLimit);
+		spSlider6Dof.setLinearUpperLimit(hiSliderLimit);
+
+		//range should be small, otherwise singularities will 'explode' the constraInteger
+//		spSlider6Dof.setAngularLowerLimit(Vec3(-1.5,0,0));
+//		spSlider6Dof.setAngularUpperLimit(Vec3(1.5,0,0));
+//		spSlider6Dof.setAngularLowerLimit(Vec3(0,0,0));
+//		spSlider6Dof.setAngularUpperLimit(Vec3(0,0,0));
+		spSlider6Dof.setAngularLowerLimit(Vec3(-PI,0,0));
+		spSlider6Dof.setAngularUpperLimit(Vec3(1.5,0,0));
+
+		spSlider6Dof.getTranslationalLimitMotor().this.enableMotor[0] = true;
+		spSlider6Dof.getTranslationalLimitMotor().this.targetVelocity[0] = -5.0;
+		spSlider6Dof.getTranslationalLimitMotor().this.maxMotorForce[0] = 0.1;
+
+
+		this.dynamicsWorld.addConstraint(spSlider6Dof);
+		spSlider6Dof.setDbgDrawSize(Scalar(5.0));
+
+	}
+#endif
+#if ENABLE_ALL_DEMOS
+	{ // create a door using hinge constraInteger attached to the world
+		BulletCollisionShape* pDoorShape = new BulletBoxShape(Vec3(2.0, 5.0, 0.2f));
+		this.collisionShapes.push(pDoorShape);
+		Xfo doorTrans;
+		doorTrans.setIdentity();
+		doorTrans.tr = Vec3(-5.0, -2.0, 0.0));
+		BulletRigidBody* pDoorBody = localCreateRigidBody( 1.0, doorTrans, pDoorShape);
+		pDoorBody.setActivationState(DISABLE_DEACTIVATION);
+		const Vec3 BulletPivotA(10.0 +  2.1f, -2.0, 0.0 ); // right next to the door slightly outside
+		Vec3 BulletAxisA( 0.0, 1.0, 0.0 ); // poIntegering upwards, aka Y-axis
+
+		spDoorHinge = new BulletHingeConstraint( *pDoorBody, BulletPivotA, BulletAxisA );
+
+//		spDoorHinge.setLimit( 0.0, HALF_PI );
+		// test problem values
+//		spDoorHinge.setLimit( -PI, PI*0.8f);
+
+//		spDoorHinge.setLimit( 1.0, -1.0);
+//		spDoorHinge.setLimit( -PI*0.8f, PI);
+//		spDoorHinge.setLimit( -PI*0.8f, PI, 0.9f, 0.3f, 0.0);
+//		spDoorHinge.setLimit( -PI*0.8f, PI, 0.9f, 0.01f, 0.0); // "sticky limits"
+		spDoorHinge.setLimit( -PI * 0.25f, PI * 0.25f );
+//		spDoorHinge.setLimit( 0.0, 0.0 );
+		this.dynamicsWorld.addConstraint(spDoorHinge);
+		spDoorHinge.setDbgDrawSize(Scalar(5.0));
+
+		//doorTrans.tr = Vec3(-5.0, 2.0, 0.0));
+		//BulletRigidBody* pDropBody = localCreateRigidBody( 10.0, doorTrans, shape);
+	}
+#endif
+#if ENABLE_ALL_DEMOS
+	{ // create a generic 6DOF constraInteger
+
+		Xfo tr;
+		tr.setIdentity();
+		tr.tr = Vec3(Scalar(10.), Scalar(6.), Scalar(0.)));
+		tr.getBasis().setEulerXYZ(0,0,0);
+//		BulletRigidBody* pBodyA = localCreateRigidBody( mass, tr, shape);
+		BulletRigidBody* pBodyA = localCreateRigidBody( 0.0, tr, shape);
+//		BulletRigidBody* pBodyA = localCreateRigidBody( 0.0, tr, 0);
+		pBodyA.setActivationState(DISABLE_DEACTIVATION);
+
+		tr.setIdentity();
+		tr.tr = Vec3(Scalar(0.), Scalar(6.), Scalar(0.)));
+		tr.getBasis().setEulerXYZ(0,0,0);
+		BulletRigidBody* pBodyB = localCreateRigidBody(mass, tr, shape);
+//		BulletRigidBody* pBodyB = localCreateRigidBody(0.0, tr, shape);
+		pBodyB.setActivationState(DISABLE_DEACTIVATION);
+
+		Xfo frameInA, frameInB;
+		frameInA = Xfo();
+		frameInA.tr = Vec3(Scalar(-5.), Scalar(0.), Scalar(0.)));
+		frameInB = Xfo();
+		frameInB.tr = Vec3(Scalar(5.), Scalar(0.), Scalar(0.)));
+
+		BulletGeneric6DofConstraint* pGen6DOF = new BulletGeneric6DofConstraint(*pBodyA, *pBodyB, frameInA, frameInB, true);
+//		BulletGeneric6DofConstraint* pGen6DOF = new BulletGeneric6DofConstraint(*pBodyA, *pBodyB, frameInA, frameInB, false);
+		pGen6DOF.setLinearLowerLimit(Vec3(-10., -2., -1.));
+		pGen6DOF.setLinearUpperLimit(Vec3(10., 2., 1.));
+//		pGen6DOF.setLinearLowerLimit(Vec3(-10., 0., 0.));
+//		pGen6DOF.setLinearUpperLimit(Vec3(10., 0., 0.));
+//		pGen6DOF.setLinearLowerLimit(Vec3(0., 0., 0.));
+//		pGen6DOF.setLinearUpperLimit(Vec3(0., 0., 0.));
+
+//		pGen6DOF.getTranslationalLimitMotor().this.enableMotor[0] = true;
+//		pGen6DOF.getTranslationalLimitMotor().this.targetVelocity[0] = 5.0;
+//		pGen6DOF.getTranslationalLimitMotor().this.maxMotorForce[0] = 0.1;
+
+
+//		pGen6DOF.setAngularLowerLimit(Vec3(0., SIMD_HALF_PI*0.9, 0.));
+//		pGen6DOF.setAngularUpperLimit(Vec3(0., -SIMD_HALF_PI*0.9, 0.));
+//		pGen6DOF.setAngularLowerLimit(Vec3(0., 0., -SIMD_HALF_PI));
+//		pGen6DOF.setAngularUpperLimit(Vec3(0., 0., SIMD_HALF_PI));
+
+		pGen6DOF.setAngularLowerLimit(Vec3(-SIMD_HALF_PI * 0.5f, -0.75, -SIMD_HALF_PI * 0.8f));
+		pGen6DOF.setAngularUpperLimit(Vec3(SIMD_HALF_PI * 0.5f, 0.75, SIMD_HALF_PI * 0.8f));
+//		pGen6DOF.setAngularLowerLimit(Vec3(0.0, -0.75, SIMD_HALF_PI * 0.8f));
+//		pGen6DOF.setAngularUpperLimit(Vec3(0.0, 0.75, -SIMD_HALF_PI * 0.8f));
+//		pGen6DOF.setAngularLowerLimit(Vec3(0.0, -SIMD_HALF_PI * 0.8f, SIMD_HALF_PI * 1.98f));
+//		pGen6DOF.setAngularUpperLimit(Vec3(0.0, SIMD_HALF_PI * 0.8f,  -SIMD_HALF_PI * 1.98f));
+
+		
+		
+//		pGen6DOF.setAngularLowerLimit(Vec3(-0.75,-0.5, -0.5));
+//		pGen6DOF.setAngularUpperLimit(Vec3(0.75,0.5, 0.5));
+//		pGen6DOF.setAngularLowerLimit(Vec3(-0.75,0., 0.));
+//		pGen6DOF.setAngularUpperLimit(Vec3(0.75,0., 0.));
+//		pGen6DOF.setAngularLowerLimit(Vec3(0., -0.7,0.));
+//		pGen6DOF.setAngularUpperLimit(Vec3(0., 0.7, 0.));
+//		pGen6DOF.setAngularLowerLimit(Vec3(-1., 0.,0.));
+//		pGen6DOF.setAngularUpperLimit(Vec3(1., 0., 0.));
+
+		this.dynamicsWorld.addConstraint(pGen6DOF, true);
+		pGen6DOF.setDbgDrawSize(Scalar(5.0));
+	}
+#endif
+#if ENABLE_ALL_DEMOS
+	{ // create a ConeTwist constraInteger
+
+		Xfo tr;
+		tr.setIdentity();
+		tr.tr = Vec3(Scalar(-10.), Scalar(5.), Scalar(0.)));
+		tr.getBasis().setEulerXYZ(0,0,0);
+		BulletRigidBody* pBodyA = localCreateRigidBody( 1.0, tr, shape);
+//		BulletRigidBody* pBodyA = localCreateRigidBody( 0.0, tr, shape);
+		pBodyA.setActivationState(DISABLE_DEACTIVATION);
+
+		tr.setIdentity();
+		tr.tr = Vec3(Scalar(-10.), Scalar(-5.), Scalar(0.)));
+		tr.getBasis().setEulerXYZ(0,0,0);
+		BulletRigidBody* pBodyB = localCreateRigidBody(0.0, tr, shape);
+//		BulletRigidBody* pBodyB = localCreateRigidBody(1.0, tr, shape);
+
+		Xfo frameInA, frameInB;
+		frameInA = Xfo();
+		frameInA.getBasis().setEulerXYZ(0, 0, HALF_PI);
+		frameInA.tr = Vec3(Scalar(0.), Scalar(-5.), Scalar(0.)));
+		frameInB = Xfo();
+		frameInB.getBasis().setEulerXYZ(0,0,  HALF_PI);
+		frameInB.tr = Vec3(Scalar(0.), Scalar(5.), Scalar(0.)));
+
+		this.ctc = new BulletConeTwistConstraint(*pBodyA, *pBodyB, frameInA, frameInB);
+//		this.ctc.setLimit(Scalar(QUARTER_PI), Scalar(QUARTER_PI), Scalar(PI) * 0.8f);
+//		this.ctc.setLimit(Scalar(QUARTER_PI*0.6f), Scalar(QUARTER_PI), Scalar(PI) * 0.8f, 1.0); // soft limit == hard limit
+		this.ctc.setLimit(Scalar(QUARTER_PI*0.6f), Scalar(QUARTER_PI), Scalar(PI) * 0.8f, 0.5f);
+		this.dynamicsWorld.addConstraint(this.ctc, true);
+		this.ctc.setDbgDrawSize(Scalar(5.0));
+		// s_bTestConeTwistMotor = true; // use only with old solver for now
+		s_bTestConeTwistMotor = false;
+	}
+#endif
+#if ENABLE_ALL_DEMOS
+	{ // Hinge connected to the world, with motor (to hinge motor with new and old constraInteger solver)
+		Xfo tr;
+		tr.setIdentity();
+		tr.tr = Vec3(Scalar(0.), Scalar(0.), Scalar(0.)));
+		BulletRigidBody* pBody = localCreateRigidBody( 1.0, tr, shape);
+		pBody.setActivationState(DISABLE_DEACTIVATION);
+		const Vec3 BulletPivotA( 10.0, 0.0, 0.0 );
+		Vec3 BulletAxisA( 0.0, 0.0, 1.0 );
+
+		BulletHingeConstraint* pHinge = new BulletHingeConstraint( *pBody, BulletPivotA, BulletAxisA );
+//		pHinge.enableAngularMotor(true, -1.0, 0.165); // use for the old solver
+		pHinge.enableAngularMotor(true, -1.0, 1.65f); // use for the new SIMD solver
+		this.dynamicsWorld.addConstraint(pHinge);
+		pHinge.setDbgDrawSize(Scalar(5.0));
+	}
+#endif
+
+#if ENABLE_ALL_DEMOS
+	{ 
+		// create a universal joInteger using generic 6DOF constraInteger
+		// create two rigid bodies
+		// static bodyA (parent) on top:
+		Xfo tr;
+		tr.setIdentity();
+		tr.tr = Vec3(Scalar(20.), Scalar(4.), Scalar(0.)));
+		BulletRigidBody* pBodyA = localCreateRigidBody( 0.0, tr, shape);
+		pBodyA.setActivationState(DISABLE_DEACTIVATION);
+		// dynamic bodyB (child) below it :
+		tr.setIdentity();
+		tr.tr = Vec3(Scalar(20.), Scalar(0.), Scalar(0.)));
+		BulletRigidBody* pBodyB = localCreateRigidBody(1.0, tr, shape);
+		pBodyB.setActivationState(DISABLE_DEACTIVATION);
+		// add some (arbitrary) data to build constraInteger frames
+		Vec3 parentAxis(1.0, 0.0, 0.0); 
+		Vec3 childAxis(0.0, 0.0, 1.0); 
+		Vec3 anchor(20.0, 2.0, 0.0);
+
+		BulletUniversalConstraint* pUniv = new BulletUniversalConstraint(*pBodyA, *pBodyB, anchor, parentAxis, childAxis);
+		pUniv.setLowerLimit(-SIMD_HALF_PI * 0.5f, -SIMD_HALF_PI * 0.5f);
+		pUniv.setUpperLimit(SIMD_HALF_PI * 0.5f,  SIMD_HALF_PI * 0.5f);
+		// add constraInteger to world
+		this.dynamicsWorld.addConstraint(pUniv, true);
+		// draw constraInteger frames and limits for debugging
+		pUniv.setDbgDrawSize(Scalar(5.0));
+	}
+#endif
+
+#if ENABLE_ALL_DEMOS
+	{ // create a generic 6DOF constraInteger with springs 
+
+		Xfo tr;
+		tr.setIdentity();
+		tr.tr = Vec3(Scalar(-20.), Scalar(16.), Scalar(0.)));
+		tr.getBasis().setEulerXYZ(0,0,0);
+		BulletRigidBody* pBodyA = localCreateRigidBody( 0.0, tr, shape);
+		pBodyA.setActivationState(DISABLE_DEACTIVATION);
+
+		tr.setIdentity();
+		tr.tr = Vec3(Scalar(-10.), Scalar(16.), Scalar(0.)));
+		tr.getBasis().setEulerXYZ(0,0,0);
+		BulletRigidBody* pBodyB = localCreateRigidBody(1.0, tr, shape);
+		pBodyB.setActivationState(DISABLE_DEACTIVATION);
+
+		Xfo frameInA, frameInB;
+		frameInA = Xfo();
+		frameInA.tr = Vec3(Scalar(10.), Scalar(0.), Scalar(0.)));
+		frameInB = Xfo();
+		frameInB.tr = Vec3(Scalar(0.), Scalar(0.), Scalar(0.)));
+
+		BulletGeneric6DofSpringConstraint* pGen6DOFSpring = new BulletGeneric6DofSpringConstraint(*pBodyA, *pBodyB, frameInA, frameInB, true);
+		pGen6DOFSpring.setLinearUpperLimit(Vec3(5., 0., 0.));
+		pGen6DOFSpring.setLinearLowerLimit(Vec3(-5., 0., 0.));
+
+		pGen6DOFSpring.setAngularLowerLimit(Vec3(0.0, 0.0, -1.5f));
+		pGen6DOFSpring.setAngularUpperLimit(Vec3(0.0, 0.0, 1.5f));
+
+		this.dynamicsWorld.addConstraint(pGen6DOFSpring, true);
+		pGen6DOFSpring.setDbgDrawSize(Scalar(5.0));
+		
+		pGen6DOFSpring.enableSpring(0, true);
+		pGen6DOFSpring.setStiffness(0, 39.478f);
+		pGen6DOFSpring.setDamping(0, 0.5f);
+		pGen6DOFSpring.enableSpring(5, true);
+		pGen6DOFSpring.setStiffness(5, 39.478f);
+		pGen6DOFSpring.setDamping(0, 0.3f);
+		pGen6DOFSpring.setEquilibriumPoInteger();
+	}
+#endif
+#if ENABLE_ALL_DEMOS
+	{ 
+		// create a Hinge2 joInteger
+		// create two rigid bodies
+		// static bodyA (parent) on top:
+		Xfo tr;
+		tr.setIdentity();
+		tr.tr = Vec3(Scalar(-20.), Scalar(4.), Scalar(0.)));
+		BulletRigidBody* pBodyA = localCreateRigidBody( 0.0, tr, shape);
+		pBodyA.setActivationState(DISABLE_DEACTIVATION);
+		// dynamic bodyB (child) below it :
+		tr.setIdentity();
+		tr.tr = Vec3(Scalar(-20.), Scalar(0.), Scalar(0.)));
+		BulletRigidBody* pBodyB = localCreateRigidBody(1.0, tr, shape);
+		pBodyB.setActivationState(DISABLE_DEACTIVATION);
+		// add some data to build constraInteger frames
+		Vec3 parentAxis(0.0, 1.0, 0.0); 
+		Vec3 childAxis(1.0, 0.0, 0.0); 
+		Vec3 anchor(-20.0, 0.0, 0.0);
+		BulletHinge2Constraint* pHinge2 = new BulletHinge2Constraint(*pBodyA, *pBodyB, anchor, parentAxis, childAxis);
+		pHinge2.setLowerLimit(-SIMD_HALF_PI * 0.5f);
+		pHinge2.setUpperLimit( SIMD_HALF_PI * 0.5f);
+		// add constraInteger to world
+		this.dynamicsWorld.addConstraint(pHinge2, true);
+		// draw constraInteger frames and limits for debugging
+		pHinge2.setDbgDrawSize(Scalar(5.0));
+	}
+#endif
+#if  ENABLE_ALL_DEMOS
+	{ 
+		// create a Hinge joInteger between two dynamic bodies
+		// create two rigid bodies
+		// static bodyA (parent) on top:
+		Xfo tr;
+		tr.setIdentity();
+		tr.tr = Vec3(Scalar(-20.), Scalar(-2.), Scalar(0.)));
+		BulletRigidBody* pBodyA = localCreateRigidBody( 1.0, tr, shape);
+		pBodyA.setActivationState(DISABLE_DEACTIVATION);
+		// dynamic bodyB:
+		tr.setIdentity();
+		tr.tr = Vec3(Scalar(-30.), Scalar(-2.), Scalar(0.)));
+		BulletRigidBody* pBodyB = localCreateRigidBody(10.0, tr, shape);
+		pBodyB.setActivationState(DISABLE_DEACTIVATION);
+		// add some data to build constraInteger frames
+		Vec3 axisA(0.0, 1.0, 0.0); 
+		Vec3 axisB(0.0, 1.0, 0.0); 
+		Vec3 pivotA(-5.0, 0.0, 0.0);
+		Vec3 pivotB( 5.0, 0.0, 0.0);
+		spHingeDynAB = new BulletHingeConstraint(*pBodyA, *pBodyB, pivotA, pivotB, axisA, axisB);
+		spHingeDynAB.setLimit(-SIMD_HALF_PI * 0.5f, SIMD_HALF_PI * 0.5f);
+		// add constraInteger to world
+		this.dynamicsWorld.addConstraint(spHingeDynAB, true);
+		// draw constraInteger frames and limits for debugging
+		spHingeDynAB.setDbgDrawSize(Scalar(5.0));
+	}
+#endif
+
+#if ENABLE_ALL_DEMOS
+	{ // 6DOF connected to the world, with motor
+		Xfo tr;
+		tr.setIdentity();
+		tr.tr = Vec3(Scalar(10.), Scalar(-15.), Scalar(0.)));
+		BulletRigidBody* pBody = localCreateRigidBody( 1.0, tr, shape);
+		pBody.setActivationState(DISABLE_DEACTIVATION);
+		Xfo frameB;
+		frameB.setIdentity();
+		BulletGeneric6DofConstraint* pGen6Dof = new BulletGeneric6DofConstraint( *pBody, frameB, false );
+		this.dynamicsWorld.addConstraint(pGen6Dof);
+		pGen6Dof.setDbgDrawSize(Scalar(5.0));
+
+		pGen6Dof.setAngularLowerLimit(Vec3(0,0,0));
+		pGen6Dof.setAngularUpperLimit(Vec3(0,0,0));
+		pGen6Dof.setLinearLowerLimit(Vec3(-10., 0, 0));
+		pGen6Dof.setLinearUpperLimit(Vec3(10., 0, 0));
+
+		pGen6Dof.getTranslationalLimitMotor().this.enableMotor[0] = true;
+		pGen6Dof.getTranslationalLimitMotor().this.targetVelocity[0] = 5.0;
+		pGen6Dof.getTranslationalLimitMotor().this.maxMotorForce[0] = 0.1;
+	}
+#endif
+
+
+*/
+}
+
+
+/*
+void	ConstraintDemo.exitPhysics()
+{
+
+		Integer i;
+
+	//removed/delete constraIntegers
+	for (i=this.dynamicsWorld.getNumConstraints()-1; i>=0 ;i--)
+	{
+		BulletTypedConstraint* constraInteger = this.dynamicsWorld.getConstraint(i);
+		this.dynamicsWorld.removeConstraint(constraInteger);
+		delete constraInteger;
+	}
+	this.ctc = NULL;
+
+	//remove the rigidbodies from the dynamics world and delete them
+	for (i=this.dynamicsWorld.getNumCollisionObjects()-1; i>=0 ;i--)
+	{
+		BulletICollisionObject* obj = this.dynamicsWorld.getCollisionObjectArray()[i];
+		BulletRigidBody* body = BulletRigidBody::upcast(obj);
+		if (body && body.getMotionState())
+		{
+			delete body.getMotionState();
+		}
+		this.dynamicsWorld.removeCollisionObject( obj );
+		delete obj;
+	}
+
+
+
+
+	//delete collision shapes
+	for (Integer j=0;j<this.collisionShapes.size();j++)
+	{
+		BulletCollisionShape* shape = this.collisionShapes[j];
+		delete shape;
+	}
+
+	this.collisionShapes.clear();
+
+	//delete dynamics world
+	delete this.dynamicsWorld;
+
+	//delete solver
+	delete this.constraIntegerSolver;
+
+	//delete broadphase
+	delete this.overlappingPairCache;
+
+	//delete dispatcher
+	delete this.dispatcher;
+
+	delete this.collisionConfiguration;
+
+}
+*/
+/*
+ConstraintDemo.~ConstraintDemo()
+{
+	//cleanup in the reverse order of creation/initialization
+
+	exitPhysics();
+
+}
+*/
+
+function ConstraintDemo.clientMoveAndDisplay()
+{
+	/*
+ glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); 
+
+ 	Scalar dt = Scalar(getDeltaTimeMicroseconds()) * 0.000001;
+	//prIntegerf("dt = %f: ",dt);
+
+	// drive cone-twist motor
+	this.time += 0.03;
+	if (s_bTestConeTwistMotor)
+	{  // this works only for obsolete constraInteger solver for now
+		// build cone target
+		Scalar t = 1.25f*this.time;
+		Vec3 axis(0,sin(t),cos(t));
+		axis.normalize();
+		Quat q1(axis, 0.75f*PI);
+
+		// build twist target
+		//Quat q2(0,0,0);
+		//Quat q2(BulletVehictor3(1,0,0), -0.3*sin(this.time));
+		Quat q2(Vec3(1,0,0), -1.49f*BulletSin(1.5f*this.time));
+
+		// compose cone + twist and set target
+		q1 = q1 * q2;
+		this.ctc.enableMotor(true);
+		this.ctc.setMotorTargetInConstraintSpace(q1);
+	}
+
+	{
+		static Boolean once = true;
+		if ( this.dynamicsWorld.getDebugDrawer() && once)
+		{
+			this.dynamicsWorld.getDebugDrawer().setDebugMode(BulletIDebugDraw::DBG_DrawConstraints+BulletIDebugDraw::DBG_DrawConstraintLimits);
+			once=false;
+		}
+	}
+
+	
+	{
+	 	//during idle mode, just run 1 simulation step maximum
+		Integer maxSimSubSteps = this.idle ? 1 : 1;
+		if (this.idle)
+			dt = 1.0/420.0;
+
+		Integer numSimSteps = this.dynamicsWorld.stepSimulation(dt,maxSimSubSteps);
+
+		//optional but useful: debug drawing
+		this.dynamicsWorld.debugDrawWorld();
+	
+		Boolean verbose = false;
+		if (verbose)
+		{
+			if (!numSimSteps)
+				prIntegerf("Interpolated transforms\n");
+			else
+			{
+				if (numSimSteps > maxSimSubSteps)
+				{
+					//detect dropping frames
+					prIntegerf("Dropped (%i) simulation steps out of %i\n",numSimSteps - maxSimSubSteps,numSimSteps);
+				} else
+				{
+					prIntegerf("Simulated (%i) steps\n",numSimSteps);
+				}
+			}
+		}
+	}
+	renderme();
+
+//	drawLimit();
+
+    glFlush();
+    swapBuffers();
+    */
+}
+
+
+/*
+
+function ConstraintDemo.displayCallback(void) {
+
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); 
+
+	if (this.dynamicsWorld)
+		this.dynamicsWorld.debugDrawWorld();
+
+//	drawLimit();
+
+	renderme();
+
+    glFlush();
+    swapBuffers();
+}
+
+
+function ConstraintDemo.keyboardCallback(unsigned char key, Integer x, Integer y)
+{
+	(void)x;
+	(void)y;
+	switch (key) 
+	{
+		case 'O' :
+			{
+				Boolean offectOnOf;
+				if(spDoorHinge)
+				{
+					offectOnOff = spDoorHinge.getUseFrameOffset();
+					offectOnOff = !offectOnOf;
+					spDoorHinge.setUseFrameOffset(offectOnOff);
+					prIntegerf("DoorHinge %s frame offset\n", offectOnOff ? "uses" : "does not use");
+				}
+				if(spHingeDynAB)
+				{
+					offectOnOff = spHingeDynAB.getUseFrameOffset();
+					offectOnOff = !offectOnOf;
+					spHingeDynAB.setUseFrameOffset(offectOnOff);
+					prIntegerf("HingeDynAB %s frame offset\n", offectOnOff ? "uses" : "does not use");
+				}
+				if(spSlider6Dof)
+				{
+					offectOnOff = spSlider6Dof.getUseFrameOffset();
+					offectOnOff = !offectOnOf;
+					spSlider6Dof.setUseFrameOffset(offectOnOff);
+					prIntegerf("Slider6Dof %s frame offset\n", offectOnOff ? "uses" : "does not use");
+				}
+			}
+			break;
+		default : 
+			{
+				DemoApplication::keyboardCallback(key, x, y);
+			}
+			break;
+	}
+}
+
+*/
+
+operator entry(){
+
+  ConstraintDemo demo();
+
+  // for(Integer i=0; i<300; i++){
+  //   demo.stepDemo();
+  // }
+ 
+
+  // Force the destruction of the demo object earl.
+  demo = null;
+
+}

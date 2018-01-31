@@ -1,0 +1,65 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "writes a single sample into the file based on the provided GeometryAttributes.\n\nSupported types:\n  this: AlembicPointsWriter\n  points: Ref<Points>\n  result: Boolean\n"
+    },
+  "title" : "WriteSamplePoints[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicPointsWriter[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "points",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Points[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "30F673C737A692AB775B7BD90E65EDE2",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicPointsWriter_writeSamplePoints_task<<<index>>>(
+  io Boolean[] result
+, io AlembicPointsWriter[] this
+, in Points[] points
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].writeSamplePoints(points[index < points.size() ? index : points.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( points.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < points.size()) task_size = points.size();
+  result.resize(task_size);
+  for(Size index = 0; index < task_size; index++) {
+    AlembicWrapper_AlembicPointsWriter_writeSamplePoints_task(index, result, this, points);
+  }
+}
+"
+  }

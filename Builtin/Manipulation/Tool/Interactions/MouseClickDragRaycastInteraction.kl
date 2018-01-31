@@ -1,0 +1,80 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+namespace Tool {
+
+  /**
+    The MouseClickDragInteraction interaction sets up a DragInteraction that is started when the mouse
+    clicks on a target shape, and ends when the mouse is released.
+
+    The mouse button can be specified (MouseButton_LeftButton by default). The target 
+    shape, if not specified, is the owner BaseTool. Else, an explicit parent shape or 
+    hierarchy can be specified with :kl-ref:`Tool::MouseClickDragRaycastInteraction.addRaycastShape` 
+    or :kl-ref:`Tool::MouseClickDragRaycastInteraction.addRaycastHierarchy`
+
+    Once active, the DragInteraction will send these various events:
+    ToolEvent_DragBegin, ToolEvent_DragMove, ToolEvent_DragEnd,
+    ToolEvent_DragBeginEndNoMove.
+
+    See :ref:`TPG.interactive-tools` for more information and examples related to tool interactions.
+  */
+  object MouseClickDragRaycastInteraction : BaseDragInteraction{
+    private MouseClickRaycastInteraction raycastInteraction;
+  };
+
+  MouseClickDragRaycastInteraction() {
+    this.raycastInteraction = MouseClickRaycastInteraction( MouseButton_LeftButton );
+    this.init();
+  }
+
+  /// \param parentIsShapeHierarchy If true, the parent's shape hierarchy will be added as a raycast shape.
+  MouseClickDragRaycastInteraction( UInt32 mouseButtonsFilter, ModiferKey allowedModifiers, Boolean parentIsShapeHierarchy ) {
+    this.raycastInteraction = MouseClickRaycastInteraction( mouseButtonsFilter, allowedModifiers, parentIsShapeHierarchy );
+    this.raycastInteraction.setParent( this );
+    this.init();
+  }
+
+  MouseClickDragRaycastInteraction( Ref<MouseClickRaycastInteraction> raycastInteraction ) {
+    this.raycastInteraction = raycastInteraction;
+    this.init();
+    // Check if the raycast interaction is already active; if so, prepare a drag right now
+    if( raycastInteraction.hasCurrentRaycast() )
+      this.onPrepare( raycastInteraction.getCurrentRaycastContext(), raycastInteraction.getCurrentRaycastResult() );
+  }
+
+  /// \internal
+  MouseClickDragRaycastInteraction.init!( ) {
+    // Connect onClicked to our Begin event.
+    this.raycastInteraction.sendSuccessOnlyIfReleaseOnTarget( false );
+    this.connectAndAttach( this.raycastInteraction, MouseClickRaycastInteraction_SuccessEvent, ToolEvent_DragBegin );
+    this.connectAndAttach( this.raycastInteraction, MouseClickRaycastInteraction_MouseReleaseEvent, ToolEvent_DragEnd );
+  }
+
+  MouseClickDragRaycastInteraction.setMouseButtonsFilter!( UInt32 mouseButtonsFilter ) {
+    this.raycastInteraction.setMouseButtonsFilter( mouseButtonsFilter );
+  }
+
+  /// \param owned If true, this object will own the shape. The shape must not own us else a cyclic leak will occur.
+  MouseClickDragRaycastInteraction.addRaycastShape!( Ref<RaycastTargetShape> shape, Boolean owned ) { this.raycastInteraction.addRaycastShape( shape, owned ); }
+  MouseClickDragRaycastInteraction.removeRaycastShape!( Ref<RaycastTargetShape> shape ) { this.raycastInteraction.removeRaycastShape( shape ); }
+
+  /// \param owned If true, this object will own the shape. The shape must not own us else a cyclic leak will occur.
+  MouseClickDragRaycastInteraction.addRaycastHierarchy!( Ref<HierarchyNode> hier, Boolean owned ) { this.raycastInteraction.addRaycastHierarchy( hier, owned ); }
+  MouseClickDragRaycastInteraction.removeRaycastHierarchy!( Ref<HierarchyNode> hier ) { this.raycastInteraction.removeRaycastHierarchy( hier ); }
+
+
+  /// \internal
+  MouseClickDragRaycastInteraction.activate!() {
+    if( this.raycastInteraction )
+      this.raycastInteraction.activate();
+    this.parent.activate();
+  }
+
+  /// \internal
+  MouseClickDragRaycastInteraction.deactivate!( ) {
+    if( this.raycastInteraction )
+      this.raycastInteraction.deactivate();
+    this.parent.deactivate();
+  }
+
+}// namespace Tool

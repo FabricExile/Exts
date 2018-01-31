@@ -1,0 +1,205 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Xfo.html",
+    "uiTooltip" : "Constructor from single channels\n\n Supported by Xfo"
+    },
+  "title" : "XfoFromSRT[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "scX",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          1
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "scY",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          1
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "scZ",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          1
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiRange" : "(-3.14, 3.14)"
+        },
+      "name" : "eulerX",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiRange" : "(-3.14, 3.14)"
+        },
+      "name" : "eulerY",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiRange" : "(-3.14, 3.14)"
+        },
+      "name" : "eulerZ",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiRange" : "(-5.0, 5.0)"
+        },
+      "name" : "trX",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiRange" : "(-5.0, 5.0)"
+        },
+      "name" : "trY",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiRange" : "(-5.0, 5.0)"
+        },
+      "name" : "trZ",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 249,\n  \"g\" : 157,\n  \"b\" : 28\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Xfo[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "7C2EA62BB2278B7E546AB64718D39497",
+  "code" : "require Math;
+
+operator Math_Xfo_XfoFromSRT_task<<<index>>>(
+  io Xfo[] result
+, in Scalar[] scX
+, in Scalar[] scY
+, in Scalar[] scZ
+, in Scalar[] eulerX
+, in Scalar[] eulerY
+, in Scalar[] eulerZ
+, in Scalar[] trX
+, in Scalar[] trY
+, in Scalar[] trZ
+) {
+  result[index] = Xfo(scX[index < scX.size() ? index : scX.size() - 1], scY[index < scY.size() ? index : scY.size() - 1], scZ[index < scZ.size() ? index : scZ.size() - 1], eulerX[index < eulerX.size() ? index : eulerX.size() - 1], eulerY[index < eulerY.size() ? index : eulerY.size() - 1], eulerZ[index < eulerZ.size() ? index : eulerZ.size() - 1], trX[index < trX.size() ? index : trX.size() - 1], trY[index < trY.size() ? index : trY.size() - 1], trZ[index < trZ.size() ? index : trZ.size() - 1]);
+}
+
+dfgEntry {
+  if( scX.size() == 0) return;
+  if( scY.size() == 0) return;
+  if( scZ.size() == 0) return;
+  if( eulerX.size() == 0) return;
+  if( eulerY.size() == 0) return;
+  if( eulerZ.size() == 0) return;
+  if( trX.size() == 0) return;
+  if( trY.size() == 0) return;
+  if( trZ.size() == 0) return;
+  Size task_size = 0;
+  if(task_size < scX.size()) task_size = scX.size();
+  if(task_size < scY.size()) task_size = scY.size();
+  if(task_size < scZ.size()) task_size = scZ.size();
+  if(task_size < eulerX.size()) task_size = eulerX.size();
+  if(task_size < eulerY.size()) task_size = eulerY.size();
+  if(task_size < eulerZ.size()) task_size = eulerZ.size();
+  if(task_size < trX.size()) task_size = trX.size();
+  if(task_size < trY.size()) task_size = trY.size();
+  if(task_size < trZ.size()) task_size = trZ.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Xfo_XfoFromSRT_task(index, result, scX, scY, scZ, eulerX, eulerY, eulerZ, trX, trY, trZ);
+    }
+  } else {
+    Math_Xfo_XfoFromSRT_task<<<task_size>>>(result, scX, scY, scZ, eulerX, eulerY, eulerZ, trX, trY, trZ);
+  }
+}
+"
+  }

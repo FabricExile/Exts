@@ -1,0 +1,199 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+
+/**
+\versionadded 1.12.0
+
+The OGLLinesShader inherits the OGLInlineShader. It extends the OGLInlineShader for shading with a specialized lines shading model..
+
+\rst
+Uniforms
+----------
+==================== ============ =============================================== ==================================
+Name                 Type         Description                                     Default
+==================== ============ =============================================== ==================================
+u_light0Position     Vec3         Position of the first light                     Position of the camera
+u_light0Color        Color        Color of the first light                        Color(1.0, 1.0, 1.0)
+u_ambientColor       Color        Ambient color component                         Color(0.05, 0.05, 0.05)
+u_rootColor          Color        Color at the start of each line (ratio == 0.0)  Color(0.1, 0.1, 0.1)
+u_tipColor           Color        Color at the end of each line (ratio == 1.0)    Color(1.0, 1.0, 1.0)
+u_specularColor      Color        Specular color component                        Color(0.2, 0.2, 0.2)
+u_specularFactor     Color        Specular distribution factor                    16.0
+u_normalIsTangent    Integer      Flag defining normal type                       0
+u_shadingAmount      Scalar       0.0 to 1.0 defining how much shading to apply   1.0
+u_vertexColorAmount  Scalar       0.0 to 1.0 defining how much to use vertexcolor 1.0
+==================== ============ =============================================== ==================================
+
+Attributes
+----------
+=============== ============ =====================================
+Name            Type         Description
+=============== ============ =====================================
+positions       Vec3         Geometry positions
+normals         Vec3         Geometry normals
+vertexColors    Color        Color per vertex
+ratios          Scalar       0.0 to 1.0 along each line
+=============== ============ =====================================
+\endrst
+
+\example
+  InlineDrawing draw = OGLInlineDrawing();
+  InlineShader shader = draw.registerShader(OGLLinesShader);
+  InlineMaterial mat = shader.getOrCreateMaterial('blueLines');
+  mat.setUniform('u_rootColor', Color(0.0, 1.0, 0.0));
+  mat.setUniform('u_tipColor', Color(0.6, 1.0, 0.6));
+\endexample
+\dfgPresetOmit
+*/
+object OGLLinesShader: OGLInlineShader {};
+
+/// default constructor
+function OGLLinesShader() {
+  // Avoid calling the init method if this default constructor is being invoked 
+  // during the construction of a derived object.
+  if(this.type() == OGLLinesShader)
+    this.init(String(this.type()));
+}
+
+/// default constructor taking a name
+function OGLLinesShader(String name) {
+  this.init(name);
+}
+
+/// initialize the OGLLinesShader using name
+/// \internal
+function OGLLinesShader.init!(String name) {
+  this.name = name;
+  this.setVertexCode("
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+      
+      uniform mat4 u_viewMatrix;
+      uniform mat4 u_projection;
+      uniform mat4 u_modelMatrix;
+      uniform mat3 u_normalMatrix;
+
+      uniform vec3 u_light0Position;
+      uniform vec4 u_light0Color;
+
+      attribute vec4 positions;
+      attribute vec3 normals;
+      attribute vec4 vertexColors;
+      attribute float ratios;
+
+      varying vec3 v_normal;
+      varying vec4 v_position;
+      varying vec3 v_lightDir;
+      varying vec4 v_lightColor;
+      varying vec3 v_eyeVec;
+      varying vec4 vertexColor;
+      varying float ratio;
+
+      void main(){
+        v_normal = u_normalMatrix * normals;
+        v_position = u_modelMatrix * positions;
+        vec4 v_positionInv = (u_viewMatrix * vec4(v_position.xyz, 1.0));
+        gl_Position = u_projection * v_positionInv;
+  
+        v_lightDir = (u_viewMatrix * vec4(u_light0Position, 1.0)).xyz - v_positionInv.xyz;
+        v_lightColor = u_light0Color;
+        v_eyeVec = -v_positionInv.xyz;
+        vertexColor = vertexColors;
+        ratio = ratios;
+      }
+    ");
+  this.setFragmentCode("
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+      
+      uniform vec4 u_ambientColor;
+      uniform vec4 u_rootColor;
+      uniform vec4 u_tipColor;
+      uniform vec4 u_specularColor;
+      uniform float u_specularFactor;
+      uniform int u_normalIsTangent;
+      uniform float u_shadingAmount;
+      uniform float u_vertexColorAmount;
+
+      varying vec3 v_normal;
+      varying vec4 v_position;
+      varying vec3 v_lightDir;
+      varying vec4 v_lightColor;
+      varying vec3 v_eyeVec;
+      varying vec4 vertexColor;
+      varying float ratio;
+
+      void main() {
+        vec4 color1 = mix(vec4(1.0, 1.0, 1.0, 1.0), vertexColor, u_vertexColorAmount);
+        color1 *= mix(u_rootColor, u_tipColor, ratio);
+        vec4 color2 = u_ambientColor * color1;
+
+
+        vec3 N;
+        if(u_normalIsTangent == 0)
+          N = normalize(v_normal);
+        else
+        {
+          N = normalize(cross(v_normal, cross(v_normal, v_eyeVec)));
+        }
+        if(dot(N, v_eyeVec) < 0.0)
+          N = -N;
+        vec3 L = normalize(v_lightDir);
+        
+        float lambertTerm = dot(N,L);
+        
+        if(lambertTerm > 0.0)
+        {
+          color2 += v_lightColor * color1 * lambertTerm; 
+          vec3 E = normalize(v_eyeVec);
+          vec3 R = reflect(-L, N);
+          float specular = pow( max(dot(R, E), 0.0), u_specularFactor );
+          color2 += u_specularColor * specular;  
+        }
+
+        gl_FragColor = mix(color1, color2, u_shadingAmount);
+      }
+    ");  
+  this.defineUniform(InlineUniform("u_viewMatrix", Mat44()));
+  this.defineUniform(InlineUniform("u_projection", Mat44()));
+  this.defineUniform(InlineUniform("u_modelMatrix", Mat44()));
+  this.defineUniform(InlineUniform("u_normalMatrix", Mat33()));
+
+  this.defineUniform(InlineUniform("u_light0Position", Vec3(100, 100, 100)));
+  this.defineUniform(InlineUniform("u_light0Color", Color(1.0, 1.0, 1.0)));
+
+  this.defineUniform(InlineUniform("u_ambientColor", Color(0.05, 0.05, 0.05)));
+  this.defineUniform(InlineUniform("u_rootColor", Color(0.1, 0.1, 0.1)));
+  this.defineUniform(InlineUniform("u_tipColor", Color(1.0, 1.0, 1.0)));
+  this.defineUniform(InlineUniform("u_specularColor", Color(0.2, 0.2, 0.2)));
+  this.defineUniform(InlineUniform("u_specularFactor", 16.0));
+  this.defineUniform(InlineUniform("u_normalIsTangent", Integer(1)));
+
+  this.defineUniform(InlineUniform("u_shadingAmount", 1.0));
+  this.defineUniform(InlineUniform("u_vertexColorAmount", 1.0));
+
+  this.defineAttribute('positions', "Vec3");
+  this.defineAttribute('normals', "Vec3");
+  this.defineAttribute('vertexColors', "Vec4");
+  this.defineAttribute('ratios', "Float32");
+}
+
+/// called by the InlineDrawing, should not be called manually 
+/// \internal 
+function Boolean OGLLinesShader.draw!(io DrawContext context) {
+
+  if(this.getName() == 'debug') 
+  report('OGLLinesShader.draw '+this.getName());
+
+  if(context.lightPositions.size() > 0) 
+  this.setUniform(InlineUniform('u_light0Position', context.lightPositions[0])); 
+  else 
+  this.setUniform(InlineUniform('u_light0Position', context.viewport.getCamera().getMat44().translation()));
+
+  if(context.lightColors.size() > 0) 
+  this.setUniform(InlineUniform('u_light0Color', context.lightColors[0]));
+
+  return this.parent.draw(context);
+}
+

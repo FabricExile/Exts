@@ -1,0 +1,218 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+using namespace Tool;
+
+/// This command adds a point array to a Points geometry.
+object DrawPointsExampleCommand : BaseScriptableCommand{};
+
+DrawPointsExampleCommand() {
+  this.declareArg( "posArray", // name
+                   Vec3Array, // arg data type (Vec3Array is an alias; using Vec3[] directly causes a syntax error)
+                   CommandArgFlag_IN ); // input arg
+
+  this.declareArg( "pointCloud", // name
+                   PersistablePoints, // arg data type
+                   CommandArgFlag_IO // input and output arg
+                   | CommandArgFlag_CREATE_IF_NULL ); // create a new Point geometry if none
+}
+
+Boolean DrawPointsExampleCommand.canUndo() { return true; }
+
+Boolean DrawPointsExampleCommand.doIt!( io String error ) {
+  if( !this.parent.doIt( error ) )// Call parent first
+    return false;
+
+  return this.redoIt();
+}
+
+Boolean DrawPointsExampleCommand.redoIt!( ) {
+  if( !this.parent.redoIt() )// Call parent first
+    return false;
+
+  // fetch agr values
+  Vec3 posArray[] = this.getArgValue( "posArray" );
+  PersistablePoints pointCloud = this.getArgValue( "pointCloud" );
+
+  // do the modification
+  Size firstIndex = pointCloud.addPoints( posArray.size() );
+  for( Size i = 0; i < posArray.size(); ++i )
+    pointCloud.setPointPosition( firstIndex + i, posArray[i] );
+
+  // set back results (actually not required here since
+  // KL objects are referenced/shared)
+  this.setArgValue( "pointCloud", RTVal( pointCloud ) );
+
+  return true;
+}
+
+Boolean DrawPointsExampleCommand.undoIt!( ) {
+  // fetch agr values
+  PersistablePoints pointCloud = this.getArgValue( "pointCloud" );
+
+  // undo the modification: remove last point
+  Vec3 posArray[] = this.getArgValue( "posArray" );
+  pointCloud.resize( pointCloud.size() - posArray.size() );
+
+  // set back results (actually not required here since
+  // KL objects are referenced/shared)
+  this.setArgValue( "pointCloud", RTVal( pointCloud ) );
+
+  return this.parent.undoIt();// Call parent last
+}
+
+Boolean DrawPointsExampleCommand.canMerge( Command prevCmd, io Boolean undoPrevAndMergeFirst ) {
+  //Set this option to true so the previous command is undone before we apply
+  //the merged one
+  undoPrevAndMergeFirst = true;
+  return this.parent.canMerge( prevCmd, undoPrevAndMergeFirst );
+}
+
+DrawPointsExampleCommand.merge!( Command prevCmd ) {
+  // Merge the commands (draw strokes):
+  // Set the posArray as the concatenation of the two
+  DrawPointsExampleCommand prevDrawCmd = prevCmd;
+  Vec3 prevPosArray[] = prevDrawCmd.getArgValue( "posArray" );
+  Vec3 posArray[] = this.getArgValue( "posArray" );
+  this.setArgValue( "posArray", RTVal( prevPosArray + posArray ) );
+}
+
+/// Simple draw points tool which creates a DrawPointsExampleCommand
+/// to draw points when the mouse is clicked and dragged
+object SimpleDrawPointsTool : Tool::BaseTool{
+  String targetPath;
+  Points points;
+  SInt32 commandMergeID;
+};
+
+SimpleDrawPointsTool() {
+  // register to raw events (mouse clicks)
+  this.registerToRawEvents( true );
+  this.commandMergeID = NoCanMergeID;// set as uninitialized
+}
+
+SimpleDrawPointsTool.update!( String targetPath, Points points ) {
+  // Copy the target path so the command can target the right data
+  this.targetPath = targetPath;
+
+  // We don't actually need "points" in this simple example, but we could use it to display hints or various computations
+  this.points = points;
+}
+
+SimpleDrawPointsTool.onRawEvent!( io Event event ) {
+
+  // We draw if the left button is clicked with no modifiers (Alt+click is for camera tool)
+  Ref<MouseEvent> mouseEvent = event;
+  if(    Boolean(mouseEvent) 
+      && !mouseEvent.isAccepted()
+      && ( mouseEvent.buttons | mouseEvent.button ) == MouseButton_LeftButton
+      && !mouseEvent.modifiers ) { // leave 'Alt-click' to camera tool
+    // Add a point if the left button is clicked, and if
+    // it is a click or move event
+    if(    mouseEvent.eventType() == Event_MouseButtonPress 
+        || mouseEvent.eventType() == Event_MouseMove
+        || mouseEvent.eventType() == Event_MouseButtonRelease ) {
+
+      Vec3 positions[];
+      // At mouse release, we just end the stroke and log the result of merged commands
+      Boolean endStroke = mouseEvent.eventType() == Event_MouseButtonRelease;
+
+      if( !endStroke ) {
+        // Add a point at the current mouse position.
+        // Make this very simple: add a point at a distance of 5 from the camera
+        Viewport viewport = this.getManager().getCurrentEventContext().viewport;
+        Ray mouseRay = viewport.calcRayFromScreenPos( mouseEvent.pos );
+        positions.push( mouseRay.start + mouseRay.direction * 5 );
+      }
+
+      // If not done already, start a new stroke.
+      // Commands of a same stroke will have the same "mergeID"
+      // and will then be automatically merged.
+      if( this.commandMergeID == NoCanMergeID )
+        this.commandMergeID = GetCommandManager().getNewCanMergeID();
+
+      RTVal args[String];
+      // set the pointCloud as a target path instead of an actual value
+      // to instruct the CommandManager that it must be fetched before/after
+      // executing the command
+      args["pointCloud"] = PathValue( this.targetPath );
+      args["posArray"] = positions;
+
+      // create and schedule the command
+      Ref<CommandManager> commandManager = GetCommandManager();
+      DrawPointsExampleCommand cmd = commandManager.scheduleCommand( "DrawPointsExampleCommand", args, this.commandMergeID );
+
+      if( endStroke )
+        this.commandMergeID = NoCanMergeID;// Next click/move will be a new stroke
+      else
+        cmd.blockLog(); // We only want the command to be logged and added to undo stack at the end of the stroke
+
+      mouseEvent.accept();//we used that mouse event
+    }
+  }
+}
+
+/// Same as SimpleDrawPointsTool, but using a MouseClickAndDragInteraction
+object SimpleDrawPointsTool2 : Tool::BaseTool{
+  String targetPath;
+  Points points;
+  SInt32 commandMergeID;
+};
+
+SimpleDrawPointsTool2() {
+  this.commandMergeID = NoCanMergeID;// set as uninitialized
+
+  // Use a mouse click and drag interaction to manage the mouse states
+  MouseClickDragInteraction interaction();
+  interaction.addListener( this, false, ToolEvent_DragMove, "drawMove" );
+  interaction.addListener( this, false, ToolEvent_DragEnd, "drawDone" );
+  this.attachComponent( interaction );
+}
+
+SimpleDrawPointsTool2.update!( String targetPath, Points points ) {
+  // Copy the target path so the command can target the right data
+  this.targetPath = targetPath;
+
+  // We don't actually need "points" in this simple example, but we could use it to display hints or various computations
+  this.points = points;
+}
+
+SimpleDrawPointsTool2.onEvent!( ToolEvent event, ToolEventUserID userID ) {
+  Boolean dragMove = event.name == "drawMove";
+  Boolean dragDone = event.name == "drawDone";
+
+  if( dragMove || dragDone ) {
+    Vec3 positions[];
+    if( !dragDone ) {
+      // Add a point at the current mouse position.
+      // Make this very simple: add a point at a distance of 5 from the camera
+      Viewport viewport = this.getManager().getCurrentEventContext().viewport;
+      Ray mouseRay = viewport.calcRayFromScreenPos( this.getManager().getLastMousePosition() );
+      positions.push( mouseRay.start + mouseRay.direction * 5 );
+    }
+
+    // If not done already, start a new stroke.
+    // Commands of a same stroke will have the same "mergeID"
+    // and will then be automatically merged.
+    if( this.commandMergeID == NoCanMergeID )
+      this.commandMergeID = GetCommandManager().getNewCanMergeID();
+
+    RTVal args[String];
+    // set the pointCloud as a target path instead of an actual value
+    // to instruct the CommandManager that it must be fetched before/after
+    // executing the command
+    args["pointCloud"] = PathValue( this.targetPath );
+    args["posArray"] = positions;
+
+    // create and schedule the command
+    Ref<CommandManager> commandManager = GetCommandManager();
+    DrawPointsExampleCommand cmd = commandManager.scheduleCommand( "DrawPointsExampleCommand", args, this.commandMergeID );
+
+    if( dragDone )
+      this.commandMergeID = NoCanMergeID;// Next click/move will be a new stroke
+    else
+      cmd.blockLog(); // We only want the command to be logged and added to undo stack at the end of the stroke
+  }
+  this.parent.onEvent( event, userID );
+}

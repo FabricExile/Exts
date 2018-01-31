@@ -1,0 +1,140 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Util;
+
+/// \internal
+inline UInt32 SubBitVectorArray_getNbRequiredUInt32( UInt32 size ) {
+  UInt32 nb = size >> 5;
+  return ( size >> 5 ) + ( (size & 31) != 0 ? 1 : 0 );
+}
+
+/// \internal
+inline Boolean SubBitVectorArray_getBit( UInt32 data<>, UInt32 dataOffset, UInt32 bit ) {
+  return getBit( data[ dataOffset + (bit >> 5) ], bit & 31 );
+}
+
+/// \internal
+inline SubBitVectorArray_setBit( io UInt32 data<>, UInt32 dataOffset, UInt32 bit, Boolean value ) {
+  setBit( data[ dataOffset + (bit >> 5) ], bit & 31, value );
+}
+
+/// \internal
+inline SubBitVectorArray_setBit( io UInt32 data[], UInt32 dataOffset, UInt32 bit, Boolean value ) {
+  setBit( data[ dataOffset + (bit >> 5) ], bit & 31, value );
+}
+
+/// \internal
+inline SubBitVectorArray_atomicSetBit( io UInt32 data<>, UInt32 dataOffset, UInt32 bit, Boolean value ) {
+  atomicSetBit( data[ dataOffset + (bit >> 5) ], bit & 31, value );
+}
+
+/// \internal
+inline SubBitVectorArray_atomicSetBit( io UInt32 data[], UInt32 dataOffset, UInt32 bit, Boolean value ) {
+  atomicSetBit( data[ dataOffset + (bit >> 5) ], bit & 31, value );
+}
+
+/// \internal
+inline SubBitVectorArray_setBit( io UInt32 data<>, UInt32 dataOffset, UInt32 bit ) {
+  setBit( data[ dataOffset + (bit >> 5) ], bit & 31 );
+}
+
+/// \internal
+inline SubBitVectorArray_setBit( io UInt32 data[], UInt32 dataOffset, UInt32 bit ) {
+  setBit( data[ dataOffset + (bit >> 5) ], bit & 31 );
+}
+
+/// \internal
+inline SubBitVectorArray_atomicSetBit( io UInt32 data<>, UInt32 dataOffset, UInt32 bit ) {
+  atomicSetBit( data[ dataOffset + (bit >> 5) ], bit & 31 );
+}
+
+/// \internal
+inline SubBitVectorArray_atomicSetBit( io UInt32 data[], UInt32 dataOffset, UInt32 bit ) {
+  atomicSetBit( data[ dataOffset + (bit >> 5) ], bit & 31 );
+}
+
+/// \internal
+inline SubBitVectorArray_clearBit( io UInt32 data<>, UInt32 dataOffset, UInt32 bit ) {
+  clearBit( data[ dataOffset + (bit >> 5) ], bit & 31 );
+}
+
+/// \internal
+inline SubBitVectorArray_clearBit( io UInt32 data[], UInt32 dataOffset, UInt32 bit ) {
+  clearBit( data[ dataOffset + (bit >> 5) ], bit & 31 );
+}
+
+/// \internal
+inline SubBitVectorArray_atomicClearBit( io UInt32 data<>, UInt32 dataOffset, UInt32 bit ) {
+  atomicClearBit( data[ dataOffset + (bit >> 5) ], bit & 31 );
+}
+
+/// \internal
+inline SubBitVectorArray_atomicClearBit( io UInt32 data[], UInt32 dataOffset, UInt32 bit ) {
+  atomicClearBit( data[ dataOffset + (bit >> 5) ], bit & 31 );
+}
+
+/// \internal
+inline Boolean SubBitVectorArray_getThenSetBit( io UInt32 data<>, UInt32 dataOffset, UInt32 bit ) {
+  return getThenSetBit( data[ dataOffset + (bit >> 5) ], bit & 31 );
+}
+
+/// \internal
+inline Boolean SubBitVectorArray_getThenSetBit( io UInt32 data[], UInt32 dataOffset, UInt32 bit ) {
+  return getThenSetBit( data[ dataOffset + (bit >> 5) ], bit & 31 );
+}
+
+/// \internal
+inline Boolean SubBitVectorArray_getThenClearBit( io UInt32 data<>, UInt32 dataOffset, UInt32 bit ) {
+  return getThenClearBit( data[ dataOffset + (bit >> 5) ], bit & 31 );
+}
+
+/// \internal
+inline Boolean SubBitVectorArray_getThenClearBit( io UInt32 data[], UInt32 dataOffset, UInt32 bit ) {
+  return getThenClearBit( data[ dataOffset + (bit >> 5) ], bit & 31 );
+}
+
+/// \internal
+inline Boolean SubBitVectorArray_getThenSetBit( io UInt32 data<>, UInt32 dataOffset, UInt32 bit, Boolean value ) {
+  return getThenSetBit( data[ dataOffset + (bit >> 5) ], bit & 31, value );
+}
+
+/// \internal
+inline Boolean SubBitVectorArray_getThenSetBit( io UInt32 data[], UInt32 dataOffset, UInt32 bit, Boolean value ) {
+  return getThenSetBit( data[ dataOffset + (bit >> 5) ], bit & 31, value );
+}
+
+/// \internal
+inline UInt32 SubByteArray_getNbRequiredUInt32( UInt32 size ) {
+  return (size+3)>>2;
+}
+
+/// \internal
+inline Byte SubByteArray_getByte( UInt32 data<>, UInt32 dataOffset, UInt32 byteIndex ) {
+  UInt32 intIndex = byteIndex >> 2;
+  UInt32 subByteIndex = byteIndex & 3;
+  UInt32 value = data[dataOffset + intIndex];
+  return Byte((value >> (subByteIndex*8) ) & 0xFF);
+}
+
+/// \internal
+inline SubByteArray_setByte(io UInt32 data<>, UInt32 dataOffset, UInt32 byteIndex, Byte value ) {
+  UInt32 intIndex = byteIndex >> 2;
+  UInt32 subByteIndex = byteIndex & 3;
+  UInt32 intValue = data[dataOffset + intIndex];
+  UInt32 shift = subByteIndex*8;
+  data[dataOffset + intIndex] = (intValue & ~(0xFF << shift)) | (value << shift);
+}
+
+/// \internal
+inline Boolean indexArrayPop( io UInt32 array[], io UInt32 element ) {
+  UInt32 size = array.size();
+  if( size ) {
+    UInt32 newSize = size-1;
+    element = array[newSize];
+    array.resize(newSize);
+    return true;
+  } else
+    return false;
+}

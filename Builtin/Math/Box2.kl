@@ -1,0 +1,123 @@
+
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/**
+The :kl-ref:`Box2` represents a 2 dimensional bounding box. It uses :kl-ref:`Vec2` types for each of the 2 elements.
+
+\rst
+  .. kl-example:: Construct Box2
+
+    // create a box2
+    Vec2 min(0.0, 0.0);
+    Vec2 max(1.0, 1.0);
+    Box2 box(min, max);
+
+\endrst
+
+\seealso Box3
+\dfgPresetColor Color(99, 129, 92)
+*/
+struct Box2
+{
+  Vec2 min;
+  Vec2 max;
+};
+
+/// Default constructor
+inline Box2() {
+  this.setEmpty();
+}
+
+/// Constructor from vectors
+inline Box2(
+  Vec2 min, Vec2 max
+) {
+  this.min = min;
+  this.max = max;
+}
+
+/// Returns true if this box has no content
+inline Boolean Box2.isEmpty() {
+  return this.max.x <= this.min.x && this.max.y <= this.min.y;
+}
+
+/// Returns true if the point is inside the box
+inline Boolean Box2.contains( Vec2 point ) {
+  return point.x >= this.min.x && point.x <= this.max.x
+    && point.y >= this.min.y && point.y <= this.max.y;
+}
+
+/// setting this box to an empty box
+inline Box2.setEmpty!() {
+  this.min = Vec2( SCALAR_INFINITE, SCALAR_INFINITE );
+  this.max = Vec2( -SCALAR_INFINITE, -SCALAR_INFINITE );
+}
+
+/// Merges the given Vec2 value into this box, expanding the Box2 accordingly
+inline Box2.merge!(Vec2 v) {
+  if(this.min.x > v.x) this.min.x = v.x;
+  if(this.min.y > v.y) this.min.y = v.y;
+  if(this.max.x < v.x) this.max.x = v.x;
+  if(this.max.y < v.y) this.max.y = v.y;
+}
+
+/// Merges the given Box2 value into this box
+inline Box2.merge!(Box2 v) {
+  if( v.min.x < this.min.x )this.min.x = v.min.x;
+  if( v.max.x > this.max.x )this.max.x = v.max.x;
+  if( v.min.y < this.min.y )this.min.y = v.min.y;
+  if( v.max.y > this.max.y )this.max.y = v.max.y;
+
+  if( v.min.y < this.min.y )
+    this.min.y = v.min.y;
+  if( v.max.y > this.max.y )
+    this.max.y = v.max.y;
+}
+
+/// Returns the merge of two boxes
+inline Box2 + (Box2 a, Box2 b) {
+  Box2 r = a;
+  r.merge(b);
+  return r;
+}
+
+/// Plus equals operator. Merges the given Vec2 value into this box
+inline Box2. += (Vec2 v) {
+  this.merge(v);
+}
+
+
+/// Plus equals operator. Merges the given Box2 value into this box
+inline Box2. += (Box2 other) {
+  this.merge(other);
+}
+
+/// Equals operator
+inline Boolean == (Box2 a, Box2 b) {
+  return a.min == b.min && a.max == b.max;
+}
+
+/// Not equals operator
+inline Boolean != (Box2 a, Box2 b) {
+  return a.min != b.min || a.max != b.max;
+}
+
+/// Hash for this value
+inline UInt32 Box2.hash() {
+  return this.min.hash() ^ this.max.hash();
+}
+
+/// Returns true if this Box2 intersects with that Box2
+inline Boolean Box2.intersects(Box2 that) {
+  if(this.isEmpty() || that.isEmpty())
+    return false;
+
+  return ((that.min.x >= this.min.x && that.min.x <= this.max.x) ||
+          (that.max.x >= this.min.x && that.max.x <= this.max.x) ||
+          (that.min.x < this.min.x && that.max.x > this.max.x)) &&
+         ((that.min.y >= this.min.y && that.min.y <= this.max.y) ||
+          (that.max.y >= this.min.y && that.max.y <= this.max.y) ||
+          (that.min.y < this.min.y && that.max.y > this.max.y));
+}

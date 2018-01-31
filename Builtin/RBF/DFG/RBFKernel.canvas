@@ -1,0 +1,183 @@
+{
+  "objectType" : "Graph",
+  "metadata" : {
+    "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+    "uiNodeColor" : "{\n  \"r\" : 87,\n  \"g\" : 119,\n  \"b\" : 143\n  }",
+    "uiGraphZoom" : "{\n  \"value\" : 0.9298843145370483\n  }",
+    "uiTooltip" : "Construct a RBF kernel\n- rbf: gaussian:0, odd_harmonic:1, even_harmonic:2, quadric:3, inv_quadric:4, mquadric:5,  inv_mquadric:6\n- power: Power parameter\n- c: Scalar parameter",
+    "uiGraphPan" : "{\n  \"x\" : -831.8897842094309,\n  \"y\" : -87.0450721169733\n  }"
+    },
+  "title" : "RBFKernel",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Execute" : {}
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiCombo" : "(\"gaussian\", \"odd_harmonic\", \"even_harmonic\", \"quadric\", \"inv_quadric\", \"mquadric\", \"inv_mquadric\")"
+        },
+      "name" : "rbf",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "UInt32" : 0
+        },
+      "execPortType" : "In",
+      "typeSpec" : "UInt32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "power",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "UInt32" : 2
+        },
+      "execPortType" : "In",
+      "typeSpec" : "UInt32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "c",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float32" : 0.1000000014901161
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "kernel",
+      "nodePortType" : "In",
+      "defaultValues" : {
+        "RBF::Kernel" : {
+          "rbf" : 2,
+          "power" : 2,
+          "c" : -1
+          }
+        },
+      "execPortType" : "Out",
+      "typeSpec" : "RBF::Kernel"
+      }
+    ],
+  "extDeps" : {
+    "RBF" : "*"
+    },
+  "presetGUID" : "9145D4FFE0EE404784D0939BACD3D11A",
+  "nodes" : [
+    {
+      "objectType" : "Inst",
+      "metadata" : {
+        "uiGraphPos" : "{\"x\":1200.0,\"y\":410.0}"
+        },
+      "name" : "Kernel",
+      "ports" : [
+        {
+          "objectType" : "InstPort",
+          "name" : "exec",
+          "nodePortType" : "IO"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "rbf",
+          "nodePortType" : "In",
+          "defaultValues" : {
+            "UInt32" : 2
+            }
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "power",
+          "nodePortType" : "In"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "c",
+          "nodePortType" : "In",
+          "defaultValues" : {
+            "Float32" : 1
+            }
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "kernel",
+          "nodePortType" : "Out"
+          }
+        ],
+      "definition" : {
+        "objectType" : "Func",
+        "metadata" : {
+          "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+          "uiNodeColor" : "{\n  \"r\" : 121,\n  \"g\" : 134,\n  \"b\" : 143\n  }"
+          },
+        "title" : "RBF",
+        "ports" : [
+          {
+            "objectType" : "ExecPort",
+            "name" : "exec",
+            "nodePortType" : "IO",
+            "execPortType" : "IO",
+            "typeSpec" : "Execute"
+            },
+          {
+            "objectType" : "ExecPort",
+            "name" : "rbf",
+            "nodePortType" : "Out",
+            "execPortType" : "In",
+            "typeSpec" : "UInt32"
+            },
+          {
+            "objectType" : "ExecPort",
+            "name" : "power",
+            "nodePortType" : "Out",
+            "execPortType" : "In",
+            "typeSpec" : "UInt32"
+            },
+          {
+            "objectType" : "ExecPort",
+            "name" : "c",
+            "nodePortType" : "Out",
+            "execPortType" : "In",
+            "typeSpec" : "Float32"
+            },
+          {
+            "objectType" : "ExecPort",
+            "name" : "kernel",
+            "nodePortType" : "In",
+            "execPortType" : "Out",
+            "typeSpec" : "RBF::Kernel"
+            }
+          ],
+        "extDeps" : {
+          "RBF" : "*"
+          },
+        "code" : "
+dfgEntry {
+  kernel = RBF::Kernel(rbf,power, c);
+}
+"
+        }
+      }
+    ],
+  "connections" : {
+    "rbf" : [
+      "Kernel.rbf"
+      ],
+    "power" : [
+      "Kernel.power"
+      ],
+    "c" : [
+      "Kernel.c"
+      ],
+    "Kernel.kernel" : [
+      "kernel"
+      ]
+    }
+  }

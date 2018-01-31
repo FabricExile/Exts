@@ -1,0 +1,455 @@
+
+require Containers;
+require FileIO;
+
+struct GLSLParam {
+  Size lineNumber;
+  String name;
+  String line;
+  String dataType;
+  UInt32 size;//TODO: support fixed arrays: have 'count' param
+  String declType;
+  String tags[];
+  Scalar defaultValue[];
+  Scalar range[2][];
+};
+
+struct GLSLInsertionPoint {
+  Size lineNumber;
+  String label;
+  Boolean fetchParameter;//If a 'fetch' statement, then 'label' == param name.
+  String fetchTag; //Optional : \fetch<fetchTag>
+};
+
+function GLSLPreprocessor_debugPrintParams( GLSLParam params[] ) {
+  for( Size i = 0; i < params.size(); ++i )
+    report( i + " " + params[i].name 
+      + " li=" + params[i].lineNumber 
+      + " declType=" + params[i].declType 
+      + (params[i].dataType ? " type=" + params[i].dataType : '') 
+      + (params[i].tags ? " tags=" + params[i].tags : '') 
+      + (params[i].defaultValue ? " default=" + params[i].defaultValue : '') 
+      + (params[i].range[0] ? " range=" + params[i].range : '') 
+      );
+}
+
+function GLSLPreprocessor_debugPrintInsertionPoint( GLSLInsertionPoint insertionPoint[] ) {
+  for( Size i = 0; i < insertionPoint.size(); ++i )
+    report( i + " " + insertionPoint[i].label + " li=" + insertionPoint[i].lineNumber );
+}
+
+function Integer GLSLPreprocessor_findOpeningBlockCommentBrace(String lines[], UInt32 closeBraceLine, io Integer openBracePos){
+  // Look back through the code for the block comment preceding the value. 
+  for(Integer i=closeBraceLine; i>=0; i--){
+    Integer pos = lines[i].find('/*', 0);
+    if(pos != -1){
+      openBracePos = pos;
+      return i;
+    }
+  }
+  return -1;
+}
+
+function String GLSLPreprocessor_gatherValueMetadata(String lines[], Integer lineNumber){
+  // Look back through the code for the block comment preceding the value. 
+  String metadata;
+  Integer pos = lines[lineNumber-1].find('*/', 0);
+  if(pos != -1){
+    Integer closeBraceLine = lineNumber-1;
+    Integer openBracePos;
+    Integer openBraceLine = GLSLPreprocessor_findOpeningBlockCommentBrace(lines, closeBraceLine, openBracePos);
+    if(openBraceLine != -1){
+      for(Integer j=openBraceLine; j<=closeBraceLine; j++){
+        if(j==closeBraceLine && j == openBraceLine)
+          metadata += lines[j].subString(pos-2, openBracePos+2) + '\n';
+        else if(j==closeBraceLine)
+          metadata += lines[j].left(pos) + '\n';
+        else if(j==openBraceLine)
+          metadata += lines[j].leftStrip(openBracePos+2) + '\n';
+        else
+          metadata += lines[j] + '\n';
+      }
+    }
+  }
+  else{
+    Integer commentline = lineNumber-1;
+    while(commentline >= 0){
+      pos = lines[commentline].find('///', 0);
+      if(pos == -1)
+        break;
+      metadata = lines[commentline].leftStrip(pos + 3) + '\n' + metadata;
+      commentline--;
+    }
+  }
+  // this parameter has no metdata
+  return metadata;
+}
+
+inline Float32[] GLSLPreprocessor_parseScalarArray(String defaultValueStr) {
+  String parts[] = defaultValueStr.replaceAny('[]', '').split(',');
+  Float32 result[];
+  result.resize(parts.size());
+  for(Integer i=0; i<parts.size(); i++)
+    result[i] = parts[i].toScalar();
+  return result;
+}
+
+
+function GLSLParam GLSLPreprocessor_generateGLSLParam(String parts[], String metadata){
+  GLSLParam param;
+  param.size = 1;//TODO: support arrays
+  param.line = ' '.join(parts);
+  String defaultValueStr;
+  String rangeStr;
+  if(parts[0] == 'uniform' || parts[0] == 'attribute' || parts[0] == 'varying' || parts[0] == 'in' || parts[0] == 'out'){
+    param.declType = parts[0];
+    param.dataType = parts[1]; 
+    param.name = parts[2].left(parts[2].length()-1);// Remove the ';' from the name. 
+  }
+  else if(parts[0] == '#define'){
+    param.declType = parts[0];
+    param.name = parts[1];
+    if( parts.size() == 2 )
+      param.dataType = 'define';
+    else {
+      defaultValueStr = parts[2];
+      if( defaultValueStr == 'true' || defaultValueStr == 'false' )
+        param.dataType = 'bool';
+      else if( defaultValueStr.find( '.' ) != -1 )
+        param.dataType = 'float';
+      else
+        param.dataType = 'int';
+    }
+  }
+
+  String lines[] = metadata.split('\n');
+  Integer pos;
+  for(Integer i=0; i<lines.size(); i++){
+    String line = lines[i];
+    pos = line.find('\\name', 0);
+    if(pos != -1){
+      // The metadata might define a more user-friendly name.
+      pos+=6;
+      GLSLPreprocessor_skipWhitespace(line, pos);
+      param.name = line.leftStrip(pos).lower();
+      continue;
+    }
+    pos = line.find('\\dataType', 0);
+    if(pos != -1){
+      // The metadata might explicitly define a data type when it is not obvious: e.g. for boolean values.
+      pos+=10;
+      GLSLPreprocessor_skipWhitespace(line, pos);
+      param.dataType = line.leftStrip(pos).lower();
+      continue;
+    }
+    pos = line.find('\\default', 0);
+    if(pos != -1){
+      pos+=9;
+      GLSLPreprocessor_skipWhitespace(line, pos);
+      defaultValueStr = line.leftStrip(pos);
+      continue;
+    }
+    pos = line.find('\\range', 0);
+    if(pos != -1){
+      pos+=6;
+      GLSLPreprocessor_skipWhitespace(line, pos);
+      rangeStr = line.leftStrip(pos);
+      continue;
+    }
+    pos = line.find('\\', 0);
+    if(pos != -1){
+      ++pos;
+      String tag = GLSLPreprocessor_readToken(line, pos);
+      if( tag )
+        param.tags.push(tag);
+      continue;
+    }
+  }
+  if(param.dataType=='bool'){
+    if(defaultValueStr != ''){
+      param.defaultValue.resize(1);
+      if(defaultValueStr == 'false' || defaultValueStr == '0')
+        param.defaultValue[0] = 0;
+      else
+        param.defaultValue[0] = 1;
+    }
+  }
+  else if(param.dataType=='int'){
+    if(defaultValueStr != ''){
+      param.defaultValue.resize(1);
+      param.defaultValue[0] = defaultValueStr.toInteger();
+    }
+    if(rangeStr != ''){
+      Scalar rangeValues[] = GLSLPreprocessor_parseScalarArray(rangeStr);
+        if(rangeValues.size() == 2){
+        param.range[0].resize(1);
+        param.range[0][0] = rangeValues[0];
+        param.range[1].resize(1);
+        param.range[1][0] = rangeValues[1];
+      }
+    }
+  }
+  else if(param.dataType=='float'){
+    if(defaultValueStr != ''){
+      param.defaultValue.resize(1);
+      param.defaultValue[0] = defaultValueStr.toScalar();
+    }
+    if(rangeStr != ''){
+      Scalar rangeValues[] = GLSLPreprocessor_parseScalarArray(rangeStr);
+        if(rangeValues.size() == 2){
+        param.range[0].resize(1);
+        param.range[0][0] = rangeValues[0];
+        param.range[1].resize(1);
+        param.range[1][0] = rangeValues[1];
+      }
+    }
+  }
+  else if(param.dataType=='vec2'){
+    if(defaultValueStr != ''){
+      param.defaultValue = GLSLPreprocessor_parseScalarArray(defaultValueStr);
+    }
+    if(rangeStr != ''){
+      Scalar rangeValues[] = GLSLPreprocessor_parseScalarArray(rangeStr);
+      if(rangeValues.size() == 6){
+        param.range[0].resize(3);
+        param.range[0][0] = rangeValues[0];
+        param.range[0][1] = rangeValues[1];
+        param.range[0][2] = rangeValues[2];
+        param.range[1].resize(3);
+        param.range[1][0] = rangeValues[3];
+        param.range[1][1] = rangeValues[4];
+        param.range[1][2] = rangeValues[5];
+      }
+    }
+  }
+  else if(param.dataType=='vec3'){
+    if(defaultValueStr != ''){
+      param.defaultValue = GLSLPreprocessor_parseScalarArray(defaultValueStr);
+    }
+    if(rangeStr != ''){
+      Scalar rangeValues[] = GLSLPreprocessor_parseScalarArray(rangeStr);
+      if(rangeValues.size() == 6){
+        param.range[0].resize(3);
+        param.range[0][0] = rangeValues[0];
+        param.range[0][1] = rangeValues[1];
+        param.range[0][2] = rangeValues[2];
+        param.range[1].resize(3);
+        param.range[1][0] = rangeValues[3];
+        param.range[1][1] = rangeValues[4];
+        param.range[1][2] = rangeValues[5];
+      }
+    }
+  }
+  else if(param.dataType=='vec4'){
+    if(defaultValueStr != ''){
+      param.defaultValue = GLSLPreprocessor_parseScalarArray(defaultValueStr);
+    }
+    if(rangeStr != ''){
+      Scalar rangeValues[] = GLSLPreprocessor_parseScalarArray(rangeStr);
+      if(rangeValues.size() == 8){
+        param.range[0].resize(4);
+        param.range[0][0] = rangeValues[0];
+        param.range[0][1] = rangeValues[1];
+        param.range[0][2] = rangeValues[2];
+        param.range[0][3] = rangeValues[3];
+        param.range[1].resize(4);
+        param.range[1][0] = rangeValues[4];
+        param.range[1][1] = rangeValues[5];
+        param.range[1][2] = rangeValues[6];
+        param.range[1][3] = rangeValues[7];
+      }
+    }
+  }
+  else if(param.dataType=='color'){
+    if(defaultValueStr != ''){
+      param.defaultValue = GLSLPreprocessor_parseScalarArray(defaultValueStr);
+    }
+    if(rangeStr != ''){
+      Scalar rangeValues[] = GLSLPreprocessor_parseScalarArray(rangeStr);
+      if(rangeValues.size() == 8){
+        param.range[0].resize(4);
+        param.range[0][0] = rangeValues[0];
+        param.range[0][1] = rangeValues[1];
+        param.range[0][2] = rangeValues[2];
+        param.range[0][3] = rangeValues[3];
+        param.range[1].resize(4);
+        param.range[1][0] = rangeValues[4];
+        param.range[1][1] = rangeValues[5];
+        param.range[1][2] = rangeValues[6];
+        param.range[1][3] = rangeValues[7];
+      }
+    }
+  }
+  else if(param.dataType=='mat2'){
+    if(defaultValueStr != ''){
+      param.defaultValue = GLSLPreprocessor_parseScalarArray(defaultValueStr);
+      if(param.defaultValue.size() != 4)
+        setError("Default Value for mat2 value '" + param.name +"' is not 4 values:" + defaultValueStr);
+    }
+  }
+  else if(param.dataType=='mat3'){
+    if(defaultValueStr != ''){
+      param.defaultValue = GLSLPreprocessor_parseScalarArray(defaultValueStr);
+      if(param.defaultValue.size() != 9)
+        setError("Default Value for mat3 value '" + param.name +"' is not 9 values:" + defaultValueStr);
+    }
+  }
+  else if(param.dataType=='mat4'){
+    if(defaultValueStr != ''){
+      param.defaultValue = GLSLPreprocessor_parseScalarArray(defaultValueStr);
+      if(param.defaultValue.size() != 16)
+        setError("Default Value for mat4 value '" + param.name +"' is not 16 values:" + defaultValueStr);
+    }
+  }
+  else if( (defaultValueStr != '') || (rangeStr != '') )
+    setError("Parameter '" + param.name + "': GLSL default or range metadata not supported for parameter of type  '" +param.dataType+ "'");
+
+  return param;
+}
+
+function Boolean GLSLPreprocessor_getInsertionPoint( String line, io String label, io Boolean fetch, io String tag ){
+  Integer pos = line.find('///', 0);
+  if(pos == -1)
+    return false;
+  pos += 3;
+  String tokenAndTag = GLSLPreprocessor_readToken( line, pos );
+  String token;
+  GLSLPreprocessor_splitTag(tokenAndTag,token,tag);
+  fetch = token == '\\fetch';
+  if( !fetch && token != '\\insert' )
+    return false;
+  label = GLSLPreprocessor_readToken( line, pos );
+  return Boolean(label);
+}
+
+function GLSLPreprocessor_extractMetaData( String lines[], io GLSLParam params[], io GLSLInsertionPoint insertionPoints[] ){
+  Integer numExpandedLines = 0;
+  for(Integer i=0; i<lines.size(); i++){
+    String line = lines[i];
+
+    GLSLInsertionPoint insertPoint;
+    if( GLSLPreprocessor_getInsertionPoint( line, insertPoint.label, insertPoint.fetchParameter, insertPoint.fetchTag ) ){
+      insertPoint.lineNumber = i;
+      insertionPoints.push(insertPoint);
+    } else {
+      String parts[] = GLSLPreprocessor_splitOnWhitepspace_ignoreComments( line );
+      if( parts.size() >= 3 &&
+          (((parts[0] == 'uniform' || parts[0] == 'attribute' || parts[0] == 'varying' || parts[0] == 'in' || parts[0] == 'out') && parts[2].endsWith( ';' )) ||
+          parts[0] == '#define') ) {
+        String metadata = GLSLPreprocessor_gatherValueMetadata( lines, i );
+        GLSLParam param = GLSLPreprocessor_generateGLSLParam( parts, metadata );
+        param.lineNumber = i;
+        params.push( param );
+      }
+    }
+  }
+}
+
+function GLSLPreprocessor_extractMetaData(String glslCode, io GLSLParam params[], io GLSLInsertionPoint insertionPoints[]){
+  String lines[] = glslCode.split('\n');
+  GLSLPreprocessor_extractMetaData( lines, params, insertionPoints );
+}
+
+struct GLSLCodeInsertion {
+  String ownerDescriptor;
+  String lines[];
+};
+
+// Note: we assume that insertionPoints are in line order, as generated by GLSLPreprocessor_extractMetaData
+function GLSLPreprocessor_insertCode( io GLSLInsertionPoint insertionPoints[], GLSLCodeInsertion insertionsPerPoint[][], io String lines[], io GLSLLineMapping mappings[] ){
+  String newLines[];
+  GLSLLineMapping newMappings[];
+
+  UInt32 currLine;
+  UInt32 nextSrcMappingIndex;
+  UInt32 splitMappingRemainingLines;
+  UInt32 insertedLines;
+
+  for( Size i = 0; i < insertionPoints.size(); ++i ) {
+    if( insertionsPerPoint[i].size() ) {
+
+      // 1) Get to the enclosing mapping region
+      if( !splitMappingRemainingLines ||
+        (mappings[nextSrcMappingIndex-1].outputFileLine + mappings[nextSrcMappingIndex-1].numLines <= insertionPoints[i].lineNumber) ) {
+        splitMappingRemainingLines = 0;
+        while( nextSrcMappingIndex < mappings.size() ) {
+          UInt32 mappingLineEnd = mappings[nextSrcMappingIndex].outputFileLine + mappings[nextSrcMappingIndex].numLines;
+          if( mappingLineEnd > insertionPoints[i].lineNumber )
+            break;
+          GLSLLineMapping mapping = mappings[nextSrcMappingIndex];
+          mapping.outputFileLine += insertedLines;
+          newMappings.push( mapping );
+          ++nextSrcMappingIndex;
+          // insert lines
+          while( currLine < mappingLineEnd )
+            newLines.push( lines[currLine++] );
+        }
+      }
+
+      // 2) Split the current mapping
+      GLSLLineMapping firstMapping;
+      if( splitMappingRemainingLines ) {
+        firstMapping = newMappings[newMappings.size() - 1];
+        //firstMapping.numLines = newLines.size() - firstMapping.outputFileLine;
+      } else {
+        // Start a new one
+        firstMapping = mappings[nextSrcMappingIndex++];
+        firstMapping.outputFileLine = newLines.size();
+        splitMappingRemainingLines = firstMapping.numLines;
+      }
+
+      // insert lines
+      firstMapping.numLines = 0;
+      firstMapping.outputFileLine = newLines.size();
+
+      while( currLine < insertionPoints[i].lineNumber ) {
+        newLines.push( lines[currLine++] );
+        ++firstMapping.numLines;
+        --splitMappingRemainingLines;
+      }
+
+      if( firstMapping.numLines )
+        newMappings.push( firstMapping );
+
+      for( Size j = 0; j < insertionsPerPoint[i].size(); ++j ) {
+        GLSLCodeInsertion insertion = insertionsPerPoint[i][j];
+        // Insert!
+
+        GLSLLineMapping insertionMapping;
+        insertionMapping.sourceFile = insertion.ownerDescriptor;
+        insertionMapping.resolvedPath = insertion.ownerDescriptor;
+        insertionMapping.sourceFileLine = 0;
+        insertionMapping.outputFileLine = newLines.size();
+        insertionMapping.numLines = insertion.lines.size();
+        newLines += insertion.lines;
+        insertedLines += insertion.lines.size();
+
+        newMappings.push(insertionMapping);
+      }
+      insertionPoints[i].lineNumber = newLines.size();
+
+      if( splitMappingRemainingLines ) {
+        GLSLLineMapping secondMapping = firstMapping;
+        secondMapping.sourceFileLine += firstMapping.numLines;
+        secondMapping.numLines = splitMappingRemainingLines;
+        secondMapping.outputFileLine = newLines.size();
+        newMappings.push( secondMapping );
+      }
+
+    }
+  }
+
+  while( nextSrcMappingIndex < mappings.size() ) {
+    GLSLLineMapping mapping = mappings[nextSrcMappingIndex++];
+    mapping.outputFileLine += insertedLines;
+    newMappings.push(mapping);
+
+  }
+
+  while( currLine < lines.size() )
+    newLines.push( lines[currLine++] );
+
+  lines = newLines;
+  mappings = newMappings;
+}
+

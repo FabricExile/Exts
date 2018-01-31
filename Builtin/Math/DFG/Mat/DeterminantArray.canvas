@@ -1,0 +1,72 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Mat22.html",
+    "uiTooltip" : "Returns the determinant of this matrix\n\n Supported by Mat22,Mat33,Mat44"
+    },
+  "title" : "Determinant[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Mat22[]" : [
+          {
+            "row0" : {
+              "x" : 1,
+              "y" : 0
+              },
+            "row1" : {
+              "x" : 0,
+              "y" : 1
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "$TYPE$[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "8E8CEF502723B08F1F2FC5C45E5E1A37",
+  "code" : "require Math;
+
+operator Math_Mat22_determinant_task<<<index>>>(
+  io Scalar[] result
+, in $TYPE$[] this
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].determinant();
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  Size task_size = this.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Mat22_determinant_task(index, result, this);
+    }
+  } else {
+    Math_Mat22_determinant_task<<<task_size>>>(result, this);
+  }
+}
+"
+  }

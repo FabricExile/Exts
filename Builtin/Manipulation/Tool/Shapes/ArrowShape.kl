@@ -1,0 +1,45 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// Arrow shape. The arrow geometry is locally starting at the origin and pointing in Y, and the passed-in direction is used to set the local transform.
+  ///
+  /// See :ref:`TPG.drawing` for more information about drawing tool shapes.
+  object ArrowShape : GeometricShape{};
+
+  ArrowShape() {
+    this.construct( Vec3( 1, 0, 0 ), 0.8, 0.2, 0.1 );
+  }
+
+  ArrowShape( Vec3 direction, Scalar length, Scalar headLength, Scalar headWidth ) {
+    this.construct( direction, length, headLength, headWidth );
+  }
+
+  /// Arrow direction in local space, including its local transform
+  Vec3 ArrowShape.getLocalDirection() {
+    return this.getLocalTransform().transformVector( Vec3( 0, 1, 0 ) );
+  }
+
+  /// \param length Total length, including headLength
+  /// TODO: construct in a draw modifier, build if params changed. Inherit from "width" properties, rebuild if it changed...
+  ArrowShape.construct!( Vec3 direction, Scalar length, Scalar headLength, Scalar headWidth ) {
+    // TODO: share that mesh for all sphere shapes (use ToolSharedData)
+
+    // Draw in "Y" locally
+    DrawElements elts();
+    elts.drawTrianglesCone( Xfo( Vec3( 0, length - headLength, 0 ) ), headWidth / 2, headLength, 15 );
+    elts.drawLine( Vec3( 0, 0, 0 ), Vec3( 0, length - headLength, 0 ) );
+    this.setGeometry( elts );
+
+    // Align with the desired axis
+    Xfo localTransform;
+    localTransform.ori.setFrom2Vectors( Vec3( 0, 1, 0 ), direction.unit_safe() );
+    this.setLocalTransform( localTransform );
+
+    // Don't use arrow elements' pen color
+    this.useGeometryColorIfAny( false );
+  }
+
+}// namespace Tool

@@ -1,0 +1,136 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+require Math;
+require Util;
+require AnimX;
+require FileIO;
+require Fbx;
+
+/**
+  The FbxClip object manages loading animation data from an Fbx file and generating the curve values that can ben be evaluated to drive character poses. 
+*/
+object FbxClip
+{
+  String filePath;
+  FbxArchive archive;
+  String animationLayerName;
+  AnimX::AnimClip clip;
+};
+
+/// Constructor from a file path and an optional animation layer.
+/// \param filePath the path to the fbx file on disk to load
+/// \param animLayer the name of the animation layer to load
+FbxClip(String filePath, String animLayer)
+{
+  if(this.readFromFile(filePath))
+    this.parseAnimClip(animLayer);
+}
+
+/// Constructor from a file path and an optional animation layer.
+/// \param filePath the path to the fbx file on disk to load
+/// \param animLayer the name of the animation layer to load
+FbxClip(FbxArchive archive, String animLayer)
+{
+  this.archive = archive;
+  if(this.archive)
+    this.parseAnimClip(animLayer);
+}
+
+/// returns this FbxClip as an AnimX::AnimClip
+AnimX::AnimClip FbxClip.getClip() {
+  return this.clip;
+}
+
+/// Returns the file path used to construct the FbxClip
+String FbxClip.getFilePath()
+{
+  return this.filePath;
+}
+
+/// \internal
+/// Opens the file specified by the file path. Called by the FbxClip constructors
+Boolean FbxClip.readFromFile!(String filePath) {
+
+  this.archive = FbxArchive();
+  if(!this.archive.ReadFromFile(filePath))
+    return false;
+  this.filePath = filePath;
+  return true;
+}
+
+/// \internal 
+/// Parses the animation clip based on the animLayer
+Boolean FbxClip.parseAnimClip!(String animLayer)
+{
+  if(!this.archive)
+    return false;
+
+  FbxAnimLayer layers[] = this.archive.getAnimationLayers();
+  if(layers.size() == 0)
+    return false;
+
+  FbxAnimLayer layer;
+  for(Size i=0;i<layers.size();i++)
+  {
+    if((!animLayer) || (layers[i].GetName() == animLayer))
+    {
+      layer = layers[i];
+      break;
+    }
+  }
+
+  if(!layer.cxx_isValid())
+    return false;
+
+  this.clip = AnimX::AnimClip(layer.GetName());
+
+  FbxNode nodes[] = this.archive.getAllNodes();
+  for(Size i=0;i<nodes.size();i++)
+  {
+    this.convertCurve(layer, nodes[i], nodes[i].get_LclTranslation(), "X", "tr.x", 1.0);
+    this.convertCurve(layer, nodes[i], nodes[i].get_LclTranslation(), "Y", "tr.y", 1.0);
+    this.convertCurve(layer, nodes[i], nodes[i].get_LclTranslation(), "Z", "tr.z", 1.0);
+    this.convertCurve(layer, nodes[i], nodes[i].get_LclRotation(), "X", "euler.x", DEG_TO_RAD);
+    this.convertCurve(layer, nodes[i], nodes[i].get_LclRotation(), "Y", "euler.y", DEG_TO_RAD);
+    this.convertCurve(layer, nodes[i], nodes[i].get_LclRotation(), "Z", "euler.z", DEG_TO_RAD);
+    this.convertCurve(layer, nodes[i], nodes[i].get_LclScaling(), "X", "sc.x", 1.0);
+    this.convertCurve(layer, nodes[i], nodes[i].get_LclScaling(), "Y", "sc.y", 1.0);
+    this.convertCurve(layer, nodes[i], nodes[i].get_LclScaling(), "Z", "sc.z", 1.0);
+  }
+
+  return true;
+}
+
+private FbxClip.convertCurve!(FbxAnimLayer layer, FbxNode node, FbxProperty property, String component, String name, Float64 scale)
+{
+  FbxProperty mutableProp = property;
+  FbxAnimCurve fbxCurve = mutableProp.GetCurve(layer, component, false);
+  if(!fbxCurve.cxx_isValid())
+    return;
+
+  String nodeName = node.GetName();
+  nodeName = nodeName.reversePartition(':')[2];
+
+  SInt32 keyCount = fbxCurve.KeyGetCount();
+  if(keyCount == 0)
+    return;
+
+  Color color(1.0, 0.0, 0.0);
+  if(name.endsWith('.y'))
+    color = Color(0.0, 1.0, 0.0);
+  else if(name.endsWith('.z'))
+    color = Color(0.0, 0.0, 1.0);
+
+  AnimX::AnimCurve curve = this.clip.addCurve(nodeName+'.'+name, true, color);
+
+  for(SInt32 i=0;i<keyCount;i++)
+  {
+    FbxAnimCurveKey key = fbxCurve.KeyGet(i);
+    Float64 time = key.GetTime().GetSecondDouble();
+    Float64 value = key.GetValue();
+
+    // for now we'll just support linear curves - this should be implemented properly in a follow up ticket.
+    curve.pushKeyframe(time, value * scale, AnimX::TangentType_Linear, 0.0, 0.0, AnimX::TangentType_Linear, 0.0, 0.0);
+  }
+}

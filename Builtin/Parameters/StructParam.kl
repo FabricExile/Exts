@@ -1,0 +1,76 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+/**
+\versionadded 1.12.0
+The :ref:`Structparam` implements the :ref:`param` interface for SInt32 values.
+
+Example
+---------
+
+.. code-block:: kl
+
+    StructParam param = StructParam('subdiv', 12);
+    report(param.getValue());
+*/
+
+require Util;
+
+object StructParam : Param {
+  String name;
+  Type type;
+  Byte data[];
+  Param options[String];
+};
+
+// default constructor
+function StructParam(String name) {
+  this.name = name;
+  this.type = Type();
+  this.data.resize(0);
+}
+
+// constructor taking input value
+function StructParam(String name, Type type, Data data, UInt64 dataSize) {
+  this.name = name;
+  this.setValue(type, data, dataSize);
+}
+
+// returns the name of this parameter
+function String StructParam.getName() {
+  return this.name;
+}
+
+// getting an option on this param
+function Param StructParam.getOption(String name)
+{
+  return this.options.get(name, null);
+}
+
+// setting an option on the parameter
+function StructParam.setOption!(Param option)
+{
+  this.options[option.getName()] = option;
+}
+
+// returns the value type of this parameter
+function String StructParam.getValueType() {
+  return this.type;
+}
+
+// returns the param's value
+function StructParam.getValueType(io UInt64 dataSize, io String type) {
+  type = this.type;
+  dataSize = this.data.size();
+}
+
+function StructParam.getValue(io Data data) {
+  CopyBytes(data, this.data.data(), this.data.size());
+}
+
+// sets the param's value
+function StructParam.setValue!(Type type, Data data, UInt64 dataSize) {
+  this.type = type;
+  this.data.resize(UInt32(dataSize));
+  CopyBytes(this.data.data(), data, dataSize);
+}

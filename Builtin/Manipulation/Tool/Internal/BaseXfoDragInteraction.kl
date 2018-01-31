@@ -1,0 +1,177 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  interface BaseXfoDragInteraction_virtuals {
+    onBegin!( Ref<DragInteraction> interaction );
+    onDrag!( Ref<DragInteraction> interaction );
+    onEnd!( Ref<DragInteraction> interaction );
+    onBeginEndNoMove!( Ref<DragInteraction> interaction );
+  };
+
+  /// Provides base functionality for interactions related to mapping mouse dragging
+  /// moves to transform changes.
+  /// See:ref:`TPG.interactive - tools` for more information and examples related to tool interactions.
+  object BaseXfoDragInteraction : EventListenerComponent, Activable, BaseXfoDragInteraction_virtuals{
+    protected DragInteraction dragInteraction;
+    protected TransformTarget transformTarget;
+
+    protected Boolean active;
+    protected Boolean invalidateAfterDrag;
+  };
+
+  /// By default, the attached DragInteraction is a new MouseClickDragRaycastInteraction().
+  BaseXfoDragInteraction() {
+    this.active = true;
+    this.setInteraction( MouseClickDragRaycastInteraction() );
+  }
+
+  BaseXfoDragInteraction( DragInteraction dragInteraction, TransformTarget transformTarget ) {
+    this.setInteraction( dragInteraction );
+    this.setTransformTarget( transformTarget );
+  }
+
+  BaseXfoDragInteraction.setInteraction!( DragInteraction dragInteraction ) {
+    if( this.dragInteraction !== dragInteraction ) {
+      if( this.dragInteraction )
+        this.disconnect( this.dragInteraction );
+
+      this.dragInteraction = dragInteraction;
+      this.connectAndAttach( this.dragInteraction );
+
+      if( !this.active ) {
+        Ref<Activable> actInter = this.dragInteraction;
+        if( actInter )
+          actInter.deactivate();
+      }
+    }
+  }
+
+  inline Ref<DragInteraction> BaseXfoDragInteraction.getInteraction() {
+    return this.dragInteraction;
+  }
+
+  inline Ref<TransformTarget> BaseXfoDragInteraction.getTarget() {
+    return this.transformTarget;
+  }
+
+  BaseXfoDragInteraction.setTransformTarget!( TransformTarget transformTarget ) {
+    this.transformTarget = transformTarget;
+  }
+
+  BaseXfoDragInteraction.onBegin!( Ref<DragInteraction> interaction ) {
+    this.transformTarget.beginChanges();
+  }
+
+  /// To be overriden; specialized class should call transformTarget.setLocalTransform() based on the drag delta.
+  BaseXfoDragInteraction.onDrag!( Ref<DragInteraction> interaction ) {}
+
+  BaseXfoDragInteraction.onEnd!( Ref<DragInteraction> interaction ) {
+    this.transformTarget.endChanges();
+    if( this.invalidateAfterDrag ) {
+      this.invalidateAfterDrag = false;
+      BaseXfoDragInteraction ensureAlive( this );// more robust on deletion order
+      this.invalidate();
+    }
+  }
+
+  BaseXfoDragInteraction.onBeginEndNoMove!( Ref<DragInteraction> interaction ) {}
+
+  /// Implementation of Activable
+  Boolean BaseXfoDragInteraction.isActive() {
+    return this.active;
+  }
+
+  /// Implementation of Activable
+  BaseXfoDragInteraction.activate!() {
+    Ref<Activable> actInter = this.dragInteraction;
+    if( actInter )
+      actInter.activate();
+    this.active = true;
+  }
+
+  /// The drag interaction will be invalidated after the drag finishes,
+  /// and will be deleted if only referenced by its owner.
+  /// \param deleteInteraction Also delete owned interaction
+  BaseXfoDragInteraction.deleteAfterDrag!( Boolean deleteInteraction ) {
+    this.invalidateAfterDrag = true;
+    if( deleteInteraction ) {
+      Ref<BaseDragInteraction> baseDragInteraction = this.dragInteraction;
+      if( baseDragInteraction )
+        baseDragInteraction.deleteAfterDrag();
+    }
+  }
+
+  /// Implementation of Activable.
+  /// Deactivates the interaction; events will no longer be listened to even if setAlwaysRegisteredToEvents().
+  BaseXfoDragInteraction.deactivate!() {
+    Ref<Activable> actInter = this.dragInteraction;
+    if( actInter )
+      actInter.deactivate();
+    this.active = false;
+  }
+
+  /// \internal
+  BaseXfoDragInteraction.onEvent!( ToolEvent event, ToolEventUserID userID ) {
+    if( !this.transformTarget )
+      return;
+    Ref<DragInteraction> dragInteraction = event.sender;
+    if( !dragInteraction )
+      dragInteraction = this.dragInteraction;
+
+    if( dragInteraction ) {
+      if( event.name == ToolEvent_DragBegin ) {
+        this.onBegin( dragInteraction );
+        // Forward event after changes are done
+        this.sendEventToListeners( ToolEvent_DragBegin, EventPropagationType_none, String(), this );
+      } else if( event.name == ToolEvent_DragMove ) {
+        this.onDrag( dragInteraction );
+        // Forward event after changes are done
+        this.sendEventToListeners( ToolEvent_DragMove, EventPropagationType_none, String(), this );
+      } else if( event.name == ToolEvent_DragEnd ) {
+        this.onEnd( dragInteraction );
+        // Forward event after changes are done
+        this.sendEventToListeners( ToolEvent_DragEnd, EventPropagationType_none, String(), this );
+      } else if( event.name == ToolEvent_DragBeginEndNoMove ) {
+        this.onBeginEndNoMove( dragInteraction );
+        // Forward event after changes are done
+        this.sendEventToListeners( ToolEvent_DragBeginEndNoMove, EventPropagationType_none, String(), this );
+      }
+    }
+    this.parent.onEvent( event, userID );
+  }
+
+  Mat44 BaseXfoDragInteraction.getTransform() {
+    return this.transformTarget.getParentTransform() * this.transformTarget.getLocalTransform().toMat44();
+  }
+
+  String BaseXfoDragInteraction.getTransformSpace() {
+    return this.transformTarget.getTransformSpace();
+  }
+
+  /// Sets the transform from a global one; this class will translate as a local delta.
+  BaseXfoDragInteraction.setTransform!( Mat44 globalTransform ) {
+    Mat44 parentInv = this.transformTarget.getParentTransform().inverse();
+    Mat44 local = parentInv * globalTransform;
+    this.transformTarget.setLocalTransform( Xfo( local ) );
+  }
+
+  /// \internal
+  BaseXfoDragInteraction.invalidateInternal!() {
+    this.dragInteraction = null;
+    this.parent.invalidate();
+  }
+
+  /// \internal
+  BaseXfoDragInteraction.invalidate!() {
+    this.invalidateInternal();
+  }
+
+  /// \internal
+  ~BaseXfoDragInteraction() {
+    this.invalidateInternal();
+  }
+
+}// namespace Tool

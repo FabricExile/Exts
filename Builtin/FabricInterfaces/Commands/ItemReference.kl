@@ -1,0 +1,51 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+const String ItemReferenceCategory_geometry = "Geometry";
+
+const String ComponentType_object = "object";
+const String ComponentType_points = "points";
+const String ComponentType_elements = "elements";//Polygons for PolygonMesh, subCurves for Curves, segments for Lines, points for Points
+
+// The itemReference represents an item (eg: selectable geometry)
+// and, optionally, some sub-components (eg: polygons 1, 2, 10).
+//
+// It also allows to merge, if possible, compatible sub-component
+// lists for a given item.
+interface ItemReference {
+  String getName();
+  String getComponentsType();// See ComponentType_X constants. ComponentType_object means the full object instead of sub-components.
+  String getCategory();
+
+  String getDescription();// Includes components, if any
+
+  Ref<Object> getReferencedObject();// Returns the related KL object, if applicable, else null
+
+  // Required to build a dictionary of selected items.
+  // Returns a hash for the selected item and its sub-items type
+  // (but excluding sub-items list).
+  UInt32 getItemHash();
+
+  // Required to build a dictionary of selected items
+  // Checks if it refers to the same item and sub-items type.
+  Boolean sameItem( Ref<ItemReference> other );
+
+  // Returns true if item and sub-items, if any, are the same.
+  Boolean sameItemAndComponents( Ref<ItemReference> other );
+
+  // Returns the array of component indices, or [0] if object.
+  Size[] getComponentIndices();
+
+  // Returns true if it includes sub-items of other (has to be the same getComponentsType() )
+  Boolean includesComponents( Ref<ItemReference> other );
+
+  // Merges sub-items, if getComponentsType() is the same.
+  addComponents!( Ref<ItemReference> other, io Size addedComponents[] );
+
+  // Removes sub-items, if getComponentsType() is the same.
+  subtractComponents!( Ref<ItemReference> other, io Size subtractedComponents[]);
+
+  // Toggles (remove if present, add otherwise) components.
+  toggleComponents!(Ref<ItemReference> other, io Size addedComponents[], io Size removedComponents[]);
+};

@@ -1,0 +1,92 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiTooltip" : "Clamps the array elements by min and max\n\n Supported by Scalar,Float64,Vec2,Vec2_d,Vec2_i,Vec3,Vec3_d,Vec3_i,Vec4,Vec4_d,Vec4_i"
+    },
+  "title" : "Clamp[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "$TYPE$[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "min",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "$TYPE$[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "max",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "$TYPE$[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "$TYPE$[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "968716F4A180FD0DB46A9A8837A24EA9",
+  "code" : "require Math;
+
+operator Math_Scalar_clamp_task<<<index>>>(
+  io $TYPE$[] result
+, in $TYPE$[] this
+, in $TYPE$[] min
+, in $TYPE$[] max
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].clamp(min[index < min.size() ? index : min.size() - 1], max[index < max.size() ? index : max.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( min.size() == 0) return;
+  if( max.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < min.size()) task_size = min.size();
+  if(task_size < max.size()) task_size = max.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Scalar_clamp_task(index, result, this, min, max);
+    }
+  } else {
+    Math_Scalar_clamp_task<<<task_size>>>(result, this, min, max);
+  }
+}
+"
+  }

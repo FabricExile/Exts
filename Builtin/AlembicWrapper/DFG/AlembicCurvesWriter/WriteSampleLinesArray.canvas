@@ -1,0 +1,65 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "writes a single sample into the file based on the provided GeometryAttributes.\n\nSupported types:\n  this: AlembicCurvesWriter\n  lines: Ref<Lines>\n  result: Boolean\n"
+    },
+  "title" : "WriteSample[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicCurvesWriter[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "lines",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Lines[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "6B82B1FDBD86F06E8D1B50A9D5144937",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicCurvesWriter_writeSample_task<<<index>>>(
+  io Boolean[] result
+, io AlembicCurvesWriter[] this
+, in Lines[] lines
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].writeSample(lines[index < lines.size() ? index : lines.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( lines.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < lines.size()) task_size = lines.size();
+  result.resize(task_size);
+  for(Size index = 0; index < task_size; index++) {
+    AlembicWrapper_AlembicCurvesWriter_writeSample_task(index, result, this, lines);
+  }
+}
+"
+  }

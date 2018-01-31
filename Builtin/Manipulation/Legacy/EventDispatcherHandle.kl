@@ -1,0 +1,52 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+  
+/**
+\versionadded 1.12.0
+
+The :kl-ref:`EventDispatcherHandle` is used to provide access to the EventDispatcher singleton object. 
+The :kl-ref:`_singletons_extension` to use store the :kl-ref:`EventDispatcher`.
+
+
+\rst
+
+The EventDispatcherHandle can be constructed from Python and used to access the EventDispatcher 
+
+  .. python-example:: EventDispatcherHandle
+      :nooutput:
+
+    from maya import cmds
+    import FabricEngine.Core
+    
+    #create a client - will be ignored if it already exists
+    cmds.fabricSplice('constructClient')
+
+    # get the client id from splice
+    contextID = cmds.fabricSplice('getClientContextID')
+    
+    # Get acces to the core context via the Splice contextID
+    client = FabricEngine.Core.createClient({'contextID':contextID})
+    
+    # Construct an EventDispatcherHandle so we can get the EventDispatcher
+    eventDispatcherHandle = client.RT.types.EventDispatcherHandle.create()
+    eventDispatcher = eventDispatcherHandle.getEventDispatcher('EventDispatcher');
+    
+    # now access the custom manipulator and get/set values directly from Python.
+    manipulator = eventDispatcher.getManipulator('MoveTool');
+
+
+\endrst
+
+\seealso Singletons, EventDispatcher
+\dfgPresetOmit
+*/
+object EventDispatcherHandle {
+};
+
+/// returns the :kl-ref:`EventDispatcher` singleton object
+function Ref<EventDispatcher> EventDispatcherHandle.getEventDispatcher() {
+  return EventDispatcher_GetInstance();
+}
+

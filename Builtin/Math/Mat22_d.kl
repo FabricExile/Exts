@@ -1,0 +1,353 @@
+
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/**
+The :kl-ref:`Mat22_d` represents a 2 by 2 matrix. It uses :kl-ref:`Vec2_d` types for each of the 2 rows.
+
+\rst
+  .. kl-example:: Construct Mat22_d
+
+    // create a matrix 2x2
+    Vec2_d v0(1.0, 0.0);
+    Vec2_d v1(0.0, 1.0);
+    Mat22_d mat(v0, v1);
+
+\endrst
+\dfgTypeColor Color(249, 157, 28)
+\dfgPresetColor Color(99, 129, 92)
+*/
+struct Mat22_d
+{
+  Vec2_d row0;
+  Vec2_d row1;
+};
+
+inline Mat22_d(){
+  this.setIdentity();
+}
+
+/// Constructor from scalars
+/// \dfgPresetDefault _00 1
+/// \dfgPresetDefault _11 1
+inline Mat22_d(
+  Float64 _00, Float64 _01,
+  Float64 _10, Float64 _11
+) {
+  this.set(_00, _01, _10, _11);
+}
+
+/// Constructor from vectors
+inline Mat22_d(
+  Vec2_d row0, Vec2_d row1
+) {
+  this.row0 = row0;
+  this.row1 = row1;
+}
+
+/// Sets each component with a single scalar value.
+inline Mat22_d.set!(
+  Float64 _00, Float64 _01,
+  Float64 _10, Float64 _11
+) {
+  this.row0 = Vec2_d(_00, _01);
+  this.row1 = Vec2_d(_10, _11);
+}
+
+/// Setter from (standard/external) float32 array and an offset
+inline Mat22_d.set!(Float32 v<>, UInt32 o) {
+  if(v.size() >= 4 + o) {
+    this.row0.set(v, o + 0);
+    this.row1.set(v, o + 2);
+  }
+}
+
+/// Getter as external float32 array and an offset
+inline Mat22_d.get(io Float32 v<>, UInt32 o) {
+  if(v.size() >= 4 + o) {
+    this.row0.get(v, o + 0);
+    this.row1.get(v, o + 2);
+  }
+}
+
+/// Getter as float32 array and an offset
+inline Mat22_d.get(io Float32 v[], UInt32 o) {
+  if(v.size() < 4 + o)
+    v.resize(4 + o);
+  this.row0.get(v, o + 0);
+  this.row1.get(v, o + 2);
+}
+
+/// Setter from (standard/external) float64 array and an offset
+inline Mat22_d.set!(Float64 v<>, UInt32 o) {
+  if(v.size() >= 4 + o) {
+    this.row0.set(v, o + 0);
+    this.row1.set(v, o + 2);
+  }
+}
+
+/// Getter as external float64 array and an offset
+inline Mat22_d.get(io Float64 v<>, UInt32 o) {
+  if(v.size() >= 4 + o) {
+    this.row0.get(v, o + 0);
+    this.row1.get(v, o + 2);
+  }
+}
+
+/// Getter as float64 array and an offset
+inline Mat22_d.get(io Float64 v[], UInt32 o) {
+  if(v.size() < 4 + o)
+    v.resize(4 + o);
+  this.row0.get(v, o + 0);
+  this.row1.get(v, o + 2);
+}
+
+/// Setter from (standard/external) float32 array
+inline Mat22_d.set!(Float32 v<>) {
+  this.set(v, 0);
+}
+
+/// Getter as external float32 array
+inline Mat22_d.get(io Float32 v<>) {
+  this.get(v, 0);
+}
+
+/// Getter as float32 array
+inline Mat22_d.get(io Float32 v[]) {
+  this.get(v, 0);
+}
+
+/// Setter from (standard/external) float64 array
+inline Mat22_d.set!(Float64 v<>) {
+  this.set(v, 0);
+}
+
+/// Getter as external float64 array
+inline Mat22_d.get(io Float64 v<>) {
+  this.get(v, 0);
+}
+
+/// Getter as float64 array
+inline Mat22_d.get(io Float64 v[]) {
+  this.get(v, 0);
+}
+
+/// Setter from vectors, row-wise
+inline Mat22_d.setRows!(in Vec2_d row0, in Vec2_d row1) {
+  this.row0 = row0;
+  this.row1 = row1;
+}
+
+/// Setter from vectors, column-wise
+inline Mat22_d.setColumns!(in Vec2_d col0, in Vec2_d col1) {
+  this.row0.x = col0.x; this.row0.y = col1.x;
+  this.row1.x = col0.y; this.row1.y = col1.y;
+}
+
+/// setting all components of the matrix to 0.0
+inline Mat22_d.setNull!() {
+  Vec2_d nullVec2_d(Float64(), Float64());
+  this.row0 = this.row1 = nullVec2_d;
+}
+
+/// setting this matrix to the identity matrix
+inline Mat22_d.setIdentity!() {
+  this.setNull();
+  this.setDiagonal(Float64(1.0));
+}
+
+/// setting the diagonal components of 
+/// this matrix to a scalar
+inline Mat22_d.setDiagonal!(in Float64 v) {
+  this.row0.x = this.row1.y = v;
+}
+
+/// setting the diagonal components of this
+/// matrix to the components of a vector
+inline Mat22_d.setDiagonal!(in Vec2_d v) {
+  this.row0.x = v.x;
+  this.row1.y = v.y;
+}
+
+/// Returns true if this matrix is the same as another one
+inline Boolean Mat22_d.equal(in Mat22_d other) {
+  return this.row0.equal( other.row0 ) && this.row1.equal( other.row1 );
+}
+
+/// Returns true if this matrix is almost the same as another one
+/// (given a precision)
+inline Boolean Mat22_d.almostEqual(
+  in Mat22_d other,
+  in Float64 precision
+  ) {
+  return this.row0.almostEqual( other.row0, precision )
+    && this.row1.almostEqual( other.row1, precision );
+}
+
+/// Returns true if this matrix is almost the same as another one
+/// (using a default precision)
+inline Boolean Mat22_d.almostEqual(in Mat22_d other) {
+  return this.almostEqual(other, PRECISION);
+}
+
+/// Equals operator
+inline Boolean == (Mat22_d a, Mat22_d b) {
+  return a.equal(b);
+}
+
+/// Not equals operator
+inline Boolean != (Mat22_d a, Mat22_d b) {
+  return !a.equal(b);
+}
+
+/// Hash for this value
+inline UInt32 Mat22_d.hash() {
+  return this.row0.hash() ^ this.row1.hash();
+}
+
+/// Returns the addition of two matrices
+inline Mat22_d + (Mat22_d a, Mat22_d b) {
+  return Mat22_d( a.row0 + b.row0, a.row1 + b.row1 );
+}
+
+/// Adds another matrix to this one
+inline Mat22_d. += (Mat22_d other) {
+  this = this + other;
+}
+
+/// Returns the subtraction of two matrices
+inline Mat22_d - (Mat22_d a, Mat22_d b) {
+  return Mat22_d( a.row0 - b.row0, a.row1 - b.row1 );
+}
+
+/// Subtracts another matrix from this one
+inline Mat22_d. -= (Mat22_d other) {
+  this = this - other;
+}
+
+/// Returns the product of two matrices
+/// \dfgPresetDefault right {"row0": {"x": 1, "y": 0}, "row1": { "x": 0, "y": 1} }
+inline Mat22_d * (Mat22_d left, Mat22_d right) {
+  Mat22_d result;
+
+  result.row0.x = left.row0.x * right.row0.x + left.row0.y * right.row1.x;
+  result.row0.y = left.row0.x * right.row0.y + left.row0.y * right.row1.y;
+
+  result.row1.x = left.row1.x * right.row0.x + left.row1.y * right.row1.x;
+  result.row1.y = left.row1.x * right.row0.y + left.row1.y * right.row1.y;
+
+  return result;
+}
+
+/// Returns the product of a matrix and a Vec2_d
+/// \dfgPresetDefault mat22 {"row0": {"x": 1, "y": 0}, "row1": { "x": 0, "y": 1} }
+inline Vec2_d * (Mat22_d mat22, Vec2_d vec2) {
+  return Vec2_d(
+    mat22.row0.x * vec2.x + mat22.row0.y * vec2.y,
+    mat22.row1.x * vec2.x + mat22.row1.y * vec2.y
+  );
+}
+
+/// Returns the product of a matrix and a scalar
+/// \dfgPresetDefault s 1
+inline Mat22_d * (Mat22_d mat22, Float64 s) {
+  return Mat22_d( mat22.row0 * s, mat22.row1 * s );
+}
+
+/// Returns the product of a scalar and a matrix
+/// \dfgPresetDefault s 1
+inline Mat22_d * (Float64 s, Mat22_d mat22) {
+  return Mat22_d( mat22.row0 * s, mat22.row1 * s );
+}
+
+/// Multiplies this matrix with another one
+/// \dfgPresetDefault other {"row0": {"x": 1, "y": 0}, "row1": { "x": 0, "y": 1} }
+inline Mat22_d. *= (Mat22_d other) {
+  this = this * other;
+}
+
+/// Multiplies this matrix with a scalar
+/// \dfgPresetDefault other 1
+inline Mat22_d. *= (Float64 other) {
+  this = this * other;
+}
+
+/// Returns the division of a matrix and a scalar
+/// \dfgPresetDefault mat22 {"row0": {"x": 1, "y": 0}, "row1": { "x": 0, "y": 1} }
+/// \dfgPresetDefault s 1
+inline Mat22_d / (Mat22_d mat22, Float64 s) {
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( s ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( s, "Mat22_d.divide" );
+  return mat22 * (1.0 / s);
+}
+
+/// Divides this matrix by a scalar
+/// \dfgPresetDefault other 1
+inline Mat22_d. /= (Float64 other) {
+  this = this / other;
+}
+
+/// Overload method for the add operator
+inline Mat22_d Mat22_d.add(Mat22_d other) {
+  return this + other;
+}
+
+/// Overload method for the subtract operator
+inline Mat22_d Mat22_d.subtract(Mat22_d other) {
+  return this - other;
+}
+
+/// Overload method for the multiply operator
+/// \dfgPresetDefault other { "row0": {"x": 1, "y": 0}, "row1": { "x": 0, "y": 1} }
+inline Mat22_d Mat22_d.multiply(Mat22_d other) {
+  return this * other;
+}
+
+/// // overload method for the divide operator
+/// inline Mat22_d Mat22_d.divide(Mat22_d other) {
+///   return this / other;
+/// }
+
+/// Returns the product of this matrix and a scalar
+/// \dfgPresetDefault other 1
+inline Mat22_d Mat22_d.multiplyFloat64(Float64 other) {
+  return this * other;
+}
+
+/// Returns the product of this matrix and a vector
+inline Vec2_d Mat22_d.multiplyVector(Vec2_d other) {
+  return this * other;
+}
+
+/// Returns the division of this matrix and a scalar
+/// \dfgPresetDefault other 1
+inline Mat22_d Mat22_d.divideFloat64(Float64 other) {
+  return this / other;
+}
+
+/// Returns the determinant of this matrix
+inline Float64 Mat22_d.determinant() {
+  return this.row0.x * this.row1.y - this.row0.y * this.row1.x;
+}
+
+/// Returns the adjoint matrix of this matrix
+inline Mat22_d Mat22_d.adjoint() {
+  return Mat22_d(this.row1.y, -this.row0.y, -this.row1.x, this.row0.x);
+}
+
+/// Returns the inverse matrix of this matrix
+inline Mat22_d Mat22_d.inverse() {
+  Float64 det = this.determinant();
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( det ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( det, "Mat22_d.inverse" );
+  return this.adjoint() / det;
+}
+
+/// Returns the transposed matrix of this matrix
+inline Mat22_d Mat22_d.transpose() {
+  Mat22_d result(
+    this.row0.x, this.row1.x,
+    this.row0.y, this.row1.y);
+  return result;
+}

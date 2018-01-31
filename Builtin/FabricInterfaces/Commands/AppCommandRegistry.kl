@@ -1,0 +1,60 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+object AppCommand;
+/**
+  \versionadded 2.6.0
+
+  This class is an internal helper to the CommandManager object.
+  In general, KL should use the CommandManager singleton (GetCommandManager()) 
+  instead of this.
+
+  The AppCommandRegistry singleton contains available C++ and Python commands
+  that have been registered. Scheduling these commands (:kl-ref:`CommandManager.scheduleCommand`) 
+  will execute them later in C++ or Python.
+
+  Usage:
+  - Get the registry: Ref<CommandRegistry> cmdRegistry = GetCommandRegistry();
+    
+  - Create a kl-command: Ref<Command> cmd = cmdRegistry.createCommand(cmdName, error);
+*/  
+object AppCommandRegistry : CommandRegistry {
+  /// List of registered app-commands (C++/Python).
+  private Type registeredAppCommands[String];
+};
+ 
+/// \internal
+/// Registers an app-command (C++, Python) to the manager, so it can be called from KL.
+/// This should be only called by the app.
+AppCommandRegistry.registerAppCommand!(String commandName) {
+  this.registeredAppCommands[commandName] = AppCommand;
+}
+
+/// \internal, implementation of CommandRegistry_virtuals.
+Boolean AppCommandRegistry.isCommandRegistered( String commandName, io Type type ) {
+  if(!this.parent.isCommandRegistered( commandName, type ))
+    type = this.registeredAppCommands.get( commandName, None );
+  return type != "None";
+}
+
+/// Creates a command named "commandName".
+/// \return The created command, or null if it couldn't be created, in which case 'error' will describe the error.
+Command AppCommandRegistry.createCommand( String commandName, io String error ) {
+  Type type = this.registeredAppCommands.get( commandName, None );
+  if( type )
+    return this.createCommand( commandName, type, error );
+  else
+    return this.parent.createCommand( commandName, error );
+}
+
+/// Gets the command manager (singleton).
+Ref<AppCommandRegistry> GetCommandRegistry() {
+  return GetOrCreateSingleton( "CommandRegistry", AppCommandRegistry );
+}
+ 
+/// \internal
+/// C++ helper
+Ref<AppCommandRegistry> AppCommandRegistry.getCommandRegistry() {
+  return GetCommandRegistry();
+}

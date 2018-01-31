@@ -1,0 +1,102 @@
+/*
+*  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+*/
+
+/**
+  \versionadded 2.2.1
+  
+  :kl-ref:`LegacyRootDispatcher` is a special :kl-ref:`LegacyBaseHandlerDispatcher` that defines the root of the manipulation tree.
+  It owns a LegacyCameraTool and a LegacySelectionTool and can register other :kl-ref:`LegacyHandlerDispatcher`.
+
+  \seealso :kl-ref:`Tool`, :kl-ref:`SRTtool`
+  
+  \dfgPresetOmit
+*/
+
+const String LegacyCameraTool_name = 'Camera';
+const String LegacyToolDispatcher_name = 'LegacyToolDispatcher';
+
+object LegacyRootDispatcher : LegacyBaseHandlerDispatcher {
+  /// Camera.
+  protected LegacyCameraTool cameraTool;
+  /// LegacySelectionTool (only one per application).
+  protected LegacySelectionTool selectionTool;
+  /// If true, select all the shared reference of the selected object.
+  protected Boolean sharedObjectSelectionEnabled;
+};
+
+/// Initializes a LegacyRootDispatcher.
+/// \param selectionTool Reference to the LegacySelectionTool.
+/// \param enableKey Key that enables/disables the dispatcher.
+LegacyRootDispatcher(Boolean enableCamera) {
+  this.parent.init(0, false);
+  if(enableCamera)
+  {
+    this.cameraTool = LegacyCameraTool(0);
+    Ref<LegacyEventHandler> handler = this.cameraTool;
+    this.registerHandler( LegacyCameraTool_name, handler);
+  } 
+}
+
+/// Sets the selection tool.
+LegacyRootDispatcher.setSelectionTool!( LegacySelectionTool selectionTool) {
+  if(selectionTool)
+    this.selectionTool = selectionTool;
+}
+
+/// Sets the LegacyToolDispatcher.
+LegacyRootDispatcher.setToolDispatcher!( LegacyToolDispatcher toolDispatcher) {
+  if(Boolean(toolDispatcher))
+  {
+    Ref<LegacyEventHandler> handler = toolDispatcher;
+    this.registerHandler( LegacyToolDispatcher_name, handler);
+    this.setActiveHandler( LegacyToolDispatcher_name);
+  }
+}
+
+/// Gets a reference to the toolDispatcher.
+Ref<LegacyToolDispatcher> LegacyRootDispatcher.getToolDispatcher() {
+  return this.getHandler( LegacyToolDispatcher_name);
+}
+
+/// Gets a reference to the LegacySelectionTool.
+Ref<LegacySelectionTool> LegacyRootDispatcher.getSelectionTool() {
+  return this.selectionTool;
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyHandlerDescription LegacyRootDispatcher.getDescription() {
+  LegacyHandlerDescription descs = null;
+  Ref<LegacyBaseHandlerDispatcher> toolDispatcher = this.getToolDispatcher();
+  if(toolDispatcher)
+    descs = toolDispatcher.getDescription();
+  return descs;
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyRootDispatcher.onEvent!(io BaseEvent baseEvent, Boolean dragging) {
+  
+  Event event = baseEvent;
+
+  // All events with the alt key pressed go to the camera manipulator.
+  if(Boolean(this.cameraTool) && event.getModifiers() == ModiferKey_Alt) 
+  {
+    // Clear the highlight when using the camera.
+    if(this.selectionTool) 
+      this.selectionTool.clearHighlightSet();
+    this.cameraTool.onEvent(event); 
+  }
+  /// Else, the toolDispatcher (if set) takes the events.
+  else 
+    this.onEvent(event);
+
+  /// Finally, the selection.
+  if(this.selectionTool)
+  {
+    // TODO: have a specific "dragMove" event type
+    this.selectionTool.setDragging(dragging);
+    Ref<LegacyEventHandler> handler = this.selectionTool;
+    handler.onEvent(event);
+    this.selectionTool.setDragging(false);
+  }
+}

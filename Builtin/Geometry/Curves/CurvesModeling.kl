@@ -1,0 +1,87 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// Adds a linear segment from `start` position to `end` position.
+/// \return The index of the created curve
+/// \category primitives
+Curve Curves.addLine!( Vec3 start, Vec3 end ) {
+  UInt32 curveIndex = this.addLinearCurveIndex( 2, false );
+  this.setPointPosition( curveIndex, 0, start );
+  this.setPointPosition( curveIndex, 1, end );
+  this.incrementPointPositionsVersion();
+  return Curve( this, curveIndex );
+}
+
+/// adds a line arc around the Y axis given a transform for the arc, 
+/// a radius, a angular min and max as a Vec3 and a detail setting. 
+/// the detail describes the number of line segments of the circle (minimum of 3).
+/// \return The index of the created curve
+/// \param angleMinMax [minAngle, maxAngle], in radians
+/// \dfgPresetDefault angleMinMax {"x": 0.0, "y": 1.47}
+/// \dfgPresetDefault detail 12
+/// \dfgPresetDefault radius 1
+/// \category primitives
+Curve Curves.addLinearArc!( Xfo xfo, Scalar radius, Vec2 angleMinMax, Integer detail ) {
+  UInt32 curveIndex = this.addLinearCurveIndex( Size( detail ) + 1, false );
+  
+  if(detail) {
+    Scalar angle = (angleMinMax.y - angleMinMax.x) / Scalar(detail);
+    for( Index i = 0; i <= detail; i++ ) {
+      Scalar currAngle = ( angle * i ) + angleMinMax.x;
+      this.setPointPosition( curveIndex, i, xfo.transformVector( Vec3( sin( currAngle ) * radius, 0.0, cos( currAngle ) * radius ) ) );
+    }
+  }
+  this.incrementPointPositionsVersion();
+  return Curve( this, curveIndex );
+}
+
+/// Adds a transformed closed circle. 
+/// \return The index of the created curve
+/// \dfgPresetDefault detail 12
+/// \dfgPresetDefault radius 1
+/// \category primitives
+Curve Curves.addLinearCircle!( Xfo xfo, Scalar radius, Size detail ) {
+  UInt32 curveIndex = this.addLinearCurveIndex( detail, true );
+  if(detail) {
+    Scalar angle = TWO_PI / Scalar(detail);
+    Index i;
+    for (i = 0; i < detail; i++)
+      this.setPointPosition( curveIndex, i, xfo.transformVector( Vec3( sin( angle * i ) * radius, 0.0, cos( angle * i ) * radius ) ) );
+    this.incrementPointPositionsVersion();
+  }
+  return Curve( this, curveIndex );
+}
+
+/// Adds a sphere made of 3 circles, one in each axis plane
+/// \dfgPresetDefault detail 12
+/// \dfgPresetDefault radius 1
+/// \return The index of the created curve
+/// \category primitives
+function Curves.addLinearSphere!( Xfo xfo, Scalar radius, Size detail ) {
+  Xfo t;
+
+  this.addLinearCircle( xfo, radius, detail );
+
+  t.ori.setFromAxisAndAngle(Vec3(1.0, 0.0, 0.0), HALF_PI);
+  t = xfo.toMat44() * t.toMat44();
+  this.addLinearCircle( t, radius, detail );
+
+  t.setIdentity();
+  t.ori.setFromAxisAndAngle(Vec3(0.0, 0.0, 1.0), HALF_PI);
+  t = xfo.toMat44() * t.toMat44();
+  this.addLinearCircle( t, radius, detail );
+}
+
+/// Adds a transformed rectangle
+/// \return The index of the created curve
+/// \category primitives
+UInt32 Curves.addRectangle!( Xfo xfo, Scalar length, Scalar width ) {
+  UInt32 curveIndex = this.addLinearCurveIndex( 4, true );
+  this.setPointPosition( curveIndex, 0, xfo.transformVector( Vec3( length / 2.0, 0, width / 2.0 ) ) );
+  this.setPointPosition( curveIndex, 1, xfo.transformVector( Vec3( -length / 2.0, 0, width / 2.0 ) ) );
+  this.setPointPosition( curveIndex, 2, xfo.transformVector( Vec3( -length / 2.0, 0, -width / 2.0 ) ) );
+  this.setPointPosition( curveIndex, 3, xfo.transformVector( Vec3( length / 2.0, 0, -width / 2.0 ) ) );
+  this.incrementPointPositionsVersion();
+  return curveIndex;
+}

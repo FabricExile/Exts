@@ -1,0 +1,110 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+namespace Tool {
+  namespace InlineDrawingRender {
+
+    /// \internal
+    interface MaterialToID_virtuals {
+      Type getIDShaderType!( DrawContext context, Ref<InlineShape> contextualShape );
+      updateMaterialParameters!( io Ref<InlineDrawing> inlineDrawing, io Ref<InlineMaterial> IDMaterial );
+    };
+
+    /// \internal
+    struct MaterialToIDData {
+      InlineMaterial IDMaterial;
+      InlineShader IDShader;
+      UInt32 lastUpdateIteration;
+    };
+
+    /// \internal
+    object MaterialToID : MaterialToID_virtuals, IDRenderEngineMaterial{
+      MaterialToIDData perShaderTypeData[Type];
+
+      Ref<Material> source;
+    };
+
+    Ref<InlineMaterial> MaterialToID.getIDMaterial( io Ref<InlineDrawing> inlineDrawing, DrawContext context, Ref<InlineShape> contextualShape ) {
+      Ref<MaterialToID> mutableThis = this;
+
+      // The shader type can depend on the contextual properties.
+      // Create the shader if it doesn't exist or if it changed
+      Boolean needsUpdate = false;
+      Type shaderType = mutableThis.getIDShaderType( context, contextualShape );
+
+      if( shaderType ) {
+        if( !mutableThis.perShaderTypeData.has( shaderType ) ) {
+          needsUpdate = true;
+
+          MaterialToIDData data;
+          data.IDShader = inlineDrawing.getShader( shaderType );
+          if( !data.IDShader ) {
+            data.IDShader = shaderType.createNew();
+            inlineDrawing.registerShader( data.IDShader );
+          }
+          data.IDMaterial = data.IDShader.getOrCreateMaterial( mutableThis.uid() );
+          mutableThis.perShaderTypeData[shaderType] = data;
+        }
+      }
+
+      // Update shader parameters if applicable
+      updateValue( context.renderEngine.getDrawIterationIndex(), mutableThis.perShaderTypeData[shaderType].lastUpdateIteration, needsUpdate );
+
+      Ref<InlineMaterial> IDMaterial = mutableThis.perShaderTypeData[shaderType].IDMaterial;
+      if( Boolean( shaderType ) && needsUpdate )
+        mutableThis.updateMaterialParameters( inlineDrawing, IDMaterial );
+
+      return IDMaterial;
+    }
+
+    /// \internal
+    Type MaterialToID.getIDShaderType!( DrawContext context, Ref<InlineShape> contextualShape ) {
+      return None;
+    }
+
+    /// \internal
+    MaterialToID.updateMaterialParameters!( io Ref<InlineDrawing> inlineDrawing, io Ref<InlineMaterial> IDMaterial ) {
+      if( !IDMaterial || !this.source )
+        return;
+
+      Ref<PropertyContainer> properties = this.source.getProperties();
+
+      // TODO: use versions to avoid this very costly loop if nothing changed!
+      Size uniformCount = IDMaterial.shader.getUniformCount();
+      for( Size i = 0; i < uniformCount; ++i ) {
+        String name = IDMaterial.shader.getUniformName( i );
+        RTVal value = properties.getProperty( name );
+        Type type = value.type();
+
+        if( type ) {
+          if( type.isA( Image2D ) ) {
+            Image2D image( value );
+            if( image ) {
+
+              if( DrawDebugTrace && SetPropertyDebugTrace )
+                report( "  BaseShapeToID.update: update " + IDMaterial.type() + " param: " + name + " = " + image.name );
+
+              InlineTexture inlineTexture = GetInlineDrawingTextureFromImage( inlineDrawing, image );
+              IDMaterial.setUniform( InlineUniform( name, inlineTexture ) );
+            }
+          } else {
+            if( DrawDebugTrace && SetPropertyDebugTrace )
+              report( "MaterialToID: update " + IDMaterial.type() + ": " + name + " = " + value );
+
+            switch( type ) {
+              case Integer: case UInt32: IDMaterial.setUniform( name, Integer( value ) ); break;
+              case Float32: IDMaterial.setUniform( name, Float32( value ) ); break;
+              case Vec2: IDMaterial.setUniform( name, Vec2( value ) ); break;
+              case Vec3: IDMaterial.setUniform( name, Vec3( value ) ); break;
+              case Quat: IDMaterial.setUniform( name, Quat( value ) ); break;
+              case Color: IDMaterial.setUniform( name, Color( value ) ); break;
+              case Mat33: IDMaterial.setUniform( name, Mat33( value ) ); break;
+              case Mat44: IDMaterial.setUniform( name, Mat44( value ) ); break;
+            }
+          }
+        }
+      }
+    }
+  }// namespace InlineDrawingRender
+
+}// namespace Tool

@@ -1,0 +1,89 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Singletons;
+
+interface Command;
+ 
+/**
+  \versionadded 2.6.0
+
+  This class is an internal helper to the CommandManager object.
+  In general, KL should use the CommandManager singleton (GetCommandManager())
+  instead of this.
+
+  In practice, an AppCommandRegistry (specializing CommandRegistry) is created
+  and used.
+*/ 
+interface CommandRegistry_virtuals {
+  /// set a command named "commandName".
+  /// \return The created command, or null if it couldn't be created, in which case 'error' will describe the error.
+  Command createCommand( String commandName, io String error );
+  
+  /// Checks if a command has been registered already.
+  Boolean isCommandRegistered( String commandName, io Type type );
+};
+
+object CommandRegistry {
+  /// List of registered commands (KL).
+  protected Type registeredCommands[String];
+};
+
+/// Registers a command (KL) to the manager.
+/// Once registered, the command can be created from the manager.
+CommandRegistry.registerCommand!( String commandName, Type commandType ) {
+
+  if( !commandName ) {
+    setError( "CommandRegistry.registerCommand: commandName is empty" );
+    return;
+  }
+
+  if( !commandType.isA( Command ) ) {
+    setError( "CommandRegistry.registerCommand: command '" + commandName + "': type '" + commandType + "' is not a Command" );
+    return;
+  }
+
+  Type type;
+  if( this.isCommandRegistered( commandName, type ) )
+  {
+    if( type == commandType )
+      return;//Already registered
+    else
+      report( "Info: CommandRegistry.registerCommand: command '" + commandName + "': type '" + commandType + "' overriding previous type '" + type + "'");
+  }
+
+  this.registeredCommands[commandName] = commandType;
+}
+
+/// Implementation of CommandRegistry_virtuals.
+Boolean CommandRegistry.isCommandRegistered( String commandName, io Type type ) {
+  type = this.registeredCommands.get( commandName, None );
+  return type != "None";
+}
+
+/// \internal
+protected Command CommandRegistry.createCommand( String commandName, Type type, io String error ) {
+  if( !type ) {
+    error = commandName + " has not been registered, use CommandRegistry.registerCommand";
+    return null;
+  }
+  Command command = type.createNew();
+  command.setName(commandName);
+  return command;
+}
+
+/// Creates a command named "commandName".
+/// \return The created command, or null if it couldn't be created, in which case 'error' will describe the error.
+Command CommandRegistry.createCommand( String commandName, io String error ) {
+  Type type = this.registeredCommands.get( commandName, None );
+  return this.createCommand(commandName, type, error);
+}
+
+/// Gets the lists of registered commands.
+String[] CommandRegistry.getRegisteredCommandList() {
+  String registeredCommandList[];
+  for(key, val in this.registeredCommands)
+    registeredCommandList.push(key);
+  return registeredCommandList;
+}

@@ -1,0 +1,87 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+  namespace InlineDrawingRender {
+
+    /// \internal
+    object GeometricShapeToID : BaseShapeToID{
+      Ref<Geometry> lastGeometry;
+    };
+
+    GeometricShapeToID.updateShape!( io Ref<InlineDrawing> inlineDrawing, DrawContext context ) {
+
+      // Update the shape if the geometry changes
+      Ref<Geometry> geometry = null;
+      Ref<GeometricShape> shapeTool = this.shapeTool;
+      if( shapeTool )
+        geometry = shapeTool.getGeometry();
+
+      if( geometry !== this.lastGeometry ) {
+        Ref<PolygonMesh> polygonMesh = geometry;
+        if( polygonMesh ) {
+          Ref<InlineMeshShape> shape = this.shape;
+          if( shape )
+            shape.setMesh( polygonMesh );
+          else
+            this.shape = InlineMeshShape( String(), polygonMesh );
+        } else {
+          Ref<Lines> lines = geometry;
+          if( lines ) {
+            Ref<InlineLinesShape> shape = this.shape;
+            if( shape )
+              shape.setLines( lines );
+            else
+              this.shape = InlineLinesShape( String(), lines );
+          } else {
+            Ref<Curves> curves = geometry;
+            if( curves ) {
+              Ref<InlineCurvesShape> shape = this.shape;
+              if( shape )
+                shape.setCurves( curves );
+              else
+                this.shape = InlineCurvesShape( String(), curves );
+            } else {
+              Ref<Points> points = geometry;
+              if( points ) {
+                Ref<InlinePointsShape> shape = this.shape;
+                if( shape )
+                  shape.setPoints( points );
+                else
+                  this.shape = InlinePointsShape( String(), points );
+              } else {
+                Ref<DrawElements> elements = geometry;
+                if( elements ) {
+                  Ref<InlineDebugShape> shape = this.shape;
+                  if( !shape ) {
+                    this.shape = InlineDebugShape( String() );
+                    shape = this.shape;
+                  }
+                  shape.setDrawElements( elements );
+                }
+              }
+            }
+          }
+        }
+        this.lastGeometry = geometry;
+      }
+    }
+
+    Ref<InlineInstance> GeometricShapeToID.update!( io Ref<InlineDrawing> inlineDrawing, Boolean visible, Ref<Object> sourceInstance, DrawContext context, Ref<IDRenderEngineMaterial> IDMaterial ) {
+      Ref<InlineInstance> inst = this.parent.update( inlineDrawing, visible, sourceInstance, context, IDMaterial );
+      if( this.instance ) {
+        Ref<Lines> lines = this.lastGeometry;
+        Ref<Curves> curves = this.lastGeometry;
+        if( Boolean( lines ) || Boolean( curves ) ) {
+          this.instance.setMappedAttributeName( "normals", "tangents" );
+          this.instance.setInstanceUniform( InlineUniform( 'normalIsTangent', Integer( 1 ) ) );
+        } else {
+          this.instance.setMappedAttributeName( "normals", "normals" );// override if geo was previously lines/curves
+          this.instance.setInstanceUniform( InlineUniform( 'normalIsTangent', Integer( 0 ) ) );
+        }
+      }
+      return inst;
+    }
+  }// namespace InlineDrawingRender
+}// namespace Tool

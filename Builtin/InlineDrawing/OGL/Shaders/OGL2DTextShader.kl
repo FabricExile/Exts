@@ -1,0 +1,106 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+
+/**
+\versionadded 2.4.0
+
+The OGL2DTextShader inherits the OGLInlineShader. 
+It extends the OGLInlineShader for shading 2D text (screen space).
+
+\rst
+Attributes
+----------
+=============== ============ =====================================
+Name            Type         Description
+=============== ============ =====================================
+textVertex      Vec2         Text vertices
+texcoord        Vec2         Texture (atlas) coordinates
+color           Color        Text color
+stringPos       Vec3         Text position (world)
+=============== ============ =====================================
+\endrst
+\dfgPresetOmit
+
+*/
+object OGL2DTextShader: OGLInlineShader {};
+
+/// default constructor
+function OGL2DTextShader() {
+  // Avoid calling the init method if this default constructor is being invoked 
+  // during the construction of a derived object.
+  if(this.type() == OGL2DTextShader)
+    this.init(String(this.type()));
+}
+
+/// default constructor taking a name
+function OGL2DTextShader(String name) {
+  this.init(name);
+}
+
+/// initialize the OGL2DTextShader using name
+/// \internal
+function OGL2DTextShader.init!(String name) {
+  this.name = name;
+  this.setVertexCode("
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+
+      uniform vec2 u_viewportDimension;
+
+      attribute vec2 textVertex;
+      attribute vec2 texcoord;
+      attribute vec4 color;
+      attribute vec3 stringPos;
+
+      varying vec4 v_color;
+      varying vec2 v_texCoord;
+
+      void main(){
+        v_color = color;
+        v_texCoord = texcoord.xy;
+        // snap to closest pixel
+        vec2 pixPos = ivec2( (stringPos.xy + 1) * 0.5 * u_viewportDimension ) + ivec2( textVertex );
+        gl_Position = vec4( (vec2( pixPos ) / u_viewportDimension) * 2 - 1, -1, 1 );
+      }
+    ");
+  this.setFragmentCode("
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+      
+      uniform sampler2D u_texture;
+     
+      varying vec4 v_color;
+      varying vec2 v_texCoord;
+
+      void main(){
+        float a = texture2D(u_texture, v_texCoord).r;
+        gl_FragColor = vec4(v_color.rgb, v_color.a*a);
+      }
+    ");  
+  this.defineUniform(InlineUniform('u_texture', null));
+  this.defineUniform(InlineUniform("u_viewportDimension", Vec2(1.0, 1.0)));
+  this.defineAttribute('textVertex', "Vec2");
+  this.defineAttribute('texcoord', "Vec2");
+  this.defineAttribute('color', "Vec4");
+  this.defineAttribute('stringPos', "Vec3");
+}
+
+/// called by the InlineDrawing, should not be called manually
+/// \internal
+function Boolean OGL2DTextShader.draw!(io DrawContext context) {
+
+  glDisable(GL_DEPTH_TEST);
+  glDepthMask(GL_FALSE);
+
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+ 
+  Boolean result = this.parent.draw(context);
+
+  glDisable(GL_BLEND);
+  glEnable(GL_DEPTH_TEST);
+  glDepthMask(GL_TRUE);
+
+  return result;
+}

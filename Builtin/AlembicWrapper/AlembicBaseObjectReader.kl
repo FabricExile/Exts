@@ -1,0 +1,231 @@
+/*
+ *  Copyright 2010-2015 Fabric Software Inc. All rights reserved.
+ */
+
+require Alembic;
+
+object AlembicArchiveReader;
+
+/**
+  \category internal
+  The AlembicBaseObjectReader provides some base services and caching for objects AlembicObjectReader specialized classes.
+*/
+
+object AlembicBaseObjectReader : AlembicObjectReader {
+
+  /// \internal
+  protected AlembicArchiveReader archive;
+  /// \internal
+  protected AlembicMetaData _metaData;
+  /// \internal
+  protected AlembicIObject alembicObject;
+  /// \internal
+  protected AlembicTimeSampling _timeSampling;
+  /// \internal
+  protected UInt32 _numSamples;
+  /// \internal
+  protected AlembicSampleInfo _info;
+  /// \internal
+  protected AlembicISampleSelector _infoIndexASelector, _infoIndexBSelector;
+  /// \internal
+  protected AlembicIBox3Property _childBoundsProperty;
+  /// \internal
+  protected AlembicTimeSampling _childBoundsPropertyTimeSampling;
+  /// \internal
+  protected String _fullPath;
+  /// \internal
+  /// Cached children for faster access
+  private AlembicObjectReader childrenReaders[];
+  /// \internal
+  /// Associated user data
+  private UInt32 userData;
+};
+
+public AlembicBaseObjectReader( Ref<AlembicArchiveReader> archive, AlembicIObject alembicObject, AlembicTimeSampling timeSampling, UInt32 numSamples, AlembicIScalarProperty childBoundsProperty )
+{
+  this.set( archive, alembicObject, timeSampling, numSamples, childBoundsProperty );
+}
+
+/// \internal
+protected AlembicBaseObjectReader.set!( Ref<AlembicArchiveReader> archive, AlembicIObject alembicObject, AlembicTimeSampling timeSampling, UInt32 numSamples, AlembicIScalarProperty childBoundsProperty ) {
+  this.archive = archive;
+  this.alembicObject = alembicObject;
+  this._timeSampling = timeSampling;
+
+  if( Boolean( childBoundsProperty ) && childBoundsProperty.valid() ) {
+    this._childBoundsProperty = childBoundsProperty;
+    if( this._childBoundsProperty )
+       this._childBoundsPropertyTimeSampling = this._childBoundsProperty.getTimeSampling();
+  }
+  this._numSamples = numSamples;
+}
+
+/// When a reader is destroyed, check in the archive if it has a reference
+/// If so remove the reference in the archive
+public ~AlembicBaseObjectReader() {
+  // Check if the archive isn't already destroy
+  if(this.archive) 
+  {
+    // Check if the reference to the alembicObject is not null
+    if(this.alembicObject)
+      this.archive.removeReader(this.alembicObject.getFullName());
+  }
+}
+
+/// Clears all pointers and releases all alembic containers
+/// Must be overload
+public AlembicBaseObjectReader.reset!() {
+  this.archive = null;
+}
+
+/// Returns the full path (cached) of the wrapped AlembicIObject
+public String AlembicBaseObjectReader.getPath() {
+  if( !this._fullPath ) {
+    Ref<AlembicBaseObjectReader> mutableThis = this;
+    mutableThis._fullPath = this.alembicObject.getFullName();
+  }
+  return this._fullPath;
+}
+
+/// Returns true if this reader wraps a valid AlembicIObject
+inline Boolean AlembicBaseObjectReader.valid() {
+  if(!this.archive)
+    return false;
+  //This should be overriden by specialized class!
+  return Boolean( this.alembicObject ) && this.alembicObject.valid();
+}
+
+/// Returns a pointer to the alembic object
+inline Ref<AlembicIObject> AlembicBaseObjectReader.getIObject() {
+  return this.alembicObject;
+}
+
+inline AlembicBaseObjectReader.setUserData!( UInt32 userData ) {
+  this.userData = userData;
+}
+
+inline UInt32 AlembicBaseObjectReader.getUserData() {
+  return this.userData;
+}
+
+/// Returns the number of samples this reader provides
+inline SInt32 AlembicBaseObjectReader.getNumSamples() {
+  return this._numSamples; 
+}
+
+/// Returns the timesampling of this reader
+inline AlembicTimeSampling AlembicBaseObjectReader.getTimeSampling()
+{
+  return this._timeSampling;
+}
+
+/// Updates this._info for the new time, returns false if nothing changed
+protected Boolean AlembicBaseObjectReader.updateTimeInfo!( Float64 time ) {
+  if( this._info.time == time )
+    return false;
+
+  AlembicSampleInfo info( time, this._timeSampling, this._numSamples );
+  if( info == this._info )
+    return false;
+  this._info = info;
+
+  this._infoIndexASelector = this.archive.getISampleSelector( this._info.indexA );
+  this._infoIndexBSelector = this.archive.getISampleSelector( this._info.indexB );
+  return true;
+}
+
+/// Builds and caches the children list
+protected AlembicBaseObjectReader.buildChildrenReadersList!() {
+  if( !this.childrenReaders.size() ) {
+    Size numChildren = this.alembicObject.getNumChildren();
+    if( numChildren ) {
+      for( UInt32 i = 0; i < numChildren; i++ ) {
+        AlembicIObject child = this.alembicObject.getChild( i );
+        this.childrenReaders.push( this.archive.getReader( child ) );
+      }
+    }
+  }
+}
+
+/// Returns the bounding box
+public Box3 AlembicBaseObjectReader.getChildBounds!(Float64 time, io Boolean isConstant) {
+  isConstant = true;
+  Box3 result;
+  if(this._childBoundsProperty)
+  {
+    UInt32 numChildBoundsSamples = this._childBoundsProperty.getNumSamples();
+    AlembicSampleInfo info(time, this._childBoundsPropertyTimeSampling, numChildBoundsSamples);
+    isConstant = numChildBoundsSamples <= 1;
+
+    result = this._childBoundsProperty.get(this.archive.getISampleSelector(info.indexA));
+    if(info.requiresInterpolation())
+    {
+      Box3 result2 = this._childBoundsProperty.get(this.archive.getISampleSelector(info.indexB));
+      result.min = result.min.linearInterpolate(result2.min, Float32(info.fraction));
+      result.max = result.max.linearInterpolate(result2.max, Float32(info.fraction));
+    }
+  }
+  else if(this.archive)
+  {
+    this.buildChildrenReadersList();
+    for(UInt32 i=0;i<this.childrenReaders.size();i++)
+    {
+      Ref<AlembicObjectReader> childReader = this.childrenReaders[i];
+      if( childReader ) {
+        Boolean childIsConstant;
+        result += childReader.getBounds( time, childIsConstant );
+        if( !childIsConstant )
+          isConstant = false;
+      }
+    }
+  }
+  return result;
+}
+
+/// Returns the bounding box
+public Boolean AlembicBaseObjectReader.areChildBoundsConstant() {
+  Boolean constant = true;
+
+  if( this._childBoundsProperty )
+    constant = this._childBoundsProperty.getNumSamples() <= 1;
+  else if( this.archive ) {
+    Ref<AlembicBaseObjectReader> mutableThis = this;
+    mutableThis.buildChildrenReadersList();
+    for( UInt32 i = 0; i<mutableThis.childrenReaders.size(); i++ ) {
+      Ref<AlembicObjectReader> childReader = mutableThis.childrenReaders[i];
+      if( Boolean( childReader ) && !childReader.areBoundsConstant() )
+        constant = false;
+    }
+  }
+  return constant;
+}
+
+/// Returns the bounds of this object, excluding the children
+public Box3 AlembicBaseObjectReader.getSelfBounds!(Float64 time, io Boolean isConstant) {
+  // To be overriden
+  isConstant = true;
+  return Box3();
+}
+
+/// Returns true if the bounds of this object, excluding the children, are constant
+public Boolean AlembicBaseObjectReader.areSelfBoundsConstant() {
+  // To be overriden
+  return true;
+}
+
+/// Returns the bounds of this object, including all children and this Xform, if any
+public Box3 AlembicBaseObjectReader.getBounds!(Float64 time, io Boolean isConstant) {
+  Boolean isSelfBoundsConstant, isChildBoundsConstant;
+  Box3 result = this.getSelfBounds( time, isSelfBoundsConstant );
+  result += this.getChildBounds( time, isChildBoundsConstant );
+  isConstant = isSelfBoundsConstant && isChildBoundsConstant;
+  return result;
+}
+
+/// Returns true if the bounds of this object, including all children and this Xform, are constant
+public Boolean AlembicBaseObjectReader.areBoundsConstant() {
+  Boolean constant = this.areSelfBoundsConstant();
+  if( constant && !this.areChildBoundsConstant() )
+    constant = false;
+  return constant;
+}

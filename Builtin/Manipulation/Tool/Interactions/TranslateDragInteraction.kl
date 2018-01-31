@@ -1,0 +1,55 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /**
+  The TranslateDragInteraction will change a TransformTarget's translation
+  component based on a DragInteraction movements in screen space. The movements will be 
+  interpreted in TransformTarget's space, which can be in world or screen space.
+
+  See :ref:`TPG.interactive-tools` for more information and examples related to tool interactions.
+  */
+  object TranslateDragInteraction : BaseXfoDragInteraction{
+    Mat44 initialTransform;
+  };
+
+  TranslateDragInteraction( DragInteraction dragInteraction, TransformTarget transformTarget ) {
+    this.setInteraction( dragInteraction );
+    this.setTransformTarget( transformTarget );
+  }
+
+  TranslateDragInteraction.onBegin!( Ref<DragInteraction> interaction ) {
+    this.initialTransform = this.getTransform();
+    this.parent.onBegin( interaction );
+  }
+
+  TranslateDragInteraction.onDrag!( Ref<DragInteraction> interaction ) {
+    // Get the current transfos
+    Mat44 transfo = this.initialTransform;
+    Vec2 normSSDelta = interaction.getCurrentNormalizedScreenSpacePosition() - interaction.getInitialNormalizedScreenSpacePosition();
+
+    String space = this.getTransformSpace();
+    if( space == NormalizedViewportSpace ) {
+      transfo.setTranslation( transfo.translation() + Vec3( normSSDelta.x, normSSDelta.y, 0 ) );
+    } else if( space == PixelCoordinatesSpace ) {
+      transfo.setTranslation( transfo.translation() + Vec3( normSSDelta.x, normSSDelta.y, 0 ) );
+    } else if( space == WorldSpace ) {
+      // Move re-projected to screen space
+      Ref<Viewport> viewport = interaction.getContextualViewport();
+      Vec3 prevPos = transfo.translation();
+      Mat44 viewProjMat = viewport.getProjectionMat() * viewport.getViewMat();
+      Vec3 projPos = viewProjMat * prevPos;
+
+      // Keep the depth, move by delta
+      projPos.x += normSSDelta.x;
+      projPos.y += normSSDelta.y;
+
+      // Reproject
+      Vec3 worldPos = viewProjMat.inverse() * projPos;
+      transfo.setTranslation( worldPos );
+    }
+    this.setTransform( transfo );
+  }
+}// namespace Tool

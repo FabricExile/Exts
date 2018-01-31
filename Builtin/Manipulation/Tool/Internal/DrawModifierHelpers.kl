@@ -1,0 +1,108 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  Ref<PropertyContainer> GetParentToolPropertyContainer( Ref<PropertyContainer> contextualProperties ) {
+    // For viewport properties, the actual parent is 2 levels up.
+    // See ToolPropertiesForViewport for more about the internal technical details.
+    Ref<BasePropertyContainer> propertyContainer = contextualProperties;
+    if( propertyContainer ) {
+      FewObjectsStableListIterator it = propertyContainer.getParentContainersIterator();
+      Ref<PropertyContainer> parentContainer = null;
+      while( parentContainer = it.next() ) {
+        Ref<ToolPropertiesForViewport> toolPropsForViewport = parentContainer;
+        if( Boolean( toolPropsForViewport ) && Boolean( toolPropsForViewport.parentViewportProperties ) )
+          return toolPropsForViewport.parentViewportProperties;
+      }
+
+      it = propertyContainer.getParentContainersIterator();
+      while( parentContainer = it.next() )
+        return parentContainer;
+    }
+    return null;
+  }
+
+  Mat44 GetParentTransform( Ref<PropertyContainer> contextualProperties ) {
+    Ref<PropertyContainer> parentContainer = GetParentToolPropertyContainer( contextualProperties );
+    if( parentContainer )
+      return GetTransform( parentContainer );
+    else
+      return Mat44();
+  }
+
+  String GetParentTransformSpace( Ref<PropertyContainer> contextualProperties ) {
+    Ref<PropertyContainer> parentContainer = GetParentToolPropertyContainer( contextualProperties );
+    if( parentContainer )
+      return GetTransformSpace( parentContainer );
+    else
+      return WorldSpace;
+  }
+
+  Mat44 PixelTransformToNormalizedViewport( Mat44 pixelTransform, Ref<Viewport> viewport ) {
+    // The pixel space transforms [0,1] to the pixel rectangle range [upperLeft, lowerRight]
+    Vec3 upperLeft = pixelTransform * Vec3( 0 );
+    Vec3 lowerRight = pixelTransform * Vec3( 1 );
+
+    Vec2 upperLeftNormalizedPos = PixelToNormalizedScreenSpace( viewport, Vec2( upperLeft.x, upperLeft.y ) );
+    Vec2 lowerRightNormalizedPos = PixelToNormalizedScreenSpace( viewport, Vec2( lowerRight.x, lowerRight.y ) );
+
+    Vec2 normalizedCenter = ( upperLeftNormalizedPos + lowerRightNormalizedPos ) * 0.5f;
+    Vec2 normalizedScale( lowerRightNormalizedPos.x - upperLeftNormalizedPos.x, upperLeftNormalizedPos.y - lowerRightNormalizedPos.y );
+    normalizedScale *= 0.5f;
+
+    Mat44 renderTransform;
+    renderTransform.setTranslation( Vec3( normalizedCenter.x, normalizedCenter.y, -1 ) );
+    renderTransform.setScaling( Vec3( normalizedScale.x, normalizedScale.y, 1 ) );
+    return renderTransform;
+  }
+
+  /// Updates the renderTransform (final OGL transform for normalized screen coords) from transform and transform space.
+  UpdateRenderTransform( io DrawContext context ) {
+    String space = GetTransformSpace( context.contextualProperties );
+    Mat44 transform = GetTransform( context.contextualProperties );
+
+    if( space == WorldSpace ) {
+      Mat44 modelView = context.viewport.getViewMat() * transform;
+      Mat44 renderTransform = context.viewport.getProjectionMat() * modelView;
+      SetRenderTransform( context.contextualProperties, renderTransform );
+      SetPositionsTransform( context.contextualProperties, modelView );
+      SetNormalsTransform( context.contextualProperties, modelView.upperLeft().inverse().transpose() );
+    } else if( space == NormalizedViewportSpace ) {
+      SetRenderTransform( context.contextualProperties, transform );
+    } else if( space == PixelCoordinatesSpace )
+      SetRenderTransform( context.contextualProperties, PixelTransformToNormalizedViewport( transform, context.viewport ) );
+  }
+
+  /// \internal
+  LogDrawModifierInternal( Ref<Object> drawModifier, Ref<Object> target ) {
+    Ref<HierarchyNode> targetHier = target;
+    report( "DrawModifier " + ( targetHier ? targetHier.getPath() : target.type() ) + "." + drawModifier.type() );
+  }
+
+  /// \internal
+  inline LogDrawModifier( Ref<Object> drawModifier, Ref<Object> target ) {
+    if( DrawDebugTrace ) //inline this!
+      LogDrawModifierInternal( drawModifier, target );
+  }
+
+  // Maps a [-1..1,-1..1,-1..1] volume to a screen space rectangle. Assumes the renderTransform has been set.
+  GetScreenSpaceRectangle( DrawContext context, io Vec2 upperLeft, io Vec2 lowerRight ) {
+    Mat44 renderTransform = GetRenderTransform( context.contextualProperties );
+
+    Vec3 first = renderTransform * Vec3( -1 );
+    Vec3 second = renderTransform * Vec3( 1 );
+
+    Box3 bbox;
+    bbox += first;
+    bbox += second;
+    upperLeft = NormalizedScreenSpaceToPixel( context.viewport, Vec2( bbox.min.x, bbox.max.y ) );
+    lowerRight = NormalizedScreenSpaceToPixel( context.viewport, Vec2( bbox.max.x, bbox.min.y ) );
+  }
+
+  ValidatePixelSpaceRectangle( Vec2 upperLeft, Vec2 lowerRight ) {
+    if( upperLeft.x > lowerRight.x || upperLeft.y > lowerRight.y )
+      setError( "Error: bad pixel space rectangle: upperLeft must be less than lowerRight" );
+  }
+}// namespace Tool

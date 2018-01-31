@@ -1,0 +1,212 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+    "uiNodeColor" : "{\n  \"r\" : 121,\n  \"g\" : 134,\n  \"b\" : 143\n  }",
+    "uiTooltip" : " - fontPath : Font path. If not valid, use default Roboto font\n - fontSize : Font size\n - maxCharacterCount : Maximum of characters per string\n - decimalCount : Number of decimals (of Float32 or Float64 values)\n - geometry : Geometry to get the attributes from\n - attribute :  Name of the attributes to draw\n - computeGlobalPosition : If true and the attributes are the points position, draw the global geometry points position.\n - rangeMinIndex : Minimum range of the attributes\n - rangeMaxIndex : Maximum range of the attributes \n - resolution : Pourcent of attributes to set the text from, between 0 and 100\n - xfo : Geometry Xfo, to place the text\n - color Text : color"
+    },
+  "title" : "DrawAttributeAsText",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Execute" : {}
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "DrawingHandle" : null
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "DrawingHandle"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "fontPath",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "FilePath" : "${FABRIC_DIR}/Resources/Fonts/Roboto/Roboto-Regular.ttf"
+        },
+      "execPortType" : "In",
+      "typeSpec" : "FilePath"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "fontSize",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "UInt32" : 20
+        },
+      "execPortType" : "In",
+      "typeSpec" : "UInt32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "maxCharacterCount",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "UInt32" : 35
+        },
+      "execPortType" : "In",
+      "typeSpec" : "UInt32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "decimalCount",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "UInt32" : 3
+        },
+      "execPortType" : "In",
+      "typeSpec" : "UInt32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "geometry",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Geometry" : null
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Geometry"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "attribute",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String" : "positions"
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "computeGlobalPosition",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Boolean" : true
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Boolean"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "rangeMinIndex",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "UInt32" : 0
+        },
+      "execPortType" : "In",
+      "typeSpec" : "UInt32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "rangeMaxIndex",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "SInt32" : -1
+        },
+      "execPortType" : "In",
+      "typeSpec" : "SInt32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiHardRange" : "(0, 100)"
+        },
+      "name" : "resolution",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float32" : 100
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "xfo",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Xfo" : {
+          "ori" : {
+            "v" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              },
+            "w" : 1
+            },
+          "tr" : {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            },
+          "sc" : {
+            "x" : 1,
+            "y" : 1,
+            "z" : 1
+            }
+          }
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Xfo"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "color",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Color" : {
+          "r" : 1,
+          "g" : 1,
+          "b" : 1,
+          "a" : 1
+          }
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Color"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "instance",
+      "nodePortType" : "In",
+      "defaultValues" : {
+        "InlineInstance" : null
+        },
+      "execPortType" : "Out",
+      "typeSpec" : "InlineInstance"
+      }
+    ],
+  "extDeps" : {
+    "InlineDrawing" : "*"
+    },
+  "presetGUID" : "ED20EF06806F24CC102B1A6BA6679C8D",
+  "code" : "dfgEntry {
+   if(this)
+   {
+     this.drawAttributeAsText(
+       fontPath,
+       fontSize,
+       maxCharacterCount, 
+       decimalCount, 
+       geometry, 
+       attribute, 
+       rangeMinIndex,
+       rangeMaxIndex,
+       resolution,
+       computeGlobalPosition, 
+       xfo, 
+       color, 
+       instance);
+    }
+}
+"
+  }

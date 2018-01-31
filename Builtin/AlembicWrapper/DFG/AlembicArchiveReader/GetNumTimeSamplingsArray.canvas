@@ -1,0 +1,56 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "returns the number of AlembicTimeSampling entities within the file\n\nSupported types:\n  this: AlembicArchiveReader\n  result: SInt32\n"
+    },
+  "title" : "GetNumTimeSamplings[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "AlembicArchiveReader[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "SInt32[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "4A3368A0285DEB2AE2B1B4CBE3D8C1C3",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicArchiveReader_getNumTimeSamplings_task<<<index>>>(
+  io SInt32[] result
+, in AlembicArchiveReader[] this
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].getNumTimeSamplings();
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  Size task_size = this.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      AlembicWrapper_AlembicArchiveReader_getNumTimeSamplings_task(index, result, this);
+    }
+  } else {
+    AlembicWrapper_AlembicArchiveReader_getNumTimeSamplings_task<<<task_size>>>(result, this);
+  }
+}
+"
+  }

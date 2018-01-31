@@ -1,0 +1,20 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+// Extension initialization callback
+namespace Manipulation {
+  operator ExtDidLoad() {
+    Ref<Tool::ToolsManager> toolManager = Tool::GetToolsManager();
+
+    toolManager.registerPathValueTool( Tool::PathValueTransformTool, Xfo );
+    toolManager.registerPathValueTool( Tool::PathValueVec3TranslateTool, Vec3 );
+    toolManager.registerPathValueTool( Tool::PathValueQuatRotateTool, Quat );
+
+    // Register commands defined in this extension at extension loading time
+    Ref<CommandRegistry> commandRegistry = GetCommandRegistry();
+    commandRegistry.registerCommand( "AddMovePointDeltas", Tool::AddMovePointDeltasCommand );
+    commandRegistry.registerCommand( "ResetMovePointDeltas", Tool::ResetMovePointDeltasCommand );
+    commandRegistry.registerCommand( 'openVisibleToolOptionsEditor', Tool::OpenVisibleToolOptionsEditorCommand );
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Box3.html"
+    },
+  "title" : "-> Box3[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "min",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : null,
+            "y" : null,
+            "z" : null
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "max",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : null,
+            "y" : null,
+            "z" : null
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Box3[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "5DE6491B479696D959AEE8B4D077B572",
+  "code" : "require Math;
+
+operator Math_Box3_compose_task<<<index>>>(io Box3[] result, in Vec3[] min, in Vec3[] max) {
+  result[index].min = min[index < min.size() ? index : min.size() - 1];
+  result[index].max = max[index < max.size() ? index : max.size() - 1];
+}
+
+dfgEntry {
+  if(min.size() == 0) return;
+  if(max.size() == 0) return;
+  Size task_size = 0;
+  if(task_size < min.size()) task_size = min.size();
+  if(task_size < max.size()) task_size = max.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size i = 0; i < task_size; i++) {
+      Math_Box3_compose_task(i, result, min, max);
+    }
+  } else {
+    Math_Box3_compose_task<<<task_size>>>(result, min, max);
+  }
+}
+"
+  }

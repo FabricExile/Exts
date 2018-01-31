@@ -1,0 +1,83 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/RGB.html"
+    },
+  "title" : "RGB[] ->",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 0,\n  \"b\" : 0\n  }"
+        },
+      "name" : "value",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "RGB[]" : [
+          {
+            "r" : 0,
+            "g" : 0,
+            "b" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "RGB[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "r",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Byte[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "g",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Byte[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "b",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Byte[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "3653EC2EDC36C2F047052B76C4E676F4",
+  "code" : "require Math;
+
+operator Math_RGB_decompose_task<<<index>>>(in RGB[] value, io Byte[] r, io Byte[] g, io Byte[] b) {
+  r[index] = value[index].r;
+  g[index] = value[index].g;
+  b[index] = value[index].b;
+}
+
+dfgEntry {
+  Size task_size = value.size();
+  r.resize(task_size);
+  g.resize(task_size);
+  b.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size i = 0; i < task_size; i++) {
+      Math_RGB_decompose_task(i, value, r, g, b);
+    }
+  } else {
+    Math_RGB_decompose_task<<<task_size>>>(value, r, g, b);
+  }
+}
+"
+  }

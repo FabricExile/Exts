@@ -1,0 +1,146 @@
+{
+  "objectType" : "Func",
+  "title" : "-> AlembicSampleInfo[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "indexA",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "UInt32[]" : [
+          -1
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "UInt32[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "indexB",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "UInt32[]" : [
+          -1
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "UInt32[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "time",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float64[]" : [
+          -100000
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float64[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "timeA",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float64[]" : [
+          -100000
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float64[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "timeB",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float64[]" : [
+          -100000
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float64[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "fraction",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float64[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float64[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "ifraction",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float64[]" : [
+          1
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float64[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "AlembicSampleInfo[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "6F817D123E37A7C88E81D7A47D04B3C0",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicSampleInfo_compose_task<<<index>>>(io AlembicSampleInfo[] result, in UInt32[] indexA, in UInt32[] indexB, in Float64[] time, in Float64[] timeA, in Float64[] timeB, in Float64[] fraction, in Float64[] ifraction) {
+  result[index].indexA = indexA[index < indexA.size() ? index : indexA.size() - 1];
+  result[index].indexB = indexB[index < indexB.size() ? index : indexB.size() - 1];
+  result[index].time = time[index < time.size() ? index : time.size() - 1];
+  result[index].timeA = timeA[index < timeA.size() ? index : timeA.size() - 1];
+  result[index].timeB = timeB[index < timeB.size() ? index : timeB.size() - 1];
+  result[index].fraction = fraction[index < fraction.size() ? index : fraction.size() - 1];
+  result[index].ifraction = ifraction[index < ifraction.size() ? index : ifraction.size() - 1];
+}
+
+dfgEntry {
+  if(indexA.size() == 0) return;
+  if(indexB.size() == 0) return;
+  if(time.size() == 0) return;
+  if(timeA.size() == 0) return;
+  if(timeB.size() == 0) return;
+  if(fraction.size() == 0) return;
+  if(ifraction.size() == 0) return;
+  Size task_size = 0;
+  if(task_size < indexA.size()) task_size = indexA.size();
+  if(task_size < indexB.size()) task_size = indexB.size();
+  if(task_size < time.size()) task_size = time.size();
+  if(task_size < timeA.size()) task_size = timeA.size();
+  if(task_size < timeB.size()) task_size = timeB.size();
+  if(task_size < fraction.size()) task_size = fraction.size();
+  if(task_size < ifraction.size()) task_size = ifraction.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size i = 0; i < task_size; i++) {
+      AlembicWrapper_AlembicSampleInfo_compose_task(i, result, indexA, indexB, time, timeA, timeB, fraction, ifraction);
+    }
+  } else {
+    AlembicWrapper_AlembicSampleInfo_compose_task<<<task_size>>>(result, indexA, indexB, time, timeA, timeB, fraction, ifraction);
+  }
+}
+"
+  }

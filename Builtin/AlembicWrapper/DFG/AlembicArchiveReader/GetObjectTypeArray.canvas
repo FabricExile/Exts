@@ -1,0 +1,71 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "returns the type of an AlembicIObject based on its path in the file\n\nSupported types:\n  this: AlembicArchiveReader\n  path: String\n  result: String\n"
+    },
+  "title" : "GetObjectType[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicArchiveReader[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "path",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String[]" : [
+          ""
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "String[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "E378DE55F72497540CB9BC1FDEF504CD",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicArchiveReader_getObjectType_task<<<index>>>(
+  io String[] result
+, io AlembicArchiveReader[] this
+, in String[] path
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].getObjectType(path[index < path.size() ? index : path.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( path.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < path.size()) task_size = path.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      AlembicWrapper_AlembicArchiveReader_getObjectType_task(index, result, this, path);
+    }
+  } else {
+    AlembicWrapper_AlembicArchiveReader_getObjectType_task<<<task_size>>>(result, this, path);
+  }
+}
+"
+  }

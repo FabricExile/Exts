@@ -1,0 +1,1324 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Alembic;
+require Util;
+require Singletons;
+require FileIO;
+object AlembicPropertyReader;
+
+/// \internal
+object AlembicLock{
+  LightReentrantLock alembicLock;
+};
+
+/// \internal
+object AlembicArchiveReaderDict
+{
+  Ref<AlembicArchiveReader> archives[String];
+};
+
+/**
+  The AlembicArchiveReader is a wrapper for the AlembicIArchive. It provides access to the higher level reader objects such as the AlembicXformReader, for example.
+  \example
+
+  require AlembicWrapper;
+  require FileIO;
+
+  operator entry() {
+    
+    FilePath path = FilePath("${FABRIC_SCENE_GRAPH_DIR}/Python/Apps/Resources/Alembic/face.abc").expandEnvVars();
+
+    AlembicArchiveReader archive(path.string());
+
+    report(archive.valid());
+    report(archive.getPath());
+    report(archive.getTimeRange());
+    String meshes[] = archive.getPathsOfType('PolyMesh');
+    for(Size i=0;i<meshes.size();i++)
+      report(meshes[i]);
+  }
+
+  \endexample
+  \seealso AlembicArchiveWriter
+*/
+object AlembicArchiveReader {
+  /// \internal
+  private AlembicIArchive _archive;
+  /// \internal
+  private String _filePath;
+  /// \internal
+  private AlembicIObject _objects[String];
+  /// \internal
+  private String _propertyKeys[String][];
+  /// \internal
+  private AlembicICompoundProperty _compoundProperties[String];
+  /// \internal
+  private AlembicIScalarProperty _scalarProperties[String];
+  /// \internal
+  private AlembicIArrayProperty _arrayProperties[String];
+  /// \internal
+  private Ref<AlembicObjectReader> _readers[String];
+  /// \internal
+  private Boolean _getAllPathsCalled;
+
+  /// \internal lock, but only active if !allowMultithreaded
+  AlembicLock alembicLock;
+  /// \internal enable thread safety
+  Boolean allowMultithreaded;
+  /// \internal enable thread safety
+  Boolean threadSafe;
+  /// \internal lock if threadsafe
+  LightReentrantLock dataLockIfThreadSafe;
+
+  /// \internal Avoid to create a new KL object for every Alembic sample...
+  private AlembicISampleSelector indexedSampleCache[];
+
+  /// \internal prototype to speed up "type detection"
+  AlembicIXform xformPrototype;
+  /// \internal prototype to speed up "type detection"
+  AlembicICamera cameraPrototype;
+  /// \internal prototype to speed up "type detection"
+  AlembicILight lightPrototype;
+  /// \internal prototype to speed up "type detection"
+  AlembicIPoints pointPrototype;
+  /// \internal prototype to speed up "type detection"
+  AlembicIMaterial materialPrototype;
+  /// \internal prototype to speed up "type detection"
+  AlembicIPolyMesh meshPrototype;
+  /// \internal prototype to speed up "type detection"
+  AlembicISubD subdPrototype;
+  /// \internal prototype to speed up "type detection"
+  AlembicINuPatch nupatchPrototype;
+  /// \internal prototype to speed up "type detection"
+  AlembicICurves curvePrototype;
+  /// \internal prototype to speed up "type detection"
+  AlembicIFaceSet faceSetPrototype;
+};
+
+/// default constructor provided a fileName to a abc file.
+public AlembicArchiveReader(String fileName) {
+  this._filePath = fileName;
+  String resolvedFilePath = FilePath(fileName).expandEnvVars().string();
+  this._archive = AlembicIArchive(resolvedFilePath);
+  this.allowMultithreaded = this._archive.getArchiveVersion() >= 10500;//Ogawa was introduced in 1.5; previously it was not threadsafe (HDF5)
+  this.alembicLock = Singleton_init( "AlembicHDF5Lock", AlembicLock() );
+
+  this._init();
+}
+
+/// \internal
+private AlembicArchiveReader._init!() {
+  this.xformPrototype = AlembicIXform();
+  this.cameraPrototype = AlembicICamera();
+  this.lightPrototype = AlembicILight();
+  this.pointPrototype = AlembicIPoints();
+  this.materialPrototype = AlembicIMaterial();
+  this.meshPrototype = AlembicIPolyMesh();
+  this.subdPrototype = AlembicISubD();
+  this.nupatchPrototype = AlembicINuPatch();
+  this.curvePrototype = AlembicICurves();
+}
+
+/// \internal
+AlembicArchiveReader.cloneMembersTo(io AlembicArchiveReader that) {
+  setError("AlembicArchiveReader cannot be cloned");
+}
+
+/// \internal
+public ~AlembicArchiveReader() {
+  this.reset();
+
+  AlembicLockBracket bracket(this.alembicLock); // force the lock
+  {
+    AlembicArchiveReaderDict archivesDict = Singleton_get("AlembicArchiveReaderDict");
+    if(archivesDict)
+    {
+      if(archivesDict.archives.has(this._filePath))
+      {
+        archivesDict.archives.delete(this._filePath);
+        // report('removed archive '+this._filePath);
+      }
+    }
+  }
+}
+
+/// Returns true if the archive supports multithreaded reads.
+/// This is the case only if archive version is > 1.5 (Ogawa)
+Boolean AlembicArchiveReader.supportsMultithreadedReads() {
+  return this.allowMultithreaded;
+}
+
+/// \internal
+AlembicArchiveReader.enableThreadSafe!( Boolean enable ) {
+  this.threadSafe = enable;
+}
+
+/// \internal
+/// Locks that will be enabled if AlembicArchiveReader.enableThreadSafe
+struct AlembicArchiveReader_lockBracket {
+  Ref<AlembicArchiveReader> archiveReader;
+};
+
+inline AlembicArchiveReader_lockBracket( Ref<AlembicArchiveReader> archiveReader ) {
+  if( archiveReader.threadSafe ) {
+    this.archiveReader = archiveReader;
+    this.archiveReader.dataLockIfThreadSafe.acquire();
+  }
+}
+
+inline ~AlembicArchiveReader_lockBracket() {
+  if( this.archiveReader )
+    this.archiveReader.dataLockIfThreadSafe.release();
+}
+
+/// This lock bracket is required when accessing Alembic, since
+/// files using HDF5 don't support multithreading.
+struct AlembicLockBracket {
+  Ref<AlembicLock> alembicLock;
+};
+
+inline AlembicLockBracket( Ref<AlembicArchiveReader> archiveReader ) {
+  if( !archiveReader.allowMultithreaded ) {
+    this.alembicLock = archiveReader.alembicLock;
+    this.alembicLock.alembicLock.acquire();
+  }
+}
+
+inline AlembicLockBracket( Ref<AlembicLock> alembicLock ) {
+  this.alembicLock = alembicLock;
+  if(this.alembicLock)
+    this.alembicLock.alembicLock.acquire();
+}
+
+inline ~AlembicLockBracket() {
+  if( this.alembicLock )
+    this.alembicLock.alembicLock.release();
+}
+
+/// Returns the path of the wrapped archive
+public String AlembicArchiveReader.getPath() {
+  if(this._archive == null)
+    return "";
+  return this._archive.getName();
+}
+
+/// sets the path for this reader
+inline AlembicArchiveReader.setPath!(String fileName) {
+  if(this.getPath() == fileName)
+    return;
+
+  AlembicArchiveReader_lockBracket bracket( this );
+  this._archive = AlembicIArchive( fileName );
+  this._getAllPathsCalled = false;
+  this._objects.clear();
+  this.allowMultithreaded = this._archive.getArchiveVersion() >= 10500;//Ogawa was introduced in 1.5; previously it was not threadsafe (HDF5)
+}
+
+/// returns true if the wrapped archive is valid
+inline Boolean AlembicArchiveReader.valid() {
+  return this._archive != null && this._archive.valid();
+}
+
+/// Resets all internal pointers, clears all reader objects
+public AlembicArchiveReader.reset!() {
+  AlembicArchiveReader_lockBracket bracket( this );
+  this._archive.reset();
+
+  for(path in this._objects)
+  {
+    // Check if the reference to the _objects is not null
+    if(this._objects.get(path))
+      this._objects.delete(path);
+  }
+
+  this._readers.clear();
+  this._objects.clear();
+  
+  this._getAllPathsCalled = false;
+}
+
+/// Remove a pointer to a reader from the dictionary
+/// Is called when a reader is destroyed 
+public AlembicArchiveReader.removeReader!(String path) {
+  AlembicArchiveReader_lockBracket bracket( this );
+  if( this._readers.has( path ) )
+    this._readers.delete(path);
+}
+
+/// \internal
+public AlembicIArchive AlembicArchiveReader.getIArchive() {
+  return this._archive;
+}
+
+/// \internal
+private AlembicIObject AlembicArchiveReader._findIObject!(String path) {
+  if(path == '')
+    return this._archive.getTop();
+
+  AlembicArchiveReader_lockBracket bracket( this );
+
+  if(this._objects.has(path))
+    return this._objects[path];
+  String parts[] = path.reversePartition('/');
+  AlembicIObject parent = this._findIObject(parts[0]);
+  if(!parent.valid())
+  {
+    setError('AlembicArchiveReader: Path can not be resolved: "'+path+'".');
+    return AlembicIObject();
+  }
+  AlembicIObject child = parent.getChild(parts[2]);
+  if(child.valid())
+    this._objects[path] = child;
+  return child;
+}
+
+/// Reuse the sample selectors to avoid creating KL objects each time
+public Ref<AlembicISampleSelector> AlembicArchiveReader.getISampleSelector!( UInt32 index ) {
+  AlembicArchiveReader_lockBracket bracket( this );
+  while( index >= this.indexedSampleCache.size() )
+    this.indexedSampleCache.push( AlembicISampleSelector( this.indexedSampleCache.size() ) );
+  return this.indexedSampleCache[index];
+}
+
+/// \internal
+public String AlembicArchiveReader._getIObjectType(AlembicIObject obj) {
+  if(!obj.valid())
+    return "";
+  AlembicMetaData md = obj.getMetaData();
+  if(this.xformPrototype.matches(md))
+    return "Xform";
+  if(this.cameraPrototype.matches(md))
+    return "Camera";
+  if(this.lightPrototype.matches(md))
+    return "Light";
+  if(this.pointPrototype.matches(md))
+    return "Points";
+  if(this.materialPrototype.matches(md))
+    return "Material";
+  if(this.meshPrototype.matches(md))
+    return "PolyMesh";
+  if(this.subdPrototype.matches(md))
+    return "SubD";
+  if(this.nupatchPrototype.matches(md))
+    return "NuPatch";
+  if(this.curvePrototype.matches(md))
+    return "Curves";
+  if(this.faceSetPrototype.matches(md))
+    return "FaceSet";
+  // report(md.keys());
+  return "";
+}
+
+Type GetIPropertyKLType( Ref<AlembicDataType> dataType ) {
+  if( Boolean( dataType ) ) {
+    AlembicPOD pod = dataType.getPod();
+    UInt32 extent = dataType.getExtent();
+
+    if( extent == 1 ) {
+      switch( pod ) {
+      case Alembic_kBooleanPOD: return Boolean;
+      case Alembic_kUint8POD: return UInt8;
+      case Alembic_kUint16POD: return UInt16;
+      case Alembic_kUint32POD: return UInt32;
+      case Alembic_kUint64POD: return UInt64;
+      case Alembic_kInt8POD: return SInt8;
+      case Alembic_kInt16POD: return SInt16;
+      case Alembic_kInt32POD: return SInt32;
+      case Alembic_kInt64POD: return SInt64;
+      case Alembic_kFloat16POD: return Float32;//We have no Float16...
+      case Alembic_kFloat32POD: return Float32;
+      case Alembic_kFloat64POD: return Float64;
+      case Alembic_kStringPOD: return String;
+      case Alembic_kWstringPOD: return String;//Maybe we should return 'none'...?
+      }
+    }
+    // TODO: support Vec2_d and Vec2_i in readers...
+    if( extent == 2 && pod >= Alembic_kUint8POD && pod <= Alembic_kFloat64POD )
+      return Vec2;
+
+    if( extent == 3 && pod >= Alembic_kUint8POD && pod <= Alembic_kFloat64POD )
+      return Vec3;
+
+    if( extent == 4 && pod >= Alembic_kUint8POD && pod <= Alembic_kFloat64POD )
+      return Vec4;
+
+    // Arbitrary interpretation...
+    if( extent == 6 && pod >= Alembic_kUint8POD && pod <= Alembic_kFloat64POD )
+      return Box3;
+
+    // Arbitrary interpretation...
+    if( extent == 9 && pod >= Alembic_kUint8POD && pod <= Alembic_kFloat64POD )
+      return Mat33;
+
+    // Arbitrary interpretation...
+    if( extent == 16 && pod >= Alembic_kUint8POD && pod <= Alembic_kFloat64POD )
+      return Mat44;
+  }
+
+  return None;
+}
+
+/// Helper for creating the right property type based on the header
+CreateIProperty(
+  Ref<AlembicICompoundProperty> parent,
+  Ref<AlembicPropertyHeader> header,
+  io AlembicIScalarProperty scalarProperty,
+  io AlembicIArrayProperty arrayProperty,
+  io AlembicICompoundProperty compoundProperty
+  ) {
+  scalarProperty = null;
+  arrayProperty = null;
+  compoundProperty = null;
+  if( header.isScalar() )
+    scalarProperty = AlembicIScalarProperty( parent, header.getName() );
+  else if( header.isArray() )
+    arrayProperty = AlembicIArrayProperty( parent, header.getName() );
+  else if( header.isCompound() )
+    compoundProperty = AlembicICompoundProperty( parent, header.getName() );
+}
+
+/// Helper for creating a property reader based on the header
+AlembicPropertyReader AlembicArchiveReader.createPropertyReader(
+  Ref<AlembicICompoundProperty> parent,
+  Ref<AlembicPropertyHeader> header
+  ) {
+  AlembicIScalarProperty scalarProperty = null;
+  AlembicIArrayProperty arrayProperty = null;
+  AlembicICompoundProperty compoundProperty = null;
+  CreateIProperty( parent, header, scalarProperty, arrayProperty, compoundProperty );
+  return AlembicPropertyReader( this, header.getPropertyType(), scalarProperty, arrayProperty, compoundProperty );
+}
+
+/// Returns the type of an AlembicIObject based on its path in the file
+public String AlembicArchiveReader.getObjectType!(String path) {
+  AlembicIObject obj = this._findIObject(path);
+  return this._getIObjectType(obj);
+}
+
+/// Returns the full paths of all AlembicIObject entities within the file
+public String[] AlembicArchiveReader.getAllPaths!() {
+  String result[];
+  AlembicArchiveReader_lockBracket bracket( this );
+  if( this._getAllPathsCalled ) {
+    for(key in this._objects)
+      result.push(key);
+  } else {
+    AlembicIObject parents[];
+    parents.push(this._archive.getTop());
+    for(Size i=0;i<parents.size();i++) {
+      if(!parents[i].valid())
+        continue;
+      for(Size j=0;j<parents[i].getNumChildren();j++) {
+        AlembicIObject child = parents[i].getChild(j);
+        if(!child.valid())
+          continue;
+        String path = child.getFullName();
+        if(!this._objects.has(path))
+          this._objects[path] = child;
+        result.push(path);
+        parents.push(child);
+      }
+    } 
+    this._getAllPathsCalled = true;
+  }
+  return result;
+}
+
+/// Returns the fullpaths of all AlembicIObject entities of a given type
+public String[] AlembicArchiveReader.getPathsOfType!(String objType) {
+  AlembicArchiveReader_lockBracket bracket( this );
+  this.getAllPaths();
+  String result[];
+  for(path, obj in this._objects) {
+    if(this._getIObjectType(obj) == objType) {
+      result.push(path);
+    }
+  }
+  return result;
+}
+
+/// Returns all meta data keys given a path
+function String[] AlembicArchiveReader.getMetaDataKeys!(String path) {
+  String result[];
+  if(this == null)
+    return result;
+  AlembicIObject obj = this._findIObject(path);
+  if(!obj.valid())
+    return result;
+  AlembicMetaData md = obj.getMetaData();
+  return md.keys();
+}
+
+/// Returns the meta data given a path and a key
+function String AlembicArchiveReader.getMetaData!(String path, String key) {
+  if(this == null)
+    return "";
+  if(key == "")
+    return "";
+  AlembicIObject obj = this._findIObject(path);
+  if(!obj.valid())
+    return "";
+  AlembicMetaData md = obj.getMetaData();
+  return md.get(key);
+}
+
+/// \dfgPresetOmit
+private function String[] AlembicArchiveReader.getPropertyKeys!(AlembicICompoundProperty compound, String prefix) {
+  String result[];
+  if(this == null)
+    return result;
+  if(!compound.valid())
+    return result;
+
+  for(UInt32 i=0;i<compound.getNumProperties();i++) {
+    AlembicPropertyHeader header = compound.getPropertyHeader(i);
+    String name = header.getName();
+
+    // recurse
+    if(header.getPropertyType() == Alembic_kCompoundProperty) {
+      AlembicICompoundProperty childCompound(compound, name);
+      result += this.getPropertyKeys(childCompound, prefix + name + "/");
+      continue;
+    }
+
+    result.push(prefix + name);
+  }
+
+  return result;
+}
+
+/// returns all paths to properties within a path to an object
+function String[] AlembicArchiveReader.getPropertyKeys!(String path) {
+  String result[];
+  if(this == null)
+    return result;
+
+  AlembicArchiveReader_lockBracket bracket( this );
+  result = this._propertyKeys.get( path, result );
+  if(result.size() == 0) {
+    AlembicIObject obj = this._findIObject(path);
+    if(!obj.valid())
+      return result;
+    AlembicICompoundProperty compound = obj.getProperties();
+    result = this.getPropertyKeys(compound, "");
+    this._propertyKeys[path] = result;
+  }
+  return result;
+}
+
+/// \dfgPresetOmit
+private function Boolean AlembicArchiveReader.getProperty!(
+  String path,
+  String prefix,
+  String suffix,
+  io AlembicICompoundProperty compound,
+  io AlembicPropertyHeader header
+) {
+
+  // if we didn't specify the main compound yet
+  // look for it
+  String currentPrefix = prefix;
+  String currentSuffix = suffix;
+  if(currentPrefix == "") {
+
+    String parts[] = currentSuffix.reversePartition('/');
+    String search = path + '|' + parts[0];
+
+    // check if it is in the map
+    AlembicArchiveReader_lockBracket bracket( this );
+    compound = this._compoundProperties.get( search, null );
+    if(compound == null) {
+      AlembicIObject obj = this._findIObject(path);
+      if(!obj.valid())
+        return false;
+      compound = obj.getProperties();
+    }
+  }
+
+  // if this is the last component, get the header
+  else if(currentSuffix.find('/') == -1) {
+    header = compound.getPropertyHeader(currentSuffix);
+    Boolean result = header.getName() == currentSuffix;
+    if( result ) {
+      AlembicArchiveReader_lockBracket bracket( this );
+      this._compoundProperties[currentPrefix] = compound;
+    }
+    return result;
+  }
+
+  // check if compound
+  String parts[] = currentSuffix.partition('/');
+  header = compound.getPropertyHeader(parts[0]);
+
+  if(header.isCompound()) { // if compound, recursively read its components
+
+    compound = AlembicICompoundProperty(compound, parts[0]);
+    return this.getProperty(path, currentPrefix + parts[0] + '/', parts[2], compound, header);
+  
+  } else { // if scalar or array, return
+
+    currentPrefix += parts[0];
+    if(header.isScalar())
+      this._scalarProperties[currentPrefix] = AlembicIScalarProperty(compound,parts[0]);
+    else if(header.isArray())
+      this._arrayProperties[currentPrefix] = AlembicIArrayProperty(compound,parts[0]);
+    else
+      return false;
+    return true;
+  }
+}
+
+function AlembicPropertyReader AlembicArchiveReader.getProperty!(
+  String path,
+  String key
+) {
+  AlembicICompoundProperty parent = null;
+  AlembicPropertyHeader header = null;
+
+  // ensure that the property path exists
+  // the getPropertyKeys method caches the results
+  // for every path used.
+  String keys[] = this.getPropertyKeys(path);
+  Boolean found = false;
+  for(Size i=0;i<keys.size();i++) {
+    if(keys[i] == key) {
+      found = true;
+      break;
+    }
+  }
+  if(!found)
+    return null;
+
+  if(!this.getProperty(path, "", key, parent, header))
+    return null;
+
+  String search = path + '|' + key;
+
+  AlembicArchiveReader_lockBracket bracket( this );
+
+  AlembicICompoundProperty compoundProp = this._compoundProperties.get(search, null);
+  AlembicIScalarProperty scalarProp = this._scalarProperties.get(search, null);
+  AlembicIArrayProperty arrayProp = this._arrayProperties.get(search, null);
+
+  if(compoundProp == null && scalarProp == null && arrayProp == null) {
+    if(header.isCompound()) {
+      compoundProp = AlembicICompoundProperty(parent, header.getName());
+      this._compoundProperties[search] = compoundProp;
+    } else if(header.isScalar()) {
+      scalarProp = AlembicIScalarProperty(parent, header.getName());
+      this._scalarProperties[search] = scalarProp;
+    } else if(header.isArray()) {
+      arrayProp = AlembicIArrayProperty(parent, header.getName());
+      this._arrayProperties[search] = arrayProp;
+    }
+  }
+
+  return AlembicPropertyReader(this, header.getPropertyType(), scalarProp, arrayProp, compoundProp);
+}
+
+/// returns the number of AlembicTimeSampling entities within the file
+inline SInt32 AlembicArchiveReader.getNumTimeSamplings() {
+  return this._archive.getNumTimeSamplings();
+}
+
+/// Returns the stored time samples of a given AlembicTimeSampling by index
+public Float64[] AlembicArchiveReader.getTimeSampling(SInt32 timeSampling) {
+  Float64 result[]; 
+  if(!this.valid()) {
+    setError('AlembicArchiveReader: Requesting timesampling on invalidated reader.');
+    return result;
+  }
+  return this._archive.getTimeSampling(timeSampling).getStoredTimes();
+}
+
+/// Returns the time range of this file as a Vec2
+/// \param parse Will parse the archive to compute the range (slower), else it will use an heuristic
+public Vec2 AlembicArchiveReader.getTimeRange( Boolean parse ) {
+  
+  Vec2 range; range.x = SCALAR_INFINITE; range.y = -SCALAR_INFINITE;
+
+  if(!parse) {
+    // Reading the header of the archive : might give larger or smaller ranges
+    for(Index i = 1; i < this.getNumTimeSamplings(); i++) {
+      Float64 times[] = this.getTimeSampling(i);
+      if(times.size()>0) {
+        range.x = Math_min( range.x, Scalar(times[0]) );
+        range.y = Math_max( range.y, Scalar(times[times.size()-1]) );
+      }
+    }
+  } else {
+    // Computing the range of every object of the archive
+    Ref<AlembicArchiveReader> mutableThis = this;
+    String allPaths[] = mutableThis.getAllPaths();
+    for(Index i = 0; i < allPaths.size(); i++) {
+      AlembicBaseObjectReader reader = mutableThis.getReader(allPaths[i]);
+      if( reader ) {
+
+        AlembicTimeSampling timeSampling = reader.getTimeSampling();
+        if( timeSampling ) {
+
+          AlembicTimeSamplingType timeSamplingType = timeSampling.getTimeSamplingType();
+          Float64 minTime = timeSampling.getSampleTime(0);
+          Float64 maxTime;
+          if( timeSamplingType.isUniform() ) {
+            // If Uniform sampling, a cycle is the time between each sample
+            maxTime = minTime + reader.getNumSamples() * timeSamplingType.getTimePerCycle();
+          } else {
+            // Else, the sample times should be hardcoded in the TimeSampling
+            // maxTime = timeSampling.getSampleTime( timeSampling.getNumStoredTimes()-1 ); // TODO : which one is better ?
+            maxTime = minTime + timeSamplingType.getTimePerCycle();
+          }
+          range.x = Math_min( range.x, Scalar(minTime) );
+          range.y = Math_max( range.y, Scalar(maxTime) );
+        }
+      }
+    }
+  }
+  return range;
+}
+
+/// Returns the time range of this file as a Vec2
+/// Will parse the archive to compute the range (can be slow)
+public Vec2 AlembicArchiveReader.getTimeRange() { return this.getTimeRange( true ); }
+
+/// Returns the AlembicIObject of a full path within this file
+public AlembicIObject AlembicArchiveReader.getIObject!(String path) {
+  if(!this.valid()) {
+    setError('AlembicArchiveReader: Requesting object on invalidated reader.');
+    return AlembicIObject();
+  }
+  return this._findIObject(path);
+}
+
+/// 
+public AlembicArchiveReader.setReaders!(io AlembicBaseObjectReader readers[]) {
+  AlembicArchiveReader_lockBracket bracket( this );
+  String allPaths[] = this.getAllPaths();
+
+  readers.resize(allPaths.size());
+  for( Size i = 0; i < allPaths.size(); ++i ) {
+
+    // TODO: this is not generic, would need to use some kind of factory... else custom schemas can't be handled!
+    AlembicIObject obj = this.getIObject( allPaths[i] );
+    String objType = this._getIObjectType(obj);
+    
+    if( objType == "Xform" ) 
+    {
+      readers[i] = AlembicXformReader(this, obj);
+      this._readers[allPaths[i]] = readers[i];
+    } 
+    else if( objType == "Camera" ) 
+    {
+      readers[i] = AlembicCameraReader(this, obj);
+      this._readers[allPaths[i]] = readers[i];
+    } 
+    else if( objType == "Points" ) 
+    {
+      readers[i] = AlembicPointsReader(this, obj);
+      this._readers[allPaths[i]] = readers[i];
+    } 
+    else if( objType == "PolyMesh" ) 
+    {
+      readers[i] = AlembicPolyMeshReader(this, obj);
+      this._readers[allPaths[i]] = readers[i];
+    } 
+    else if( objType == "SubD" ) 
+    {
+      readers[i] = AlembicSubDReader(this, obj);
+      this._readers[allPaths[i]] = readers[i];
+    } 
+    else if( objType == "Curves" ) 
+    {
+      readers[i] = AlembicCurvesReader( this, obj );
+      this._readers[allPaths[i]] = readers[i];
+    }
+    else if( objType == "FaceSet" ) 
+    {
+      readers[i] = AlembicFaceSetReader( this, obj );
+      this._readers[allPaths[i]] = readers[i];
+    }
+    // Wrap with an non-specialized reader (at least supports some hierarchy services)
+    else {
+      readers[i] = AlembicBaseObjectReader( this, obj, null, 1, null );
+      this._readers[allPaths[i]] = readers[i];
+    }
+  }
+}
+
+/// \internal
+Ref<AlembicObjectReader> AlembicArchiveReader.getReaderIfExists!(String path) {
+  AlembicArchiveReader_lockBracket bracket( this );
+  return this._readers.get( path, null );
+}
+
+/// \internal
+private AlembicObjectReader AlembicArchiveReader.getReader_noLock!(AlembicIObject obj, String path) {
+
+  if(this._readers.has(path))
+    return this._readers[path];
+
+  if(!this.valid()) {
+    setError('AlembicArchiveReader: Requesting object on invalidated reader.');
+    return null;
+  }
+
+  // TODO: this is not generic, would need to use some kind of factory... else custom schemas can't be handled!
+  String objType = this._getIObjectType(obj);
+  if( objType == "Xform" ) {
+    AlembicXformReader reader = AlembicXformReader(this, obj);
+    this._readers[path] = reader;
+
+    // get the parent reader and store it on the Xform Reader as well
+    // for performance reasons. this way the global transform can be
+    // computed much faster.
+    AlembicIObject parent = obj.getParent();
+    if(parent.getFullName() != obj.getFullName() && this._getIObjectType(parent) == 'Xform')
+      reader._parentReader = this.getReader_noLock(parent, parent.getFullName());
+
+    return reader;
+
+  } else if( objType == "Camera" ) {
+    AlembicCameraReader reader = AlembicCameraReader(this, obj);
+    this._readers[path] = reader;
+    return reader;
+  } else if( objType == "Points" ) {
+    AlembicPointsReader reader = AlembicPointsReader(this, obj);
+    this._readers[path] = reader;
+    return reader;
+  } else if( objType == "PolyMesh" ) {
+    AlembicPolyMeshReader reader = AlembicPolyMeshReader(this, obj);
+    this._readers[path] = reader;
+    return reader;
+  } else if( objType == "SubD" ) {
+    AlembicSubDReader reader = AlembicSubDReader(this, obj);
+    this._readers[path] = reader;
+    return reader;
+  } else if( objType == "Curves" ) {
+    AlembicCurvesReader reader = AlembicCurvesReader( this, obj );
+    this._readers[path] = reader;
+    return reader;
+  } else if( objType == "FaceSet" ) {
+    AlembicFaceSetReader reader = AlembicFaceSetReader( this, obj );
+    this._readers[path] = reader;
+    return reader;
+  }
+
+  // Wrap with an non-specialized reader (at least supports some hierarchy services)
+  AlembicBaseObjectReader reader( this, obj, null, 1, null );
+  this._readers[path] = reader;
+  return reader;
+}
+
+/// \internal
+private AlembicObjectReader AlembicArchiveReader.getReader!(AlembicIObject obj, String path) {
+  AlembicArchiveReader_lockBracket bracket( this );
+  return this.getReader_noLock(obj, path);
+}
+
+/// Returns the reader object associated with this AlembicIObject
+public AlembicObjectReader AlembicArchiveReader.getReader!(AlembicIObject obj) {
+  return this.getReader( obj, obj.getFullName() );
+}
+
+/// Returns the reader object associated with this path
+public AlembicObjectReader AlembicArchiveReader.getReader!(String path) {
+  return this.getReader( this.getIObject( path ), path );
+}
+
+/// \internal
+private AlembicXformReader AlembicArchiveReader.getXform!(String parentPath, String childPath) {
+  String path;
+  if(parentPath.length() > 0)
+    path = parentPath + '/' + childPath;
+  else
+    path = childPath;
+
+  if(!this.valid()) {
+    setError('AlembicArchiveReader: Requesting object on invalidated reader.');
+    return null;
+  }
+  AlembicIObject obj = this._findIObject(path);
+  if(!obj.valid()) {
+    return null;
+  }
+  String objType = this._getIObjectType(obj);
+  if(objType != 'Xform') {
+    // setError('AlembicArchiveReader: Requesting object "'+path+'" as Xform (is "'+objType+'").');
+    return null;
+  }
+
+  return this.getReader(obj);
+}
+
+/// \internal
+private AlembicXformReader AlembicArchiveReader.getXform!(Ref<AlembicObjectReader> parent, String childPath) {
+  return this.getXform(parent.getPath(), childPath);
+}
+
+/// Returns a AlembicXformReader wrapper for the AlembicIXform object at a given path
+public AlembicXformReader AlembicArchiveReader.getXform!(String path) {
+  return this.getXform('', path);
+}
+
+/// \internal
+private AlembicCameraReader AlembicArchiveReader.getCamera!(String parentPath, String childPath) {
+  String path;
+  if(parentPath.length() > 0)
+    path = parentPath + '/' + childPath;
+  else
+    path = childPath;
+  if(!this.valid()) {
+    setError('AlembicArchiveReader: Requesting object on invalidated reader.');
+    return null;
+  }
+  AlembicIObject obj = this._findIObject(path);
+  if(!obj.valid()) {
+    return null;
+  }
+  String objType = this._getIObjectType(obj);
+  if(objType != 'Camera') {
+    // setError('AlembicArchiveReader: Requesting object "'+path+'" as Camera (is "'+objType+'").');
+    return null;
+  }
+
+  return this.getReader(obj);
+}
+
+/// \internal
+/// [pzion 20150205] We can't make this private because the unit tests call it
+public AlembicCameraReader AlembicArchiveReader.getCamera!(Ref<AlembicObjectReader> parent, String childPath) {
+  return this.getCamera(parent.getPath(), childPath);
+}
+
+/// Returns a AlembicCameraReader wrapper for the AlembicICamera object at a given path
+public AlembicCameraReader AlembicArchiveReader.getCamera!(String path) {
+  return this.getCamera('', path);
+}
+
+/// \internal
+private AlembicPointsReader AlembicArchiveReader.getPoints!(String parentPath, String childPath) {
+  String path;
+  if(parentPath.length() > 0)
+    path = parentPath + '/' + childPath;
+  else
+    path = childPath;
+
+  if(!this.valid()) {
+    setError('AlembicArchiveReader: Requesting object on invalidated reader.');
+    return null;
+  }
+  AlembicIObject obj = this._findIObject(path);
+  if(!obj.valid()) {
+    return null;
+  }
+  String objType = this._getIObjectType(obj);
+  if(objType != 'Points') {
+    // setError('AlembicArchiveReader: Requesting object "'+path+'" as Points (is "'+objType+'").');
+    return null;
+  }
+
+  return this.getReader(obj);
+}
+
+/// \internal
+private AlembicPointsReader AlembicArchiveReader.getPoints!(Ref<AlembicObjectReader> parent, String childPath) {
+  return this.getPoints(parent.getPath(), childPath);
+}
+
+/// Returns a AlembicPointsReader wrapper for the AlembicIPoints object at a given path
+public AlembicPointsReader AlembicArchiveReader.getPoints!(String path) {
+  return this.getPoints('', path);
+}
+
+/// \internal
+private AlembicPolyMeshReader AlembicArchiveReader.getPolyMesh!(String parentPath, String childPath) {
+  String path;
+  if(parentPath.length() > 0)
+    path = parentPath + '/' + childPath;
+  else
+    path = childPath;
+
+  if(!this.valid()) {
+    setError('AlembicArchiveReader: Requesting object on invalidated reader.');
+    return null;
+  }
+  AlembicIObject obj = this._findIObject(path);
+  if(!obj.valid()) {
+    return null;
+  }
+  String objType = this._getIObjectType(obj);
+  if(objType != 'PolyMesh') {
+    // setError('AlembicArchiveReader: Requesting object "'+path+'" as PolyMesh (is "'+objType+'").');
+    return null;
+  }
+
+  return this.getReader(obj);
+}
+
+/// \internal
+private AlembicPolyMeshReader AlembicArchiveReader.getPolyMesh!(Ref<AlembicObjectReader> parent, String childPath) {
+  return this.getPolyMesh(parent.getPath(), childPath);
+}
+
+/// Returns a AlembicPolyMeshReader wrapper for the AlembicIPolyMesh object at a given path
+public AlembicPolyMeshReader AlembicArchiveReader.getPolyMesh!(String path) {
+  return this.getPolyMesh('', path);
+}
+
+/// \internal
+private AlembicSubDReader AlembicArchiveReader.getSubD!(String parentPath, String childPath) {
+  String path;
+  if(parentPath.length() > 0)
+    path = parentPath + '/' + childPath;
+  else
+    path = childPath;
+
+  if(!this.valid()) {
+    setError('AlembicArchiveReader: Requesting object on invalidated reader.');
+    return null;
+  }
+  AlembicIObject obj = this._findIObject(path);
+  if(!obj.valid()) {
+    return null;
+  }
+  String objType = this._getIObjectType(obj);
+  if(objType != 'SubD') {
+    // setError('AlembicArchiveReader: Requesting object "'+path+'" as SubD (is "'+objType+'").');
+    return null;
+  }
+
+  return this.getReader(obj);
+}
+
+/// \internal
+private AlembicSubDReader AlembicArchiveReader.getSubD!(Ref<AlembicObjectReader> parent, String childPath) {
+  return this.getSubD(parent.getPath(), childPath);
+}
+
+/// Returns a AlembicSubDReader wrapper for the AlembicISubD object at a given path
+public AlembicSubDReader AlembicArchiveReader.getSubD!(String path) {
+  return this.getSubD('', path);
+}
+
+/// \internal
+private AlembicCurvesReader AlembicArchiveReader.getCurves!(String parentPath, String childPath) {
+  String path;
+  if(parentPath.length() > 0)
+    path = parentPath + '/' + childPath;
+  else
+    path = childPath;
+
+  if(!this.valid()) {
+    setError('AlembicArchiveReader: Requesting object on invalidated reader.');
+    return null;
+  }
+  AlembicIObject obj = this._findIObject(path);
+  if(!obj.valid()) {
+    return null;
+  }
+  String objType = this._getIObjectType(obj);
+  if(objType != 'Curves') {
+    // setError('AlembicArchiveReader: Requesting object "'+path+'" as Curves (is "'+objType+'").');
+    return null;
+  }
+
+  return this.getReader(obj);
+}
+
+/// \internal
+private AlembicFaceSetReader AlembicArchiveReader.getFaceSet!(Ref<AlembicObjectReader> parent, String childPath) {
+  return this.getFaceSet(parent.getPath(), childPath);
+}
+
+/// Returns a AlembicFaceSetReader wrapper for the AlembicIFaceSet object at a given path
+public AlembicFaceSetReader AlembicArchiveReader.getFaceSet!(String path) {
+  return this.getFaceSet('', path);
+}
+
+/// \internal
+private AlembicFaceSetReader AlembicArchiveReader.getFaceSet!(String parentPath, String childPath) {
+  String path;
+  if(parentPath.length() > 0)
+    path = parentPath + '/' + childPath;
+  else
+    path = childPath;
+
+  if(!this.valid()) {
+    setError('AlembicArchiveReader: Requesting object on invalidated reader.');
+    return null;
+  }
+  AlembicIObject obj = this._findIObject(path);
+  if(!obj.valid()) {
+    return null;
+  }
+  String objType = this._getIObjectType(obj);
+  if(objType != 'FaceSet') {
+    // setError('AlembicArchiveReader: Requesting object "'+path+'" as Curves (is "'+objType+'").');
+    return null;
+  }
+
+  return this.getReader(obj);
+}
+
+/// \internal
+private AlembicCurvesReader AlembicArchiveReader.getCurves!(Ref<AlembicObjectReader> parent, String childPath) {
+  return this.getCurves(parent.getPath(), childPath);
+}
+
+/// Returns a AlembicCurvesReader wrapper for the AlembicICurves object at a given path
+public AlembicCurvesReader AlembicArchiveReader.getCurves!(String path) {
+  return this.getCurves('', path);
+}
+
+/// Browse the archive to find the largest time samples (used by demos to set the initial timeline)
+/// Note: this is slow as it traverses the whole archive!
+/// TODO : use getTimeRangeByParsing() instead
+public AlembicArchiveReader.searchForMaxStoredTimes!( io UInt32 numSamples, io AlembicTimeSampling timeSampling ) {
+  String allPaths[] = this.getAllPaths();
+  timeSampling = null;
+  numSamples = 0;
+
+  for( Size i = 0; i < allPaths.size(); ++i ) {
+    AlembicBaseObjectReader reader = this.getReader(allPaths[i]);
+    if( reader ) {
+      UInt32 currNumSamples = reader.getNumSamples();
+      if( currNumSamples > numSamples ) {
+        numSamples = currNumSamples;
+        timeSampling = reader.getTimeSampling();
+      }
+    }
+  }
+}
+
+/// Returns true if a path contains xform or geometry deformation.
+/// Optionally you can set this function to recursively find xform animation.
+public Boolean AlembicArchiveReader.isPathAnimated!(String path, Boolean checkXformAnim, Boolean checkDeformation, Boolean recursively) {
+  if(path.length() == 0)
+    return false;
+
+  String objectType = this.getObjectType(path);
+  if(objectType.length() == 0)
+    return false;
+
+  switch(objectType)
+  {
+    case "Camera":
+    {
+      if(this.getCamera(path).getNumSamples() > 1)
+        return true;
+      break;
+    }
+    case "Points":
+    {
+      if(checkDeformation && this.getPoints(path).getNumSamples() > 1)
+        return true;
+      break;
+    }
+    case "PolyMesh":
+    {
+      if(checkDeformation && this.getPolyMesh(path).getNumSamples() > 1)
+        return true;
+      break;
+    }
+    case "SubD":
+    {
+      if(checkDeformation && this.getSubD(path).getNumSamples() > 1)
+        return true;
+      break;
+    }
+    case "Curves":
+    {
+      if(checkDeformation && this.getCurves(path).getNumSamples() > 1)
+        return true;
+      break;
+    }
+    case "Xform":
+    {
+      if(checkXformAnim && this.getXform(path).getNumSamples() > 1)
+        return true;
+      if(!recursively)
+        return false;
+      break;
+    }
+    case "FaceSet":
+    {
+      // facesets are usually not animated
+      return false;
+    }
+    case "Light":
+    case "NuPatch":
+    case "Material":
+    default:
+    {
+      break;
+    }
+  }
+
+  if(!checkXformAnim)
+    return false;
+
+  String parentPath = path.reversePartition('/')[0];
+  return this.isPathAnimated(parentPath, checkXformAnim, checkDeformation, recursively);
+}
+
+/// Returns true if a path contains xform or geometry deformation.
+/// This function will also recurse to find if parent transforms contains
+/// animation or not.
+public Boolean AlembicArchiveReader.isPathAnimated!(String path, Boolean checkXformAnim, Boolean checkDeformation) {
+  return this.isPathAnimated(path, checkXformAnim, checkDeformation, true);
+}
+
+/// \dfgPresetOmit
+public Boolean AlembicArchiveReader_getArchive(String filePath, io AlembicArchiveReader archive, io Boolean clearReaders)
+{
+  clearReaders = archive == null;
+
+  if(archive != null)
+  {
+    FilePath resolvedPath = FilePath(filePath).expandEnvVars();
+    if(archive.getPath() != resolvedPath.string())
+    {
+      archive = null;      
+    }
+  }
+
+  if(archive == null)
+  {
+    AlembicLock lock = Singleton_init( "AlembicHDF5Lock", AlembicLock());
+    AlembicLockBracket bracket(lock);
+    {
+      FilePath resolvedPath = FilePath(filePath).expandEnvVars();
+
+      AlembicArchiveReaderDict archivesDict = Singleton_init( "AlembicArchiveReaderDict", AlembicArchiveReaderDict() );
+      if(archivesDict.archives.has(filePath))
+      {
+        archive = archivesDict.archives.get(filePath, null);
+        // if(archive)
+        //   report('reused existing archive '+filePath);
+      }
+
+      if(archive == null)
+      {
+        if(!resolvedPath.exists())
+        {
+          report('Alembic archive '+filePath+' does not exist.');
+          return false;
+        }
+        archive = AlembicArchiveReader(filePath);
+        archive.enableThreadSafe(true); // assume ogawa at this point
+
+        archivesDict.archives[filePath] = archive;
+        // report('opened new archive '+filePath);
+      }
+      clearReaders = true;
+    }
+  }
+
+  return (archive != null) && archive.valid();
+}
+
+/// \dfgPresetOmit
+public Boolean AlembicArchiveReader_getXform(String filePath, String abcPath, io AlembicArchiveReader archive, io AlembicXformReader reader, io Boolean clearReaders)
+{
+  if(!AlembicArchiveReader_getArchive(filePath, archive, clearReaders))
+    return false;
+  if(reader != null)
+  {
+    if(!reader.valid() || clearReaders)
+    {
+      reader = null;
+    }
+  }
+  if(reader == null)
+  {
+    reader = archive.getXform(abcPath);
+  }
+  return (reader != null) && reader.valid();
+}
+
+/// \dfgPresetOmit
+public Boolean AlembicArchiveReader_getCurves(String filePath, String abcPath, io AlembicArchiveReader archive, io AlembicCurvesReader reader, io Boolean clearReaders)
+{
+  if(!AlembicArchiveReader_getArchive(filePath, archive, clearReaders))
+    return false;
+  if(reader != null)
+  {
+    if(!reader.valid() || clearReaders)
+      reader = null;
+  }
+  if(reader == null)
+  {
+    reader = archive.getCurves(abcPath);
+  }
+  return (reader != null) && reader.valid();
+}
+
+/// \dfgPresetOmit
+public Boolean AlembicArchiveReader_getPoints(String filePath, String abcPath, io AlembicArchiveReader archive, io AlembicPointsReader reader, io Boolean clearReaders)
+{
+  if(!AlembicArchiveReader_getArchive(filePath, archive, clearReaders))
+    return false;
+  if(reader != null)
+  {
+    if(!reader.valid() || clearReaders)
+      reader = null;
+  }
+  if(reader == null)
+  {
+    reader = archive.getPoints(abcPath);
+  }
+  return (reader != null) && reader.valid();
+}
+
+/// \dfgPresetOmit
+public Boolean AlembicArchiveReader_getPolyMesh(String filePath, String abcPath, io AlembicArchiveReader archive, io AlembicPolyMeshReader reader, io Boolean clearReaders)
+{
+  if(!AlembicArchiveReader_getArchive(filePath, archive, clearReaders))
+    return false;
+  if(reader != null)
+  {
+    if(!reader.valid() || clearReaders)
+      reader = null;
+  }
+  if(reader == null)
+  {
+    reader = archive.getPolyMesh(abcPath);
+  }
+  return (reader != null) && reader.valid();
+}
+
+/// \dfgPresetOmit
+public Boolean AlembicArchiveReader_getSubD(String filePath, String abcPath, io AlembicArchiveReader archive, io AlembicSubDReader reader, io Boolean clearReaders)
+{
+  if(!AlembicArchiveReader_getArchive(filePath, archive, clearReaders))
+    return false;
+  if(reader != null)
+  {
+    if(!reader.valid() || clearReaders)
+      reader = null;
+  }
+  if(reader == null)
+  {
+    reader = archive.getSubD(abcPath);
+  }
+  return (reader != null) && reader.valid();
+}
+
+/// \dfgPresetOmit
+public Boolean AlembicArchiveReader_getCamera(String filePath, String abcPath, io AlembicArchiveReader archive, io AlembicCameraReader reader, io Boolean clearReaders)
+{
+  if(!AlembicArchiveReader_getArchive(filePath, archive, clearReaders))
+    return false;
+  if(reader != null)
+  {
+    if(!reader.valid() || clearReaders)
+      reader = null;
+  }
+  if(reader == null)
+  {
+    reader = archive.getCamera(abcPath);
+  }
+  return (reader != null) && reader.valid();
+}

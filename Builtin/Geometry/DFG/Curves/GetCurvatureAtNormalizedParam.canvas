@@ -1,0 +1,64 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/Curves.html",
+    "uiTooltip" : "Returns the curvature vector (normal * arcLength) at this normalized parameter.\nIf no curvature (eg: linear curve), Vec3() is returned.\nThe arc length can be computed as curvature.length(), or SCALAR_INFINITE if length is 0.\nThe normalizedParam should be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.\n\nSupported types:\n  this: Curves\n  curveIndex: UInt32\n  normalizedParam: Float32\n  result: Vec3\n"
+    },
+  "title" : "GetCurvatureAtNormalizedParam",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Curves"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "curveIndex",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "UInt32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiRange" : "(0.0, 1.0)"
+        },
+      "name" : "normalizedParam",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Float32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Vec3"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "40FFEBA1AAC3367475A38CD94FB57549",
+  "code" : "require Geometry;
+
+dfgEntry {
+  result = this.getCurvatureAtNormalizedParam(curveIndex, normalizedParam);
+}
+"
+  }

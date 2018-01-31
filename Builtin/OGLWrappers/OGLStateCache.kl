@@ -1,0 +1,885 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+require FabricOGL, Util;
+
+/// \internal
+struct GLBooleanValueAndGeneration {
+  Boolean value;
+  UInt32 generation;
+};
+
+inline GLBooleanValueAndGeneration.update!( Boolean value, UInt32 generation, io Boolean changedAccumulator ) {
+  if( this.generation != generation ) {
+    this.generation = generation;
+    this.value = value;
+    changedAccumulator = true;
+  } else if( this.value != value ) {
+    this.value = value;
+    changedAccumulator = true;
+  }
+}
+
+inline Boolean GLBooleanValueAndGeneration.update!( Boolean value, UInt32 generation ) {
+  Boolean changed;
+  this.update( value, generation, changed );
+  return changed;
+}
+
+/// \internal
+struct GLScalarValueAndGeneration {
+  Scalar value;
+  UInt32 generation;
+};
+
+inline GLScalarValueAndGeneration.update!( Scalar value, UInt32 generation, io Boolean changedAccumulator ) {
+  if( this.generation != generation ) {
+    this.generation = generation;
+    this.value = value;
+    changedAccumulator = true;
+  } else if( this.value != value ) {
+    this.value = value;
+    changedAccumulator = true;
+  }
+}
+
+inline Boolean GLScalarValueAndGeneration.update!( Scalar value, UInt32 generation ) {
+  Boolean changed;
+  this.update( value, generation, changed );
+  return changed;
+}
+
+/// \internal
+struct GLUInt32ValueAndGeneration {
+  UInt32 value;
+  UInt32 generation;
+};
+
+inline GLUInt32ValueAndGeneration.reset!() {
+  this.generation = 0;
+}
+
+inline GLUInt32ValueAndGeneration.update!( UInt32 value, UInt32 generation, io Boolean changedAccumulator ) {
+  if( this.generation != generation ) {
+    this.generation = generation;
+    this.value = value;
+    changedAccumulator = true;
+  } else if( this.value != value ) {
+    this.value = value;
+    changedAccumulator = true;
+  }
+}
+
+inline Boolean GLUInt32ValueAndGeneration.update!( UInt32 value, UInt32 generation ) {
+  Boolean changed;
+  this.update( value, generation, changed );
+  return changed;
+}
+
+/// \internal
+struct GLUInt32ValueAndGenerationArray {
+  GLUInt32ValueAndGeneration values[];
+  Size size;
+};
+
+inline GLUInt32ValueAndGenerationArray.resize!( Size size) {
+  if( size > this.values.size() )
+    this.values.resize(size);
+  for( Size i = this.size; i < size; ++i )
+    this.values[i].generation = 0;//invalidate
+  this.size = size;
+}
+
+inline GLUInt32ValueAndGenerationArray.prepareForIndex!( UInt32 index ) {
+  if( index >= this.size )
+    this.resize( index+1 );
+}
+
+/// \internal
+struct OGLViewportArgs {
+  UInt32 x;
+  UInt32 y;
+  UInt32 width;
+  UInt32 height;
+};
+
+/// \internal
+struct OGLStencilMaskArgs {
+  UInt32 back;
+  UInt32 front;
+};
+
+/// \internal
+struct OGLStencilFuncArgs {
+  UInt32 frontFunc;
+  UInt32 frontRef;
+  UInt32 frontMask;
+  UInt32 backFunc;
+  UInt32 backRef;
+  UInt32 backMask;
+};
+
+/// \internal
+struct OGLStencilOpArgs {
+  UInt32 frontSfail;
+  UInt32 frontDpfail;
+  UInt32 frontDppass;
+  UInt32 backSfail;
+  UInt32 backDpfail;
+  UInt32 backDpass;
+};
+
+/// \internal
+struct OGLBlendFuncArgs {
+  UInt32 srcRGB;
+ 	UInt32 dstRGB;
+ 	UInt32 srcAlpha;
+ 	UInt32 dstAlpha;
+};
+
+/// \internal
+struct OGLBlendEquationArgs {
+  UInt32 modeRGB;
+ 	UInt32 modeAlpha;
+};
+
+/// \internal
+struct OGLPolygonOffsetArgs {
+ 	Scalar factor;
+  Scalar units;
+};
+
+/// \internal
+struct OGLBindFramebufferArgs {
+  UInt32 read;
+ 	UInt32 draw;
+};
+
+/// \internal
+struct OGLVertexAttribPointerState {
+  Boolean enabled;
+  UInt32 enabledGeneration;
+
+  UInt32 bufferID;
+ 	UInt32 size;
+ 	UInt32 type;
+ 	Boolean normalized;
+ 	UInt32 stride;
+  UInt32 generation;
+};
+
+/// \internal
+struct OGLVertexAttribPointerStateArray {
+  OGLVertexAttribPointerState data[];
+  UInt32 size;
+  Boolean someAreDisabled;
+};
+
+inline OGLVertexAttribPointerStateArray.resize!( UInt32 size ) {
+  if( size > this.data.size() )
+    this.data.resize(size);
+
+  //Invalidate new entries
+  for( Size i = this.size; i < size; ++i ) {
+    this.data[i].generation = 0;
+    this.data[i].enabledGeneration = 0;
+  }
+  this.size = size;
+}
+
+inline OGLVertexAttribPointerStateArray.prepareForIndex!( UInt32 index ) {
+  if( index >= this.size )
+    this.resize( index+1 );
+}
+
+/// \internal
+struct OGLBindTextureData {
+  UInt32 target;
+  UInt32 texture;
+  UInt32 generation;
+};
+
+/// \internal
+struct OGLBindTextureArray {
+  OGLBindTextureData data[];
+  UInt32 size;
+};
+
+inline OGLBindTextureArray.resize!( UInt32 size ) {
+  if( size > this.data.size() )
+    this.data.resize(size);
+
+  //Invalidate new entries
+  for( Size i = this.size; i < size; ++i )
+    this.data[i].generation = 0;
+  this.size = size;
+}
+
+inline OGLBindTextureArray.prepareForIndex!( UInt32 index ) {
+  if( index >= this.size )
+    this.resize( index+1 );
+}
+
+object OGLStateCache {
+  UInt32 generation;
+
+  OGLViewportArgs viewportArgs;
+  UInt32 viewportGeneration;
+
+  GLUInt32ValueAndGeneration colorMaskData;//Mutually exclusive with colorMaski
+
+  GLBooleanValueAndGeneration depthMaskData;
+  GLUInt32ValueAndGeneration depthFuncData;
+  GLBooleanValueAndGeneration depthTestEnable;
+  GLBooleanValueAndGeneration vertexProgramPointSizeEnable;
+
+  OGLStencilMaskArgs stencilMaskArgs;
+  UInt32 stencilMaskGeneration;
+
+  GLBooleanValueAndGeneration stencilTestEnable;
+
+  OGLStencilFuncArgs stencilFuncArgs;
+  UInt32 stencilFuncGeneration;
+
+  OGLStencilOpArgs stencilOpArgs;
+  UInt32 stencilOpGeneration;
+
+  GLUInt32ValueAndGeneration cullFaceData;
+  GLBooleanValueAndGeneration cullFaceEnabled;
+
+  OGLBlendFuncArgs blendFuncArgs;
+  UInt32 blendFuncGeneration;
+  Color blendColorData;
+  UInt32 blendColorGeneration;
+  OGLBlendEquationArgs blendEquationArgs;
+  UInt32 blendEquationGeneration;
+  GLBooleanValueAndGeneration blendEnabled;
+
+  OGLPolygonOffsetArgs polygonOffsetArgs;
+  UInt32 polygonOffsetGeneration;
+  GLBooleanValueAndGeneration polygonOffsetFillEnabled;
+  GLBooleanValueAndGeneration polygonOffsetLineEnabled;
+  GLBooleanValueAndGeneration polygonOffsetPointEnabled;
+
+  OGLBindFramebufferArgs bindFramebufferArgs;
+  UInt32 bindFramebufferGeneration;
+
+  GLUInt32ValueAndGeneration readBufferData;
+  GLUInt32ValueAndGeneration drawBufferData;
+
+  UInt32ArrayNoFree drawBuffersData;
+  UInt32 attachmentToDrawBuffer[];
+  UInt32 drawBuffersGeneration;
+
+  GLUInt32ValueAndGenerationArray colorMaskiData;//Resize to 0 if glColorMask
+
+  GLUInt32ValueAndGeneration bindArrayBufferData;
+  GLUInt32ValueAndGeneration bindElementBufferData;
+
+  GLUInt32ValueAndGeneration bindRenderbufferData;
+
+  GLUInt32ValueAndGeneration activeTextureIndex;
+  OGLBindTextureArray bindTextureArrayData;
+
+  GLUInt32ValueAndGeneration bindVertexArrayData;
+  UInt32 defaultVertexArray;
+  OGLVertexAttribPointerStateArray vertexAttribPointerStates;//Reset if vertexArray changes. 0 == disabled.
+
+  GLScalarValueAndGeneration pointSizeData;
+  GLScalarValueAndGeneration lineWidthData;
+
+  GLUInt32ValueAndGeneration useProgramData;
+};
+
+inline OGLStateCache() {
+  this.generation = 1;//Ensure 0 can't be current generation (invalid)
+  this.defaultVertexArray = InvalidIndex;
+}
+
+inline OGLStateCache.reset!() {
+  ++this.generation;
+  this.vertexAttribPointerStates.resize(0);//Assuming client disabled all its states.
+  this.bindTextureArrayData.resize(0);
+  this.activeTexture(GL_TEXTURE0);
+}
+
+inline OGLStateCache.cleanup!( ) {
+  this.disableAllVertexAttribArrays();
+  this.useProgram( 0 );
+}
+
+/// \internal
+struct _OGLStateCacheBaseBracket {
+  Boolean hasData;
+  Ref<OGLStateCache> stateCache;
+};
+
+inline Boolean _OGLStateCacheBaseBracket.initialize!( Ref<OGLStateCache> stateCache, UInt32 generation ) {
+  this.stateCache = stateCache;
+  if( stateCache.generation == generation ) {
+    this.hasData = true;
+    return true;
+  } else {
+    this.hasData = false;
+    return false;
+  }
+}
+
+inline Boolean _OGLStateCacheBaseBracket.wasSet() {
+  return this.hasData;
+}
+
+/// \internal
+struct _OGLStateCacheBooleanBracket : _OGLStateCacheBaseBracket {
+  Boolean value;
+};
+
+inline Boolean _OGLStateCacheBooleanBracket.initialize!( Ref<OGLStateCache> stateCache, GLBooleanValueAndGeneration valueAndGen ) {
+  if( this.parent.initialize( stateCache, valueAndGen.generation ) ) {
+    this.value = valueAndGen.value;
+    return true;
+  } else
+    return false;
+}
+
+/// \internal
+struct _OGLStateCacheUInt32Bracket : _OGLStateCacheBaseBracket {
+  UInt32 value;
+};
+
+inline Boolean _OGLStateCacheUInt32Bracket.initialize!( Ref<OGLStateCache> stateCache, GLUInt32ValueAndGeneration valueAndGen ) {
+  if( this.parent.initialize( stateCache, valueAndGen.generation ) ) {
+    this.value = valueAndGen.value;
+    return true;
+  } else
+    return false;
+}
+
+/// \internal
+struct _OGLStateCacheScalarBracket : _OGLStateCacheBaseBracket {
+  Scalar value;
+};
+
+inline Boolean _OGLStateCacheScalarBracket.initialize!( Ref<OGLStateCache> stateCache, GLScalarValueAndGeneration valueAndGen ) {
+  if( this.parent.initialize( stateCache, valueAndGen.generation ) ) {
+    this.value = valueAndGen.value;
+    return true;
+  } else
+    return false;
+}
+
+function OGLStateCache.viewport!( Size x, Size y, Size width, Size height ) {
+  Boolean changed;
+  updateValue( x, this.viewportArgs.x, changed );
+  updateValue( y, this.viewportArgs.y, changed );
+  updateValue( width, this.viewportArgs.width, changed );
+  updateValue( height, this.viewportArgs.height, changed );
+  updateValue( this.generation, this.viewportGeneration, changed );
+
+  if( changed )
+    glViewport( x, y, width, height );
+}
+/*
+struct OGLStateCacheViewportBackup : _OGLStateCacheBaseBracket {
+  OGLViewportArgs args;
+};
+
+inline OGLStateCache.viewport!( Size x, Size y, Size width, Size height, io OGLStateCacheViewportBackup backup ) {
+  if( backup.initialize( this, this.viewportGeneration ) )
+    backup.args = this.viewportArgs;
+  this.viewport( x, y, width, height );
+}
+
+inline OGLStateCache.viewport!( OGLStateCacheViewportBackup backup ) {
+  if( backup.wasSet() )
+    this.viewport( backup.args.x, backup.args.y, backup.args.width, backup.args.height );
+}
+*/
+
+/// \internal
+inline UInt32 _colorMaskBooleanToUInt32( Boolean r, Boolean g, Boolean b, Boolean a ) {
+  return (r ? (1<<0) : 0) | (g ? (1<<1) : 0) | (b ? (1<<2) : 0) | (a ? (1<<3) : 0);
+}
+
+/// \internal
+inline _colorMaskRGBAToBoolean( UInt32 mask, io Boolean r, io Boolean g, io Boolean b, io Boolean a ) {
+  r = Boolean( mask & (1<<0) );
+  g = Boolean( mask & (1<<1) );
+  b = Boolean( mask & (1<<2) );
+  a = Boolean( mask & (1<<3) );
+}
+
+inline OGLStateCache.colorMask!( Boolean r, Boolean g, Boolean b, Boolean a ) {
+  UInt32 mask = _colorMaskBooleanToUInt32( r, g, b, a );
+  Boolean hasMaski = Boolean(this.colorMaskiData.size);
+  if( hasMaski )
+    this.colorMaskiData.resize(0);//Invalidate all
+  if( this.colorMaskData.update( mask, this.generation ) || hasMaski )
+    glColorMask( r, g, b, a);
+}
+
+inline OGLStateCache.depthMask!( Boolean mask ) {
+  if( this.depthMaskData.update( mask, this.generation ) )
+    glDepthMask( mask ? GL_TRUE : GL_FALSE );
+}
+
+inline OGLStateCache.depthFunc!( UInt32 glDepthFunction ) {
+  if( this.depthFuncData.update( glDepthFunction, this.generation ) )
+    glDepthFunc( glDepthFunction );
+}
+
+inline OGLStateCache.enableDepthTest!( Boolean enable ) {
+  if( this.depthTestEnable.update( enable, this.generation ) ) {
+    if(enable)
+      glEnable( GL_DEPTH_TEST );
+    else
+      glDisable( GL_DEPTH_TEST );
+  }
+}
+
+inline OGLStateCache.enableVertexProgramPointSize!( Boolean enable ) {
+  if( this.vertexProgramPointSizeEnable.update( enable, this.generation ) ) {
+    if( enable )
+      glEnable( GL_VERTEX_PROGRAM_POINT_SIZE );
+    else
+      glDisable( GL_VERTEX_PROGRAM_POINT_SIZE );
+  }
+}
+
+function OGLStateCache.stencilMaskSeparate!( UInt32 face, UInt32 mask ) {
+  Boolean changed;
+  updateValue( this.generation, this.stencilMaskGeneration, changed );
+  if( face != GL_FRONT )
+    updateValue( mask, this.stencilMaskArgs.back, changed );
+  if( face != GL_BACK )
+    updateValue( mask, this.stencilMaskArgs.front, changed );
+
+  if( changed )
+    glStencilMaskSeparate( face, mask );
+}
+
+inline OGLStateCache.stencilMask!( UInt32 mask ) {
+  this.stencilMaskSeparate( GL_FRONT_AND_BACK, mask );
+}
+
+inline OGLStateCache.enableStencilTest!( Boolean enable ) {
+  if( this.depthTestEnable.update( enable, this.generation ) ) {
+    if(enable)
+      glEnable( GL_STENCIL_TEST );
+    else
+      glDisable( GL_STENCIL_TEST );
+  }
+}
+
+inline OGLStateCache.stencilFuncSeparate!( UInt32 face, UInt32 func, UInt32 ref, UInt32 mask ) {
+  Boolean changed;
+  updateValue( this.generation, this.stencilFuncGeneration, changed );
+  if( face != GL_FRONT ) {
+    updateValue( func, this.stencilFuncArgs.backFunc, changed );
+    updateValue( ref, this.stencilFuncArgs.backRef, changed );
+    updateValue( mask, this.stencilFuncArgs.backMask, changed );
+  }
+  if( face != GL_BACK ) {
+    updateValue( func, this.stencilFuncArgs.frontFunc, changed );
+    updateValue( ref, this.stencilFuncArgs.frontRef, changed );
+    updateValue( mask, this.stencilFuncArgs.frontMask, changed );
+  }
+  if( changed )
+    glStencilFuncSeparate( face, func, ref, mask );
+}
+
+inline OGLStateCache.stencilFunc!( UInt32 func, UInt32 ref, UInt32 mask ) {
+  this.stencilFuncSeparate( GL_FRONT_AND_BACK, func, ref, mask ); 
+}
+
+inline OGLStateCache.stencilOpSeparate!( UInt32 face, UInt32 sfail, UInt32 dpfail, UInt32 dppass ) {
+  Boolean changed;
+  updateValue( this.generation, this.stencilOpGeneration, changed );
+  if( face != GL_FRONT ) {
+    updateValue( sfail, this.stencilOpArgs.frontSfail, changed );
+    updateValue( dpfail, this.stencilOpArgs.frontDpfail, changed );
+    updateValue( dppass, this.stencilOpArgs.frontDppass, changed );
+  }
+  if( face != GL_BACK ) {
+    updateValue( sfail, this.stencilOpArgs.backSfail, changed );
+    updateValue( dpfail, this.stencilOpArgs.backDpfail, changed );
+    updateValue( dppass, this.stencilOpArgs.backDpass, changed );
+  }
+  if( changed )
+    glStencilOpSeparate( face, sfail, dpfail, dppass );
+}
+
+inline OGLStateCache.stencilOp!( UInt32 sfail, UInt32 dpfail, UInt32 dppass ) {
+  this.stencilOpSeparate( GL_FRONT_AND_BACK, sfail, dpfail, dppass ); 
+}
+
+inline OGLStateCache.cullFace!( UInt32 mode ) {
+  if( this.cullFaceData.update( mode, this.generation ) )
+    glCullFace( mode );
+}
+
+inline OGLStateCache.enableCullFace!( Boolean enable ) {
+  if( this.cullFaceEnabled.update( enable, this.generation ) ) {
+    if(enable)
+      glEnable( GL_CULL_FACE );
+    else
+      glDisable( GL_CULL_FACE );
+  }
+}
+
+inline OGLStateCache.blendFuncSeparate!( UInt32 srcRGB, UInt32 dstRGB, UInt32 srcAlpha, UInt32 dstAlpha ) {
+  Boolean changed;
+  updateValue( this.generation, this.blendFuncGeneration, changed );
+  updateValue( srcRGB, this.blendFuncArgs.srcRGB, changed );
+  updateValue( dstRGB, this.blendFuncArgs.dstRGB, changed );
+  updateValue( srcAlpha, this.blendFuncArgs.srcAlpha, changed );
+  updateValue( dstAlpha, this.blendFuncArgs.dstAlpha, changed );
+
+  if( changed )
+    glBlendFuncSeparate( srcRGB, dstRGB, srcAlpha, dstAlpha );
+}
+
+inline OGLStateCache.blendFunc!( UInt32 src, UInt32 dst ) {
+  this.blendFuncSeparate( src, dst, src, dst ); 
+}
+
+function OGLStateCache.blendColor!( Color color ) {
+  Boolean changed;
+  updateValue( color.r, this.blendColorData.r, changed );
+  updateValue( color.g, this.blendColorData.g, changed );
+  updateValue( color.b, this.blendColorData.b, changed );
+  updateValue( color.a, this.blendColorData.a, changed );
+  updateValue( this.generation, this.blendColorGeneration, changed );
+  
+  if( changed )
+    glBlendColor( color.r, color.g, color.b, color.a );
+}
+
+inline OGLStateCache.blendEquationSeparate!( UInt32 modeRGB, UInt32 modeAlpha ) {
+  Boolean changed;
+  updateValue( this.generation, this.blendEquationGeneration, changed );
+  updateValue( modeRGB, this.blendEquationArgs.modeRGB, changed );
+  updateValue( modeAlpha, this.blendEquationArgs.modeAlpha, changed );
+
+  if( changed )
+    glBlendEquationSeparate( modeRGB, modeAlpha );
+}
+
+inline OGLStateCache.blendEquation!( UInt32 mode ) {
+  this.blendEquationSeparate( mode, mode ); 
+}
+
+inline OGLStateCache.enableBlend!( Boolean enable ) {
+  if( this.blendEnabled.update( enable, this.generation ) ) {
+    if(enable)
+      glEnable( GL_BLEND );
+    else
+      glDisable( GL_BLEND );
+  }
+}
+
+function OGLStateCache.polygonOffset!( Scalar factor, Scalar units ) {
+  Boolean changed;
+  updateValue( factor, this.polygonOffsetArgs.factor, changed );
+  updateValue( units, this.polygonOffsetArgs.units, changed );
+  updateValue( this.generation, this.polygonOffsetGeneration, changed );
+  
+  if( changed )
+    glPolygonOffset( factor, units );
+}
+
+inline OGLStateCache.enablePolygonOffsetFill!( Boolean enable ) {
+  if( this.polygonOffsetFillEnabled.update( enable, this.generation ) ) {
+    if(enable)
+      glEnable( GL_POLYGON_OFFSET_FILL );
+    else
+      glDisable( GL_POLYGON_OFFSET_FILL );
+  }
+}
+
+inline OGLStateCache.enablePolygonOffsetLine!( Boolean enable ) {
+  if( this.polygonOffsetLineEnabled.update( enable, this.generation ) ) {
+    if(enable)
+      glEnable( GL_POLYGON_OFFSET_LINE );
+    else
+      glDisable( GL_POLYGON_OFFSET_LINE );
+  }
+}
+
+inline OGLStateCache.enablePolygonOffsetPoint!( Boolean enable ) {
+  if( this.polygonOffsetPointEnabled.update( enable, this.generation ) ) {
+    if(enable)
+      glEnable( GL_POLYGON_OFFSET_POINT );
+    else
+      glDisable( GL_POLYGON_OFFSET_POINT );
+  }
+}
+
+function OGLStateCache.bindFramebuffer!( UInt32 target, UInt32 framebuffer ) {
+  Boolean changed;
+  updateValue( this.generation, this.bindFramebufferGeneration, changed );
+  if( framebuffer != GL_DRAW_FRAMEBUFFER )
+    updateValue( framebuffer, this.bindFramebufferArgs.read, changed );
+  if( framebuffer != GL_READ_FRAMEBUFFER )
+    updateValue( framebuffer, this.bindFramebufferArgs.draw, changed );
+  if( changed )
+    glBindFramebuffer( target, framebuffer );
+}
+
+inline OGLStateCache.drawBuffer!( UInt32 mode ) {
+
+  UInt32 prevDrawBuffersCount = this.drawBuffersData.size();
+  if( prevDrawBuffersCount ) {
+    LocalL16UInt32Array buffers;
+    this.drawBuffers(buffers);
+  }
+
+  if( this.drawBufferData.update( mode, this.generation ) || Boolean(prevDrawBuffersCount) )
+    glDrawBuffer( mode );
+}
+
+inline OGLStateCache.readBuffer!( UInt32 mode ) {
+  if( this.readBufferData.update( mode, this.generation ) )
+    glReadBuffer( mode );
+}
+
+/// \internal
+inline OGLStateCache.setDrawBufferToIndex!( UInt32 drawBuffer, UInt32 index ) {
+  //TODO: take into account FRONT_RIGHT, FRONT_LEFT, ...
+  UInt32 value = drawBuffer;
+  if( value != GL_NONE ) {
+    value = value - GL_COLOR_ATTACHMENT0;
+    if( value < this.attachmentToDrawBuffer.size() )
+      this.attachmentToDrawBuffer[value] = index;
+  }
+}
+
+inline OGLStateCache.drawBuffers!( LocalL16UInt32Array buffers ) {
+  //TODO: take into account FRONT_RIGHT, FRONT_LEFT, ...
+  Boolean changed;
+  updateValue( this.generation, this.drawBuffersGeneration, changed );
+  UInt32 count = buffers.size();
+  UInt32 prevCount = this.drawBuffersData.size();
+  if( count != prevCount ) {
+    //Reset inverse mapping
+    for( Size i = count; i < prevCount; ++i ) {
+      UInt32 prevValue = this.drawBuffersData.data[i];
+      this.setDrawBufferToIndex( this.drawBuffersData.data[i], UInt32Max );
+    }
+    changed = true;
+    this.drawBuffersData.resize( count );
+  }
+  //We need to reset mapping first, since it could overlap with new values
+  for( Size i = 0; i < count; ++i ) {
+    UInt32 prevValue = this.drawBuffersData.data[i];
+    if( prevValue != buffers.get(i) ) {
+      this.setDrawBufferToIndex( prevValue, UInt32Max );
+      changed = true;
+    }
+  }
+  if( changed ) {
+    for( Size i = 0; i < count; ++i ) {
+      UInt32 value = buffers.get(i);
+      if( this.drawBuffersData.data[i] != value ) {
+        this.setDrawBufferToIndex( value, i );
+        this.drawBuffersData.data[i] = value;
+      }
+    }
+    glDrawBuffers( count, this.drawBuffersData.data );
+  }
+}
+
+/// Returns the draw attachment index for a color attachment, or UInt32Max if not found.
+/// Attachment index: 0 for GL_COLOR_ATTACHMENT0, etc.
+/// Returned value: 0 for GL_DRAW_BUFFER0, etc.
+inline Size OGLStateCache.getDrawBufferIndexForColorAttachmentIndex( UInt32 attachmentIndex ) {
+  if( this.drawBuffersGeneration != this.generation )
+    return UInt32Max;
+  else if( attachmentIndex < this.attachmentToDrawBuffer.size() )
+    return this.attachmentToDrawBuffer[attachmentIndex];
+  else
+    return UInt32Max;
+}
+
+inline OGLStateCache.colorMaski!( UInt32 index, Boolean r, Boolean g, Boolean b, Boolean a ) {
+  //Invalidate colorMask
+  this.colorMaskData.generation = 0;
+  this.colorMaskiData.prepareForIndex(index);
+  UInt32 mask = _colorMaskBooleanToUInt32( r, g, b, a );
+  if( this.colorMaskiData.values[index].update( mask, this.generation ) )
+    glColorMaski( index, r, g, b, a);
+}
+
+inline OGLStateCache.bindVertexArray!( UInt32 index ) {
+  if( this.bindVertexArrayData.update( index, this.generation ) ) {
+    this.vertexAttribPointerStates.resize(0);
+    this.bindArrayBufferData.reset();
+    this.bindElementBufferData.reset();
+    glBindVertexArray( index );
+  }
+}
+
+inline Boolean OGLStateCache.hasBoundVertexArray() {
+  return this.bindVertexArrayData.generation == this.generation && this.bindVertexArrayData.value != 0 && this.bindVertexArrayData.value != this.defaultVertexArray;
+}
+
+inline OGLStateCache.bindRenderbuffer!( UInt32 index ) {
+  if( this.bindRenderbufferData.update( index, this.generation ) )
+    glBindRenderbuffer( GL_RENDERBUFFER, index );
+}
+
+inline OGLStateCache.bindBuffer!( UInt32 target, UInt32 buffer ) {
+  if( target == GL_ARRAY_BUFFER ) {
+    if( this.bindArrayBufferData.update( buffer, this.generation ) )
+      glBindBuffer( target, buffer );
+  } else if( target == GL_ELEMENT_ARRAY_BUFFER ) {
+    if( this.bindElementBufferData.update( buffer, this.generation ) )
+      glBindBuffer( target, buffer );
+  } else
+    glBindBuffer(target, buffer);//We don't keep track of other buffer types
+}
+
+inline UInt32 OGLStateCache.getBoundBuffer!() {
+  if( synchronizeVersion( this.generation, this.bindArrayBufferData.generation ) ) {
+    SInt32 tempIDs[1];
+    SInt32 tempIDsExt<> = tempIDs;
+    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, tempIDsExt);
+    this.bindArrayBufferData.value = tempIDs[0];
+    this.bindArrayBufferData.generation = this.generation;
+  }
+  return this.bindArrayBufferData.value;
+}
+
+function OGLStateCache.enableVertexAttribArray!( UInt32 index ) {
+  if( this.hasBoundVertexArray() )
+    glEnableVertexAttribArray(index);
+  else {
+    this.vertexAttribPointerStates.prepareForIndex(index);
+    Boolean changed;
+    updateValue( this.generation, this.vertexAttribPointerStates.data[index].enabledGeneration, changed );
+    updateValue( true, this.vertexAttribPointerStates.data[index].enabled, changed );
+    if( changed )
+      glEnableVertexAttribArray(index);
+  }
+}
+
+function OGLStateCache.disableVertexAttribArray!( UInt32 index ) {
+  if( this.hasBoundVertexArray() )
+    glDisableVertexAttribArray(index);
+  else {
+    this.vertexAttribPointerStates.prepareForIndex(index);
+    Boolean changed;
+    updateValue( this.generation, this.vertexAttribPointerStates.data[index].enabledGeneration, changed );
+    updateValue( false, this.vertexAttribPointerStates.data[index].enabled, changed );
+    if( changed ) {
+      this.vertexAttribPointerStates.someAreDisabled = true;
+      glDisableVertexAttribArray( index );
+    }
+  }
+}
+
+function OGLStateCache.disableAllVertexAttribArrays!() {
+  for( Size i = 0; i < this.vertexAttribPointerStates.size; ++i )
+    this.disableVertexAttribArray(i);
+}
+
+function OGLStateCache.setVertexAttribArrayCount!( Size count ) {
+
+  if( !this.vertexAttribPointerStates.someAreDisabled ) {
+    Size prevSize = this.vertexAttribPointerStates.size;
+    for( Size i = count; i < prevSize; ++i )
+      this.disableVertexAttribArray( i );
+    this.vertexAttribPointerStates.resize( count );
+    for( Size i = prevSize; i < count; ++i )
+      this.enableVertexAttribArray( i );
+  } else {
+    this.vertexAttribPointerStates.resize( count );
+    for( Size i = 0; i < count; ++i )
+      this.enableVertexAttribArray( i );
+  }
+  this.vertexAttribPointerStates.someAreDisabled = false;
+}
+
+function OGLStateCache.vertexAttribPointer!( UInt32 index, UInt32 size, UInt32 type, Boolean normalized, UInt32 stride, UInt32 bufferID ) {
+  if( this.hasBoundVertexArray() ) {
+    this.bindBuffer(GL_ARRAY_BUFFER, bufferID);
+    Data NULL;
+    glVertexAttribPointer(index, size, type, normalized ? GL_TRUE : GL_FALSE, stride, NULL);
+  } else {
+    this.vertexAttribPointerStates.prepareForIndex(index);
+    Boolean changed;
+    updateValue( this.generation, this.vertexAttribPointerStates.data[index].generation, changed );
+    updateValue( size, this.vertexAttribPointerStates.data[index].size, changed );
+    updateValue( type, this.vertexAttribPointerStates.data[index].type, changed );
+    updateValue( normalized, this.vertexAttribPointerStates.data[index].normalized, changed );
+    updateValue( stride, this.vertexAttribPointerStates.data[index].stride, changed );
+    updateValue( bufferID, this.vertexAttribPointerStates.data[index].bufferID, changed );
+    if( changed ) {
+      this.bindBuffer(GL_ARRAY_BUFFER, bufferID);
+      Data NULL;
+      glVertexAttribPointer(index, size, type, normalized ? GL_TRUE : GL_FALSE, stride, NULL);
+    }
+  }
+}
+
+inline OGLStateCache.vertexAttribPointer!( UInt32 index, UInt32 size, UInt32 type, Boolean normalized, UInt32 stride ) {
+  UInt32 buffer = this.getBoundBuffer();
+  this.vertexAttribPointer( index, size, type, normalized, stride, buffer );
+}
+
+inline OGLStateCache.activeTexture!( UInt32 index ) {
+  UInt32 actualIndex = index-GL_TEXTURE0;
+  this.bindTextureArrayData.prepareForIndex(actualIndex);
+  if( this.activeTextureIndex.update( actualIndex, this.generation ) )
+    glActiveTexture( index );
+}
+
+inline UInt32 OGLStateCache.getActiveTextureIndex() {
+  return this.activeTextureIndex.value;//Note: always up to date since updated at "reset"
+}
+
+function OGLStateCache.bindTexture!( UInt32 target, UInt32 texture ) {
+  UInt32 activeTextureIndex = this.getActiveTextureIndex();
+  Boolean changed;
+  updateValue( this.generation, this.bindTextureArrayData.data[activeTextureIndex].generation, changed );
+  updateValue( target, this.bindTextureArrayData.data[activeTextureIndex].target, changed );
+  updateValue( texture, this.bindTextureArrayData.data[activeTextureIndex].texture, changed );
+  if( changed )
+    glBindTexture( target, texture );
+}
+
+function OGLStateCache.bindTexture!( UInt32 textureIndex, UInt32 target, UInt32 texture ) {
+  this.bindTextureArrayData.prepareForIndex(textureIndex);
+  Boolean changed;
+  updateValue( this.generation, this.bindTextureArrayData.data[textureIndex].generation, changed );
+  updateValue( target, this.bindTextureArrayData.data[textureIndex].target, changed );
+  updateValue( texture, this.bindTextureArrayData.data[textureIndex].texture, changed );
+  if( changed ) {
+    this.activeTexture(textureIndex+GL_TEXTURE0);
+    glBindTexture( target, texture );
+  }
+}
+
+inline OGLStateCache.useProgram!( UInt32 program ) {
+  if( this.useProgramData.update( program, this.generation ) )
+    glUseProgram( program );
+}
+
+inline OGLStateCache.pointSize!( Scalar size ) {
+  if( this.pointSizeData.update( size, this.generation ) )
+    glPointSize( size );
+}
+
+inline OGLStateCache.lineWidth!( Scalar width ) {
+  if( this.pointSizeData.update( width, this.generation ) )
+    glLineWidth( width );
+}
+
+/*
+struct OGLPointSizeBracket : _OGLStateCacheScalarBracket {};
+
+OGLPointSizeBracket( Ref<OGLStateCache> stateCache ) {
+  this.initialize( stateCache,  )
+}
+*/

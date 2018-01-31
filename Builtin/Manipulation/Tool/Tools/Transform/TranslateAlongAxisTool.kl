@@ -1,0 +1,74 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// This tool allows to translate a :kl-ref:`Tool::TransformTarget` along
+  /// a 3D axis by clicking on a 3D gizmo. The tool creates a :kl-ref:`TranslateAlongAxisDragInteraction` 
+  /// to map mouse moves to transform changes.
+  ///
+  /// While this tool is used as a sub-tool of the :kl-ref:`TranslateTool`,
+  /// it can also be created independently.
+  object TranslateAlongAxisTool : XfoTargetAlignedGizmo{
+    Vec3 axisDirection;
+    Boolean localTranslate;
+    Boolean showValueUnderCursor;
+    TranslateAlongAxisDragInteraction translateInteraction;
+  };
+
+  TranslateAlongAxisTool( TransformTarget target, Vec3 axisDirection, Color arrowColor, Color highlightColor, Boolean showValueUnderCursor ) {
+    ArrowShape arrow( axisDirection, 1.0, 0.2, 0.1 );
+    arrow.setColor( arrowColor );
+    this.construct( target, axisDirection, highlightColor, arrow, showValueUnderCursor );
+  }
+
+  TranslateAlongAxisTool( TransformTarget target, Vec3 axisDirection, Color highlightColor, Ref<BaseTool> gizmoShape, Boolean showValueUnderCursor ) {
+    this.construct( target, axisDirection, highlightColor, gizmoShape, showValueUnderCursor );
+  }
+
+  TranslateAlongAxisTool.construct!( TransformTarget target, Vec3 axisDirection, Color highlightColor, Ref<BaseTool> gizmoShape, Boolean showValueUnderCursor ) {
+    this.showValueUnderCursor = showValueUnderCursor;
+    this.axisDirection = axisDirection;
+
+    // Add a drag interaction to the shape
+    MouseClickDragRaycastInteraction clickAndDragInteraction();
+    this.translateInteraction = TranslateAlongAxisDragInteraction( clickAndDragInteraction, target, axisDirection, this.localTranslate );
+    this.attachComponent( this.translateInteraction );
+
+    this.parent.construct( target, highlightColor, gizmoShape, this.translateInteraction );
+    this.enableLocalTranslation( true );
+  }
+
+  TranslateAlongAxisTool.enableLocalTranslation!( Boolean localTranslate ) {
+    this.localTranslate = localTranslate;
+    this.alignModifier.setAlignType( true, localTranslate, false, true );
+    this.translateInteraction.setLocal( localTranslate );
+  }
+
+  TranslateAlongAxisTool.onEnterState!( String newState, Boolean mainState ) {
+    if( newState == XfoTargetAlignedGizmo_dragging && this.showValueUnderCursor ) {
+      AddChildAction drawLabel( "translate", TranslateAlongAxisTool_drawValue(), true );
+      this.attachAndDoStateSpecificAction( newState, drawLabel );
+    }
+    this.parent.onEnterState( newState, mainState );
+  }
+
+  /// \internal
+  /// Drawing value label
+  object TranslateAlongAxisTool_drawValue : BaseTool{};
+
+  TranslateAlongAxisTool_drawValue() {
+    this.addDrawModifier( DrawUnderMouseCursorModifier(), false );
+    this.addChild( "label", Text() );
+    this.setColor( Color( 1.0 ) );
+  }
+
+  TranslateAlongAxisTool_drawValue.updateDrawData!( io DrawContext context, Ref<Object> target ) {
+    Ref<TranslateAlongAxisTool> parentTool = this.getParent();
+    Ref<Text> text = this.getChild( "label" );
+    text.setText( parentTool.axisDirection.dot( ( parentTool.target.getParentTransform() * parentTool.target.getLocalTransform().toMat44() ).translation() ) );
+    this.parent.updateDrawData( context, target );
+  }
+
+}// namespace Tool

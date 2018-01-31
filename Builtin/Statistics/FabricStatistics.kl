@@ -1,0 +1,354 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// Interface allowing for recording an object's statistics. See :ref:`fabricstatistics` for more details.
+///It is recommended use the :kl-ref:`StatisticsAutoRegisterMember` helper object as it simplifies the StatisticSource interface support.
+/// See :ref:`fabricstatistics` for an example of usage.
+interface StatisticSource {
+
+  /// Returns all the statistics or information related to the StatisticSource (including the `Name`). The `Type` will be generated automatically if not provided.
+  StatisticRecord[] getStatistics();
+
+  /// Sets a statistic key, for private usage from the FabricStatistic extension. This key should be stored
+  /// and the same key should be returned by the :kl-ref:`StatisticSource.getStatisticsKey` function.
+  /// \note See :kl-ref:`StatisticsAutoRegisterMember` for simplifying the support for this interface.
+  setStatisticsKey!( Size key );
+
+  /// Retrieves the statistic key, for private usage from the FabricStatistic extension. This key should
+  /// have the same value as the last :kl-ref:`StatisticSource.setStatisticsKey` call.
+  /// \note See :kl-ref:`StatisticsAutoRegisterMember` for simplifying the support for this interface.
+  Size getStatisticsKey();
+};
+
+/// Return true if statistics collection is enabled.
+/// \seealso EnableFabricStatistics, DisableFabricStatistics
+function Boolean FabricStatisticsEnabled() = "FabricStatisticsEnabled";
+
+/// Enables statistics collection. Previously constructed StatisticSource objects are ignored.
+/// See :ref:`fabricstatistics` for an example of usage.
+/// \seealso DisableFabricStatistics, FabricStatisticsEnabled
+inline EnableFabricStatistics() {
+  _GetOrCreateFabricStatisticsSingleton();
+  _EnableFabricStatistics();
+}
+
+/// Disable statistics collection, and collected data is lost (reset).
+/// \seealso EnableFabricStatistics, FabricStatisticsEnabled
+inline DisableFabricStatistics() {
+  _DisableFabricStatistics();
+  if( !FabricProfilingEnabled() )
+    _FabricStatisticsInitSingleton(null);//cleanup
+}
+
+/// Registers a statistic source if statistics are enabled.
+/// \note When used, the :kl-ref:`StatisticsAutoRegisterMember` helper object takes care of calling this.
+/// \seealso UnregisterFromFabricStatistics, EnableFabricStatistics
+inline RegisterToFabricStatistics( Ref<StatisticSource> source ) {
+  if( !FabricStatisticsEnabled() )
+    return;
+
+  Ref<_FabricStatistics> singleton = _GetFabricStatisticsSingleton();
+  singleton.registerSource(source);
+}
+
+/// Declares a parent-child relationship between two statistic sources (hierarchy)
+/// See :ref:`fabricstatistics` for an example of usage.
+/// \seealso EnableFabricStatistics, RegisterToFabricStatistics
+inline AddStatisticsChild( Ref<StatisticSource> parent, Ref<StatisticSource> child ) {
+  if( !FabricStatisticsEnabled() )
+    return;
+
+  Ref<_FabricStatistics> singleton = _GetFabricStatisticsSingleton();
+  singleton.addChild( parent, child );
+}
+
+/// Unregisters a statistic source. This must be called before the source gets destroyed.
+/// \note When used, the :kl-ref:`StatisticsAutoRegisterMember` helper object takes care of calling this.
+/// \seealso RegisterToFabricStatistics, EnableFabricStatistics
+inline UnregisterFromFabricStatistics( Ref<StatisticSource> source ) {
+  if( !FabricStatisticsEnabled() )
+    return;
+
+  Ref<_FabricStatistics> singleton = _GetFabricStatisticsSingleton();
+  singleton.unregisterSource(source);
+}
+
+/// Returns the statistics as CSV-formatted lines. The first line contains the column names.
+/// The data is provided as a flattened hierarchy (root first), and the first column is the hierarchy level.
+/// The second column is the `Name`.
+/// \param columnsToSelect Columns (record names) to gather. If empty, one column will be created for all defined statistic fields.
+/// \param columnsTosum Statistic records that should be summed over the hierarchy. Typically, `Memory` and `GPUMemory` can be summed.
+inline String[] GetStatisticsCSV( String columnsToSelect[], String columnsToSum[] ) {
+  if( !FabricStatisticsEnabled() ) {
+    String emptyResult[];
+    return emptyResult;
+  }
+
+  Ref<_FabricStatistics> singleton = _GetFabricStatisticsSingleton();
+  return singleton.getStatisticsCSV(columnsToSelect, columnsToSum);
+}
+
+/// Returns the statistics as CSV-formatted lines. The first line contains the column names.
+/// The data is provided as a flattened hierarchy (root first), and the first column is the hierarchy level.
+/// The second column is the `Name`. The `Memory` and `GPUMemory` records will be summed over the hierarchy.
+/// \param columnsToSelect Columns (record names) to gather. If empty, one column will be created for all defined statistic fields.
+inline String[] GetStatisticsCSV( String columnsToSelect[] ) {
+  if( !FabricStatisticsEnabled() ) {
+    String emptyResult[];
+    return emptyResult;
+  }
+
+  Ref<_FabricStatistics> singleton = _GetFabricStatisticsSingleton();
+  return singleton.getStatisticsCSV(columnsToSelect);
+}
+
+/// Returns the statistics as CSV-formatted lines. The first line contains the column names.
+/// The data is provided as a flattened hierarchy (root first), and the first column is the hierarchy level.
+/// The second column is the `Name`. One column will be created for all defined statistic fields.
+/// The `Memory` and `GPUMemory` records will be summed over the hierarchy.
+inline String[] GetStatisticsCSV() {
+  String columnsToSelect[];
+  if( !FabricStatisticsEnabled() )
+    return columnsToSelect;
+
+  Ref<_FabricStatistics> singleton = _GetFabricStatisticsSingleton();
+  return singleton.getStatisticsCSV(columnsToSelect);
+}
+
+/// Returns the statistics as String lines and hierarchy levels (flattened hierarchy, root first).
+/// \param lines Content of the gathered statistic records, in the format ``statsName1=value1 statsName2=value2 statsName2=value3 ...``. String values will have double-quotes.
+/// \param levels Hierarchy level of the records, in flattened hierarchy order (0 == root, similar to an expanded tree view).
+/// \param columnsToSelect Columns (record names) to gather. If empty, all statistics will be gathered.
+/// \param columnsTosum Statistic records that should be summed over the hierarchy. Typically, `Memory` and `GPUMemory` can be summed.
+inline GetStatisticStrings( out String lines[], out Size levels[], String columnsToSelect[], String columnsToSum[] ) {
+  if( !FabricStatisticsEnabled() )
+    return;
+
+  Ref<_FabricStatistics> singleton = _GetFabricStatisticsSingleton();
+  singleton.getStatisticStrings(lines, levels, columnsToSelect, columnsToSum);
+}
+
+/// Returns the statistics as String lines and hierarchy levels (flattened hierarchy, root first).
+/// The `Memory` and `GPUMemory` records will be summed over the hierarchy.
+/// \param lines Content of the gathered statistic records, in the format ``statsName1=value1 statsName2=value2 statsName2=value3 ...``. String values will have double-quotes.
+/// \param levels Hierarchy level of the records, in flattened hierarchy order (0 == root, similar to an expanded tree view).
+/// \param columnsToSelect Columns (record names) to gather. If empty, all statistics will be gathered.
+inline GetStatisticStrings( out String lines[], out Size levels[], String columnsToSelect[] ) {
+  if( !FabricStatisticsEnabled() )
+    return;
+
+  Ref<_FabricStatistics> singleton = _GetFabricStatisticsSingleton();
+  singleton.getStatisticStrings(lines, levels, columnsToSelect);
+}
+
+/// Returns the statistics as String lines and hierarchy levels (flattened hierarchy, root first).
+/// The `Memory` and `GPUMemory` records will be summed over the hierarchy.
+/// \param lines Content of the gathered statistic records, in the format ``statsName1=value1 statsName2=value2 statsName2=value3 ...``. String values will have double-quotes.
+/// \param levels Hierarchy level of the records, in flattened hierarchy order (0 == root, similar to an expanded tree view).
+inline GetStatisticStrings( out String lines[], out Size levels[] ) {
+  if( !FabricStatisticsEnabled() )
+    return;
+
+  Ref<_FabricStatistics> singleton = _GetFabricStatisticsSingleton();
+  String columnsToSelect[];
+  singleton.getStatisticStrings(lines, levels, columnsToSelect);
+}
+
+/// Returns a full statistics report as a single String, providing a simple way to dump the results in the console from KL.
+/// \param columnsToSelect Columns (record names) to gather. If empty, all statistics will be gathered.
+/// \param columnsTosum Statistic records that should be summed over the hierarchy. Typically, `Memory` and `GPUMemory` can be summed.
+inline String GetStatisticsReport( String columnsToSelect[], String columnsToSum[] ) {
+  String lines[];
+  Size levels[];
+  GetStatisticStrings( lines, levels, columnsToSelect );
+  String result;
+  for( Size i = 0; i < lines.size(); ++i ) {
+    for( Size j = 0; j < levels[i]; ++j )
+      result += '  ';
+    result += lines[i] + '\n';
+  }
+  return result;
+}
+
+/// GetStatisticsReport returns a full statistics report as a single String, providing a simple way to dump the results in the console from KL.
+/// The `Memory` and `GPUMemory` records will be summed over the hierarchy.
+/// \param columnsToSelect Columns (record names) to gather. If empty, all statistics will be gathered.
+inline String GetStatisticsReport( String columnsToSelect[] ) {
+  String columnsToSum[];
+  return GetStatisticsReport( columnsToSelect, columnsToSum );
+}
+
+/// GetStatisticsReport returns a full statistics report as a single String, providing a simple way to dump the results in the console from KL.
+/// The `Memory` and `GPUMemory` records will be summed over the hierarchy.
+/// See :ref:`fabricstatistics` for an example of usage.
+inline String GetStatisticsReport() {
+  String columnsToSelect[];
+  return GetStatisticsReport( columnsToSelect );
+}
+
+//Profiling
+
+/// Returns true if profiling events recording is enabled.
+inline Boolean FabricProfilingEnabled() = "FabricProfilingEnabled";
+
+/// Enables profiling events recording until :kl-ref:`StopFabricProfiling` is called.
+inline StartFabricProfiling() {
+  Ref<_FabricStatistics> singleton = _GetOrCreateFabricStatisticsSingleton();
+  singleton.startProfiling();
+}
+
+/// Enables profiling events recording for a specific timelapse (in seconds). This timelapse
+/// will be only be checked when :kl-ref:`FabricProfilingBeginFrame` is called (frame granularity).
+/// See :ref:`fabricstatisticsprofiling` for an example of usage.
+inline StartFabricProfiling( Scalar seconds ) {
+  Ref<_FabricStatistics> singleton = _GetOrCreateFabricStatisticsSingleton();
+  singleton.startProfiling(seconds);
+}
+
+/// Enables profiling events recording for a certain number of frames.
+/// \seealso FabricProfilingBeginFrame
+inline StartFabricProfilingFrames( Size frameCount ) {
+  Ref<_FabricStatistics> singleton = _GetOrCreateFabricStatisticsSingleton();
+  singleton.startProfilingFrames(frameCount);
+}
+
+/// Marks the beginning of a new frame for profiling purposes.
+/// \param frameID Frame index (if applicable)
+/// \param time Frame start time (if applicable)
+/// \seealso FabricProfilingBeginFrame, StartFabricProfiling
+function FabricProfilingBeginFrame( Integer frameID, Scalar time ) {
+  Ref<_FabricStatistics> singleton = _GetOrCreateFabricStatisticsSingleton();
+  singleton.beginFrame(frameID, time);
+}
+
+
+/// Stops the profiling events recording.
+/// See :ref:`fabricstatisticsprofiling` for an example of usage.
+inline StopFabricProfiling() {
+  Ref<_FabricStatistics> singleton = _GetOrCreateFabricStatisticsSingleton();
+  singleton.stopProfiling();
+}
+
+/// Records a profiling event.
+/// The function returns a `key` that is needed for calling the associated :kl-ref:`EndProfilingEvent`.
+/// It is recommended to use the :kl-ref:`AutoProfilingEvent` helper, for simplicity and to minimize error risks.
+/// See :ref:`fabricstatisticsprofiling` for an example of usage.
+/// \param label Identifies the profiling event. The `FUNC` built-in KL constant can be used to identify current function.
+/// \param source A StatisticSource can optionally be associated with the event for more context (its name will be attached to the event).
+inline Size BeginProfilingEvent(String label, Ref<StatisticSource> source) {
+  if( FabricProfilingEnabled() ) {
+    Ref<_FabricStatistics> singleton = _GetOrCreateFabricStatisticsSingleton();
+    return singleton.beginProfilingEvent(label, source);
+  }
+  return 0;
+}
+
+/// Records that a profiling event.
+/// The function returns a ``key`` that is needed for calling the associated :kl-ref:`EndProfilingEvent`.
+/// It is recommended to use the :kl-ref:`AutoProfilingEvent` helper, for simplicity and to minimize error risks.
+/// See :ref:`fabricstatisticsprofiling` for an example of usage.
+/// \param label Identifies the profiling event. The `FUNC` built-in KL constant can be used to identify current function.
+inline Size BeginProfilingEvent(String label) {
+  Ref<StatisticSource> nullSource = null;
+  return BeginProfilingEvent(label, nullSource);
+}
+
+/// Records the end of a profiling event. The `key` must be the returned value of the associated :kl-ref:`BeginProfilingEvent` call.
+/// It is recommended to use the :kl-ref:`AutoProfilingEvent` helper, for simplicity and to minimize error risks.
+inline EndProfilingEvent(Size key) {
+  if( FabricProfilingEnabled() ) {
+    Ref<_FabricStatistics> singleton = _GetOrCreateFabricStatisticsSingleton();
+    singleton.endProfilingEvent(key);
+  }
+}
+
+/// The AutoProfilingEvent helper struct simplifies the recording of a profiling event by automatically calling 
+/// :kl-ref:`BeginProfilingEvent` in its constructor and :kl-ref:`EndProfilingEvent` in its destructor.
+/// This is intended to be created as a local variable, whose scope is the same as the profiled event.
+/// See :ref:`fabricstatisticsprofiling` for an example of usage.
+struct AutoProfilingEvent {
+  Size key;
+};
+
+/// Constructs a AutoProfilingEvent identified as `label` and related to the `source` object.
+inline AutoProfilingEvent( String label, Ref<StatisticSource> source ) {
+  this.key = BeginProfilingEvent(label, source);
+}
+
+/// Constructs a AutoProfilingEvent identified as `label`.
+inline AutoProfilingEvent( String label ) {
+  this.key = BeginProfilingEvent(label );
+}
+
+/// \internal
+inline ~AutoProfilingEvent() {
+  EndProfilingEvent(this.key);
+}
+
+/// Raw profiling data returned by :kl-ref:`GetProfilingEvents`
+struct ProfilingEvent {
+  /// Hierarchy level (root == 0)
+  Size level;
+  /// Current frame
+  Size frame;
+  /// Profiling event label
+  String label;
+  /// Start time
+  Float64 startTime;
+  /// Elapsed time
+  Float64 duration;
+  /// Profiling event associated Statistics source, if any
+  String sourceName;
+  /// Thread Index for this event.
+  UInt32 threadIndex;
+};
+
+/// Returns all the recorded profiling events. The `level` member of the ProfilingEvent struct defines event's level within the flattened hierarchy (root == 0).
+/// \note Events are not necessarily ordered by start time.
+inline ProfilingEvent[] GetProfilingEvents() {
+  Ref<_FabricStatistics> singleton = _GetOrCreateFabricStatisticsSingleton();
+  return singleton.getProfilingEvents();
+}
+
+/// Returns all profiling events as a single String, providing a simple way to dump the results in the console from KL. See :ref:`fabricstatisticsprofiling` for an example of usage.
+function String GetProfilingReport() {
+  ProfilingEvent events[] = GetProfilingEvents();
+
+  //Check if frames differ
+  Boolean differentFrames;
+  for( Size i = 1; i < events.size(); ++i ) {
+    if( events[i].frame != events[i-1].frame ) {
+      differentFrames = true;
+      break;
+    }
+  }
+
+  String result;
+  for( Size i = 0; i < events.size(); ++i ) {
+    if( differentFrames && (i == 0 || events[i].frame != events[i-1].frame ) )
+      result += 'Frame '+events[i].frame+'\n';
+
+    if( differentFrames )
+      result += '  ';
+
+    for( Size j = 0; j < events[i].level; ++j )
+      result += '  ';
+
+    Float64 durationms = Scalar(events[i].duration)*1000.0;
+    Size ms = Size(durationms);
+    durationms -= Float64(ms) / 1000.0;
+    durationms *= 9999.99;
+    Size msfract = Size(durationms);
+    String msfractStr = msfract;
+    if(durationms < 1000)
+      msfractStr = "0" + msfractStr;
+    if(durationms < 100)
+      msfractStr = "0" + msfractStr;
+    if(durationms < 10)
+      msfractStr = "0" + msfractStr;
+
+    result += events[i].label + ": duration="+ms+"."+msfractStr+" ms, startTime=" + Scalar(events[i].startTime) + "', " + (events[i].sourceName ? ("(source:'"+events[i].sourceName+"'), ") : "") + "threadIndex:" + events[i].threadIndex +'\n';
+  }
+  return result;
+}

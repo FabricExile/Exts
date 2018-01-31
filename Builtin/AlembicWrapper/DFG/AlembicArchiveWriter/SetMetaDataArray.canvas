@@ -1,0 +1,88 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "Sets the meta data given a path, key and value\n\nSupported types:\n  this: AlembicArchiveWriter\n  path: String\n  key: String\n  value: String\n"
+    },
+  "title" : "SetMetaData[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicArchiveWriter[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "path",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String[]" : [
+          ""
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "key",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String[]" : [
+          ""
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "value",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String[]" : [
+          ""
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "68BAB34534B44D7EB933E2C323BD5312",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicArchiveWriter_setMetaData_task<<<index>>>(
+  io AlembicArchiveWriter[] this
+, in String[] path
+, in String[] key
+, in String[] value
+) {
+  this[index < this.size() ? index : this.size() - 1].setMetaData(path[index < path.size() ? index : path.size() - 1], key[index < key.size() ? index : key.size() - 1], value[index < value.size() ? index : value.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( path.size() == 0) return;
+  if( key.size() == 0) return;
+  if( value.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < path.size()) task_size = path.size();
+  if(task_size < key.size()) task_size = key.size();
+  if(task_size < value.size()) task_size = value.size();
+  for(Size index = 0; index < task_size; index++) {
+    AlembicWrapper_AlembicArchiveWriter_setMetaData_task(index, this, path, key, value);
+  }
+}
+"
+  }

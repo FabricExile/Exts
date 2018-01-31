@@ -1,0 +1,128 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Alembic;
+require Geometry;
+
+interface AlembicObjectWriter; // forward decl
+
+/**
+  AlembicGeometryAttributesWriter is used to store a GeometryAttributes in the alembic file. 
+  You usually don't have to interact with this object, but use the AlembicPolyMeshWriter or AlembicCurvesWriter, for example
+  \seealso AlembicPolyMeshWriter, AlembicCurvesWriter
+  \dfgPresetOmit
+  \dfgArrayPexDisable true
+*/
+object AlembicGeometryAttributesWriter permits AlembicObjectWriter {
+  /// \internal
+  private AlembicGeometryParamWriter _paramWriters[String];
+};
+
+/// release all alembic handles and all internal pointers
+function AlembicGeometryAttributesWriter.reset!() {
+  this._paramWriters.clear();
+}
+
+/// \internal
+/// Store a new AlembicGeometryParamWriter for a custom attribute.
+private function AlembicGeometryAttributesWriter.addParamWriter!(AlembicGeometryParamWriter writer) {
+  this._paramWriters[writer.getName()] = writer;
+}
+
+/// \internal
+/// Store a new AlembicGeometryParamReader based on an existing attribute
+private function AlembicGeometryAttributesWriter.addParamWriter!(AlembicOCompoundProperty parent, String name, AlembicGeometryScope scope, SInt32 timeSampling, GeometryAttribute attribute) {
+  // todooooo
+  if(attribute == null)
+  {
+    return;
+  }
+  else if(attribute.type().isA(ScalarAttribute))
+  {
+    ScalarAttribute cast = attribute;
+    this.addParamWriter(AlembicGeometryParamWriter(parent, name, scope, timeSampling, cast));
+  }
+  else if(attribute.type().isA(UInt32Attribute))
+  {
+    UInt32Attribute cast = attribute;
+    this.addParamWriter(AlembicGeometryParamWriter(parent, name, scope, timeSampling, cast));
+  }
+  else if(attribute.type().isA(IntegerAttribute))
+  {
+    IntegerAttribute cast = attribute;
+    this.addParamWriter(AlembicGeometryParamWriter(parent, name, scope, timeSampling, cast));
+  }
+  else if(attribute.type().isA(Vec2Attribute))
+  {
+    Vec2Attribute cast = attribute;
+    this.addParamWriter(AlembicGeometryParamWriter(parent, name, scope, timeSampling, cast));
+  }
+  else if(attribute.type().isA(Vec3Attribute))
+  {
+    Vec3Attribute cast = attribute;
+    this.addParamWriter(AlembicGeometryParamWriter(parent, name, scope, timeSampling, cast));
+  }
+  else if(attribute.type().isA(QuatAttribute))
+  {
+    QuatAttribute cast = attribute;
+    this.addParamWriter(AlembicGeometryParamWriter(parent, name, scope, timeSampling, cast));
+  }
+  else if(attribute.type().isA(ColorAttribute))
+  {
+    ColorAttribute cast = attribute;
+    this.addParamWriter(AlembicGeometryParamWriter(parent, name, scope, timeSampling, cast));
+  }
+  else
+    setError('AlembicGeometryAttributesWriter: Attribute type "'+attribute.type()+'" not supported.');
+}
+
+/// writes a single sample into the file based on the provided GeometryAttributes.
+function Boolean AlembicGeometryAttributesWriter.writeSample!(Ref<Geometry> geometry, Ref<GeometryAttributes> attributes) {
+
+  Boolean success = true;
+  for(name, writerRef in this._paramWriters) {
+    if(!attributes.has(name)) {
+      // setError ?
+      report('AlembicGeometryAttributesWriter: Attribute "'+name+'" does not exist.');
+      success = false;
+      continue;
+    }
+    AlembicGeometryParamWriter writer = writerRef;
+    if(!writer.writeSample(geometry, attributes.getAttribute(name)))
+      success = false;
+  }
+
+  return success;
+}
+
+function Boolean AlembicGeometryAttributesWriter.writeSample!(
+  Ref<Geometry> geometry, 
+  Ref<GeometryAttributes> attributes,
+  Index pointToIndex<>
+)
+{
+
+  Boolean success = true;
+  for(name, writerRef in this._paramWriters) {
+    if(!attributes.has(name)) {
+      // setError ?
+      report('AlembicGeometryAttributesWriter: Attribute "'+name+'" does not exist.');
+      success = false;
+      continue;
+    }
+    AlembicGeometryParamWriter writer = writerRef;
+    if(writer.getScope() == Alembic_kVertexScope)
+    {
+      if( !writer.writeSample( geometry, attributes.getAttribute(name) ) )
+        success = false;
+    }
+    else
+    {
+      if( !writer.writeSample( geometry, attributes.getAttribute(name), pointToIndex ) )
+        success = false;
+    }
+  }
+
+  return success;
+}

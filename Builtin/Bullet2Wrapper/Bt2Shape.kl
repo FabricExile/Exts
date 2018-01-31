@@ -1,0 +1,46 @@
+//
+// Copyright 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/// \dfgPresetOmit
+struct Bt2Shape : Bt2Item permits Bt2World
+{
+  protected btCollisionShape shape;
+  protected Boolean passiveOnly;
+};
+
+/// \dfgPresetOmit
+Boolean Bt2Shape.isForPassiveRigidBodiesOnly()
+{
+  return this.passiveOnly;
+}
+
+function Float32 Bt2Shape.getMargin()
+{
+  if(!this.isValid())
+    return 0.0;
+  return this.shape.getMargin();
+}
+
+/// \dfgPresetDefault margin 0.1
+function Bt2Shape.setMargin!(Float32 margin)
+{
+  if(!this.isValid())
+    return;
+  this.shape.setMargin(margin);
+}
+
+function Vec3 Bt2Shape.getLocalScaling()
+{
+  if(!this.isValid())
+    return Vec3();
+  return this.shape.getLocalScaling();
+}
+
+/// \dfgPresetDefault margin {"x": 1.0, "y": 1.0, "z": 1.0}
+function Bt2Shape.setLocalScaling!(Vec3 scaling)
+{
+  if(!this.isValid())
+    return;
+  this.shape.setLocalScaling(scaling);
+}

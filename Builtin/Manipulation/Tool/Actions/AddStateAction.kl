@@ -1,0 +1,88 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /**
+    \versionadded 2.6.0
+
+    The AddStateAction will add a state (:kl-ref:`Tool::BaseTool.addState` ) to a BaseTool, and
+    optionally remove it (:kl-ref:`Tool::BaseTool.rmoveState` ) upon destruction (~AddStateAction).
+
+    The target is the first BaseTool parent of the AddStateAction.
+
+    The action can also be triggered (do + undo) by connected events; see :kl-ref:BaseAction.connectToDo` and :kl-ref:`Tool::BaseAction.connectToUndo` .
+  */
+
+  object AddStateAction : SendEventAction{
+    EventSource undoEventSource;
+    EventName undoSourceEventName;
+    Boolean removeStateOnDestroyEnabled;
+  };
+
+  /// Connects and attaches a source event to the add state action.
+  /// \eventSource Source of the for doing the add state
+  /// \sourceEventName Name of the source for doing the add state
+  AddStateAction( Ref<EventSource> eventSource, EventName sourceEventName, String stateName ) {
+    this.connectAndAttach( eventSource, sourceEventName, stateName );
+  }
+
+  /// Connects and attaches a source event to the add state action.
+  /// \eventSource Source of the for doing the add state
+  /// \sourceEventName Name of the source for doing the add state
+  /// \removeStateOnDestroy Remove added state on destroy or undo
+  AddStateAction( Ref<EventSource> eventSource, EventName sourceEventName, String stateName, Boolean removeStateOnDestroy ) {
+    this.connectAndAttach( eventSource, sourceEventName, stateName );
+    this.removeStateOnDestroy( removeStateOnDestroy );
+  }
+
+  /// Connects and attaches a source event and undo event to the add state action.
+  /// \eventSource Source of the for doing the add state
+  /// \sourceEventName Name of the source for doing the add state
+  /// \undoEventSource Source of the event for undoing the add state
+  /// \undoSourceEventName Name of the source event for undoing the add state
+  AddStateAction( Ref<EventSource> eventSource, EventName sourceEventName, Ref<EventSource> undoEventSource, EventName undoSourceEventName, String stateName ) {
+    this.connectAndAttach( eventSource, sourceEventName, undoEventSource, undoSourceEventName, stateName );
+  }
+
+  /// Enable undo on delete
+  AddStateAction.removeStateOnDestroy!( Boolean enable ) {
+    this.removeStateOnDestroyEnabled = enable;
+  }
+
+  AddStateAction.connectAndAttach!( Ref<EventSource> eventSource, EventName sourceEventName, String stateName ) {
+    this.setState( stateName );
+    this.parent.connectAndAttach( eventSource, sourceEventName, Event_AddState, stateName );
+  }
+
+  AddStateAction.connectAndAttach!( Ref<EventSource> eventSource, EventName sourceEventName, Ref<EventSource> undoEventSource, EventName undoSourceEventName, String stateName ) {
+    this.setState( stateName );
+    this.parent.connectAndAttach( eventSource, sourceEventName, Event_AddState, stateName );
+    this.undoEventSource = undoEventSource;
+    this.undoSourceEventName = undoSourceEventName;
+  }
+
+  String AddStateAction.getState() {
+    return this.doEvent.tag;
+  }
+
+  AddStateAction.setState!( String state ) {
+    // Auto-rename the action
+    if( this.name == this.type() || this.name == "AddStateAction_" + this.doEvent.tag )
+      this.setName( "AddStateAction_" + state );
+
+    this.doEvent.tag = state;
+  }
+
+  /// \internal
+  AddStateAction.doAction!( ) {
+    if( !this.sentEvent && ( Boolean( this.undoEventSource ) || this.removeStateOnDestroyEnabled ) ) {
+      if( this.undoEventSource )
+        this.connectUndoAndAttach( this.undoEventSource, this.undoSourceEventName, Event_RemoveState, this.doEvent.tag );
+      else
+        this.setUndoEvent( Event_RemoveState, this.doEvent.tag );
+    }
+    this.parent.doAction();
+  }
+}// namespace Tool

@@ -1,0 +1,95 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Xfo.html",
+    "uiTooltip" : "Sets this transform from a given Mat44\n\n Supported by Xfo"
+    },
+  "title" : "SetFromMat44[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 249,\n  \"g\" : 157,\n  \"b\" : 28\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Xfo[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 249,\n  \"g\" : 157,\n  \"b\" : 28\n  }"
+        },
+      "name" : "m",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Mat44[]" : [
+          {
+            "row0" : {
+              "x" : 1,
+              "y" : 0,
+              "z" : 0,
+              "t" : 0
+              },
+            "row1" : {
+              "x" : 0,
+              "y" : 1,
+              "z" : 0,
+              "t" : 0
+              },
+            "row2" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 1,
+              "t" : 0
+              },
+            "row3" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0,
+              "t" : 1
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Mat44[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "A0524D3515D50A7285F2C2AFBB4D60B6",
+  "code" : "require Math;
+
+operator Math_Xfo_setFromMat44_task<<<index>>>(
+  io Xfo[] this
+, in Mat44[] m
+) {
+  this[index < this.size() ? index : this.size() - 1].setFromMat44(m[index < m.size() ? index : m.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( m.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < m.size()) task_size = m.size();
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Xfo_setFromMat44_task(index, this, m);
+    }
+  } else {
+    Math_Xfo_setFromMat44_task<<<task_size>>>(this, m);
+  }
+}
+"
+  }

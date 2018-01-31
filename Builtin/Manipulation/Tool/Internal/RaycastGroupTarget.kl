@@ -1,0 +1,104 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// \internal
+  /// Contains a group of shapes and/or shape hierarchies which will be treated as a single raycast target.
+  /// This is used internally for tool picking / selection.
+  object RaycastGroupTarget : RaycastTarget{
+    FewObjectsStableList targetShapes;
+    FewObjectsStableList targetShapeHierarchies;
+  };
+
+  RaycastGroupTarget() {
+    this.targetShapes = FewObjectsStableList();
+    this.targetShapeHierarchies = FewObjectsStableList();
+  }
+
+  /// \param owned If true, this object will own the shape. The shape must not own us else a cyclic leak will occur.
+  RaycastGroupTarget.addRaycastShape!( Ref<RaycastTargetShape> shape, Boolean owned ) {
+    if( !this.targetShapes.has( shape ) )// filter duplicates
+      this.targetShapes.pushBack( shape, owned );
+  }
+
+  RaycastGroupTarget.removeRaycastShape!( Ref<RaycastTargetShape> shape ) {
+    this.targetShapes.remove_nothrow( shape );
+  }
+
+  /// \param owned If true, this object will own the shape. The shape must not own us else a cyclic leak will occur.
+  RaycastGroupTarget.addRaycastHierarchy!( Ref<HierarchyNode> hier, Boolean owned ) {
+    if( !this.targetShapeHierarchies.has( hier ) )// filter duplicates
+      this.targetShapeHierarchies.pushBack( hier, owned );
+  }
+
+  RaycastGroupTarget.removeRaycastHierarchy!( Ref<HierarchyNode> hier ) {
+    this.targetShapeHierarchies.remove_nothrow( hier );
+  }
+
+  CollectHierarchySelectionDrawList( Ref<Object> target, DrawContext context, io SelectionManagerDrawList drawList ) {
+    Ref<RaycastTargetShape> shape = target;
+    if( shape ) {
+      SelectionManagerDrawListKey key( shape );
+      Ref<SelectionDrawableItem> item = shape.getSelectionDrawableItem( context );
+      if( item )
+        drawList.addItem( item, key );
+    }
+    Ref<HierarchyNode> shapeHier = target;
+    if( shapeHier ) {
+      Size count = shapeHier.childCount();
+      for( Size i = 0; i < count; ++i )
+        CollectHierarchySelectionDrawList( shapeHier.getChild( i ), context, drawList );
+    }
+  }
+
+  SelectionManagerDrawList RaycastGroupTarget.getSelectionDrawList( RaycastContext context ) {
+    // For now: rebuild the list each time. TODO: optimize
+    SelectionManagerDrawList drawList();
+
+    FewObjectsStableListIterator it( this.targetShapes );
+    Ref<RaycastTargetShape> shape = null;
+    while( shape = it.next() ) {
+      SelectionManagerDrawListKey key( shape );
+      Ref<SelectionDrawableItem> item = shape.getSelectionDrawableItem( context.context );
+      if( item )
+        drawList.addItem( item, key );
+    }
+    FewObjectsStableListIterator it2( this.targetShapeHierarchies );
+    Ref<HierarchyNode> shapeHier = null;
+    while( shapeHier = it2.next() )
+      CollectHierarchySelectionDrawList( shapeHier, context.context, drawList );
+
+    return drawList;
+  }
+
+  /// \internal
+  /// To be overriden
+  RaycastGroupTarget.onRaycastInitiated!( io RaycastContext context, RaycastResult result ) {}
+
+  /// \internal
+  /// To be overriden
+  RaycastGroupTarget.onRaycastSucceeded!( io RaycastContext context, RaycastResult result ) {}
+
+  /// \internal
+  /// To be overriden
+  RaycastGroupTarget.onRaycastFail!( io RaycastContext context ) {}
+
+  /// \internal
+  /// Non-virtual version that can be safely called from the destructor
+  /// This can be removed once KL is fixed to not call specialized methods in destructors
+  RaycastGroupTarget.invalidateInternal!( ) {
+    this.targetShapes.clear();
+    this.targetShapeHierarchies.clear();
+  }
+
+  RaycastGroupTarget.invalidate!( ) {
+    this.invalidateInternal();
+  }
+
+  ~RaycastGroupTarget() {
+    this.invalidateInternal();
+  }
+
+}// namespace Tool

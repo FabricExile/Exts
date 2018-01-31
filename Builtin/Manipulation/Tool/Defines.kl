@@ -1,0 +1,299 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+alias String StringArray[];
+
+namespace Tool {
+  /// This file defines various global constants and helper methods that are used by the tool framework.
+
+  const Boolean SetPropertyDebugTrace = false;
+  const Boolean DrawDebugTrace = false;
+  const Boolean StructureDebugTrace = false;
+  const Boolean RawEventDebugTrace = false;
+  const Boolean EventConnectDebugTrace = false;
+  const Boolean ToolEventDebugTrace = false;
+  const Boolean StateDebugTrace = false;
+
+  // Predefined property names
+  const String ActiveProperty = "active";
+  const String InvalidatedProperty = "invalidated";
+  const String ExclusiveProperty = "exclusive";
+  const String VisibleProperty = "visible";
+  const String LocalTransformProperty = "localTransform";
+  const String TransformProperty = "transform";
+  const String TransformSpaceProperty = "transformSpace";
+  const String RenderTransformProperty = "renderTransform";
+  const String PositionsTransformProperty = "positionsTransform";
+  const String NormalsTransformProperty = "normalsTransform";
+  const String ColorProperty = "color";
+  const String TransparencyProperty = "transparency";
+  const String MaterialProperty = "material";
+  const String RenderPassProperty = "renderPass";
+  const String SpecificViewportsProperty = "specificViewports";// Explicit viewport list: viewport names, and/or "ActiveViewport"
+  const String FontSizeProperty = "fontSize";
+  const String FontProperty = "font";
+  const String DrawCullFrontProperty = "drawCullFront";
+  const String DrawCullBackProperty = "drawCullBack";
+
+  // Viewport spaces
+  const String WorldSpace = "worldSpace";
+  const String NormalizedViewportSpace = "normalizedViewportSpace";
+  const String PixelCoordinatesSpace = "pixelCoordinatesSpace";
+
+  // To be used in SpecificViewportsProperty
+  const String ActiveViewport = "activeViewport";
+
+  // Predefined render passes
+  const String PrepareDrawPass = "Prepare";
+  //const String BackgroundRenderPass = "Background"; // not supported yet
+  const String MainRenderPass = "Main";
+  //const String MainPlusOffsetRenderPass = "MainPlusOffsetRenderPass"; // not supported yet
+  //const String OnTopRenderPass = "OnTop"; // not supported yet
+  const String OnTopWithRelativeDepthRenderPass = "OnTopWithRelativeDepthRenderPass";
+  const String OnTopNoDepthTestRenderPass = "OnTopNoDepthRenderPass";
+  const String HUDRenderPass = "HUDL1RenderPass";
+
+  Boolean IsActive( Ref<PropertyContainer> propertyContainer ) {
+    return GetBooleanProperty( propertyContainer, ActiveProperty, false );
+  }
+
+  SetActive( io Ref<PropertyContainer> propertyContainer, Boolean active ) {
+    propertyContainer.setProperty( ActiveProperty, RTVal( active ) );
+  }
+
+  Boolean WasInvalidated( Ref<PropertyContainer> propertyContainer ) {
+    return GetBooleanProperty( propertyContainer, InvalidatedProperty, false );
+  }
+
+  SetInvalidated( io Ref<PropertyContainer> propertyContainer, Boolean active ) {
+    propertyContainer.setProperty( InvalidatedProperty, RTVal( active ) );
+  }
+
+  Boolean IsExclusive( Ref<PropertyContainer> propertyContainer ) {
+    return GetBooleanProperty( propertyContainer, ActiveProperty, false );
+  }
+
+  SetExclusive( io Ref<PropertyContainer> propertyContainer, Boolean exclusive ) {
+    propertyContainer.setProperty( ExclusiveProperty, RTVal( exclusive ) );
+  }
+
+  Boolean IsVisible( Ref<PropertyContainer> propertyContainer ) {
+    return GetBooleanProperty( propertyContainer, VisibleProperty, false );
+  }
+
+  SetVisible( io Ref<PropertyContainer> propertyContainer, Boolean visible ) {
+    propertyContainer.setProperty( VisibleProperty, RTVal( visible ) );
+  }
+
+  Xfo GetLocalTransform( Ref<PropertyContainer> propertyContainer ) {
+    return GetXfoProperty( propertyContainer, LocalTransformProperty );
+  }
+
+  SetLocalTransform( io Ref<PropertyContainer> propertyContainer, Xfo value ) {
+    propertyContainer.setProperty( LocalTransformProperty, RTVal( value ) );
+    propertyContainer.setPropertyAsLocalOnly( LocalTransformProperty, true );
+  }
+
+  SetLocalTransform( io Ref<PropertyContainer> propertyContainer, Mat44 value ) {
+    propertyContainer.setProperty( LocalTransformProperty, RTVal( value ) );
+    propertyContainer.setPropertyAsLocalOnly( LocalTransformProperty, true );
+  }
+
+  Mat44 GetTransform( Ref<PropertyContainer> propertyContainer ) {
+    return GetMat44Property( propertyContainer, TransformProperty );
+  }
+
+  SetTransform( io Ref<PropertyContainer> propertyContainer, Xfo value ) {
+    propertyContainer.setProperty( TransformProperty, RTVal( value ) );
+  }
+
+  SetTransform( io Ref<PropertyContainer> propertyContainer, Mat44 value ) {
+    propertyContainer.setProperty( TransformProperty, RTVal( value ) );
+  }
+
+  String GetTransformSpace( Ref<PropertyContainer> propertyContainer ) {
+    return GetStringProperty( propertyContainer, TransformSpaceProperty );
+  }
+
+  SetTransformSpace( io Ref<PropertyContainer> propertyContainer, String value ) {
+    propertyContainer.setProperty( TransformSpaceProperty, RTVal( value ) );
+  }
+
+  Mat44 GetRenderTransform( Ref<PropertyContainer> propertyContainer ) {
+    return GetMat44Property( propertyContainer, RenderTransformProperty );
+  }
+
+  SetRenderTransform( io Ref<PropertyContainer> propertyContainer, Mat44 value ) {
+    propertyContainer.setProperty( RenderTransformProperty, RTVal( value ) );
+  }
+
+  Mat33 GetNormalsTransform( Ref<PropertyContainer> propertyContainer ) {
+    return GetMat33Property( propertyContainer, NormalsTransformProperty );
+  }
+
+  SetNormalsTransform( io Ref<PropertyContainer> propertyContainer, Mat33 value ) {
+    propertyContainer.setProperty( NormalsTransformProperty, RTVal( value ) );
+  }
+
+  Mat44 GetPositionsTransform( Ref<PropertyContainer> propertyContainer ) {
+    return GetMat44Property( propertyContainer, PositionsTransformProperty );
+  }
+
+  SetPositionsTransform( io Ref<PropertyContainer> propertyContainer, Mat44 value ) {
+    propertyContainer.setProperty( PositionsTransformProperty, RTVal( value ) );
+  }
+
+  Boolean IsColorTexture( Ref<PropertyContainer> propertyContainer ) {
+    if( !propertyContainer.hasProperty( ColorProperty ) )
+      return false;
+
+    RTVal prop = propertyContainer.getProperty( ColorProperty );
+    return prop.type().isA( Image2D );
+  }
+
+  Boolean IsColorAttribute( Ref<PropertyContainer> propertyContainer ) {
+    if( !propertyContainer.hasProperty( ColorProperty ) )
+      return false;
+
+    RTVal prop = propertyContainer.getProperty( ColorProperty );
+    return prop.type().isA( GeometryAttribute );
+  }
+
+  Color GetColor( Ref<PropertyContainer> propertyContainer ) {
+    return GetColorProperty( propertyContainer, ColorProperty, Color( 1.0 ) );
+  }
+
+  Image2D GetColorTexture( Ref<PropertyContainer> propertyContainer ) {
+    RTVal value = propertyContainer.getProperty( ColorProperty );
+    if( value.type().isA( Image2D ) )
+      return value;
+    return null;
+  }
+
+  SetColor( io Ref<PropertyContainer> propertyContainer, RTVal value ) {
+    propertyContainer.setProperty( ColorProperty, value );
+  }
+
+  SetColor( io Ref<PropertyContainer> propertyContainer, Color value ) {
+    propertyContainer.setProperty( ColorProperty, RTVal( value ) );
+  }
+
+  SetColor( io Ref<PropertyContainer> propertyContainer, Image2D value ) {
+    propertyContainer.setProperty( ColorProperty, RTVal( value ) );
+  }
+
+  SetColor( io Ref<PropertyContainer> propertyContainer, GeometryAttribute value ) {
+    propertyContainer.setProperty( ColorProperty, RTVal( value ) );
+  }
+
+  Float32 GetTransparency( Ref<PropertyContainer> propertyContainer ) {
+    return GetFloat32Property( propertyContainer, TransparencyProperty, 0.0 );
+  }
+
+  SetTransparency( io Ref<PropertyContainer> propertyContainer, Float32 value ) {
+    propertyContainer.setProperty( TransparencyProperty, RTVal( value ) );
+  }
+
+  Boolean IsDrawCullFront( Ref<PropertyContainer> propertyContainer ) {
+    return GetBooleanProperty( propertyContainer, DrawCullFrontProperty, false );
+  }
+
+  SetDrawCullFront( io Ref<PropertyContainer> propertyContainer, Boolean drawCullFront ) {
+    propertyContainer.setProperty( DrawCullFrontProperty, RTVal( drawCullFront ) );
+  }
+
+  Boolean IsDrawCullBack( Ref<PropertyContainer> propertyContainer ) {
+    return GetBooleanProperty( propertyContainer, DrawCullBackProperty, false );
+  }
+
+  SetDrawCullBack( io Ref<PropertyContainer> propertyContainer, Boolean drawCullBack ) {
+    propertyContainer.setProperty( DrawCullBackProperty, RTVal( drawCullBack ) );
+  }
+
+  /// Note: this feature is not supported yet
+  String<> GetSpecificViewports( Ref<PropertyContainer> propertyContainer ) {
+    RTVal value = propertyContainer.getProperty( SpecificViewportsProperty );
+    if( value.type() == StringArray )
+      return value;
+    String noValue<>;
+    return noValue;
+  }
+
+  /// Note: this feature is not supported yet
+  SetSpecificViewports( io Ref<PropertyContainer> propertyContainer, String viewportNames[] ) {
+    propertyContainer.setProperty( SpecificViewportsProperty, RTVal( viewportNames ) );
+  }
+
+  Ref<Object> GetMaterial( Ref<PropertyContainer> propertyContainer ) {
+    RTVal value = propertyContainer.getProperty( MaterialProperty );
+    if( value.type() != None )
+      return value;
+    return null;
+  }
+
+  SetMaterial( io Ref<PropertyContainer> propertyContainer, Object value ) {
+    propertyContainer.setProperty( MaterialProperty, RTVal( value ) );
+  }
+
+  String GetRenderPass( Ref<PropertyContainer> propertyContainer ) {
+    return GetStringProperty( propertyContainer, RenderPassProperty );
+  }
+
+  SetRenderPass( io Ref<PropertyContainer> propertyContainer, String value ) {
+    propertyContainer.setProperty( RenderPassProperty, RTVal( value ) );
+  }
+
+  Size GetFontSize( Ref<PropertyContainer> propertyContainer ) {
+    return GetSInt32Property( propertyContainer, FontSizeProperty, 8 );
+  }
+
+  SetFontSize( io Ref<PropertyContainer> propertyContainer, Size value ) {
+    propertyContainer.setProperty( FontSizeProperty, RTVal( value ) );
+  }
+
+  String GetFont( Ref<PropertyContainer> propertyContainer ) {
+    return GetStringProperty( propertyContainer, FontProperty );
+  }
+
+  SetFont( io Ref<PropertyContainer> propertyContainer, String value ) {
+    propertyContainer.setProperty( FontProperty, RTVal( value ) );
+  }
+
+
+  const Size PrepareDrawPass_index = 0;
+  //const Size BackgroundRenderPass_index = 1; // not supported yet
+  const Size MainRenderPass_index = 2;
+  //const Size MainPlusOffsetRenderPass_index = 3; // not supported yet
+  //const Size MainPlusOffsetRenderPass_index = 4; // not supported yet
+  const Size OnTopWithRelativeDepthRenderPass_index = 5;
+  const Size OnTopNoDepthTestRenderPass_index = 6;
+  const Size HUDRenderPass_index = 7;
+  const Size RenderPassCount = 8;
+
+  /// \internal
+  Size GetPassIndex( String renderPass ) {
+    switch( renderPass ) {
+      case PrepareDrawPass: return PrepareDrawPass_index;
+      case MainRenderPass: return MainRenderPass_index;
+      case OnTopWithRelativeDepthRenderPass: return OnTopWithRelativeDepthRenderPass_index;
+      case OnTopNoDepthTestRenderPass: return OnTopNoDepthTestRenderPass_index;
+      case HUDRenderPass: return HUDRenderPass_index;
+    }
+    return 1;
+  }
+
+  /// \internal
+  String GetPassFromIndex( Size renderPassIndex ) {
+    switch( renderPassIndex ) {
+      case PrepareDrawPass_index: return PrepareDrawPass;
+      case MainRenderPass_index: return MainRenderPass;
+      case OnTopWithRelativeDepthRenderPass_index: return OnTopWithRelativeDepthRenderPass;
+      case OnTopNoDepthTestRenderPass_index: return OnTopNoDepthTestRenderPass;
+      case HUDRenderPass_index: return HUDRenderPass;
+    }
+    return "(unknown pass)";
+  }
+
+}// namespace Tool

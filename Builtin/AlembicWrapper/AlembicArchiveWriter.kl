@@ -1,0 +1,536 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Alembic;
+require FileIO;
+
+/**
+  The AlembicArchiveWriter is a wrapper for the AlembicOArchive. It provides access to the higher level writer objects such as the AlembicXformWriter, for example.
+  \example
+
+  require AlembicWrapper;
+  require FileIO;
+
+  operator entry() {
+    
+    FilePath path = FilePath("${TEMP}/archivewriter.abc").expandEnvVars();
+
+    AlembicArchiveWriter archive(path.string());
+
+    AlembicXformWriter xformA = archive.addXform('/xfoA', Alembic_kConstantTimeSampling);
+    AlembicXformWriter xformB = archive.addXform('/xfoA/xfoB', Alembic_kConstantTimeSampling);
+
+    xformA.writeSample(Mat44());
+    xformB.writeSample(Mat44());
+
+    archive.reset();
+
+    report(path.exists());
+    report('Alembic file written: '+path.string());
+  }
+
+  \endexample
+  \seealso AlembicArchiveWriter
+  \dfgArrayPexDisable true
+*/
+object AlembicArchiveWriter {
+  /// \internal
+  private AlembicOArchive _archive;
+  /// \internal
+  private String _path;
+  /// \internal
+  private UInt32 _nbSuccessfulSamples;
+  /// \internal
+  private AlembicObjectWriter _objects[String];
+  /// \internal
+  private AlembicOCompoundProperty _compounds[String];
+  /// \internal
+  private AlembicPropertyWriter _properties[String];
+};
+
+/// default constructor provided a fileName to create
+inline AlembicArchiveWriter(String fileName) {
+  String resolvedFilePath = FilePath(fileName).expandEnvVars().string();
+  this._archive = AlembicOArchive(resolvedFilePath);
+  this._path = resolvedFilePath;
+  this._nbSuccessfulSamples = 0;
+}
+
+/// returns the path of the open archive
+inline String AlembicArchiveWriter.getPath() {
+  if(this == null)
+    return "";
+  return this._path;
+}
+
+/// returns true if the wrapped archive is valid
+inline Boolean AlembicArchiveWriter.valid() {
+  if(this == null)
+    return false;
+  return this._archive.valid();
+}
+
+/// clears the content of the archive and closes all related writer objects
+inline AlembicArchiveWriter.reset!() {
+  this._archive.reset();
+  for(path in this._objects)
+    this._objects[path].reset();
+  this._objects.clear();
+  for(path in this._compounds)
+    this._compounds[path].reset();
+  this._compounds.clear();
+  for(path in this._properties)
+    this._properties[path].reset();
+  this._properties.clear();
+  this._nbSuccessfulSamples = 0;
+}
+
+/// closes the file after writing
+inline AlembicArchiveWriter.closeArchive!(Boolean close) {
+  if(close && this.valid()) {
+    this.reset();
+    report('AlembicArchiveWriter closed: '+this._path);
+  }
+}
+
+/// informs the AlembicArchiveWriter of a successfull sample store
+inline AlembicArchiveWriter.informOfSampleStore!(Boolean succeeded) {
+  if(this == null)
+    return;
+  if(succeeded)
+    this._nbSuccessfulSamples++;
+}
+
+/// informs the AlembicArchiveWriter of several successfull sample stores
+inline AlembicArchiveWriter.informOfSampleArrayStore!(Boolean succeeded[]) {
+  if(this == null)
+    return;
+  for(Size i=0;i<succeeded.size();i++) {
+    if(succeeded[i])
+      this._nbSuccessfulSamples++;
+  }
+}
+
+function AlembicOObject AlembicArchiveWriter.getTop() {
+  return this._archive.getTop();
+}
+
+/// \internal
+private function AlembicOObject AlembicArchiveWriter._findOObject(String path) {
+  if(path == '')
+    return this._archive.getTop();
+  if(this._objects.has(path))
+    return this._objects[path].getOObject();
+  // setError('AlembicArchiveWriter: Object at path "'+path+'" does not exist.');
+  return AlembicOObject();
+}
+
+/// Returns all meta data keys given a path
+function String[] AlembicArchiveWriter.getMetaDataKeys!(String path) {
+  String result[];
+  if(this == null)
+    return result;
+  AlembicOObject obj = this._findOObject(path);
+  if(!obj.valid())
+    return result;
+  AlembicMetaData md = obj.getMetaData();
+  return md.keys();
+}
+
+/// Returns the meta data given a path and a key
+function String AlembicArchiveWriter.getMetaData!(String path, String key) {
+  if(this == null)
+    return "";
+  if(key == "")
+    return "";
+  AlembicOObject obj = this._findOObject(path);
+  if(!obj.valid())
+    return "";
+  AlembicMetaData md = obj.getMetaData();
+  return md.get(key);
+}
+
+/// Sets the meta data given a path, key and value
+function AlembicArchiveWriter.setMetaData!(String path, String key, String value) {
+  if(this == null)
+    return;
+  if(key == "")
+    return;
+  AlembicOObject obj = this._findOObject(path);
+  if(!obj.valid())
+    return;
+  AlembicMetaData md = obj.getMetaData();
+  md.set(key, value);
+}
+
+/// \internal
+/// \dfgPresetOmit
+private function Boolean AlembicArchiveWriter.getCompoundProperty!(
+  String path,
+  String prefix,
+  String suffix,
+  io AlembicOCompoundProperty compound
+) {
+  // if we didn't specify the main compound yet
+  // look for it
+  String currentPrefix = prefix;
+  String currentSuffix = suffix;
+  if(currentPrefix == "") {
+
+    String search = path;
+
+    // check if it is in the map
+    compound = this._compounds.get(search, null);
+    if(compound == null) {
+      AlembicOObject obj = this._findOObject(path);
+      if(!obj.valid())
+        return false;
+      compound = obj.getProperties();
+      this._compounds[search] = compound;
+    }
+  }
+
+  // if this is the last component, return
+  else if(currentSuffix.find('/') == -1) {
+    return compound.valid();
+  }
+
+  // otherwise recurse
+  String parts[] = currentSuffix.partition('/');
+  if(currentPrefix.length() > 0)
+    currentPrefix += '/';
+  currentPrefix += parts[0];
+
+  String search = path + '|' + currentPrefix;
+  AlembicOCompoundProperty childCompound = this._compounds.get(search, null);
+  if(childCompound == null) {
+    childCompound = AlembicOCompoundProperty(compound, parts[0]);
+    this._compounds[search] = childCompound;
+  }
+  compound = childCompound;
+  return this.getCompoundProperty(path, currentPrefix, parts[2], compound);
+}
+
+function AlembicPropertyWriter AlembicArchiveWriter.addProperty!(
+  String path,
+  String key,
+  AlembicPropertyType propertyType,
+  AlembicPOD pod,
+  UInt32 extent,
+  SInt32 timeSampling
+) {
+  if(this == null)
+    return null;
+  if(propertyType == Alembic_kCompoundProperty)
+    return null;
+  if(path == "" || key == null)
+    return null;
+  String search = path + '|' + key;
+  AlembicPropertyWriter prop = this._properties.get(search, null);
+  if(prop != null)
+    return prop;
+
+  String parts[] = key.reversePartition('/');
+  AlembicOCompoundProperty compound = this._compounds.get(path + '|' + parts[0], null);
+  if(compound == null) {
+    if(!this.getCompoundProperty(path, "", key, compound))
+      return null;
+    this._compounds[path + '|' + parts[0]] = compound;
+  }
+
+
+  String name = key.reversePartition('/')[2];
+  prop = AlembicPropertyWriter(this, compound, propertyType, name, pod, extent, timeSampling);
+  this._properties[search] = prop;
+  return prop;
+}
+
+/// adds a new AlembicTimeSampling based on an array of sample times and returns its index.
+function SInt32 AlembicArchiveWriter.addTimeSampling!(Float64 times[]) {
+  if(this == null)
+    return 0;
+  if(!this.valid()) {
+    // setError('AlembicArchiveWriter: Adding timesampling on invalidated writer.');
+    return 0;
+  }
+  if(times.size() == 0)
+    return 0;
+  AlembicTimeSamplingType timeSamplingType(times.size(), times.size() > 1 ? times[times.size()-1] - times[0] : 0.0);
+  AlembicTimeSampling timeSampling(timeSamplingType, times);
+  return this._archive.addTimeSampling(timeSampling);
+}
+
+/// \internal
+private function AlembicArchiveWriter._findParent?(String parentPath, String childPath, io String path, io String name, io AlembicOObject parent, io AlembicObjectWriter writer) {
+  path = parentPath;
+  if(!childPath.startsWith('/'))
+    path += '/'+childPath;
+  else
+    path += childPath;
+  if(this._objects.has(path)) {
+    writer = this._objects[path];
+    return;
+  }
+  String parts[] = path.reversePartition('/');
+  String realParentPath = parts[0];
+  name = parts[2];
+  parent = this._findOObject(realParentPath);
+  if(!parent.valid()) {
+    // setError('AlembicArchiveWriter: Parent path "'+realParentPath+'" does not exist.');
+  }
+}
+
+/// adds a new AlembicOXform object below the parent (specified by its path), using the childPath as its name and a given timeSampling index.
+function AlembicXformWriter AlembicArchiveWriter.addXform!(String parentPath, String childPath, SInt32 timeSampling)
+{
+  if(!this.valid()) {
+    // setError('AlembicArchiveWriter: Adding object on invalidated writer.');
+    return null;
+  }
+  if(childPath == "") {
+    return null;
+  }
+
+  AlembicOObject parent = null;
+  AlembicObjectWriter existing = null;
+  String name, path;
+  this._findParent(parentPath, childPath, path, name, parent, existing);
+  if(existing != null)
+    return existing;
+  if(!parent.valid()) {
+    return null;
+  }
+
+  AlembicXformWriter result =  AlembicXformWriter(parent, name, timeSampling);
+  this._objects[path] = result;
+  return result;
+}
+
+/// adds a new AlembicOXform object below the parent writer, using the childPath as its name and a given timeSampling index.
+/// \dfgPresetOmit
+function AlembicXformWriter AlembicArchiveWriter.addXform!(Ref<AlembicObjectWriter> parentWriter, String childPath, SInt32 timeSampling) {
+  return this.addXform(parentWriter.getPath(), childPath, timeSampling);
+}
+
+/// adds a new AlembicOXform object based on a fullpath and a given timeSampling index.
+/// \dfgPresetOmit
+function AlembicXformWriter AlembicArchiveWriter.addXform!(String childPath, SInt32 timeSampling) {
+  return this.addXform('', childPath, timeSampling);
+}
+
+/// adds a new AlembicOCamera object below the parent (specified by its path), using the childPath as its name and a given timeSampling index.
+function AlembicCameraWriter AlembicArchiveWriter.addCamera!(String parentPath, String childPath, SInt32 timeSampling)
+{
+  if(!this.valid()) {
+    // setError('AlembicArchiveWriter: Adding object on invalidated writer.');
+    return null;
+  }
+  if(childPath == "")
+    return null;
+
+  AlembicOObject parent = null;
+  AlembicObjectWriter existing = null;
+  String name, path;
+  this._findParent(parentPath, childPath, path, name, parent, existing);
+  if(existing != null)
+    return existing;
+  if(!parent.valid())
+    return null;
+
+  AlembicCameraWriter result =  AlembicCameraWriter(parent, name, timeSampling);
+  this._objects[path] = result;
+  return result;
+}
+
+/// adds a new AlembicOCamera object based on a fullpath and a given timeSampling index.
+/// \dfgPresetOmit
+function AlembicCameraWriter AlembicArchiveWriter.addCamera!(Ref<AlembicObjectWriter> parentWriter, String childPath, SInt32 timeSampling) {
+  return this.addCamera(parentWriter.getPath(), childPath, timeSampling);
+}
+
+/// adds a new AlembicOCamera object based on a fullpath and a given timeSampling index.
+/// \dfgPresetOmit
+function AlembicCameraWriter AlembicArchiveWriter.addCamera!(String childPath, SInt32 timeSampling) {
+  return this.addCamera('', childPath, timeSampling);
+}
+
+/// adds a new AlembicOPoints object below the parent (specified by its path), using the childPath as its name and a given timeSampling index.
+function AlembicPointsWriter AlembicArchiveWriter.addPoints!(String parentPath, String childPath, SInt32 timeSampling)
+{
+  if(!this.valid()) {
+    // setError('AlembicArchiveWriter: Adding object on invalidated writer.');
+    return null;
+  }
+  if(childPath == "")
+    return null;
+
+  AlembicOObject parent = null;
+  AlembicObjectWriter existing = null;
+  String name, path;
+  this._findParent(parentPath, childPath, path, name, parent, existing);
+  if(existing != null)
+    return existing;
+  if(!parent.valid())
+    return null;
+
+  AlembicPointsWriter result =  AlembicPointsWriter(parent, name, timeSampling);
+  this._objects[path] = result;
+  return result;
+}
+
+/// adds a new AlembicOPoints object based on a fullpath and a given timeSampling index.
+/// \dfgPresetOmit
+function AlembicPointsWriter AlembicArchiveWriter.addPoints!(Ref<AlembicObjectWriter> parentWriter, String childPath, SInt32 timeSampling) {
+  return this.addPoints(parentWriter.getPath(), childPath, timeSampling);
+}
+
+/// adds a new AlembicOPoints object based on a fullpath and a given timeSampling index.
+/// \dfgPresetOmit
+function AlembicPointsWriter AlembicArchiveWriter.addPoints!(String childPath, SInt32 timeSampling) {
+  return this.addPoints('', childPath, timeSampling);
+}
+
+/// adds a new AlembicOPolyMesh object below the parent (specified by its path), using the childPath as its name and a given timeSampling index.
+function AlembicPolyMeshWriter AlembicArchiveWriter.addPolyMesh!(String parentPath, String childPath, SInt32 timeSampling)
+{
+  if(!this.valid()) {
+    // setError('AlembicArchiveWriter: Adding object on invalidated writer.');
+    return null;
+  }
+  if(childPath == "")
+    return null;
+
+  AlembicOObject parent = null;
+  AlembicObjectWriter existing = null;
+  String name, path;
+  this._findParent(parentPath, childPath, path, name, parent, existing);
+  if(existing != null)
+    return existing;
+  if(!parent.valid())
+    return null;
+
+  AlembicPolyMeshWriter result =  AlembicPolyMeshWriter(parent, name, timeSampling);
+  this._objects[path] = result;
+  return result;
+}
+
+/// adds a new AlembicOPolyMesh object based on a fullpath and a given timeSampling index.
+/// \dfgPresetOmit
+function AlembicPolyMeshWriter AlembicArchiveWriter.addPolyMesh!(Ref<AlembicObjectWriter> parentWriter, String childPath, SInt32 timeSampling) {
+  return this.addPolyMesh(parentWriter.getPath(), childPath, timeSampling);
+}
+
+/// adds a new AlembicOPolyMesh object based on a fullpath and a given timeSampling index.
+/// \dfgPresetOmit
+function AlembicPolyMeshWriter AlembicArchiveWriter.addPolyMesh!(String childPath, SInt32 timeSampling) {
+  return this.addPolyMesh('', childPath, timeSampling);
+}
+
+/// adds a new AlembicOSubD object below the parent (specified by its path), using the childPath as its name and a given timeSampling index.
+function AlembicSubDWriter AlembicArchiveWriter.addSubD!(String parentPath, String childPath, SInt32 timeSampling)
+{
+  if(!this.valid()) {
+    // setError('AlembicArchiveWriter: Adding object on invalidated writer.');
+    return null;
+  }
+  if(childPath == "")
+    return null;
+
+  AlembicOObject parent = null;
+  AlembicObjectWriter existing = null;
+  String name, path;
+  this._findParent(parentPath, childPath, path, name, parent, existing);
+  if(existing != null)
+    return existing;
+  if(!parent.valid())
+    return null;
+
+  AlembicSubDWriter result =  AlembicSubDWriter(parent, name, timeSampling);
+  this._objects[path] = result;
+  return result;
+}
+
+/// adds a new AlembicOSubD object based on a fullpath and a given timeSampling index.
+/// \dfgPresetOmit
+function AlembicSubDWriter AlembicArchiveWriter.addSubD!(Ref<AlembicObjectWriter> parentWriter, String childPath, SInt32 timeSampling) {
+  return this.addSubD(parentWriter.getPath(), childPath, timeSampling);
+}
+
+/// adds a new AlembicOSubD object based on a fullpath and a given timeSampling index.
+/// \dfgPresetOmit
+function AlembicSubDWriter AlembicArchiveWriter.addSubD!(String childPath, SInt32 timeSampling) {
+  return this.addSubD('', childPath, timeSampling);
+}
+
+/// adds a new AlembicOCurves object below the parent (specified by its path), using the childPath as its name and a given timeSampling index.
+function AlembicCurvesWriter AlembicArchiveWriter.addCurves!(String parentPath, String childPath, SInt32 timeSampling)
+{
+  if(!this.valid()) {
+    // setError('AlembicArchiveWriter: Adding object on invalidated writer.');
+    return null;
+  }
+  if(childPath == "")
+    return null;
+
+  AlembicOObject parent = null;
+  AlembicObjectWriter existing = null;
+  String name, path;
+  this._findParent(parentPath, childPath, path, name, parent, existing);
+  if(existing != null)
+    return existing;
+  if(!parent.valid())
+    return null;
+
+  AlembicCurvesWriter result =  AlembicCurvesWriter(parent, name, timeSampling);
+  this._objects[path] = result;
+  return result;
+}
+
+/// adds a new AlembicOCurves object based on a fullpath and a given timeSampling index.
+/// \dfgPresetOmit
+function AlembicCurvesWriter AlembicArchiveWriter.addCurves!(Ref<AlembicObjectWriter> parentWriter, String childPath, SInt32 timeSampling) {
+  return this.addCurves(parentWriter.getPath(), childPath, timeSampling);
+}
+
+/// adds a new AlembicOCurves object based on a fullpath and a given timeSampling index.
+/// \dfgPresetOmit
+function AlembicCurvesWriter AlembicArchiveWriter.addCurves!(String childPath, SInt32 timeSampling) {
+  return this.addCurves('', childPath, timeSampling);
+}
+
+/// adds a new AlembicOFaceSet object below the parent (specified by its path), using the childPath as its name and a given timeSampling index.
+function AlembicFaceSetWriter AlembicArchiveWriter.addFaceSet!(String parentPath, String childPath, SInt32 timeSampling)
+{
+  if(!this.valid()) {
+    // setError('AlembicArchiveWriter: Adding object on invalidated writer.');
+    return null;
+  }
+  if(childPath == "")
+    return null;
+
+  AlembicOObject parent = null;
+  AlembicObjectWriter existing = null;
+  String name, path;
+  this._findParent(parentPath, childPath, path, name, parent, existing);
+  if(existing != null)
+    return existing;
+  if(!parent.valid())
+    return null;
+
+  AlembicFaceSetWriter result =  AlembicFaceSetWriter(parent, name, timeSampling);
+  this._objects[path] = result;
+  return result;
+}
+
+/// adds a new AlembicOFaceSet object based on a fullpath and a given timeSampling index.
+/// \dfgPresetOmit
+function AlembicFaceSetWriter AlembicArchiveWriter.addFaceSet!(Ref<AlembicObjectWriter> parentWriter, String childPath, SInt32 timeSampling) {
+  return this.addFaceSet(parentWriter.getPath(), childPath, timeSampling);
+}
+
+/// adds a new AlembicOFaceSet object based on a fullpath and a given timeSampling index.
+/// \dfgPresetOmit
+function AlembicFaceSetWriter AlembicArchiveWriter.addFaceSet!(String childPath, SInt32 timeSampling) {
+  return this.addFaceSet('', childPath, timeSampling);
+}

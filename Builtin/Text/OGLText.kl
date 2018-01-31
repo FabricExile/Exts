@@ -1,0 +1,66 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+/**
+  \versionadded 2.4.0
+  
+  OGLText specializes BaseTextGL for FabricOGL.
+
+  \seealso :kl-ref:`Text`, :kl-ref:`BaseTextGL`.
+
+  \dfgPresetOmit
+*/
+object OGLText : BaseTextGL {
+};
+
+/// Constructs an OGLText to draw text primitives.
+/// \param atlas Reference to an AtlasGL
+/// \param attributes GLSL attributes list (as a string)
+OGLText(Ref<AtlasGL> atlas, String attributes) {
+  this.parent.init(atlas, attributes);
+}
+
+/// Constructs an OGLText to draw line primitives.
+/// \param mode GL drawing mode (GL_LINES)
+/// \param attributes GLSL attributes list (as a string)
+/// \param vertexSize Vertices size
+/// \param indexSize Indices size
+OGLText(UInt32 mode, String attributes, UInt32 nbVertices, UInt32 nbIndices) {
+  this.parent.init(mode, attributes, nbVertices, nbIndices);
+}
+
+/// Implementation of :kl-ref:`Text`. 
+private OGLText.prepareRender!() {
+  if(this.getState() != FreeTypeGL_CLEAN)
+  {
+    if(this.getState() == FreeTypeGL_FROZEN)
+      return;
+    
+    this.generateBuffers();
+    
+    // Always upload vertices first such that indices do not point to non
+    // existing data (if we get interrupted in between for example).
+    glBindBuffer(GL_ARRAY_BUFFER, this.getVerticesID());
+    this.bindVertices();
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this.getIndicesID());
+    this.bindIndices();
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+    this.setState(FreeTypeGL_CLEAN);
+  }
+
+  glBindBuffer(GL_ARRAY_BUFFER, this.getVerticesID());
+  this.enableAttributes();
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this.getIndicesID());
+}
+
+/// Implementation of :kl-ref:`Text`. 
+private OGLText.finishRender!() {
+  this.disableAttributes();
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+}
+ 

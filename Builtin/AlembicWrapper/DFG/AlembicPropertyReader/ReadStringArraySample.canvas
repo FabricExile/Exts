@@ -1,0 +1,47 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "returns the value in the property as a String.\nthis method interpolates values between frames.\n\nSupported types:\n  this: AlembicPropertyReader\n  time: Float64\n  result: String[]\n"
+    },
+  "title" : "ReadStringArraySample",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicPropertyReader"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "time",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Float64"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "String[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "F8CBEB955C022E21B6C367E289752D0C",
+  "code" : "require AlembicWrapper;
+
+dfgEntry {
+  result = this.readStringArraySample(time);
+}
+"
+  }

@@ -1,0 +1,63 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/GeometryAttribute.html",
+    "uiTooltip" : "Sets the value located at targetIndex as a linear combination of other values.\n\n\n Supported by GeometryAttribute,BaseAttribute,ScalarAttribute,ScalarConstantArrayAttribute,SkinningAttributeData,SkinningAttribute,IntegerAttribute,UInt32Attribute,UInt16ConstantArrayAttribute,RGBAttribute,RGBAAttribute,Vec2Attribute,Vec3Attribute,Vec3_dAttribute,Vec4Attribute,QuatAttribute,ColorAttribute,Mat33Attribute,Mat44Attribute"
+    },
+  "title" : "LinearCombine",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "$TYPE$"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "sourceAttr",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Object"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "sourceIndices",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "LocalL16UInt32Array"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "sourceWeights",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "LocalL16ScalarArray"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "targetIndex",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Size"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "EC62FC4EEC029A71C83DDADCDA07019E",
+  "code" : "require Geometry;
+
+dfgEntry {
+  Ref<Object> sourceAttr_ref = sourceAttr;
+  this.linearCombine(sourceAttr_ref, sourceIndices, sourceWeights, targetIndex);
+}
+"
+  }

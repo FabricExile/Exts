@@ -1,0 +1,156 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /**
+    The ScaleAlongAxisDragInteraction will change a TransformTarget's scaling
+    component based on a DragInteraction movements relative to a center and a direction
+    axis. The direction axis is interpreted in TransformTarget's space, which can be 
+    in world or screen space.
+
+    The :kl-ref:`Tool::ScaleAlongAxisDragInteraction.setLocal` method allows to interpret the 
+    axis can be in TransformTarget's local space or in global space (local space is default).
+
+    The :kl-ref:`Tool::ScaleAlongAxisDragInteraction.usePixelDelta` method allows to 
+    use the pixel delta (X and Y) instead of a projection to the actual axis.
+
+    By default, the scaling center is the TransformTarget translation,
+    else an explicit center can be set with :kl-ref:`Tool::ScaleAlongAxisDragInteraction.setExplicitCenter`.
+
+    See :ref:`TPG.interactive-tools` for more information and examples related to tool interactions.
+  */
+  object ScaleAlongAxisDragInteraction : BaseXfoDragInteraction{
+    Boolean local;//Else: global
+    Vec3 direction;
+    Vec3 explicitCenter;
+    Boolean hasExplicitCenter;
+    Mat44 initialTransform;
+
+    Boolean enablePixelDelta;
+    Float32 pixelsForFirstFactor2;
+
+    Float32 lastFactor;
+  };
+
+  ScaleAlongAxisDragInteraction() {
+    this.setLocal( true );
+    this.direction = Vec3( 1, 0, 0 );
+    this.lastFactor = 1;
+  }
+
+  ScaleAlongAxisDragInteraction( DragInteraction dragInteraction, TransformTarget transformTarget, Vec3 direction, Boolean localDirection ) {
+    this.setInteraction( dragInteraction );
+    this.setTransformTarget( transformTarget );
+    this.setLocal( localDirection );
+    this.direction = direction.unit_safe();
+  }
+
+  ScaleAlongAxisDragInteraction.setLocal!( Boolean localDirection ) {
+    this.local = localDirection;
+  }
+
+  ScaleAlongAxisDragInteraction.usePixelDelta!( Boolean enable, Scalar pixelsForFirstFactor2 ) {
+    this.enablePixelDelta = enable;
+    this.pixelsForFirstFactor2 = pixelsForFirstFactor2;
+  }
+
+  /// Sets an explicit scaling center. If in local (:kl-ref:`Tool::ScaleAlongAxisDragInteraction.setLocal` ),
+  /// the center will be interpreted in local space, else it will be transformed by the TransformTarget transform.
+  ScaleAlongAxisDragInteraction.setExplicitCenter!( Vec3 explicitCenter ) {
+    this.explicitCenter = explicitCenter;
+    this.hasExplicitCenter = true;
+  }
+
+  ScaleAlongAxisDragInteraction.onBegin!( Ref<DragInteraction> interaction ) {
+    this.initialTransform = this.getTransform();
+    this.parent.onBegin( interaction );
+  }
+
+  ScaleAlongAxisDragInteraction.onEnd!( Ref<DragInteraction> interaction ) {
+    this.lastFactor = 1;
+    this.parent.onEnd( interaction );
+  }
+
+  ScaleAlongAxisDragInteraction.onDrag!( Ref<DragInteraction> interaction ) {
+    // Get the current transfos
+    Mat44 transfo = this.initialTransform;
+    Ref<Viewport> viewport = interaction.getContextualViewport();
+    Vec3 direction = this.direction;
+    if( this.local )
+      direction = ( transfo.upperLeft() * direction ).unit_safe();
+
+    Vec3 center = transfo.translation();
+    if( this.hasExplicitCenter )
+      center = this.explicitCenter;
+
+    Scalar factor = 1;
+    String space = this.getTransformSpace();
+    Mat44 viewProj = viewport.getProjectionMat() * viewport.getViewMat();
+
+    Vec2 pixCenter = Vec2( center.x, center.y );
+    Vec2 axisEndPix = pixCenter + Vec2( direction.x, direction.y );
+
+    if( space == WorldSpace ) {
+      Vec3 projCenter = viewProj * center;
+      pixCenter = NormalizedScreenSpaceToPixel( viewport, Vec2( projCenter.x, projCenter.y ) );
+
+      Vec3 projAxisEnd = viewProj * (center + direction);
+      axisEndPix = NormalizedScreenSpaceToPixel( viewport, Vec2( projAxisEnd.x, projAxisEnd.y ) );
+
+    } else if( space == NormalizedViewportSpace ) {
+      pixCenter = NormalizedScreenSpaceToPixel( viewport, pixCenter );
+      axisEndPix = NormalizedScreenSpaceToPixel( viewport, Vec2( center.x, center.y ) + Vec2( direction.x, direction.y ) );
+    }
+
+    Vec2 startPix = interaction.getInitialPixelPosition();
+    if( this.enablePixelDelta )
+      startPix = axisEndPix;
+
+    Vec2 startVec = startPix - pixCenter;
+    Float32 startLen = startVec.length();
+    if( startLen < 4 )
+      return;//will create too large movements
+
+    Vec2 pixDir = startVec / startLen;
+
+    if( this.enablePixelDelta ) {
+      // Simply use a factor of the pixel delta
+      Vec2 pixelDelta = interaction.getCurrentPixelPosition() - interaction.getInitialPixelPosition();
+
+      // Flip if not aligned with axis
+      if( pixDir.x < 0 )
+        pixelDelta.x = -pixelDelta.x;
+      if( pixDir.y < 0 )
+        pixelDelta.y = -pixelDelta.y;
+
+      factor = ( ( pixelDelta.x + pixelDelta.y ) + this.pixelsForFirstFactor2) / this.pixelsForFirstFactor2;
+    } else {
+
+      Vec2 pixDelta = interaction.getCurrentPixelPosition() - pixCenter;
+      Float32 newLen = pixDir.dot( pixDelta );
+      factor = newLen / startLen;
+    }
+
+    // Block factor 0
+    if( abs( factor ) < 1e-3 )
+      factor = factor < 0 ? -1e-3 : 1e-3;
+
+    // Apply factor along axis
+    Quat rot;
+    rot.setFrom2Vectors( direction, Vec3(1,0,0), true );
+    Mat33 xScaling;
+    xScaling.setDiagonal( Vec3(factor, 1, 1) );
+    Mat44 scaleMat;
+    scaleMat.setFromMat33(rot.inverse().toMat33() * xScaling * rot.toMat33());
+
+    // Apply on pivot center
+    transfo.setTranslation( transfo.translation() - center );
+    transfo = scaleMat * transfo;
+    transfo.setTranslation( transfo.translation() + center );
+
+    this.lastFactor = factor;
+    this.setTransform( transfo );
+  }
+}// namespace Tool

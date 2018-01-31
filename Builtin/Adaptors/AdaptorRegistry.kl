@@ -1,0 +1,171 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/*SPHINX-description
+
+*/
+
+require FabricSynchronization;
+
+/// An ObjectAdaptor can bridge the data and functionality
+/// from a specific source type to a particular target.
+/// These should be initially registered with the :kl-ref:`CreateAdaptor`
+/// global function.
+interface ObjectAdaptor {
+  /// Updates to this new source. If not supported, returns false.
+  Boolean updateSource!( Ref<Object> source );
+  Ref<Object> getSource();
+};
+
+/// \internal
+struct _AdaptorKey {
+  Type sourceType;
+  String target;
+};
+
+/// \internal
+inline Boolean == (_AdaptorKey a, _AdaptorKey b) {
+  return a.sourceType == b.sourceType && a.target == b.target;
+}
+
+inline UInt32 _AdaptorKey.hash() {
+  return this.sourceType.hash() ^ this.target.hash();
+}
+
+/// \internal
+struct _AdaptorInfo {
+  Type adaptorType;
+  Boolean isObjectAdaptor;
+  //TODO: other information??
+};
+
+/// \internal
+object AdaptorRegistry {
+  SimpleLock lockVar;
+  _AdaptorInfo adaptors[];
+
+  UInt32 prototypesByKey[_AdaptorKey];
+};
+
+function AdaptorRegistry() {
+  this.lockVar = SimpleLock("AdaptorRegistry");
+}
+
+function AdaptorRegistry.registerAdaptor!( Type sourceType, String target, Type adaptorType ) {
+  _AdaptorKey key;
+  key.sourceType = sourceType;
+  key.target = target;
+
+  _AdaptorInfo info;
+  info.adaptorType = adaptorType;
+  info.isObjectAdaptor = adaptorType.isA( ObjectAdaptor );
+
+  {
+    AutoLock AL(this.lockVar);
+    UInt32 index = this.adaptors.size();
+    this.adaptors.push(info);
+    this.prototypesByKey[key] = index;
+  }
+}
+
+inline Boolean AdaptorRegistry.adaptorExists( Type sourceType, String target ) {
+  _AdaptorKey key;
+  key.sourceType = sourceType;
+  key.target = target;
+  Boolean exists;
+
+  AutoLock AL( this.lockVar );
+  while( true ) {
+    UInt32 index = this.prototypesByKey.get( key, UInt32Max );
+    exists = index != UInt32Max;
+    if( exists )
+      break;
+    key.sourceType = key.sourceType.parentType();
+    if( key.sourceType == None )
+      break;
+  }
+  return exists;
+}
+
+function Object AdaptorRegistry.createAdaptor( Ref<Object> wrapped, Type sourceType, String target ) {
+  _AdaptorKey key;
+  key.sourceType = sourceType;
+  key.target = target;
+
+  Type adaptorType;
+  Boolean isObjectAdaptor;
+  {
+    AutoLock AL(this.lockVar);
+    while( true ) {
+      UInt32 index = this.prototypesByKey.get( key, UInt32Max );
+      if( index != UInt32Max ) {
+        adaptorType = this.adaptors[index].adaptorType;
+        isObjectAdaptor = this.adaptors[index].isObjectAdaptor;
+        break;
+      }
+      key.sourceType = key.sourceType.parentType();
+      if( key.sourceType == None )
+        break;
+    }
+  }
+  if( adaptorType == None ) {
+    //Don't report errors
+    return null;
+  }
+  Object adaptor = adaptorType.createNew();
+  if( wrapped ) {
+    if( isObjectAdaptor ) {
+      Ref<ObjectAdaptor> objectAdaptor = adaptor;
+      objectAdaptor.updateSource(wrapped);
+    } else
+      setError("AdaptorRegistry.createAdaptor: adaptor registered for type " + sourceType + " and target " + target + " cannot wrap the input object because is not an ObjectAdaptor");
+  }
+  return adaptor;
+}
+
+inline Object AdaptorRegistry.createAdaptor!( Type sourceType, String target ) {
+  Ref<Object> wrapped = null;
+  return this.createAdaptor( wrapped, sourceType, target );
+}
+
+inline Object AdaptorRegistry.createAdaptor!( Ref<Object> wrapped, String target ) {
+  return this.createAdaptor( wrapped, wrapped.type(), target );
+}
+
+inline Ref<AdaptorRegistry> GetAdaptorRegistry() = "_getAdaptorRegistry";
+
+/// Registers a [sourceType -> adaptorType] adaptor for `target`.
+///
+/// For example: RegisterAdaptor( Vec3Attribute, RTROGLAdaptorTarget, Vec3AttributeToRTR );
+inline RegisterAdaptor( Type sourceType, String target, Type adaptorType ) {
+  Ref<AdaptorRegistry> adaptors = GetAdaptorRegistry();
+  adaptors.registerAdaptor( sourceType, target, adaptorType );
+}
+
+/// Creates an adaptor from `sourceType` to `target`.
+/// Returns null if no suitable adaptor was registered
+///
+/// For example, if `Vec3AttributeToRTR` was registered as an adaptor from
+/// `Vec3Attribute` to `RTROGLAdaptorTarget`, then a `Vec3AttributeToRTR`
+/// will be returned.
+inline Object CreateAdaptor( Type sourceType, String target ) {
+  Ref<AdaptorRegistry> adaptors = GetAdaptorRegistry();
+  return adaptors.createAdaptor( sourceType, target );
+}
+
+/// Creates an adaptor from `sourceType` to `target`, and initializes it
+/// with the `wrapped` source object.
+/// Returns null if no suitable adaptor was registered
+inline Object CreateAdaptor( Ref<Object> wrapped, Type sourceType, String target  ) {
+  Ref<AdaptorRegistry> adaptors = GetAdaptorRegistry();
+  return adaptors.createAdaptor( wrapped, sourceType, target );
+}
+
+/// Creates an adaptor from `wrapped.type()` to `target`, and initializes it
+/// with the `wrapped` source object.
+/// Returns null if no suitable adaptor was registered
+inline Object CreateAdaptor( Ref<Object> wrapped, String target  ) {
+  Ref<AdaptorRegistry> adaptors = GetAdaptorRegistry();
+  return adaptors.createAdaptor( wrapped, wrapped.type(), target );
+}

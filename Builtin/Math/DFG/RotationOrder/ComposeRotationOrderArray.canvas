@@ -1,0 +1,63 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/RotationOrder.html"
+    },
+  "title" : "-> RotationOrder[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "order",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Integer[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Integer[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 0,\n  \"g\" : 191,\n  \"b\" : 232\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "RotationOrder[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "D54041015A0106A10373B11C9C9AD193",
+  "code" : "require Math;
+
+operator Math_RotationOrder_compose_task<<<index>>>(io RotationOrder[] result, in Integer[] order) {
+  result[index].order = order[index < order.size() ? index : order.size() - 1];
+}
+
+dfgEntry {
+  if(order.size() == 0) return;
+  Size task_size = 0;
+  if(task_size < order.size()) task_size = order.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size i = 0; i < task_size; i++) {
+      Math_RotationOrder_compose_task(i, result, order);
+    }
+  } else {
+    Math_RotationOrder_compose_task<<<task_size>>>(result, order);
+  }
+}
+"
+  }

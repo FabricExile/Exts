@@ -1,0 +1,135 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Alembic;
+
+/**
+  The :kl-ref:`AlembicXformWriter` specializes the :kl-ref:`AlembicObjectWriter` interface for writing :kl-ref:`AlembicOXform` data. 
+  It can be created using the :kl-ref:`AlembicArchiveWriter.addXform` methods.
+  \example
+
+  require AlembicWrapper;
+  require FileIO;
+
+  operator entry() {
+    
+    FilePath path = FilePath('${TEMP}/xform.abc').expandEnvVars();
+
+    AlembicArchiveWriter archive(path.string());
+
+    Float64 times[];
+    times.push(0.0);
+    times.push(1.0);
+    times.push(2.0);
+
+    Integer ts = archive.addTimeSampling(times);
+    
+    AlembicXformWriter transform = archive.addXform('/xfo', ts);
+  
+    Xfo xfo;
+
+    xfo.tr = Vec3(1.0, 0.0, 0.0);
+    transform.writeSample(xfo.toMat44());
+
+    xfo.tr = Vec3(2.0, 0.0, 0.0);
+    transform.writeSample(xfo.toMat44());
+
+    xfo.tr = Vec3(3.0, 0.0, 0.0);
+    transform.writeSample(xfo.toMat44());
+
+    archive.reset();
+
+    report(path.exists());
+    report('Alembic file created: '+path.string());
+  }
+
+  \endexample
+  \seealso AlembicXformReader
+  \dfgArrayPexDisable true
+*/
+object AlembicXformWriter : AlembicObjectWriter{
+  /// \internal
+  private AlembicOXform _xform;
+  /// \internal
+  private AlembicOXformSchema _schema;
+  /// \internal
+  private AlembicXformSample _sample;
+  /// \internal
+  private UInt32 _numSamples;
+  /// \internal
+  private UInt32 _storedSamples;
+};
+
+/// \internal
+private function AlembicXformWriter(AlembicOObject parent, String name, SInt32 timeSampling) {
+  this._xform = AlembicOXform(parent, name, timeSampling);
+  this._schema = this._xform.getSchema();
+  this._numSamples = this._schema.getTimeSampling().getNumStoredTimes();
+  if(this._numSamples == 0)
+    this._numSamples = 1;
+  this._storedSamples = 0;
+  this._sample = AlembicXformSample();
+  this._sample.setInheritsXforms(true);
+}
+
+/// returns the full path of the wrapped AlembicOXform
+function String AlembicXformWriter.getPath() {
+  return this._xform.asOObject().getFullName();
+}
+
+/// returns true if this writer wraps a valid AlembicOXform
+function Boolean AlembicXformWriter.valid() {
+  return this._xform.valid();
+}
+
+/// clears all pointers and releases all alembic containers
+function AlembicXformWriter.reset!() {
+  this._xform.reset();
+  this._schema.reset();
+}
+
+/// returns the wrapped AlembicOObject
+function AlembicOObject AlembicXformWriter.getOObject() {
+  return this._xform.asOObject();
+}
+
+/// writes a single sample into the file based on the provided Mat44.
+function Boolean AlembicXformWriter.writeSample!(Mat44 mat) {
+
+  if(this == null)
+    return false;
+
+  if(this._storedSamples == this._numSamples) {
+    setError('AlembicXformWriter: Max number of samples reached.');
+    return false;
+  }
+  this._sample.setMatrix(mat.transpose());
+  this._schema.set(this._sample);
+  this._storedSamples++;
+  return true;
+}
+
+/// writes a single sample into the file based on the provided Mat44.
+function Boolean AlembicXformWriter.writeSample!(Mat44 mat, Box3 childBounds) {
+  if(this._storedSamples == this._numSamples) {
+    // setError('AlembicXformWriter: Max number of samples reached.');
+    return false;
+  }
+  this._sample.setMatrix(mat.transpose());
+  this._schema.set(this._sample);
+
+  AlembicOScalarProperty scalarProp = this._schema.getChildBoundsProperty();
+  if( scalarProp ) {
+    AlembicOBox3Property boxProp( scalarProp );
+    boxProp.set(childBounds);
+  }
+
+  this._storedSamples++;
+  return true;
+}
+
+/// writes a single sample into the file based on the provided Xfo.
+function Boolean AlembicXformWriter.writeSample!(Xfo xfo) {
+  return this.writeSample(xfo.toMat44());
+}

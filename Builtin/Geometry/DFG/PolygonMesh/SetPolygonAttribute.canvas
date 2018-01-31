@@ -1,0 +1,69 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/PolygonMesh.html",
+    "uiTooltip" : "Sets an attribute's value for a specific polygon point. If the value differs from a previously set value at other\nneighbors of around the connected point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.\nSee :kl-ref:`PolygonMesh.getPointAttributeIndex` for an example of usage.\n\n Supported by PolygonMesh"
+    },
+  "title" : "SetPolygonAttribute",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "PolygonMesh"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "polygon",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Size"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "polygonPointIndex",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Size"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "attribute",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Ref<ColorAttribute>"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 0,\n  \"b\" : 0\n  }"
+        },
+      "name" : "value",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Color"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "5359F8029A98A4E5A051130E2C6EB99E",
+  "code" : "require Geometry;
+
+dfgEntry {
+  Ref<ColorAttribute> attribute_ref = attribute;
+  this.setPolygonAttribute(polygon, polygonPointIndex, attribute_ref, value);
+}
+"
+  }

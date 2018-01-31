@@ -1,0 +1,251 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Util;
+
+alias UInt32 PackedIndexListElementKey;
+alias UInt32 PackedIndexListKey;
+
+/// \internal An element of a PackedIndexLists
+struct PackedIndexListElement {
+  UInt32 index;
+  ///0 -> none
+  UInt32 prev;
+  ///0 -> none
+  UInt32 next;
+};
+
+/**
+  The PackedIndexLists allows to store multiple double-linked lists of UInt32 values
+  into a single memory buffer.
+
+  /note List and element keys are not safe-guarded; a wrong usage will lead to unexpected results.
+
+  /example
+    require Containers;
+
+    function printList( PackedIndexLists lists, PackedIndexListKey listKey ) {
+      report("Elements:");
+      PackedIndexListKey key = listKey;
+      UInt32 index;
+      while( lists.getNextIndexAndIncrement( key, index ) )
+        report("  " + index );
+    }
+
+    operator entry(){
+
+      PackedIndexLists lists;
+
+      PackedIndexListKey list1 = lists.createList();
+      lists.listAddIndex( list1, 3 );
+
+      //Keep a key for element 9, as we will remove it later
+      PackedIndexListElementKey element9 = lists.listAddIndex( list1, 9 );
+
+      PackedIndexListKey list2 = lists.createList();
+      lists.listAddIndex( list2, 1 );
+      lists.listAddIndex( list2, 2 );
+
+      lists.listAddIndex( list1, 8 );
+
+      lists.listAddIndex( list2, 5 );
+
+      //Remove '9' from list1
+      lists.removeListElement( element9 );
+
+      printList( lists, list1 );
+      printList( lists, list2 );
+    }
+  /endexample
+*/
+struct PackedIndexLists {
+  /// \internal
+  PackedIndexListElement packedLists[];
+  /// \internal
+  IndexPool packedListsIndexPool;
+};
+
+/// \internal
+function PackedIndexLists() {
+  //Reserve entry 0 as NULL
+  UInt32 dummy;
+  this.packedLists.resize(1);
+  this.packedLists[0].index = InvalidIndex;
+  this.packedListsIndexPool.getFreeIndex(dummy);
+}
+
+/// clears all managed lists.
+function PackedIndexLists.clearAll!( Boolean deallocate ) {
+  if( deallocate ) {
+    this.packedLists.resize(1);
+    this.packedListsIndexPool.reset();
+    UInt32 dummy;
+    this.packedListsIndexPool.getFreeIndex(dummy);
+  }
+  else {
+    this.packedListsIndexPool.setAllAsUnused(true);
+  }
+}
+
+/// \internal
+inline PackedIndexListElementKey PackedIndexLists.createNewListElement!() {
+  UInt32 key;
+  if( this.packedListsIndexPool.getFreeIndex( key ) )
+    this.packedLists.resize( key+1 );
+  return key;
+}
+
+/// returns a new list. A key for identifying the list is returned.
+inline PackedIndexListKey PackedIndexLists.createList!() {
+  UInt32 key = this.createNewListElement();
+  this.packedLists[key].index = InvalidIndex;
+  this.packedLists[key].prev = 0;
+  this.packedLists[key].next = 0;
+  return key;
+}
+
+/// returns true if a given list is empty
+inline Boolean PackedIndexLists.listIsEmpty?( PackedIndexListKey listKey ) {
+  //should assert that prev==0 else wrong listKey
+  return this.packedLists[listKey].next == 0 && this.packedLists[listKey].index == InvalidIndex;
+}
+
+/// adds an index to an existing list.
+inline PackedIndexListElementKey PackedIndexLists.listAddIndex!( PackedIndexListKey listKey, UInt32 index ) {
+  UInt32 key;
+  if( this.packedLists[listKey].index == InvalidIndex ) {
+    if( listKey == 0 )
+      report( "Error: PackedIndexLists.listAddIndex: adding to NULL reserved list");//assert
+    else {
+      this.packedLists[listKey].index = index;
+      key = listKey;
+    }
+  } else {
+    //Insert after the head (head must remain valid and its contained index must not change)
+    key = this.createNewListElement();
+    UInt32 next = this.packedLists[listKey].next;
+    this.packedLists[key].index = index;
+    this.packedLists[key].next = next;
+    this.packedLists[key].prev = listKey;
+    this.packedLists[listKey].next = key;
+    if( next )
+      this.packedLists[next].prev = key;
+  }
+  return key;
+}
+
+/// removes a list element. After the removal, the element key is no longer valid, however
+/// other elements of the list remain valid.
+inline PackedIndexLists.removeListElement!( PackedIndexListElementKey elementKey ) {
+  if( elementKey != 0 )
+  {
+    UInt32 prev = this.packedLists[elementKey].prev;
+    if( prev == 0 ) // head of the list: clear the element, but don't free the list item
+      this.packedLists[elementKey].index = InvalidIndex;
+    else {
+      UInt32 next = this.packedLists[elementKey].next;
+      this.packedLists[prev].next = next;
+      this.packedLists[next].prev = prev;
+      this.packedListsIndexPool.unusedIndex( elementKey );
+    }
+  }
+}
+
+/// If true is returned, this retrieves the next UInt32 element of the list and goes to the next one.
+/// If false is returned, there are no other elements. See PackedIndexLists for an example of usage.
+/// \param index Stored UInt32 value
+/// \param elementKey List iterator (will be incremented to point to the next element)
+inline Boolean PackedIndexLists.getNextIndexAndIncrement?( io PackedIndexListElementKey elementKey, io UInt32 index ) {
+  if( elementKey == 0 )
+    return false;
+  index = this.packedLists[elementKey].index;
+  elementKey = this.packedLists[elementKey].next;
+  if( index == InvalidIndex )
+    return this.getNextIndexAndIncrement( elementKey, index );
+  else
+    return true;
+}
+
+/// removes a complete list from the PackedIndexLists
+inline PackedIndexLists.deleteList!( PackedIndexListKey listKey ) {
+  //TODO: if debug -> set the index = InvalidIndex, and prev & next to 0
+  PackedIndexListKey listKeyIter = listKey;
+  while( listKeyIter != 0 ) {
+    this.packedListsIndexPool.unusedIndex( listKeyIter );
+    listKeyIter = this.packedLists[listKeyIter].next;
+  }
+}
+
+/// empties an existing list
+inline PackedIndexLists.clearList!( PackedIndexListKey listKey ) {
+  //TODO: if debug -> set the index = InvalidIndex, and prev & next to 0
+  PackedIndexListKey listKeyIter = listKey;
+  while( listKeyIter != 0 ) {
+    if( listKeyIter == listKey ) {
+      this.packedLists[listKeyIter].index = InvalidIndex;
+      this.packedLists[listKeyIter].next = 0;
+    } else
+      this.packedListsIndexPool.unusedIndex( listKeyIter );
+    listKeyIter = this.packedLists[listKeyIter].next;
+  }
+}
+
+/// move one element from an existing list to another one
+inline PackedIndexListElementKey PackedIndexLists.moveElementToList!( PackedIndexListElementKey elementKey, PackedIndexListKey targetListKey ) {
+  if( elementKey == 0 )
+    return 0;
+  UInt32 prev = this.packedLists[elementKey].prev;
+  if( prev == 0 ) { // head of the list: clear the element, but don't free the list item
+    Size index = this.packedLists[elementKey].index;
+    this.packedLists[elementKey].index = InvalidIndex;
+    return this.listAddIndex( targetListKey, index );
+  } else {
+    //Else we can reuse the element key
+    UInt32 next = this.packedLists[elementKey].next;
+    this.packedLists[prev].next = next;
+    if( next )
+      this.packedLists[next].prev = prev;
+    this.packedLists[elementKey].next = this.packedLists[targetListKey].next;
+    this.packedLists[elementKey].prev = targetListKey;
+
+    UInt32 listNext = this.packedLists[targetListKey].next;
+    this.packedLists[targetListKey].next = elementKey;
+    if( listNext )
+      this.packedLists[listNext].prev = elementKey;
+    return elementKey;
+  }
+}
+
+/// returns the size of a list.
+/// \note This requires a full traversal of the list.
+function Size PackedIndexLists.getListSize_slow?( PackedIndexListKey listKey ) {
+  //Note: use this only for debugging!
+  if( listKey == 0 )
+    return 0;
+
+  if( this.packedLists[listKey].prev != 0 )
+    report("Error: PackedIndexLists.getListSize_slow: invalid list key");
+
+  Size dummy, count;
+  PackedIndexListKey key = listKey;
+  while( this.getNextIndexAndIncrement( key, dummy ) )
+    ++count;
+  return count;
+}
+
+/// returns a string containing the description of a given list
+function String PackedIndexLists.getListDesc?( PackedIndexListKey listKey ) {
+  Size count = this.getListSize_slow( listKey );
+  String s = "list: count=" + count + " [";
+  Size index;
+  PackedIndexListKey key = listKey;
+  while( this.getNextIndexAndIncrement( key, index ) )
+    s += index + ",";
+  return s + "]";
+}
+
+/// \internal returns the memory usage of this container
+function Size PackedIndexLists.getMemUsage?() {
+  return this.packedLists.size()*4*3 + this.packedListsIndexPool.getMemUsage();
+}

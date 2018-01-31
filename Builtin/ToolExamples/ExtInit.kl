@@ -1,0 +1,22 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+// Extension initialization callback
+namespace ToolExamples {
+  operator ExtDidLoad() {
+    // Register commands defined in this extension at extension loading time
+    Ref<CommandRegistry> commandRegistry = GetCommandRegistry();
+    commandRegistry.registerCommand( "AddMoveCurvePointDeltas", AddMoveCurvePointDeltasCommand );
+    commandRegistry.registerCommand( "DeleteCurvePoints", DeleteCurvePointsCommand );
+    commandRegistry.registerCommand( "AddCurvePoint", AddCurvePointCommand );
+    commandRegistry.registerCommand( "AddPointsExampleCommand", AddPointsExampleCommand );
+    commandRegistry.registerCommand( "AddPersistablePointsExampleCommand", AddPersistablePointsExampleCommand );
+    commandRegistry.registerCommand( "DrawPointsExampleCommand", DrawPointsExampleCommand );
+    commandRegistry.registerCommand( "DrawColoredPointsExampleCommand", DrawColoredPointsExampleCommand );
+    commandRegistry.registerCommand( "MoveChainJointExampleCommand", MoveChainJointExampleCommand );
+
+    Ref<Tool::ToolsManager> toolManager = Tool::GetToolsManager();
+    toolManager.registerPathValueTool( MoveChainInlineDrawingExampleTool, ChainExampleData );
+  }
+}

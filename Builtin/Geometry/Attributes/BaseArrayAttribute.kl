@@ -1,0 +1,123 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+Common functionality for array attribute objects
+\internal
+*/
+object BaseArrayAttribute : BaseAttribute{
+  ArrayAttributeData internalData;
+  UInt32 memoryLocation; // CPU = 0, GPU = 1, VBO_backed_GPU = 2;
+};
+
+function StatisticRecord[] BaseArrayAttribute.getStatistics() {
+  StatisticRecord stats[] = this.parent.getStatistics();
+  stats.push( StatisticRecord( Statistic_MemoryUsage, this.internalData.memUsage() ) );
+  return stats;
+}
+
+/// \dfgPresetOmit
+BaseArrayAttribute.cloneMembersTo( io BaseArrayAttribute that ) {
+  //The difference with default clone() is that new.parent.autoStat will point to 'new' (from constructor)
+  this.parent.cloneMembersTo(that);//Copies all but the values
+  this.internalData.cloneMembersTo( that.internalData );
+}
+
+inline Data BaseArrayAttribute.data() {
+  return this.internalData.dataAllocator.data.data();
+}
+
+inline UInt32 BaseArrayAttribute.getElementsMemType() {
+  return this.memoryLocation;
+}
+
+inline BaseArrayAttribute.convertToGPU!( ) {
+  this.internalData.convertToGPU();
+  this.memoryLocation = 1;
+  this.incrementVersion();
+}
+
+inline BaseArrayAttribute.convertToCPU!( ) {
+  this.internalData.convertToCPU();
+  this.memoryLocation = 0;
+  this.incrementVersion();
+}
+
+function BaseArrayAttribute.resize!( Size count ) {
+  this.parent.resize(count);
+  this.internalData.resize( count );
+}
+
+inline Boolean BaseArrayAttribute.checkConsistency() {
+  if( this.size() != this.internalData.size() )
+    return false;
+  return this.parent.checkConsistency();
+}
+
+
+inline BaseArrayAttribute.copyValue!( Size sourceIndex, Size targetIndex ) {
+  this.internalData.copyValue( sourceIndex, targetIndex );
+}
+
+inline BaseArrayAttribute.copyValue!( Ref<Object> sourceAttr, Size sourceIndex, Size targetIndex ) {
+  Ref<BaseArrayAttribute> source = sourceAttr;
+  this.internalData.copyValue( source.internalData, sourceIndex, targetIndex );
+}
+
+inline BaseArrayAttribute.copyFrom!( Ref<Object> otherAttr ) {
+  // [andrew 20150202] if this.internalData lives on GPU we need to first
+  // reset it before copying in the new data due to some of the checks
+  // that take place in the .copyFrom() method (even if the new data
+  // also lives on GPU)
+  if (this.getElementsMemType() == Fabric_MemType_GPU)
+    this.internalData = ArrayAttributeData();
+  this.parent.copyFrom( otherAttr );
+  Ref<BaseArrayAttribute> other = otherAttr;
+  this.internalData.copyFrom( other.internalData );
+}
+
+inline BaseArrayAttribute.setCount!( UInt32 index, UInt32 count ) {
+  this.internalData.setCount( index, count );
+}
+
+inline UInt32 BaseArrayAttribute.getCount( UInt32 index ) {
+  return this.internalData.getCount( index );
+}
+
+/// We cannot merge arrays automatically; just keep the one with highest index.
+/// \internal
+inline UInt32 BaseArrayAttribute.getLinearCombinationIndex( LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights ) {
+  Scalar highestWeight = -1;
+  UInt32 highestWeightIndex = InvalidIndex;
+
+  Size count = sourceIndices.size();
+  for( Size i = 0; i < count; ++i ) {
+    Scalar weight = sourceWeights.get( i );
+    if( weight > highestWeight ) {
+      highestWeight = weight;
+      highestWeightIndex = sourceIndices.get( i );
+    }
+  }
+  return highestWeightIndex;
+}
+
+// We cannot merge arrays automatically; just keep the one with highest index.
+inline BaseArrayAttribute.linearCombine!( Ref<Object> sourceAttr, LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights, Size targetIndex ) {
+  UInt32 index = this.getLinearCombinationIndex( sourceIndices, sourceWeights );
+  if( index != InvalidIndex )
+    this.copyValue( sourceAttr, index, targetIndex );
+}
+
+/// Unsupported since we have a variable size per item
+inline BaseArrayAttribute.setFromScalar!( Size index, LocalL16ScalarArray value ) {
+}
+
+/// Unsupported since we have a variable size per item
+inline Size BaseArrayAttribute.getScalarValueSize() {
+  return 0;
+}
+
+inline Boolean BaseArrayAttribute.equalValues( Size index1, Size index2 ) {
+  return this.internalData.equalValues( index1, index2 );
+}

@@ -1,0 +1,58 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "sets the current sample's horizontalAperture value\n\nSupported types:\n  this: AlembicCameraWriter\n  value: Float64\n"
+    },
+  "title" : "SetHorizontalAperture[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicCameraWriter[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "value",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float64[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float64[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "B4897DE99B03189CD8A3F428180825AA",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicCameraWriter_setHorizontalAperture_task<<<index>>>(
+  io AlembicCameraWriter[] this
+, in Float64[] value
+) {
+  this[index < this.size() ? index : this.size() - 1].setHorizontalAperture(value[index < value.size() ? index : value.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( value.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < value.size()) task_size = value.size();
+  for(Size index = 0; index < task_size; index++) {
+    AlembicWrapper_AlembicCameraWriter_setHorizontalAperture_task(index, this, value);
+  }
+}
+"
+  }

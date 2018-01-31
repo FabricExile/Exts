@@ -1,0 +1,106 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Ray.html",
+    "uiTooltip" : "Returns the distance from an point in 3d space to the the ray.\n\n Supported by Ray"
+    },
+  "title" : "DistanceToPoint[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Ray[]" : [
+          {
+            "start" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              },
+            "direction" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Ray[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "point",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "rayParam",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "4765F3CB9B1B10A2D25C09A7794561AB",
+  "code" : "require Math;
+
+operator Math_Ray_distanceToPoint_task<<<index>>>(
+  io Scalar[] result
+, in Ray[] this
+, in Vec3[] point
+, out Scalar[] rayParam
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].distanceToPoint(point[index < point.size() ? index : point.size() - 1], rayParam[index < rayParam.size() ? index : rayParam.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( point.size() == 0) return;
+  if( rayParam.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < point.size()) task_size = point.size();
+  result.resize(task_size);
+  rayParam.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Ray_distanceToPoint_task(index, result, this, point, rayParam);
+    }
+  } else {
+    Math_Ray_distanceToPoint_task<<<task_size>>>(result, this, point, rayParam);
+  }
+}
+"
+  }

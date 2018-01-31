@@ -1,0 +1,293 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+    "uiNodeColor" : "{\n  \"r\" : 132,\n  \"g\" : 106,\n  \"b\" : 97\n  }",
+    "uiTooltip" : "Finds an object within an object array using a block for the condition."
+    },
+  "title" : "findObject",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Execute" : {}
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "objects",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "ImporterObject[]" : []
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Ref<ImporterObject>[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "defaultValues" : {
+        "ImporterObject" : null
+        },
+      "execPortType" : "Out",
+      "typeSpec" : "Ref<ImporterObject>"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "found",
+      "nodePortType" : "In",
+      "defaultValues" : {
+        "Boolean" : false
+        },
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean"
+      }
+    ],
+  "blocks" : [
+    {
+      "objectType" : "ExecBlock",
+      "metadata" : {
+        "uiGraphPos" : "{\"x\":0.0,\"y\":0.0}"
+        },
+      "name" : "condition",
+      "ports" : [
+        {
+          "objectType" : "ExecBlockPort",
+          "name" : "matches",
+          "nodePortType" : "Out",
+          "outsidePortType" : "Out",
+          "typeSpec" : "Boolean"
+          },
+        {
+          "objectType" : "ExecBlockPort",
+          "name" : "inObject",
+          "nodePortType" : "In",
+          "outsidePortType" : "In",
+          "typeSpec" : "Ref<ImporterObject>"
+          }
+        ],
+      "defaultExec" : {
+        "objectType" : "Graph",
+        "metadata" : {
+          "uiGraphZoom" : "{\n  \"value\" : 1.0\n  }",
+          "uiGraphPan" : "{\n  \"x\" : 628.0,\n  \"y\" : 136.5\n  }"
+          },
+        "title" : "",
+        "ports" : [
+          {
+            "objectType" : "ExecPort",
+            "name" : "path",
+            "nodePortType" : "Out",
+            "defaultValues" : {
+              "String" : ""
+              },
+            "execPortType" : "In",
+            "typeSpec" : "String"
+            }
+          ],
+        "fixedPorts" : [
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "matches",
+            "nodePortType" : "In",
+            "outsidePortType" : "Out"
+            },
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "inObject",
+            "nodePortType" : "Out",
+            "outsidePortType" : "In"
+            }
+          ],
+        "extDeps" : {},
+        "nodes" : [
+          {
+            "objectType" : "Inst",
+            "metadata" : {
+              "uiGraphPos" : "{\"x\":215.0,\"y\":90.0}"
+              },
+            "name" : "path_1",
+            "ports" : [
+              {
+                "objectType" : "InstPort",
+                "name" : "exec",
+                "nodePortType" : "IO"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "this",
+                "nodePortType" : "In"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "result",
+                "nodePortType" : "Out"
+                }
+              ],
+            "executable" : "Fabric.Compounds.IO.Importer.Object.path",
+            "presetGUID" : "052BB2BDFB905F6B7970BAEF89D2C7B9"
+            },
+          {
+            "objectType" : "Inst",
+            "metadata" : {
+              "uiGraphPos" : "{\"x\":405.0,\"y\":11.0}"
+              },
+            "name" : "IsNull_1",
+            "ports" : [
+              {
+                "objectType" : "InstPort",
+                "name" : "exec",
+                "nodePortType" : "IO"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "obj",
+                "nodePortType" : "In"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "result",
+                "nodePortType" : "Out"
+                }
+              ],
+            "executable" : "Fabric.Core.Object.IsNull",
+            "presetGUID" : "84AEE2708BDEAAFDEBA207A1733A052F"
+            },
+          {
+            "objectType" : "Inst",
+            "metadata" : {
+              "uiGraphPos" : "{\"x\":789.0,\"y\":52.0}"
+              },
+            "name" : "And_1",
+            "ports" : [
+              {
+                "objectType" : "InstPort",
+                "name" : "exec",
+                "nodePortType" : "IO"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "lhs",
+                "nodePortType" : "In"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "rhs",
+                "nodePortType" : "In"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "result",
+                "nodePortType" : "Out"
+                }
+              ],
+            "executable" : "Fabric.Core.Logic.And",
+            "presetGUID" : "5C4DF279926CC4AFD90CCD43A2E07655"
+            },
+          {
+            "objectType" : "Inst",
+            "metadata" : {
+              "uiGraphPos" : "{\"x\":594.0,\"y\":28.0}"
+              },
+            "name" : "Not_1",
+            "ports" : [
+              {
+                "objectType" : "InstPort",
+                "name" : "exec",
+                "nodePortType" : "IO"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "value",
+                "nodePortType" : "In"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "result",
+                "nodePortType" : "Out"
+                }
+              ],
+            "executable" : "Fabric.Core.Logic.Not",
+            "presetGUID" : "B8FE3CDCF84BBE1B3A07C80E724FB147"
+            },
+          {
+            "objectType" : "Inst",
+            "metadata" : {
+              "uiGraphPos" : "{\"x\":386.0,\"y\":199.0}"
+              },
+            "name" : "Eq_1",
+            "ports" : [
+              {
+                "objectType" : "InstPort",
+                "name" : "exec",
+                "nodePortType" : "IO"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "lhs",
+                "nodePortType" : "In"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "rhs",
+                "nodePortType" : "In"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "result",
+                "nodePortType" : "Out"
+                }
+              ],
+            "executable" : "Fabric.Core.Logic.Eq",
+            "presetGUID" : "EE5CD58CD54E7460D6011FA855D8C6EB"
+            }
+          ],
+        "connections" : {
+          "inObject" : [
+            "IsNull_1.obj",
+            "path_1.this"
+            ],
+          "path" : [
+            "Eq_1.rhs"
+            ],
+          "path_1.result" : [
+            "Eq_1.lhs"
+            ],
+          "IsNull_1.result" : [
+            "Not_1.value"
+            ],
+          "And_1.result" : [
+            "matches"
+            ],
+          "Not_1.result" : [
+            "And_1.lhs"
+            ],
+          "Eq_1.result" : [
+            "And_1.rhs"
+            ]
+          }
+        }
+      }
+    ],
+  "extDeps" : {
+    "AssetPatterns" : "*"
+    },
+  "presetGUID" : "A7AF0A88EFD3052C132E562861156D13",
+  "code" : "dfgEntry {
+  found = false;
+  for(Size i=0;i<objects.size();i++) {
+    Boolean matches = dfgPullBlockPort(\"condition.matches\", objects[i]);
+    if(matches) {
+      result = objects[i];
+      found = true;
+      break;
+    }
+  }
+}
+"
+  }

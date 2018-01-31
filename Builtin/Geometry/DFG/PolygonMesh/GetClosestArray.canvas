@@ -1,0 +1,93 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/SpatialQueryable.html",
+    "uiTooltip" : "A shortcut to :kl-ref:`SpatialQuery.getClosest`, without the need to call\n:kl-ref:`SpatialQueryable.beginSpatialQuery` and :kl-ref:`SpatialQueryable.endSpatialQuery`.\nSee :kl-ref:`SpatialQuery.getClosest` for more details.\n\n\n Supported by SpatialQueryable,Points,Lines,PolygonMesh"
+    },
+  "title" : "GetClosest[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "PolygonMesh"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "position",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "scaling",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Vec3"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "maxUnscaledDistance",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Scalar"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "GeometryLocation[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "9D39DE8545E42FF6E21986D02A2BCE3F",
+  "code" : "
+require Geometry;
+
+operator geometry_polygonmesh_getclosest_task<<<index>>>(
+  PolygonMesh this,
+  Vec3 position[],
+  Vec3 scaling,
+  Scalar maxUnscaledDistance,
+  io GeometryLocation result[]
+) {
+  result[index] = this.getClosest(position[index], scaling, maxUnscaledDistance);
+}
+
+dfgEntry {
+  if(position.size() == 0) return;
+  result.resize(position.size());
+
+  GenericValueContainer options = GenericValueContainer();
+  this.prepareForSpatialQueries(result.size(), options);
+
+  if(result.size() < 128)
+  {
+    for(Size i=0;i<result.size();i++)
+      geometry_polygonmesh_getclosest_task(i, this, position, scaling, maxUnscaledDistance, result);
+  }
+  else
+  {
+    geometry_polygonmesh_getclosest_task<<<result.size()>>>(this, position, scaling, maxUnscaledDistance, result);
+  }
+}
+"
+  }

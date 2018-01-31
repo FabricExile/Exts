@@ -1,0 +1,695 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// returns the value in the property as a Boolean.
+/// this method interpolates values between frames.
+function Boolean AlembicPropertyReader.readBooleanSample!(Float64 time) {
+  if(this.scalarProperty == null)
+    return false;
+  if(this.dataType.getExtent() != 1)
+    return false;
+  if(this.numSamples == 0)
+    return false;
+
+  AlembicSampleInfo info(time, this.timeSampling, this.numSamples);
+  this.info = info;
+
+  AlembicIBooleanProperty specializedProp = this.specializedProp;
+  Boolean succeededOnce = specializedProp != null;
+  if(!succeededOnce)
+    specializedProp = AlembicIBooleanProperty(this.scalarProperty);
+
+  Boolean a = specializedProp.get(AlembicISampleSelector(this.info.indexA));
+  if(this.info.requiresInterpolation()) {
+    Boolean b = specializedProp.get(AlembicISampleSelector(this.info.indexB));
+    a = this.info.fraction > 0.5 ? b : a;
+  }
+
+  if(!succeededOnce) {
+    String error = getLastError();
+    if(error.length() > 0)
+      return false;
+    this.specializedProp = specializedProp;
+  }
+
+  return a;
+}
+
+/// returns the value in the property as a SInt8.
+/// this method interpolates values between frames.
+function SInt8 AlembicPropertyReader.readSInt8Sample!(Float64 time) {
+  if(this.scalarProperty == null)
+    return 0;
+  if(this.dataType.getExtent() != 1)
+    return 0;
+  if(this.numSamples == 0)
+    return 0;
+
+  AlembicSampleInfo info(time, this.timeSampling, this.numSamples);
+  this.info = info;
+
+  AlembicISInt8Property specializedProp = this.specializedProp;
+  Boolean succeededOnce = specializedProp != null;
+  if(!succeededOnce)
+    specializedProp = AlembicISInt8Property(this.scalarProperty);
+
+  SInt8 a = specializedProp.get(AlembicISampleSelector(this.info.indexA));
+  if(this.info.requiresInterpolation()) {
+    SInt8 b = specializedProp.get(AlembicISampleSelector(this.info.indexB));
+    a = SInt8(Float64(a) * this.info.ifraction + Float64(b) * this.info.fraction);
+  }
+
+  if(!succeededOnce) {
+    String error = getLastError();
+    if(error.length() > 0)
+      return 0;
+    this.specializedProp = specializedProp;
+  }
+
+  return a;
+}
+
+/// returns the value in the property as a SInt16.
+/// this method interpolates values between frames.
+function SInt16 AlembicPropertyReader.readSInt16Sample!(Float64 time) {
+  if(this.scalarProperty == null)
+    return 0;
+  if(this.dataType.getExtent() != 1)
+    return 0;
+  if(this.numSamples == 0)
+    return 0;
+
+  AlembicSampleInfo info(time, this.timeSampling, this.numSamples);
+  this.info = info;
+
+  AlembicISInt16Property specializedProp = this.specializedProp;
+  Boolean succeededOnce = specializedProp != null;
+  if(!succeededOnce)
+    specializedProp = AlembicISInt16Property(this.scalarProperty);
+
+  SInt16 a = specializedProp.get(AlembicISampleSelector(this.info.indexA));
+  if(this.info.requiresInterpolation()) {
+    SInt16 b = specializedProp.get(AlembicISampleSelector(this.info.indexB));
+    a = SInt16(Float64(a) * this.info.ifraction + Float64(b) * this.info.fraction);
+  }
+
+  if(!succeededOnce) {
+    String error = getLastError();
+    if(error.length() > 0)
+      return 0;
+    this.specializedProp = specializedProp;
+  }
+
+  return a;
+}
+
+/// returns the value in the property as a SInt32.
+/// this method interpolates values between frames.
+function SInt32 AlembicPropertyReader.readSInt32Sample!(Float64 time) {
+  if(this.scalarProperty == null)
+    return 0;
+  if(this.dataType.getExtent() != 1)
+    return 0;
+  if(this.numSamples == 0)
+    return 0;
+
+  AlembicSampleInfo info(time, this.timeSampling, this.numSamples);
+  this.info = info;
+
+  AlembicISInt32Property specializedProp = this.specializedProp;
+  Boolean succeededOnce = specializedProp != null;
+  if(!succeededOnce)
+    specializedProp = AlembicISInt32Property(this.scalarProperty);
+
+  SInt32 a = specializedProp.get(AlembicISampleSelector(this.info.indexA));
+  if(this.info.requiresInterpolation()) {
+    SInt32 b = specializedProp.get(AlembicISampleSelector(this.info.indexB));
+    a = SInt32(Float64(a) * this.info.ifraction + Float64(b) * this.info.fraction);
+  }
+
+  if(!succeededOnce) {
+    String error = getLastError();
+    if(error.length() > 0)
+      return 0;
+    this.specializedProp = specializedProp;
+  }
+
+  return a;
+}
+
+/// returns the value in the property as a SInt64.
+/// this method interpolates values between frames.
+function SInt64 AlembicPropertyReader.readSInt64Sample!(Float64 time) {
+  if(this.scalarProperty == null)
+    return 0;
+  if(this.dataType.getExtent() != 1)
+    return 0;
+  if(this.numSamples == 0)
+    return 0;
+
+  AlembicSampleInfo info(time, this.timeSampling, this.numSamples);
+  this.info = info;
+
+  AlembicISInt64Property specializedProp = this.specializedProp;
+  Boolean succeededOnce = specializedProp != null;
+  if(!succeededOnce)
+    specializedProp = AlembicISInt64Property(this.scalarProperty);
+
+  SInt64 a = specializedProp.get(AlembicISampleSelector(this.info.indexA));
+  if(this.info.requiresInterpolation()) {
+    SInt64 b = specializedProp.get(AlembicISampleSelector(this.info.indexB));
+    a = SInt64(Float64(a) * this.info.ifraction + Float64(b) * this.info.fraction);
+  }
+
+  if(!succeededOnce) {
+    String error = getLastError();
+    if(error.length() > 0)
+      return 0;
+    this.specializedProp = specializedProp;
+  }
+
+  return a;
+}
+
+/// returns the value in the property as a UInt8.
+/// this method interpolates values between frames.
+function UInt8 AlembicPropertyReader.readUInt8Sample!(Float64 time) {
+  if(this.scalarProperty == null)
+    return 0;
+  if(this.dataType.getExtent() != 1)
+    return 0;
+  if(this.numSamples == 0)
+    return 0;
+
+  AlembicSampleInfo info(time, this.timeSampling, this.numSamples);
+  this.info = info;
+
+  AlembicIUInt8Property specializedProp = this.specializedProp;
+  Boolean succeededOnce = specializedProp != null;
+  if(!succeededOnce)
+    specializedProp = AlembicIUInt8Property(this.scalarProperty);
+
+  UInt8 a = specializedProp.get(AlembicISampleSelector(this.info.indexA));
+  if(this.info.requiresInterpolation()) {
+    UInt8 b = specializedProp.get(AlembicISampleSelector(this.info.indexB));
+    a = UInt8(Float64(a) * this.info.ifraction + Float64(b) * this.info.fraction);
+  }
+
+  if(!succeededOnce) {
+    String error = getLastError();
+    if(error.length() > 0)
+      return 0;
+    this.specializedProp = specializedProp;
+  }
+
+  return a;
+}
+
+/// returns the value in the property as a UInt16.
+/// this method interpolates values between frames.
+function UInt16 AlembicPropertyReader.readUInt16Sample!(Float64 time) {
+  if(this.scalarProperty == null)
+    return 0;
+  if(this.dataType.getExtent() != 1)
+    return 0;
+  if(this.numSamples == 0)
+    return 0;
+
+  AlembicSampleInfo info(time, this.timeSampling, this.numSamples);
+  this.info = info;
+
+  AlembicIUInt16Property specializedProp = this.specializedProp;
+  Boolean succeededOnce = specializedProp != null;
+  if(!succeededOnce)
+    specializedProp = AlembicIUInt16Property(this.scalarProperty);
+
+  UInt16 a = specializedProp.get(AlembicISampleSelector(this.info.indexA));
+  if(this.info.requiresInterpolation()) {
+    UInt16 b = specializedProp.get(AlembicISampleSelector(this.info.indexB));
+    a = UInt16(Float64(a) * this.info.ifraction + Float64(b) * this.info.fraction);
+  }
+
+  if(!succeededOnce) {
+    String error = getLastError();
+    if(error.length() > 0)
+      return 0;
+    this.specializedProp = specializedProp;
+  }
+
+  return a;
+}
+
+/// returns the value in the property as a UInt32.
+/// this method interpolates values between frames.
+function UInt32 AlembicPropertyReader.readUInt32Sample!(Float64 time) {
+  if(this.scalarProperty == null)
+    return 0;
+  if(this.dataType.getExtent() != 1)
+    return 0;
+  if(this.numSamples == 0)
+    return 0;
+
+  AlembicSampleInfo info(time, this.timeSampling, this.numSamples);
+  this.info = info;
+
+  AlembicIUInt32Property specializedProp = this.specializedProp;
+  Boolean succeededOnce = specializedProp != null;
+  if(!succeededOnce)
+    specializedProp = AlembicIUInt32Property(this.scalarProperty);
+
+  UInt32 a = specializedProp.get(AlembicISampleSelector(this.info.indexA));
+  if(this.info.requiresInterpolation()) {
+    UInt32 b = specializedProp.get(AlembicISampleSelector(this.info.indexB));
+    a = UInt32(Float64(a) * this.info.ifraction + Float64(b) * this.info.fraction);
+  }
+
+  if(!succeededOnce) {
+    String error = getLastError();
+    if(error.length() > 0)
+      return 0;
+    this.specializedProp = specializedProp;
+  }
+
+  return a;
+}
+
+/// returns the value in the property as a UInt64.
+/// this method interpolates values between frames.
+function UInt64 AlembicPropertyReader.readUInt64Sample!(Float64 time) {
+  if(this.scalarProperty == null)
+    return 0;
+  if(this.dataType.getExtent() != 1)
+    return 0;
+  if(this.numSamples == 0)
+    return 0;
+
+  AlembicSampleInfo info(time, this.timeSampling, this.numSamples);
+  this.info = info;
+
+  AlembicIUInt64Property specializedProp = this.specializedProp;
+  Boolean succeededOnce = specializedProp != null;
+  if(!succeededOnce)
+    specializedProp = AlembicIUInt64Property(this.scalarProperty);
+
+  UInt64 a = specializedProp.get(AlembicISampleSelector(this.info.indexA));
+  if(this.info.requiresInterpolation()) {
+    UInt64 b = specializedProp.get(AlembicISampleSelector(this.info.indexB));
+    a = UInt64(Float64(a) * this.info.ifraction + Float64(b) * this.info.fraction);
+  }
+
+  if(!succeededOnce) {
+    String error = getLastError();
+    if(error.length() > 0)
+      return 0;
+    this.specializedProp = specializedProp;
+  }
+
+  return a;
+}
+
+/// returns the value in the property as a Float32.
+/// this method interpolates values between frames.
+function Float32 AlembicPropertyReader.readFloat32Sample!(Float64 time) {
+  if(this.scalarProperty == null)
+    return 0;
+  if(this.dataType.getExtent() != 1)
+    return 0;
+  if(this.numSamples == 0)
+    return 0;
+
+  AlembicSampleInfo info(time, this.timeSampling, this.numSamples);
+  this.info = info;
+
+  AlembicIFloat32Property specializedProp = this.specializedProp;
+  Boolean succeededOnce = specializedProp != null;
+  if(!succeededOnce)
+    specializedProp = AlembicIFloat32Property(this.scalarProperty);
+
+  Float32 a = specializedProp.get(AlembicISampleSelector(this.info.indexA));
+  if(this.info.requiresInterpolation()) {
+    Float32 b = specializedProp.get(AlembicISampleSelector(this.info.indexB));
+    a = Float32(Float64(a) * this.info.ifraction + Float64(b) * this.info.fraction);
+  }
+
+  if(!succeededOnce) {
+    String error = getLastError();
+    if(error.length() > 0)
+      return 0;
+    this.specializedProp = specializedProp;
+  }
+
+  return a;
+}
+
+/// returns the value in the property as a Float64.
+/// this method interpolates values between frames.
+function Float64 AlembicPropertyReader.readFloat64Sample!(Float64 time) {
+  if(this.scalarProperty == null)
+    return 0;
+  if(this.dataType.getExtent() != 1)
+    return 0;
+  if(this.numSamples == 0)
+    return 0;
+
+  AlembicSampleInfo info(time, this.timeSampling, this.numSamples);
+  this.info = info;
+
+  AlembicIFloat64Property specializedProp = this.specializedProp;
+  Boolean succeededOnce = specializedProp != null;
+  if(!succeededOnce)
+    specializedProp = AlembicIFloat64Property(this.scalarProperty);
+
+  Float64 a = specializedProp.get(AlembicISampleSelector(this.info.indexA));
+  if(this.info.requiresInterpolation()) {
+    Float64 b = specializedProp.get(AlembicISampleSelector(this.info.indexB));
+    a = Float64(Float64(a) * this.info.ifraction + Float64(b) * this.info.fraction);
+  }
+
+  if(!succeededOnce) {
+    String error = getLastError();
+    if(error.length() > 0)
+      return 0;
+    this.specializedProp = specializedProp;
+  }
+
+  return a;
+}
+
+/// returns the value in the property as a String.
+/// this method interpolates values between frames.
+function String AlembicPropertyReader.readStringSample!(Float64 time) {
+  if(this.scalarProperty == null)
+    return "";
+  if(this.dataType.getExtent() != 1)
+    return "";
+  if(this.numSamples == 0)
+    return "";
+
+  AlembicSampleInfo info(time, this.timeSampling, this.numSamples);
+  this.info = info;
+
+  AlembicIStringProperty specializedProp = this.specializedProp;
+  Boolean succeededOnce = specializedProp != null;
+  if(!succeededOnce)
+    specializedProp = AlembicIStringProperty(this.scalarProperty);
+
+  String a = specializedProp.get(AlembicISampleSelector(this.info.indexA));
+  if(this.info.requiresInterpolation()) {
+    String b = specializedProp.get(AlembicISampleSelector(this.info.indexB));
+    a = this.info.fraction > 0.5 ? b : a;
+  }
+
+  if(!succeededOnce) {
+    String error = getLastError();
+    if(error.length() > 0)
+      return "";
+    this.specializedProp = specializedProp;
+  }
+
+  return a;
+}
+
+/// returns the value in the property as a Vec2.
+/// this method interpolates values between frames.
+function Vec2 AlembicPropertyReader.readVec2Sample!(Float64 time) {
+  if(this.scalarProperty == null)
+    return Vec2();
+  if(this.dataType.getExtent() != 2)
+    return Vec2();
+  if(this.numSamples == 0)
+    return Vec2();
+
+  AlembicSampleInfo info(time, this.timeSampling, this.numSamples);
+  this.info = info;
+
+  AlembicIVec2Property specializedProp = this.specializedProp;
+  Boolean succeededOnce = specializedProp != null;
+  if(!succeededOnce)
+    specializedProp = AlembicIVec2Property(this.scalarProperty);
+
+  Vec2 a = specializedProp.get(AlembicISampleSelector(this.info.indexA));
+  if(this.info.requiresInterpolation()) {
+    Vec2 b = specializedProp.get(AlembicISampleSelector(this.info.indexB));
+    a = a.linearInterpolate(b, Float32(this.info.fraction));
+  }
+
+  if(!succeededOnce) {
+    String error = getLastError();
+    if(error.length() > 0)
+      return Vec2();
+    this.specializedProp = specializedProp;
+  }
+
+  return a;
+}
+
+/// returns the value in the property as a Vec3.
+/// this method interpolates values between frames.
+function Vec3 AlembicPropertyReader.readVec3Sample!(Float64 time) {
+  if(this.scalarProperty == null)
+    return Vec3();
+  if(this.dataType.getExtent() != 3)
+    return Vec3();
+  if(this.numSamples == 0)
+    return Vec3();
+
+  AlembicSampleInfo info(time, this.timeSampling, this.numSamples);
+  this.info = info;
+
+  AlembicIVec3Property specializedProp = this.specializedProp;
+  Boolean succeededOnce = specializedProp != null;
+  if(!succeededOnce)
+    specializedProp = AlembicIVec3Property(this.scalarProperty);
+
+  Vec3 a = specializedProp.get(AlembicISampleSelector(this.info.indexA));
+  if(this.info.requiresInterpolation()) {
+    Vec3 b = specializedProp.get(AlembicISampleSelector(this.info.indexB));
+    a = a.linearInterpolate(b, Float32(this.info.fraction));
+  }
+
+  if(!succeededOnce) {
+    String error = getLastError();
+    if(error.length() > 0)
+      return Vec3();
+    this.specializedProp = specializedProp;
+  }
+
+  return a;
+}
+
+/// returns the value in the property as a Quat.
+/// this method interpolates values between frames.
+function Quat AlembicPropertyReader.readQuatSample!(Float64 time) {
+  if(this.scalarProperty == null)
+    return Quat();
+  if(this.dataType.getExtent() != 4)
+    return Quat();
+  if(this.numSamples == 0)
+    return Quat();
+
+  AlembicSampleInfo info(time, this.timeSampling, this.numSamples);
+  this.info = info;
+
+  AlembicIQuatProperty specializedProp = this.specializedProp;
+  Boolean succeededOnce = specializedProp != null;
+  if(!succeededOnce)
+    specializedProp = AlembicIQuatProperty(this.scalarProperty);
+
+  Quat a = specializedProp.get(AlembicISampleSelector(this.info.indexA));
+  if(this.info.requiresInterpolation()) {
+    Quat b = specializedProp.get(AlembicISampleSelector(this.info.indexB));
+    a = a.sphericalLinearInterpolate(b, Float32(this.info.fraction));
+  }
+
+  if(!succeededOnce) {
+    String error = getLastError();
+    if(error.length() > 0)
+      return Quat();
+    this.specializedProp = specializedProp;
+  }
+
+  return a;
+}
+
+/// returns the value in the property as a Box2.
+/// this method interpolates values between frames.
+function Box2 AlembicPropertyReader.readBox2Sample!(Float64 time) {
+  if(this.scalarProperty == null)
+    return Box2();
+  if(this.dataType.getExtent() != 4)
+    return Box2();
+  if(this.numSamples == 0)
+    return Box2();
+
+  AlembicSampleInfo info(time, this.timeSampling, this.numSamples);
+  this.info = info;
+
+  AlembicIBox2Property specializedProp = this.specializedProp;
+  Boolean succeededOnce = specializedProp != null;
+  if(!succeededOnce)
+    specializedProp = AlembicIBox2Property(this.scalarProperty);
+
+  Box2 a = specializedProp.get(AlembicISampleSelector(this.info.indexA));
+  if(this.info.requiresInterpolation()) {
+    Box2 b = specializedProp.get(AlembicISampleSelector(this.info.indexB));
+    a.min = a.min.linearInterpolate(b.min, Float32(this.info.fraction));
+    a.max = a.max.linearInterpolate(b.max, Float32(this.info.fraction));
+  }
+
+  if(!succeededOnce) {
+    String error = getLastError();
+    if(error.length() > 0)
+      return Box2();
+    this.specializedProp = specializedProp;
+  }
+
+  return a;
+}
+
+/// returns the value in the property as a Box3.
+/// this method interpolates values between frames.
+function Box3 AlembicPropertyReader.readBox3Sample!(Float64 time) {
+  if(this.scalarProperty == null)
+    return Box3();
+  if(this.dataType.getExtent() != 6)
+    return Box3();
+  if(this.numSamples == 0)
+    return Box3();
+
+  AlembicSampleInfo info(time, this.timeSampling, this.numSamples);
+  this.info = info;
+
+  AlembicIBox3Property specializedProp = this.specializedProp;
+  Boolean succeededOnce = specializedProp != null;
+  if(!succeededOnce)
+    specializedProp = AlembicIBox3Property(this.scalarProperty);
+
+  Box3 a = specializedProp.get(AlembicISampleSelector(this.info.indexA));
+  if(this.info.requiresInterpolation()) {
+    Box3 b = specializedProp.get(AlembicISampleSelector(this.info.indexB));
+    a.min = a.min.linearInterpolate(b.min, Float32(this.info.fraction));
+    a.max = a.max.linearInterpolate(b.max, Float32(this.info.fraction));
+  }
+
+  if(!succeededOnce) {
+    String error = getLastError();
+    if(error.length() > 0)
+      return Box3();
+    this.specializedProp = specializedProp;
+  }
+
+  return a;
+}
+
+/// returns the value in the property as a Mat33.
+/// this method interpolates values between frames.
+function Mat33 AlembicPropertyReader.readMat33Sample!(Float64 time) {
+  if(this.scalarProperty == null)
+    return Mat33();
+  if(this.dataType.getExtent() != 9)
+    return Mat33();
+  if(this.numSamples == 0)
+    return Mat33();
+
+  AlembicSampleInfo info(time, this.timeSampling, this.numSamples);
+  this.info = info;
+
+  AlembicIMat33Property specializedProp = this.specializedProp;
+  Boolean succeededOnce = specializedProp != null;
+  if(!succeededOnce)
+    specializedProp = AlembicIMat33Property(this.scalarProperty);
+
+  Mat33 a = specializedProp.get(AlembicISampleSelector(this.info.indexA));
+  if(this.info.requiresInterpolation()) {
+    Mat33 b = specializedProp.get(AlembicISampleSelector(this.info.indexB));
+    //NOTE: this is wrong if there is some scaling
+    Quat aQuat, bQuat;
+    aQuat.setFromMat33(a);
+    bQuat.setFromMat33(b);
+    aQuat = aQuat.sphericalLinearInterpolate(bQuat, Float32(this.info.fraction));
+    a = aQuat.toMat33();
+  }
+
+  if(!succeededOnce) {
+    String error = getLastError();
+    if(error.length() > 0)
+      return Mat33();
+    this.specializedProp = specializedProp;
+  }
+
+  return a;
+}
+
+/// returns the value in the property as a Mat44.
+/// this method interpolates values between frames.
+function Mat44 AlembicPropertyReader.readMat44Sample!(Float64 time) {
+  if(this.scalarProperty == null)
+    return Mat44();
+  if(this.dataType.getExtent() != 16)
+    return Mat44();
+  if(this.numSamples == 0)
+    return Mat44();
+
+  AlembicSampleInfo info(time, this.timeSampling, this.numSamples);
+  this.info = info;
+
+  AlembicIMat44Property specializedProp = this.specializedProp;
+  Boolean succeededOnce = specializedProp != null;
+  if(!succeededOnce)
+    specializedProp = AlembicIMat44Property(this.scalarProperty);
+
+  Mat44 a = specializedProp.get(AlembicISampleSelector(this.info.indexA));
+  if(this.info.requiresInterpolation()) {
+    Mat44 b = specializedProp.get(AlembicISampleSelector(this.info.indexB));
+    //NOTE: this is wrong if there is some non-uniform scaling
+    Xfo aXfo, bXfo;
+    aXfo.setFromMat44(a);
+    bXfo.setFromMat44(b);
+    aXfo = aXfo.linearInterpolate(bXfo, Float32(this.info.fraction));
+    a = aXfo.toMat44();
+  }
+
+  if(!succeededOnce) {
+    String error = getLastError();
+    if(error.length() > 0)
+      return Mat44();
+    this.specializedProp = specializedProp;
+  }
+
+  return a;
+}
+
+/// returns the value in the property as a Color.
+/// this method interpolates values between frames.
+function Color AlembicPropertyReader.readColorSample!(Float64 time) {
+  if(this.scalarProperty == null)
+    return Color();
+  if(this.dataType.getExtent() != 4)
+    return Color();
+  if(this.numSamples == 0)
+    return Color();
+
+  AlembicSampleInfo info(time, this.timeSampling, this.numSamples);
+  this.info = info;
+
+  AlembicIColorProperty specializedProp = this.specializedProp;
+  Boolean succeededOnce = specializedProp != null;
+  if(!succeededOnce)
+    specializedProp = AlembicIColorProperty(this.scalarProperty);
+
+  Color a = specializedProp.get(AlembicISampleSelector(this.info.indexA));
+  if(this.info.requiresInterpolation()) {
+    Color b = specializedProp.get(AlembicISampleSelector(this.info.indexB));
+    a = a.linearInterpolate(b, Float32(this.info.fraction));
+  }
+
+  if(!succeededOnce) {
+    String error = getLastError();
+    if(error.length() > 0)
+      return Color();
+    this.specializedProp = specializedProp;
+  }
+
+  return a;
+}

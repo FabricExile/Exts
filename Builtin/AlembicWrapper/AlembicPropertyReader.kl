@@ -1,0 +1,178 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+require Alembic;
+require Geometry;
+
+// forward decl;
+object AlembicArchiveReader;
+
+/**
+  The :kl-ref:`AlembicPropertyReader` can be used to read 
+  \seealso AlembicPropertyWriter
+*/
+object AlembicPropertyReader {
+  /// \internal
+  private Ref<AlembicArchiveReader> archive;
+  /// \internal
+  private AlembicPropertyType propertyType;
+  /// \internal
+  private AlembicDataType dataType;
+  /// \internal
+  private AlembicIScalarProperty scalarProperty;
+  /// \internal
+  private AlembicIArrayProperty arrayProperty;
+  /// \internal
+  private AlembicICompoundProperty compoundProperty;
+  /// \internal
+  private AlembicTimeSampling timeSampling;
+  /// \internal
+  private AlembicSampleInfo info;
+  /// \internal
+  private UInt32 numSamples;
+  /// \internal
+  private Object specializedProp;
+};
+
+/// \internal
+function AlembicPropertyReader() {
+  this.propertyType = Alembic_kUnknownProperty;
+}
+
+/// \internal
+private function AlembicPropertyReader(
+  Ref<AlembicArchiveReader> archive,
+  AlembicPropertyType propertyType,
+  AlembicIScalarProperty scalarProperty,
+  AlembicIArrayProperty arrayProperty,
+  AlembicICompoundProperty compoundProperty
+) {
+  this.archive = archive;
+  this.propertyType = propertyType;
+  this.scalarProperty = scalarProperty;
+  this.arrayProperty = arrayProperty;
+  this.compoundProperty = compoundProperty;
+
+  switch(this.propertyType) {
+    case Alembic_kCompoundProperty:
+    {
+      this.timeSampling = this.compoundProperty.getTimeSampling();
+      this.numSamples = 0;
+      this.dataType = AlembicDataType();
+      break;
+    }
+    case Alembic_kScalarProperty:
+    {
+      this.timeSampling = this.scalarProperty.getTimeSampling();
+      this.numSamples = this.scalarProperty.getNumSamples();
+      this.dataType = this.scalarProperty.getDataType();
+      break;
+    }
+    case Alembic_kArrayProperty:
+    {
+      this.timeSampling = this.arrayProperty.getTimeSampling();
+      this.numSamples = this.arrayProperty.getNumSamples();
+      this.dataType = this.arrayProperty.getDataType();
+      break;
+    }
+    default:
+    {
+      this.numSamples = 0;
+      this.dataType = AlembicDataType();
+    }
+  }
+}
+
+private function AlembicPropertyHeader AlembicPropertyReader.getHeader() {
+  if(this == null)
+    return null;
+  if(!this.valid())
+    return null;
+  switch(this.propertyType) {
+    case Alembic_kCompoundProperty:
+    {
+      return this.compoundProperty.getHeader();
+    }
+    case Alembic_kScalarProperty:
+    {
+      return this.scalarProperty.getHeader();
+    }
+    case Alembic_kArrayProperty:
+    {
+      return this.arrayProperty.getHeader();
+    }
+  }
+  return null;
+}
+
+/// returns true if this reader wraps a valid AlembicIPoints
+function Boolean AlembicPropertyReader.valid() {
+  if(!this.archive)
+    return false;
+  return this.propertyType != Alembic_kUnknownProperty;
+}
+
+/// clears all pointers and releases all alembic containers
+function AlembicPropertyReader.reset!() {
+  this.scalarProperty.reset();
+  this.arrayProperty.reset();
+  this.compoundProperty.reset();
+}
+
+/// returns the full path of the wrapped AlembicIPoints
+function String AlembicPropertyReader.getName() {
+  if(this == null)
+    return "";
+  if(!this.valid())
+    return "";
+  AlembicPropertyHeader header = this.getHeader();
+  if(header == null)
+    return "";
+  return header.getName();
+}
+
+function Ref<AlembicDataType> AlembicPropertyReader.getAlembicDataType() {
+  return this.dataType;
+}
+
+function AlembicPropertyType AlembicPropertyReader.getAlembicPropertyType() {
+  return this.propertyType;
+}
+
+function Ref<AlembicIScalarProperty> AlembicPropertyReader.getScalarProperty() {
+  return this.scalarProperty;
+}
+
+function Ref<AlembicIArrayProperty> AlembicPropertyReader.getArrayProperty() {
+  return this.arrayProperty;
+}
+
+function Ref<AlembicICompoundProperty> AlembicPropertyReader.getCompoundProperty() {
+  return this.compoundProperty;
+}
+
+function String AlembicPropertyReader.getPropertyType() {
+  if(this == null)
+    return "";
+  if(!this.valid())
+    return "";
+  AlembicPropertyHeader header = this.getHeader();
+  if(header == null)
+    return "";
+
+  String result;
+  if(header.isScalar())
+    result = "scalar-";
+  else if(header.isArray())
+    result = "array-";
+  else if(header.isCompound())
+    result = "compound-";
+
+  AlembicDataType dataType = header.getDataType();
+  result += dataType.getPodName() + '-';
+  result += dataType.getExtent();
+  return result;
+}
+

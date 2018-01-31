@@ -1,0 +1,63 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiTooltip" : "Converts degrees to radians\n\n Supported by Scalar"
+    },
+  "title" : "DegToRad[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "val",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "729415FFC70AB12D2BDD57F20431CBE0",
+  "code" : "require Math;
+
+operator Math_Math_degToRad_task<<<index>>>(
+  io Scalar[] result
+, in Scalar[] val
+) {
+  result[index] = Math_degToRad(val[index < val.size() ? index : val.size() - 1]);
+}
+
+dfgEntry {
+  if( val.size() == 0) return;
+  Size task_size = 0;
+  if(task_size < val.size()) task_size = val.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Math_degToRad_task(index, result, val);
+    }
+  } else {
+    Math_Math_degToRad_task<<<task_size>>>(result, val);
+  }
+}
+"
+  }

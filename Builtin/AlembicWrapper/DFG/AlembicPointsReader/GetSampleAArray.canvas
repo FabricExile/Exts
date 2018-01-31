@@ -1,0 +1,56 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "returns the first sample used by this reader\n\nSupported types:\n  this: AlembicPointsReader\n  result: AlembicIPointsSample\n"
+    },
+  "title" : "GetSampleA[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "AlembicPointsReader[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "AlembicIPointsSample[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "3DAC724F761F032C90FED2577F6A25D4",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicPointsReader_getSampleA_task<<<index>>>(
+  io AlembicIPointsSample[] result
+, in AlembicPointsReader[] this
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].getSampleA();
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  Size task_size = this.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      AlembicWrapper_AlembicPointsReader_getSampleA_task(index, result, this);
+    }
+  } else {
+    AlembicWrapper_AlembicPointsReader_getSampleA_task<<<task_size>>>(result, this);
+  }
+}
+"
+  }

@@ -1,0 +1,72 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+require Math;
+
+namespace AnimX
+{
+  //! This definition allows control over whether 32 or 64 bit time precision 
+  // should be used.
+  const SInt64  kTicksPerSecondInTicks = 141120000;
+  const Float64 kPI 					= 3.141592653589793;
+  const Float64 kSlerpThreshold 		= 0.00001;
+  const Float64 kDblEpsilonSqr 		= 1.0e-20;
+  const Float64 kDblEpsilon 			= 1.0e-10;
+  const Float64 kOneThird = 1.0 / 3.0;
+  const Float64 kTwoThirds = 2.0 / 3.0;
+  const Float64 kFourThirds = 4.0 / 3.0;
+  const Float64 kOneTickInSeconds = 1.0 / Float64(kTicksPerSecondInTicks);
+
+  inline Boolean lessThan(Float64 x, Float64 y, Float64 epsilon)
+  {
+      return (x <= (y - epsilon));
+  }
+
+  inline Boolean lessThan(Float64 x, Float64 y)
+  {
+    return lessThan(x, y, kDblEpsilon);
+  }
+
+  inline Boolean lessEqual(Float64 x, Float64 y, Float64 epsilon)
+  {
+      return (x <= (y + epsilon));
+  }
+
+  inline Boolean lessEqual(Float64 x, Float64 y)
+  {
+    return lessEqual(x, y, kDblEpsilon);
+  }
+
+  inline Boolean greaterThan(Float64 x, Float64 y, Float64 epsilon)
+  {
+      return (x >= (y + epsilon));
+  }
+
+  inline Boolean greaterThan(Float64 x, Float64 y)
+  {
+    return greaterThan(x, y, kDblEpsilon);
+  }
+
+  inline Boolean equivalent(Float64 a, Float64 b, Float64 epsilon)
+  {
+      return (abs(a - b) <= epsilon);
+  }
+
+  inline Boolean equivalent(Float64 a, Float64 b)
+  {
+    return equivalent(a, b, kDblEpsilon);
+  }
+
+  // Convert double time into ticks and back to double to 
+  // mimic Maya's loss of precision when time is involved
+  Float64 toTickDoubleTime(Float64 time)
+  {
+    SInt64 ticks = SInt64(
+        Math_max(
+            Math_min(Float64(SInt64Max), time * Float64(kTicksPerSecondInTicks)),
+            Float64(SInt64Min)
+        ) + 0.5);
+    return Float64(ticks) / Float64(kTicksPerSecondInTicks);
+  }
+}

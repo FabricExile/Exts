@@ -1,0 +1,93 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+namespace Tool {
+
+  const String ActionEvent_Do = "doAction";
+  const String ActionEvent_Undo = "undoAction";
+
+  /// \internal
+  interface BaseAction_virtuals {
+    doAction!( );
+    undoAction!( );
+  };
+
+  /// The BaseAction provides basic functionality for all action classes.
+  /// See :ref:`TPG.state-actions` for more details and examples related to states and actions.
+  object BaseAction : EventListenerComponent, BaseAction_virtuals{
+    Boolean didAction;
+  };
+
+  /// Connects eventSource's sourceEventName to do().
+  BaseAction.connect!( Ref<EventSource> eventSource, EventName doSourceEventName, EventName undoSourceEventName, Boolean ownedByEventSource ) {
+    if( !eventSource )
+      return;
+    this.parent.connect( eventSource, ownedByEventSource, doSourceEventName, ActionEvent_Do );
+    this.parent.connect( eventSource, ownedByEventSource, undoSourceEventName, ActionEvent_Undo );
+  }
+
+  /// Connects eventSource's sourceEventName to do().
+  BaseAction.connectToDo!( Ref<EventSource> eventSource, EventName sourceEventName, Boolean ownedByEventSource ) {
+    if( !eventSource )
+      return;
+    this.parent.connect( eventSource, ownedByEventSource, sourceEventName, ActionEvent_Do );
+  }
+
+  /// Connects eventSource's sourceEventName to do(), and sets event source as an owned component by this action.
+  BaseAction.connectToDoAndAttach!( Ref<EventSource> eventSource, EventName sourceEventName ) {
+    if( !eventSource )
+      return;
+    this.connectAndAttach( eventSource, sourceEventName, ActionEvent_Do );
+  }
+
+  /// Connects eventSource's sourceEventName to do().
+  BaseAction.connectToUndo!( Ref<EventSource> eventSource, EventName sourceEventName, Boolean ownedByEventSource ) {
+    if( !eventSource )
+      return;
+    this.parent.connect( eventSource, ownedByEventSource, sourceEventName, ActionEvent_Undo );
+  }
+
+  /// Connects eventSource's sourceEventName to undo(), and sets event source as an owned component by this action.
+  BaseAction.connectToUndoAndAttach!( Ref<EventSource> eventSource, EventName sourceEventName ) {
+    if( !eventSource )
+      return;
+    this.connectAndAttach( eventSource, sourceEventName, ActionEvent_Undo );
+  }
+
+  /// Disconnect from eventSource's sourceEventName.
+  BaseAction.disconnect!( Ref<EventSource> eventSource, EventName sourceEventName ) {
+    if( !eventSource )
+      return;
+    this.disconnect( eventSource, sourceEventName );
+  }
+
+  /// \internal
+  /// By default, sends our event if we receive a Event_Call.
+  BaseAction.onEvent!( ToolEvent event, ToolEventUserID userID ) {
+    //report( "BaseAction.onEvent: source=" + GetComponentName( event.sender ) + " uid=" + event.sender.uid() + " event=" + event.name );
+
+    if( event.name == ActionEvent_Do )
+      this.doAction();
+    else if( event.name == ActionEvent_Undo )
+      this.undoAction();
+  }
+
+  /// To be overriden. This base method should be called however for tracing purposes.
+  BaseAction.doAction!( ) {
+    this.didAction = true;
+    if( ToolEventDebugTrace )
+      report( this.getPath() + ": doAction" );
+    this.sendEventToListeners( ActionEvent_Do );
+  }
+
+  /// To be overriden. This base method should be called however for tracing purposes.
+  BaseAction.undoAction!( ) {
+    if( this.didAction ) {
+      this.didAction = false;
+      if( ToolEventDebugTrace )
+        report( this.getPath() + ": undoAction" );
+      this.sendEventToListeners( ActionEvent_Undo );
+    }
+  }
+
+}// namespace Tool

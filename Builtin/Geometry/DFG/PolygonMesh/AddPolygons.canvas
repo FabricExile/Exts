@@ -1,0 +1,51 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/PolygonMesh.html",
+    "uiTooltip" : "Adds many polygons in batch, using a packed size and points array.\nFor example, if a triangle T and a quadrilateral Q are added, the following array layout should be used:\n- `polygonSizes` = [size of T = 3, size of Q = 4]\n- `packedPolygonPointIndices` = [T.point0, T.point1, T.point2, Q.point0, Q.point1, Q.point2]\n\n\n Supported by PolygonMesh"
+    },
+  "title" : "AddPolygons",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "PolygonMesh"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "polygonSizes",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Size<>"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "packedPolygonPointIndices",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Size<>"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "12506509CFD91102DCFCBC117D18E9B4",
+  "code" : "require Geometry;
+
+dfgEntry {
+  this.addPolygons(polygonSizes, packedPolygonPointIndices);
+}
+"
+  }

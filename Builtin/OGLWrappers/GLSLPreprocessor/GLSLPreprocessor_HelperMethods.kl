@@ -1,0 +1,97 @@
+
+
+
+inline String[] GLSLPreprocessor_splitOnWhitepspace_ignoreComments(String str) {
+  String strNoComments;
+  Integer findPos = str.find('//');
+  Integer findPos2 = str.find('/*');
+  if( findPos2 != -1 && (findPos == -1 || findPos2 < findPos) )
+    findPos = findPos2;
+
+  if( findPos != -1 )
+    strNoComments = str.subString( 0, findPos );
+  else
+    strNoComments = str;
+
+  String parts[] = strNoComments.splitAny(' \t');
+  String result[];
+  for( Integer i = 0; i < parts.size(); i++ ) {
+    if( parts[i] != "" )
+      result.push( parts[i] );
+  }
+  return result;
+}
+
+
+/// \internal
+function Boolean GLSLPreprocessor_skipWhitespace(String line, io Integer pos){
+  Integer len = line.length();
+  while(true){
+    if(pos >= len){
+      setError("Error Parsing line. Reached end of the string.");
+      return false;
+    }
+    String c = line[pos];
+    if(c == " " || c == "\n" || c == "\t" || c == "\r") 
+      pos++; // skip whitespace.
+    else
+      break;
+  }
+  return true;
+}
+
+/// \internal
+function String GLSLPreprocessor_readToken(String line, io Integer pos){
+  Integer len = line.length();
+  String result;
+  while(true){
+    if(pos >= len)
+      break;
+
+    String c = line[pos];
+    if( c == " " || c == "\n" || c == "\t" || c == "\r" ) {
+      if( result )
+        break;
+    }
+    else
+      result += c;
+    pos++; // skip whitespace.
+  }
+  return result;
+}
+
+/// \internal
+/// Gets the tag in a token : \fetch<aTag> will write "\fetch" and "aTag"
+/// \param token The part before '<'
+/// \param tag The part between '<' and '>'
+/// returns true iff there is a tag
+function Boolean GLSLPreprocessor_splitTag(String line, io String token, io String tag ){
+  tag = ""; 
+  token = line;
+  Integer start = line.find('<');
+  token = line.left( start );
+  if(start == -1) { return false; }
+  Integer end = line.find('>');
+  if(end == -1) { return false; }
+  tag = line.subString( start+1, end-start-1 );
+  return true;
+}
+
+/// \internal
+function String GLSLPreprocessor_parseString(String line){
+	Integer pos = 0;
+  GLSLPreprocessor_skipWhitespace(line, pos);
+  if(line[pos] != '\'' && line[pos] != '"')
+    setError('Invalid Include directive');
+  pos++;
+  Integer startPos = pos;
+  while(pos < line.length()){
+    if(line[pos]=="\"" || line[pos]=="'") 
+      break;
+    pos++;
+  }
+  if(pos == line.length())
+    setError('Invalid string quotes');
+  String result = line.subString(startPos, pos-startPos);
+  return result;
+}

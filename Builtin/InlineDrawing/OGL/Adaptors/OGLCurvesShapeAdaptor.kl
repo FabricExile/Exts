@@ -1,0 +1,160 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+\versionadded 1.12.0
+
+The OGLCurvesShapeAdaptor implements the InlineShapeAdaptor interface. It is used to draw a InlineShape within an OpenGL viewport.
+\dfgPresetOmit
+*/
+object OGLCurvesShapeAdaptor : InlineShapeAdaptor{};
+
+/// default constructor
+function OGLCurvesShapeAdaptor() {}
+
+/// returns the types this adaptor is capable of drawing
+function String[] OGLCurvesShapeAdaptor.getShapeTypes() {
+  String result[];
+  result.push( 'InlineCurvesShape' );
+  return result;
+}
+
+/// draws the curves to the screen. this is used by the 
+/// InlineInstance, and should not be called manually.
+/// \internal
+function Boolean OGLCurvesShapeAdaptor.draw!( io DrawContext context, io Ref<InlineShape> shape ) {
+
+  // access the curves shape
+  InlineCurvesShape curvesShape = shape;
+  Ref<Curves> curves = curvesShape.getCurves();
+  if( curves == null )
+    return true;
+
+  if( curves.allCurvesPointRange() == 0 )
+    return true;
+
+  OGLBufferDictionary buffers = curvesShape.getMetaData( 'buffers' );
+  if(buffers == null) {
+    buffers = OGLBufferDictionary();
+    curvesShape.setMetaData( 'buffers', buffers );
+  }
+
+  //Request without tangent at first; if it was already requested it will be computed anyway
+  Ref<Curves_samplingData> curvesSampling = curves.getUpdatedSampling( false );
+
+  // reset all versions if the uid changed
+  if( buffers.getVersion( 'uid' ) != curvesSampling.uid() ) {
+    buffers.resetAllVersions();
+    buffers.setVersion( 'uid', curvesSampling.uid() );
+  }
+
+  if( curves.getVersion() == 0 && curves.curveCount() > 0 ) {
+    setError( "Error drawing " + shape.getName() + ": topology version has not been incremented. Call curves.incrementStructureVersion after making topology changes." );
+    return false;
+  }
+
+  // Ensure the required attributes are sampled and up to date
+  Ref<InlineShader> shader = context.getMetaData('currentShader');
+  Ref<InlineInstance> instance = context.getMetaData( 'currentInstance' );
+
+  Data NULL;
+  for( Size i = 0; i < shader.getAttributeCount(); i++ ) {
+    String name = shader.getAttributeName( i );
+    Integer locationInt = shader.getAttributeID( name );
+    if( locationInt != -1 ) {
+      String attributeName = instance.getMappedAttributeName( name );
+
+      if( attributeName == "tangents" ){
+        // Special case: sampled tangents must be requested with getUpdatedSampling(true).
+        curvesSampling = curves.getUpdatedSampling( true );
+      } else {
+        Ref<GeometryAttribute> sourceAttr = curves.getAttributes().getAttribute( attributeName );
+        if( sourceAttr )
+          curves.updateAttributeSampling( curvesSampling, sourceAttr );
+      }
+    }
+  }
+
+  OGLShape_updateGeometryAttributeBuffers( context, buffers, curvesSampling.sampledAttributes );
+
+  if( buffers.getVersion( 'topology' ) != curvesSampling.structureVersion ) {
+    OGLBuffer buffer = buffers.get('topology');
+    if(buffer == null) {
+      buffer = OGLBuffer();
+      buffer.bufferType = GL_ARRAY_BUFFER;
+      buffer.bufferUsage = GL_STATIC_DRAW;
+      buffers.set('topology', buffer);
+    }
+    if( buffer.bufferID )
+      buffer.bufferUsage = GL_DYNAMIC_DRAW;//Loaded at least 2 times: lazily upgrade to "dynamic"
+
+    Boolean useShorts = curvesSampling.lineElements_16;
+    buffer.bufferElementComponentType = useShorts ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT;
+
+    UInt32 memType = curvesSampling.getMemType();
+    if(memType == Fabric_MemType_CPU){
+      // Generate the openGL buffer for the data using the traditional method without modifying the mem type.
+      if( useShorts )
+        buffer.genBuffer( curvesSampling.lineElements_16.data(), curvesSampling.lineElements_16.dataSize(), curvesSampling.lineElements_16.size() );
+      else
+        buffer.genBuffer( curvesSampling.lineElements.data(), curvesSampling.lineElements.dataSize(), curvesSampling.lineElements.size() );
+    }
+    else if(memType == Fabric_MemType_GLBuffer){
+      // The data is already on the GPU so retrieve its buffer id.
+      if( useShorts )
+        buffer.bufferID = curvesSampling.lineElements_16.getBufferId();
+      else
+        buffer.bufferID = curvesSampling.lineElements.getBufferId();
+    }
+    else {
+      if( buffer.bufferID != 0 )
+        buffer.deleteBuffer();
+      // We need to convert the GPU data to CPU data, so we can convert it to VBO backed GPU data.
+      // TODO! curvesSampling.convertToCPU();
+
+      if( useShorts ) {
+        buffer.bufferID = curvesSampling.lineElements_16.convertToGLBuffer( buffer.bufferType, buffer.bufferUsage );
+        buffer.elementCount = curvesSampling.lineElements_16.size();
+      } else {
+        buffer.bufferID = curvesSampling.lineElements.convertToGLBuffer( buffer.bufferType, buffer.bufferUsage );
+        buffer.elementCount = curvesSampling.lineElements.size();
+      }
+    }
+    buffers.setVersion( 'topology', curvesSampling.structureVersion );
+  }
+    
+  OGLBuffer buffer = buffers.get('topology');
+  if(buffer == null){
+    report("Warning: invalid topology for :" +shape.getName());
+    return false;
+  }
+
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffer.bufferID);
+  glLineWidth( curvesShape.getLineWidth() );
+
+  Xfo xfos[] = instance.transform.nonLocking_getAllGlobalXfos();
+
+  if(shader.supportsHardwareInstancing())
+  {
+    shader.enableHardwareInstancing(context, true, instance.instancingStorage, xfos, instance.transform.getVersion());
+
+    glDrawElementsInstanced(GL_LINES, buffer.elementCount, buffer.bufferElementComponentType, NULL, xfos.size());
+
+    shader.enableHardwareInstancing(context, false, instance.instancingStorage, xfos, instance.transform.getVersion());
+  }
+  else
+  {
+    for(Size i=0;i<xfos.size();i++)
+    {
+      if(!OGLTransform_draw(context, shader, xfos[i].toMat44()))
+        return false;
+      if(!instance.drawTransformUniforms(context, shader, i))
+        return false;
+      glDrawElements(GL_LINES, buffer.elementCount, buffer.bufferElementComponentType, NULL);
+    }
+  }
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+  return true;
+}

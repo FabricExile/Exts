@@ -1,0 +1,52 @@
+
+
+// Example error message from NVidia compiler. 
+// Fragment shader failed to compile with the following errors:
+// ERROR: 1:6: error(#202) No matching overloaded function found ttexture2D
+// ERROR: 1:6: error(#216) Vector field selection out of range 'rgb'
+// ERROR: error(#273) 2 compilation errors.  No code generated
+
+function String GLSLPreprocessor_errorMessageParser(String glslErrorMessage, GLSLLineMapping mappings[]){
+  String lines[] = glslErrorMessage.split('\n');
+  for(Integer i=0; i<lines.size(); i++){
+    String line = lines[i];
+
+    // Older/Newer? NVidia and ATI error syntax: "ERROR: lineNumber:charIndex: error(#errorNumber) message"
+    Integer pos = line.find('ERROR:', 0);
+    if(pos != -1){
+      String parts[] = line.split(' ');
+      String lineAndCharNumbers[] = parts[1].split(':');
+      if(lineAndCharNumbers.size() != 3)
+        continue;
+      Integer lineNumber = lineAndCharNumbers[0].toInteger()-1;
+      Integer mappingIndex, mappingLineIndex;
+      GLSLPreprocessor_findSourceLocation( lineNumber, mappings, mappingIndex, mappingLineIndex );
+      if(mappingIndex == -1){
+        setError("Invalid line number:" + lineNumber + ". No file found that could contain that line number.");
+        continue;
+      }
+      lineAndCharNumbers[0] = mappings[mappingIndex].resolvedPath +"(" + String(mappingLineIndex + 1);
+      parts[1] = lineAndCharNumbers[0] +':' + lineAndCharNumbers[1]+") :";
+      lines[i] = ' '.join(parts);
+    }
+    else{
+      // The new NVidia error syntax is: "0(lineNumber) : error errorNumber: Message"
+      pos = line.find(': error', 0);
+      if(pos != -1){
+        String parts[] = line.split(' ');
+        Integer openBrace = parts[0].find('(');
+        Integer closeBrace = parts[0].find(')');
+        Integer lineNumber = parts[0].subString(openBrace+1, closeBrace-2).toInteger()-1;
+        Integer mappingIndex, mappingLineIndex;
+        GLSLPreprocessor_findSourceLocation( lineNumber, mappings, mappingIndex, mappingLineIndex );
+        if(mappingIndex == -1){
+          setError("Invalid line number:" + lineNumber + ". No file found that could contain that line number.");
+          continue;
+        }
+        parts[0] = mappings[mappingIndex].resolvedPath +"(" + String(mappingLineIndex + 1) + ")";
+        lines[i] = ' '.join(parts);
+      }
+    }
+  }
+  return '\n'.join(lines);
+}

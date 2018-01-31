@@ -1,0 +1,658 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+require Singletons;
+require FabricSynchronization;
+
+interface InlineDrawing;
+
+interface InlineDrawingCallback {
+  viewportRegistered!(InlineDrawing inlineDrawing, io Viewport viewport);
+};
+
+/**
+\versionadded 1.13.0
+
+The InlineDrawing is an interface describing all methods required for the InlineDrawingBase object.
+   
+\dfgPresetOmit
+*/
+interface InlineDrawing {
+  /// returns the root transform of this drawing
+  InlineTransform getRoot();
+  /// returns the number of registered shaders
+  Size getShaderCount();
+  /// returns true if a shader with a given name has been registered
+  Boolean hasShader(String name);
+  /// registers a new shader into this drawing
+  InlineShader registerShader!(InlineShader shader);
+   /// registers a new shader of type shaderType into this drawing
+  InlineShader registerShader!(Type shaderType);
+  /// returns the index of a shader in the drawing
+  Integer getShaderIndex(String name);
+  /// returns a shader given an index
+  InlineShader getShader(Index index);
+  /// returns a shader given a name, or null
+  InlineShader getShader(String name);
+  /// registers a new adaptor for shape drawing
+  registerTransformAdaptor!(InlineTransformAdaptor adaptor);
+  /// unregisters this shape from this drawing
+  /// returns true of successful
+  Boolean unregisterShape!(String name);
+  /// returns the index of a transform adaptor
+  Integer getTransformAdaptorIndex(String transformType);
+  /// returns the transform adaptor of a given index
+  InlineTransformAdaptor getTransformAdaptor(Index index);
+  /// returns the transform adaptor for a given type
+  InlineTransformAdaptor getTransformAdaptor(String transformType);
+  /// registers a new adaptor for shape drawing
+  registerShapeAdaptor!(InlineShapeAdaptor adaptor);
+  /// returns the index of a shape adaptor
+  Integer getShapeAdaptorIndex(String shapeType);
+  /// returns the shape adaptor of a given index
+  InlineShapeAdaptor getShapeAdaptor(Index index);
+  /// returns the shape adaptor for a given type
+  InlineShapeAdaptor getShapeAdaptor(String shapeType);
+  /// returns true if a shape with a given name has been registered
+  Boolean hasShape(String name);
+  /// registers a new shape into this drawing
+  InlineShape registerShape!(InlineShapeBase shape);
+  /// returns the number of shapes registered
+  Size getShapeCount();
+  /// returns the index of a shape in the drawing
+  Integer getShapeIndex(String name);
+  /// returns a shape with a given index, or null
+  InlineShape getShape(Index index);
+  /// returns a shape with a given name, or null
+  InlineShape getShape(String name);
+  /// registers a new adaptor for texture drawing
+  registerTextureAdaptor!(InlineTextureAdaptor adaptor);
+  /// returns the index of a texture adaptor
+  Integer getTextureAdaptorIndex(String textureType);
+  /// returns the texture adaptor of a given index
+  InlineTextureAdaptor getTextureAdaptor(Index index);
+  /// returns the texture adaptor for a given type
+  InlineTextureAdaptor getTextureAdaptor(String textureType);
+  /// returns true if a given texture has been registered
+  Boolean hasTexture(String name);
+  /// registers a new texture into this drawing.
+  /// the texture should replace an existing texture if name
+  /// unique is relevant.
+  InlineTexture registerTexture!(InlineTexture texture);
+  /// returns the number of textures registered
+  Size getTextureCount();
+  /// returns the index of a texture in the drawing
+  Integer getTextureIndex(String name);
+  /// returns a texture with a given index, or null
+  InlineTexture getTexture(Index index);
+  /// returns a texture with a given name, or null
+  InlineTexture getTexture(String name);
+  /// returns an InlineAtlasTexture to draw text
+  Ref<InlineTexture> getOrCreateAtlasTexture!(FilePath fontPath, UInt32 fontSize);
+
+  /// draws the content of the drawing on the screen.
+  /// this is called automatically by the DCC integrations and should
+  /// not be called manually.
+  /// \internal
+  Boolean draw!(io DrawContext context);
+
+  /// draws the content of the drawing on the screen for a given viewport.
+  /// \internal
+  Boolean drawViewport!(String key, io DrawContext context);
+  /// Registers a new viewport
+  registerViewport!(String key, Viewport viewport);
+  /// Returns a known viewport 
+  Viewport getViewport(String key);
+  /// Gets or creates a viewport 
+  Viewport getOrCreateViewport!( String key );
+  /// Registers a InlineDrawingCallback
+  registerCallback!( InlineDrawingCallback callback );
+  /// deregisters a InlineDrawingCallback
+  deregisterCallback!(InlineDrawingCallback callback);
+  /// deregisters a InlineDrawingCallback
+  InlineDrawingCallback[] getCallbacks();
+  
+  /// \internal
+  clearAll!();
+
+  /// \internal
+  /// print the content of the InlineDrawing
+  printContent();
+};
+
+/**
+\versionadded 1.12.0
+
+The InlineDrawingBase is used to perform direct rendering to the viewport. This KL object is inherited by the OGLInlineDrawing type for specialized OpenGL direct rendering. The InlineDrawingBase manages a minimalistic scene using the InlineTransform, as well as InlineShader and InlineShape objects.
+   
+\dfgPresetOmit
+*/
+object InlineDrawingBase : InlineEntityBase, InlineDrawing, AppEventCallback {
+  /// \internal
+  InlineTransformBase root;
+
+  /// \internal
+  InlineShader shaders[];
+  /// \internal
+  Size shaderOffsets[String];
+
+  /// \internal
+  InlineTransformAdaptor transformAdaptors[];
+  /// \internal
+  Size transformAdaptorOffsets[String];
+
+  /// \internal
+  InlineShapeAdaptor shapeAdaptors[];
+  /// \internal
+  Size shapeAdaptorOffsets[String];
+
+  /// \internal
+  InlineShapeBase shapes[];
+  /// \internal
+  Size shapeOffsets[String];
+
+  /// \internal
+  InlineTextureAdaptor textureAdaptors[];
+  /// \internal
+  Size textureAdaptorOffsets[String];
+
+  /// \internal
+  InlineTexture textures[];
+  /// \internal
+  Size textureOffsets[String];
+
+  /// \internal
+  Viewport viewports[String];
+
+  /// \internal
+  InlineDrawingCallback callbacks[];
+
+  /// \internal
+  SimpleLock simpleLock;
+};
+
+/// default constructor
+function InlineDrawingBase() {
+  this.setName("InlineDrawing");
+  this.simpleLock = SimpleLock("InlineDrawing");
+  this.root = InlineTransformBase("InlineDrawing", Xfo());
+  RegisterToAppEvent(AppEvent_newScene, this);
+}
+
+/// \internal
+function ~InlineDrawingBase() {
+  UnregisterFromAppEvent(AppEvent_newScene, this);  
+}
+
+/// returns the name of this drawing
+function String InlineDrawingBase.getName() {
+  return this.root.getName();
+}
+
+/// returns the root transform of this drawing
+function InlineTransform InlineDrawingBase.getRoot() {
+  return this.root;
+}
+
+/// \internal
+InlineDrawingBase.clearAll!( ) {
+
+  this.shaders.resize(0);
+  this.shaderOffsets.clear();
+  this.transformAdaptors.resize(0);
+  this.transformAdaptorOffsets.clear();
+  this.shapeAdaptors.resize( 0 );
+  this.shapeAdaptorOffsets.clear();
+  this.shapes.resize( 0 );
+  this.shapeOffsets.clear();
+  this.textureAdaptors.resize( 0 );
+  this.textureAdaptorOffsets.clear();
+  this.textures.resize( 0 );
+  this.textureOffsets.clear();
+  this.viewports.clear();
+  this.callbacks.resize( 0 );
+
+  this.root = InlineTransformBase( "InlineDrawing", Xfo() );
+}
+
+/// \internal
+/// Implementation of AppEventCallback.
+InlineDrawingBase.onAppEvent!( String eventName ) {
+  if( eventName == AppEvent_newScene )
+    this.clearAll();
+}
+
+//////////////////////////////////////////
+// Shaders
+
+/// returns the number of registered shaders
+function Size InlineDrawingBase.getShaderCount() {
+  AutoLock AL(this.simpleLock);
+  return this.shaders.size();
+}
+
+/// returns true if a shader with a given name has been registered
+function Boolean InlineDrawingBase.hasShader(String name) {
+  AutoLock AL(this.simpleLock);
+  return this.shaderOffsets.has(name);
+}
+
+/// registers a new shader into this drawing
+function InlineShader InlineDrawingBase.registerShader!(InlineShader shader) {
+  AutoLock AL(this.simpleLock);
+  if(this.hasShader(shader.getName())){
+    InlineShader existingShader = this.getShader(shader.getName());
+    if(existingShader.type() != shader.type())
+      setError('InlineDrawing::registerShader: There is already a shader "'+shader.getName()+'" with a different type ("'+existingShader.type()+'").');
+    return existingShader;
+  }
+  else{
+    this.shaderOffsets[shader.getName()] = this.shaders.size();
+    this.shaders.push(shader);
+    return shader;
+  }
+}
+
+/// registers a new shader of type shaderType into this drawing
+function InlineShader InlineDrawingBase.registerShader!(Type shaderType) {
+  AutoLock AL(this.simpleLock);
+  String name = shaderType;
+  if(this.hasShader(name))
+    return this.getShader(name);
+  else
+  {
+    InlineShader shader = shaderType.createNew();
+    this.shaderOffsets[name] = this.shaders.size();
+    this.shaders.push(shader);
+    return shader;
+  }
+}
+
+/// returns the index of a shader in the drawing
+function Integer InlineDrawingBase.getShaderIndex(String name) {
+  AutoLock AL(this.simpleLock);
+  return this.shaderOffsets.get(name, -1);
+}
+
+/// returns a shader given an index
+function InlineShader InlineDrawingBase.getShader(Index index) {
+  AutoLock AL(this.simpleLock);
+  return this.shaders[index];
+}
+
+/// returns a shader given a name, or null
+function InlineShader InlineDrawingBase.getShader(String name) {
+  AutoLock AL(this.simpleLock);
+  Size offset = this.shaderOffsets.get(name, this.shaders.size());
+  if(offset == this.shaders.size())
+    return null;
+  return this.shaders[offset];
+}
+
+
+//////////////////////////////////////////
+// Transforms
+
+/// registers a new adaptor for shape drawing
+function InlineDrawingBase.registerTransformAdaptor!(InlineTransformAdaptor adaptor) {
+  AutoLock AL(this.simpleLock);
+  String types[] = adaptor.getTransformTypes();
+  for(Size i=0; i<types.size(); i++) {
+    Size offset = this.transformAdaptorOffsets.get(types[i], this.transformAdaptors.size());
+    if(offset == this.transformAdaptors.size()) {
+      this.transformAdaptorOffsets[types[i]] = offset;
+      this.transformAdaptors.push(adaptor);
+    }
+  }
+}
+
+/// returns the index of a transform adaptor
+function Integer InlineDrawingBase.getTransformAdaptorIndex(String transformType) {
+  AutoLock AL(this.simpleLock);
+  return this.transformAdaptorOffsets.get(transformType, -1);
+}
+
+/// returns the transform adaptor of a given index
+function InlineTransformAdaptor InlineDrawingBase.getTransformAdaptor(Index index) {
+  AutoLock AL(this.simpleLock);
+  return this.transformAdaptors[index];
+}
+
+/// returns the transform adaptor for a given type
+function InlineTransformAdaptor InlineDrawingBase.getTransformAdaptor(String transformType) {
+  AutoLock AL(this.simpleLock);
+  Size offset = this.transformAdaptorOffsets.get(transformType, this.transformAdaptors.size());
+  if(offset == this.transformAdaptors.size()) {
+    report('ERROR: There is no known transform adaptor for transform type "'+transformType+'".');
+    return null;
+  }
+  return this.transformAdaptors[offset];
+}
+
+
+//////////////////////////////////////////
+// Shapes
+
+/// registers a new adaptor for shape drawing
+function InlineDrawingBase.registerShapeAdaptor!(InlineShapeAdaptor adaptor) {
+  AutoLock AL(this.simpleLock);
+  String types[] = adaptor.getShapeTypes();
+  for(Size i=0; i<types.size(); i++) {
+    Size offset = this.shapeAdaptorOffsets.get(types[i], this.shapeAdaptors.size());
+    if(offset == this.shapeAdaptors.size()) {
+      this.shapeAdaptorOffsets[types[i]] = offset;
+      this.shapeAdaptors.push(adaptor);
+    }
+  }
+}
+
+/// returns the index of a shape adaptor
+function Integer InlineDrawingBase.getShapeAdaptorIndex(String shapeType) {
+  AutoLock AL(this.simpleLock);
+  return this.shapeAdaptorOffsets.get(shapeType, -1);
+}
+
+/// returns the shape adaptor of a given index
+function InlineShapeAdaptor InlineDrawingBase.getShapeAdaptor(Index index) {
+  AutoLock AL(this.simpleLock);
+  return this.shapeAdaptors[index];
+}
+
+/// returns the shape adaptor for a given type
+function InlineShapeAdaptor InlineDrawingBase.getShapeAdaptor(String shapeType) {
+  AutoLock AL(this.simpleLock);
+  Size offset = this.shapeAdaptorOffsets.get(shapeType, this.shapeAdaptors.size());
+  if(offset == this.shapeAdaptors.size()) {
+    report('ERROR: There is no known shape adaptor for shape type "'+shapeType+'".');
+    return null;
+  }
+  return this.shapeAdaptors[offset];
+}
+
+
+/// returns true if a shape with a given name has been registered
+function Boolean InlineDrawingBase.hasShape(String name) {
+  AutoLock AL(this.simpleLock);
+  return this.shapeOffsets.has(name);
+}
+
+/// registers a new shape into this drawing
+function InlineShape InlineDrawingBase.registerShape!(InlineShapeBase shape) {
+  AutoLock AL(this.simpleLock);
+  Size offset = this.shapeOffsets.get(shape.getName(), this.shapes.size());
+  if(offset < this.shapes.size()) {
+    InlineShape existingShape = this.shapes[offset];
+    if(existingShape.type() != shape.type())
+      setError('InlineDrawing::registerShape: There is already a shape "'+shape.getName()+'" with a different type ("'+existingShape.type()+'").');
+    return existingShape;
+  }
+  this.shapeOffsets[shape.getName()] = offset;
+  this.shapes.push(shape);
+  return shape;
+}
+
+/// unregisters a new shape into this drawing.
+/// returns true of successful
+function Boolean InlineDrawingBase.unregisterShape!(String name) {
+  AutoLock AL(this.simpleLock);
+  Size offset = this.shapeOffsets.get(name, this.shapes.size());
+  if(offset < this.shapes.size()) 
+  {
+    String lastShapeName = this.shapes[this.shapes.size()-1].getName();
+
+    if(offset < this.shapes.size()-1)
+    {
+      this.shapes[offset] = this.shapes[this.shapes.size()-1];
+      String shapeToRemoveName = this.shapes[offset].getName();
+      this.shapeOffsets[shapeToRemoveName] = this.shapeOffsets[lastShapeName];
+    }
+  
+    this.shapes.resize(this.shapes.size()-1);
+    this.shapeOffsets.delete(lastShapeName);
+
+    return true;
+  }
+  return false;
+}
+
+/// returns the number of shapes registered
+function Size InlineDrawingBase.getShapeCount() {
+  AutoLock AL(this.simpleLock);
+  return this.shapes.size();
+}
+
+/// returns the index of a shape in the drawing
+function Integer InlineDrawingBase.getShapeIndex(String name) {
+  AutoLock AL(this.simpleLock);
+  return this.shapeOffsets.get(name, -1);
+}
+
+/// returns a shape with a given index, or null
+function InlineShape InlineDrawingBase.getShape(Index index) {
+  AutoLock AL(this.simpleLock);
+  return this.shapes[index];
+}
+
+/// returns a shape with a given name, or null
+function InlineShape InlineDrawingBase.getShape(String name) {
+  AutoLock AL(this.simpleLock);
+  Size offset = this.shapeOffsets.get(name, this.shapes.size());
+  if(offset == this.shapes.size())
+    return null;
+  return this.shapes[offset];
+}
+
+//////////////////////////////////////////
+// Textures
+  
+
+/// registers a new adaptor for texture drawing
+function InlineDrawingBase.registerTextureAdaptor!(InlineTextureAdaptor adaptor) {
+  AutoLock AL(this.simpleLock);
+  String types[] = adaptor.getTextureTypes();
+  for(Size i=0; i<types.size(); i++) {
+    Size offset = this.textureAdaptorOffsets.get(types[i], this.textureAdaptors.size());
+    if(offset == this.textureAdaptors.size()) {
+      this.textureAdaptorOffsets[types[i]] = offset;
+      this.textureAdaptors.push(adaptor);
+    }
+  }
+}
+
+/// returns the index of a texture adaptor
+function Integer InlineDrawingBase.getTextureAdaptorIndex(String textureType) {
+  AutoLock AL(this.simpleLock);
+  return this.textureAdaptorOffsets.get(textureType, -1);
+}
+
+/// returns the texture adaptor of a given index
+function InlineTextureAdaptor InlineDrawingBase.getTextureAdaptor(Index index) {
+  AutoLock AL(this.simpleLock);
+  return this.textureAdaptors[index];
+}
+
+/// returns the texture adaptor for a given type
+function InlineTextureAdaptor InlineDrawingBase.getTextureAdaptor(String textureType) {
+  AutoLock AL(this.simpleLock);
+  Size offset = this.textureAdaptorOffsets.get(textureType, this.textureAdaptors.size());
+  if(offset == this.textureAdaptors.size()) {
+    report('ERROR: There is no known texture adaptor for texture type "'+textureType+'".');
+    return null;
+  }
+  return this.textureAdaptors[offset];
+}
+
+/// returns true if a given texture has been registered
+function Boolean InlineDrawingBase.hasTexture(String name) {
+  AutoLock AL(this.simpleLock);
+  return this.textureOffsets.has(name);
+}
+
+/// registers a new texture into this drawing.
+/// the texture should replace an existing texture if name
+/// unique is relevant.
+function InlineTexture InlineDrawingBase.registerTexture!(InlineTexture texture) {
+  AutoLock AL(this.simpleLock);
+  Size offset = this.textureOffsets.get(texture.getName(), this.textures.size());
+  if(offset < this.textures.size())
+    return this.textures[offset];
+  this.textureOffsets[texture.getName()] = offset;
+  this.textures.push(texture);
+  return texture;
+}
+
+/// returns the number of textures registered
+function Size InlineDrawingBase.getTextureCount() {
+  AutoLock AL(this.simpleLock);
+  return this.textures.size();
+}
+
+/// returns the index of a texture in the drawing
+function Integer InlineDrawingBase.getTextureIndex(String name) {
+  AutoLock AL(this.simpleLock);
+  return this.textureOffsets.get(name, -1);
+}
+
+/// returns a texture with a given index, or null
+function InlineTexture InlineDrawingBase.getTexture(Index index) {
+  AutoLock AL(this.simpleLock);
+  return this.textures[index];
+}
+
+/// returns a texture with a given name, or null
+function InlineTexture InlineDrawingBase.getTexture(String name) {
+  AutoLock AL(this.simpleLock);
+  Size offset = this.textureOffsets.get(name, this.textures.size());
+  if(offset == this.textures.size())
+    return null;
+  return this.textures[offset];
+}
+
+//////////////////////////////////////////
+// Drawing
+
+/// draws the content of the drawing on the screen.
+/// this is called automatically by the DCC integrations and should
+/// not be called manually.
+/// \internal
+function Boolean InlineDrawingBase.draw!(io DrawContext context) {
+  setError("Boolean InlineDrawingBase.draw should be overridden in a derived drawing object. See OGLInlineDrawing.");
+  return false;
+}
+
+///////////////////////////////////////////
+// Viewports
+
+/// path for drawing in standalone scenarios
+/// \internal
+function Boolean InlineDrawingBase.drawViewport!(String key, io DrawContext context) {
+  Viewport vp = this.viewports.get(key, null);
+  if(!vp) {
+    setError("Viewport "+key+" not found.");
+    return false;
+  }
+
+  context.viewport = vp;
+
+  if(vp.draw(context))
+    return true;
+
+  vp.invokeCallback(ViewportDrawPhase_PreDraw, context);
+
+  Boolean result = vp.invokeCallback(ViewportDrawPhase_Draw, context);
+  if(!result)
+    result = this.draw(context);
+
+  vp.invokeCallback(ViewportDrawPhase_PostDraw, context);
+
+  if(vp.postDraw(context))
+    return true;
+
+  return result;
+}
+
+/// Gets or creates a new viewport
+function Viewport InlineDrawingBase.getOrCreateViewport!( String key ) {
+  if( !this.viewports.has( key ) ) {
+    InlineViewport viewport();
+    viewport.setName( key );
+    this.registerViewport( key, viewport );
+  }
+  return this.viewports[key];
+}
+
+/// Registers a new viewport
+function InlineDrawingBase.registerViewport!(String key, Viewport viewport) {
+  if( !this.viewports.has( key ) ) {
+    this.viewports[key] = viewport;
+    for( Size i = 0; i < this.callbacks.size(); ++i ) {
+      Viewport vp = viewport;
+      this.callbacks[i].viewportRegistered( this, vp );
+    }
+  }
+}
+
+/// Returns a known viewport 
+function Viewport InlineDrawingBase.getViewport(String key) {
+  return this.viewports.get(key, null);
+}
+
+/// Registers a InlineDrawingCallback
+InlineDrawingBase.registerCallback!( InlineDrawingCallback callback ) {
+  InlineDrawingCallback ioCallback = callback;
+  this.callbacks.push(ioCallback);
+  for( k,v in this.viewports )
+    ioCallback.viewportRegistered( this, v );
+}
+
+/// deregisters a InlineDrawingCallback
+InlineDrawingBase.deregisterCallback!(InlineDrawingCallback callback) {
+  for( Size i = 0; i < this.callbacks.size(); ++i ) {
+    if( this.callbacks[i] === callback ) {
+      // Shuffle with last one
+      this.callbacks[i] = this.callbacks[this.callbacks.size()-1];
+      this.callbacks.resize(this.callbacks.size()-1);
+      break;
+    }
+  }
+}
+
+InlineDrawingCallback[] InlineDrawingBase.getCallbacks() {
+  return this.callbacks;
+}
+
+///////////////////////////////////////////
+// Debug
+/// \internal
+/// print the content of the InlineDrawing
+function InlineDrawingBase.printContent() {
+  report("\n ---- Registered Shape ----");
+  for(Index i=0; i<this.getShapeCount(); ++i)
+  {
+    Ref<InlineShape> shape = this.getShape(i);
+    report("Shape[" + i + "] " + shape.getName());
+    
+  }
+
+  report("\n ---- Registered Shaders, Material and Instances ----");
+
+  for(Index i=0; i<this.getShaderCount(); ++i)
+  {
+    Ref<InlineShader> shader = this.getShader(i);
+    report("Shader[" + i + "] " + shader.getName());
+
+    for(Index j=0; j<shader.getMaterialCount(); ++j)
+    {
+      Ref<InlineMaterial> material = shader.getMaterial(j);
+      report("Material[" + j + "] " + material.getName());
+
+      for(Index k=0; k<material.getInstanceCount(); ++k)
+      {
+        Ref<InlineInstance> instance = material.getInstance(k);
+        report("Instance[" + k + "] " + instance.getName());
+      }
+    }
+  }
+}

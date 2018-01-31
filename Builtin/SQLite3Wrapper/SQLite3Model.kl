@@ -1,0 +1,202 @@
+//
+// Copyright 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+require Util;
+
+struct SQLite3Instance;
+
+/// The SQLite3Model implements a model for a SQL database.
+/// The model supports the standard datbase operations such as
+/// insert, delete, select and update.
+object SQLite3Model permits SQLite3Factory, SQLite3Instance
+{
+  protected Ref<SQLite3DataBase> db;
+  protected Ref<SQLite3Factory> factory;
+  protected String modelName;
+  protected String fields[String];
+};
+
+/// Default constructor
+SQLite3Model(Ref<SQLite3DataBase> db, String modelName)
+{
+  this.init(db, modelName);
+}
+
+/// Returns the name of the model
+String SQLite3Model.getModelName?()
+{
+  return this.modelName;
+}
+
+/// Returns the database this model refers to.
+Ref<SQLite3DataBase> SQLite3Model.getDB?()
+{
+  return this.db;
+}
+
+/// Creates the data base table if it needs to be
+/// setup.
+Boolean SQLite3Model.createTableIfRequired!()
+{
+  String sql = 'SELECT name FROM sqlite_master WHERE type="table"';
+  sqlite3_records records = this.db.select(sql);
+  for(UInt32 i=0;i<records.size();i++)
+  {
+    if(records.cxx_getAtIndex(i).cxx_getAtIndex(0) == this.getModelName())
+      return true;
+  }
+
+  sql = 'CREATE TABLE '+this.getModelName();
+  sql += '(';
+  for(key in this.fields)
+  {
+    if(!sql.endsWith('('))
+      sql += ', ';
+    sql += key + ' ' + this.fields[key];
+  }
+  sql += ');';
+
+  this.db.execute(sql);
+  return true;
+}
+
+/// Returns the number of instances of this model
+UInt32 SQLite3Model.count!()
+{
+  String sql = "SELECT COUNT(rowid) FROM "+this.getModelName()+";";
+  sqlite3_records records = this.db.select(sql);
+  String result = records.cxx_getAtIndex(0).cxx_getAtIndex(0);
+  return result.toInteger();
+}
+
+/// Returns a single instance based on the rowid
+/// If prefetch is true all of the fields will be pulled already
+SQLite3Instance SQLite3Model.getFromRowId(SInt64 rowid, Boolean prefetch)
+{
+  if(prefetch)
+    return SQLite3Instance(this, rowid, this.selectFromRowId(rowid));
+  return SQLite3Instance(this, rowid);
+}
+
+/// Returns a list of instances based on a SQL query string
+/// If prefetch is true all of the fields will be pulled already
+SQLite3Instance[] SQLite3Model.getFromSql(String sql, Boolean prefetch)
+{
+  SQLite3Instance result[];
+  sqlite3_records records = this.db.select(sql);
+  for(UInt32 i=0;i<records.size();i++)
+  {
+    sqlite3_record record = records.cxx_getAtIndex(i);
+    UInt32 offset = 0;
+    SInt64 rowid = String(record.cxx_getAtIndex(offset++)).toInteger();
+    if(prefetch)
+    {
+      String fields[String];
+      for(key in this.fields)
+        fields[key] = record.cxx_getAtIndex(offset++);
+      result.push(SQLite3Instance(this, rowid, this.selectFromRowId(rowid)));
+    }
+    else
+    {
+      result.push(SQLite3Instance(this, rowid));
+    }
+  }
+  return result;
+}
+
+protected SQLite3Model.init!(Ref<SQLite3DataBase> db, String modelName)
+{
+  this.modelName = modelName;
+  this.db = db;
+  this.factory = null;
+}
+
+protected SQLite3Model.setFactory!(Ref<SQLite3Factory> factory)
+{
+  this.factory = factory;
+}
+
+protected SQLite3Instance SQLite3Model.insertFromFields!(String fields[String])
+{
+  String sql = "INSERT INTO "+this.getModelName()+" (";
+  for(key in this.fields)
+  {
+    if(!fields.has(key))
+      continue;
+    if(!sql.endsWith('('))
+      sql += ', ';
+    sql += key;
+  }
+  sql += ") VALUES (";
+  for(key, format in this.fields)
+  {
+    if(!fields.has(key))
+      continue;
+    if(!sql.endsWith('('))
+      sql += ', ';
+    String value = fields[key];
+    if(!value.startsWith('"') && format.startsWith('TEXT'))
+      sql += '"' + value + '"';
+    else
+      sql += value;
+  }
+  sql += ');';
+
+  SInt64 rowid = this.db.insert(sql);
+  if(fields.size() < this.fields.size())
+    return this.getFromRowId(rowid, true);
+  return SQLite3Instance(this, rowid, fields);
+}
+
+protected SQLite3Model.updateFromFields(SInt64 rowid, String fields[String])
+{
+  String sql = "UPDATE "+this.getModelName()+" SET ";
+  UInt32 offset = 0;
+  for(key, format in this.fields)
+  {
+    if(!fields.has(key))
+      continue;
+    if(offset > 0)
+      sql += ", ";
+    String value = fields[key];
+    if(!value.startsWith('"') && format.startsWith('TEXT'))
+      sql += key + ' = "' + value + '"';
+    else
+      sql += key + ' = ' + value;
+    offset++;
+  }
+  sql += ' WHERE rowid = '+rowid+';';
+  this.db.update(sql);
+}
+
+protected String[String] SQLite3Model.selectFromRowId(SInt64 rowid)
+{
+  String result[String];
+  String sql = "SELECT ";
+  for(key in this.fields)
+  {
+    if(!sql.endsWith(' '))
+      sql += ', ';
+    sql += key;
+  }
+  sql += " FROM "+this.getModelName()+" WHERE rowid = "+rowid+";";
+
+  sqlite3_records records = this.db.select(sql);
+  if(records.size() == 0)
+    return result;
+
+  sqlite3_record record = records.cxx_getAtIndex(0);
+  UInt32 offset = 0;
+  for(key in this.fields)
+    result[key] = record.cxx_getAtIndex(offset++);
+
+  return result;
+}
+
+protected Boolean SQLite3Model.delete!(SInt64 rowid)
+{
+  String sql = "DELETE FROM "+this.getModelName()+" WHERE rowid = "+rowid+";";
+  this.db.delete(sql);
+  return true;
+}

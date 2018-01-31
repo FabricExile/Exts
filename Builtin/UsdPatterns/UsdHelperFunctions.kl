@@ -1,0 +1,482 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+require USD;
+require Math;
+
+Mat44 UsdPrim_getTransform(UsdPrim prim, UsdTimeCode tc)
+{
+  UsdGeomXformable xformable(prim);
+ 
+  Mat44_d matrix_d;
+  Boolean resetTransformStack;
+  xformable.GetLocalTransformation(matrix_d, resetTransformStack, tc);
+
+  Mat44 matrix;
+  matrix.row0.x = Float32(matrix_d.row0.x);
+  matrix.row0.y = Float32(matrix_d.row0.y);
+  matrix.row0.z = Float32(matrix_d.row0.z);
+  matrix.row0.t = Float32(matrix_d.row0.t);
+  matrix.row1.x = Float32(matrix_d.row1.x);
+  matrix.row1.y = Float32(matrix_d.row1.y);
+  matrix.row1.z = Float32(matrix_d.row1.z);
+  matrix.row1.t = Float32(matrix_d.row1.t);
+  matrix.row2.x = Float32(matrix_d.row2.x);
+  matrix.row2.y = Float32(matrix_d.row2.y);
+  matrix.row2.z = Float32(matrix_d.row2.z);
+  matrix.row2.t = Float32(matrix_d.row2.t);
+  matrix.row3.x = Float32(matrix_d.row3.x);
+  matrix.row3.y = Float32(matrix_d.row3.y);
+  matrix.row3.z = Float32(matrix_d.row3.z);
+  matrix.row3.t = Float32(matrix_d.row3.t);
+
+  return matrix.transpose();
+}
+
+function UsdPrim_setupScalarGeometryAttribute(Geometry geometry, UsdGeomPrimvar primvar, UsdTimeCode tc) {
+  String name = primvar.GetName().GetText();
+  name = name.reversePartition(':')[2];
+  if(name == 'st')
+    name = 'uvs0';
+
+  UsdAttribute primvarAttr = primvar.GetAttr();
+  GfFloatArray values = primvarAttr.GetGfFloatArray(tc);
+
+  VtIntArray indices;
+  if(primvar.IsIndexed())
+    primvar.GetIndices(indices);
+
+  GeometryAttributes geoAttributes = geometry.getAttributes();
+  Ref<ScalarAttribute> attr = geoAttributes.getOrCreateScalarAttribute(name);
+  String interpolation = primvar.GetInterpolation().GetText();
+
+  PolygonMesh mesh = geometry;
+  if(mesh)
+  {
+    switch(interpolation)
+    {
+      case 'constant':
+      case 'uniform':
+      {
+        for(Size i=0;i<attr.values.size();i++)
+          attr.values[i] = values.cxx_getAtIndex(0);
+        break;
+      }
+      case 'vertex':
+      {
+        if(indices.size() > 0) {
+          for(Size i=0;i<mesh.pointCount();i++) {
+            SInt32 index = indices.cxx_getAtIndex(i);
+            mesh.setPointAttribute(i, attr, values.cxx_getAtIndex(index));
+          }
+        } else {
+          for(Size i=0;i<mesh.pointCount();i++)
+            mesh.setPointAttribute(i, attr, values.cxx_getAtIndex(i));
+        }
+        break;
+      }
+      case 'varying':
+      case 'faceVarying':
+      {
+        if(indices.size() > 0) {
+          UInt32 offset = 0;
+          for(UInt32 i=0;i<mesh.polygonCount();i++)
+          {
+            UInt32 count = UInt32(mesh.getPolygonSize(i));
+            for(UInt32 j=0;j<count;j++) {
+              SInt32 index = indices.cxx_getAtIndex(offset++);
+              mesh.setPolygonAttribute(UInt32(i), j, attr, values.cxx_getAtIndex(index));
+            }
+          }
+        } else {
+          UInt32 offset = 0;
+          for(UInt32 i=0;i<mesh.polygonCount();i++)
+          {
+            UInt32 count = UInt32(mesh.getPolygonSize(i));
+            for(UInt32 j=0;j<count;j++)
+              mesh.setPolygonAttribute(UInt32(i), j, attr, values.cxx_getAtIndex(offset++));
+          }
+        }
+        break;
+      }
+      default:
+      {
+        throw('Unsupported interpolation for primvar '+name+': '+interpolation);
+      }
+    }
+  }
+  else
+  {
+    throw("Other types of geometry not implemented yet...!");
+  }
+}
+
+function UsdPrim_setupVec2GeometryAttribute(Geometry geometry, UsdGeomPrimvar primvar, UsdTimeCode tc) {
+  String name = primvar.GetName().GetText();
+  name = name.reversePartition(':')[2];
+  if(name == 'st')
+    name = 'uvs0';
+
+  UsdAttribute primvarAttr = primvar.GetAttr();
+  GfVec2fArray values = primvarAttr.GetGfVec2fArray(tc);
+
+  VtIntArray indices;
+  if(primvar.IsIndexed())
+    primvar.GetIndices(indices);
+
+  GeometryAttributes geoAttributes = geometry.getAttributes();
+  Ref<Vec2Attribute> attr = geoAttributes.getOrCreateVec2Attribute(name);
+  String interpolation = primvar.GetInterpolation().GetText();
+
+  PolygonMesh mesh = geometry;
+  if(mesh)
+  {
+    switch(interpolation)
+    {
+      case 'constant':
+      case 'uniform':
+      {
+        for(Size i=0;i<attr.values.size();i++)
+          attr.values[i] = values.cxx_getAtIndex(0);
+        break;
+      }
+      case 'vertex':
+      {
+        if(indices.size() > 0) {
+          for(Size i=0;i<mesh.pointCount();i++) {
+            SInt32 index = indices.cxx_getAtIndex(i);
+            mesh.setPointAttribute(i, attr, values.cxx_getAtIndex(index));
+          }
+        } else {
+          for(Size i=0;i<mesh.pointCount();i++)
+            mesh.setPointAttribute(i, attr, values.cxx_getAtIndex(i));
+        }
+        break;
+      }
+      case 'varying':
+      case 'faceVarying':
+      {
+        if(indices.size() > 0) {
+          UInt32 offset = 0;
+          for(UInt32 i=0;i<mesh.polygonCount();i++)
+          {
+            UInt32 count = UInt32(mesh.getPolygonSize(i));
+            for(UInt32 j=0;j<count;j++) {
+              SInt32 index = indices.cxx_getAtIndex(offset++);
+              mesh.setPolygonAttribute(UInt32(i), j, attr, values.cxx_getAtIndex(index));
+            }
+          }
+        } else {
+          UInt32 offset = 0;
+          for(UInt32 i=0;i<mesh.polygonCount();i++)
+          {
+            UInt32 count = UInt32(mesh.getPolygonSize(i));
+            for(UInt32 j=0;j<count;j++)
+              mesh.setPolygonAttribute(UInt32(i), j, attr, values.cxx_getAtIndex(offset++));
+          }
+        }
+        break;
+      }
+      default:
+      {
+        throw('Unsupported interpolation for primvar '+name+': '+interpolation);
+      }
+    }
+  }
+  else
+  {
+    throw("Other types of geometry not implemented yet...!");
+  }
+}
+
+function UsdPrim_setupVec3GeometryAttribute(Geometry geometry, UsdGeomPrimvar primvar, UsdTimeCode tc) {
+  String name = primvar.GetName().GetText();
+  name = name.reversePartition(':')[2];
+
+  UsdAttribute primvarAttr = primvar.GetAttr();
+  GfVec3fArray values = primvarAttr.GetGfVec3fArray(tc);
+
+  VtIntArray indices;
+  if(primvar.IsIndexed())
+    primvar.GetIndices(indices);
+
+  GeometryAttributes geoAttributes = geometry.getAttributes();
+  Ref<Vec3Attribute> attr = geoAttributes.getOrCreateVec3Attribute(name);
+  String interpolation = primvar.GetInterpolation().GetText();
+
+  PolygonMesh mesh = geometry;
+  if(mesh)
+  {
+    switch(interpolation)
+    {
+      case 'constant':
+      case 'uniform':
+      {
+        for(Size i=0;i<attr.values.size();i++)
+          attr.values[i] = values.cxx_getAtIndex(0);
+        break;
+      }
+      case 'vertex':
+      {
+        if(indices.size() > 0) {
+          for(Size i=0;i<mesh.pointCount();i++) {
+            SInt32 index = indices.cxx_getAtIndex(i);
+            mesh.setPointAttribute(i, attr, values.cxx_getAtIndex(index));
+          }
+        } else {
+          for(Size i=0;i<mesh.pointCount();i++)
+            mesh.setPointAttribute(i, attr, values.cxx_getAtIndex(i));
+        }
+        break;
+      }
+      case 'varying':
+      case 'faceVarying':
+      {
+        if(indices.size() > 0) {
+          UInt32 offset = 0;
+          for(UInt32 i=0;i<mesh.polygonCount();i++)
+          {
+            UInt32 count = UInt32(mesh.getPolygonSize(i));
+            for(UInt32 j=0;j<count;j++) {
+              SInt32 index = indices.cxx_getAtIndex(offset++);
+              mesh.setPolygonAttribute(UInt32(i), j, attr, values.cxx_getAtIndex(index));
+            }
+          }
+        } else {
+          UInt32 offset = 0;
+          for(UInt32 i=0;i<mesh.polygonCount();i++)
+          {
+            UInt32 count = UInt32(mesh.getPolygonSize(i));
+            for(UInt32 j=0;j<count;j++)
+              mesh.setPolygonAttribute(UInt32(i), j, attr, values.cxx_getAtIndex(offset++));
+          }
+        }
+        break;
+      }
+      default:
+      {
+        throw('Unsupported interpolation for primvar '+name+': '+interpolation);
+      }
+    }
+  }
+  else
+  {
+    throw("Other types of geometry not implemented yet...!");
+  }
+}
+
+function UsdPrim_setupColorGeometryAttribute(Geometry geometry, UsdGeomPrimvar primvar, UsdTimeCode tc) {
+  String name = primvar.GetName().GetText();
+  name = name.reversePartition(':')[2];
+  if(name == 'displayColor')
+    name = 'vertexColors';
+
+  UsdAttribute primvarAttr = primvar.GetAttr();
+  GfVec3fArray values = primvarAttr.GetGfVec3fArray(tc);
+
+  VtIntArray indices;
+  if(primvar.IsIndexed())
+    primvar.GetIndices(indices);
+
+  GeometryAttributes geoAttributes = geometry.getAttributes();
+  Ref<ColorAttribute> attr = geoAttributes.getOrCreateColorAttribute(name);
+  String interpolation = primvar.GetInterpolation().GetText();
+
+  PolygonMesh mesh = geometry;
+  if(mesh)
+  {
+    switch(interpolation)
+    {
+      case 'constant':
+      case 'uniform':
+      {
+        for(Size i=0;i<attr.values.size();i++)
+          attr.values[i] = values.cxx_getAtIndex(0);
+        break;
+      }
+      case 'vertex':
+      {
+        if(indices.size() > 0) {
+          for(Size i=0;i<mesh.pointCount();i++) {
+            SInt32 index = indices.cxx_getAtIndex(i);
+            mesh.setPointAttribute(i, attr, values.cxx_getAtIndex(index));
+          }
+        } else {
+          for(Size i=0;i<mesh.pointCount();i++)
+            mesh.setPointAttribute(i, attr, values.cxx_getAtIndex(i));
+        }
+        break;
+      }
+      case 'varying':
+      case 'faceVarying':
+      {
+        if(indices.size() > 0) {
+          UInt32 offset = 0;
+          for(UInt32 i=0;i<mesh.polygonCount();i++)
+          {
+            UInt32 count = UInt32(mesh.getPolygonSize(i));
+            for(UInt32 j=0;j<count;j++) {
+              SInt32 index = indices.cxx_getAtIndex(offset++);
+              mesh.setPolygonAttribute(UInt32(i), j, attr, values.cxx_getAtIndex(index));
+            }
+          }
+        } else {
+          UInt32 offset = 0;
+          for(UInt32 i=0;i<mesh.polygonCount();i++)
+          {
+            UInt32 count = UInt32(mesh.getPolygonSize(i));
+            for(UInt32 j=0;j<count;j++)
+              mesh.setPolygonAttribute(UInt32(i), j, attr, values.cxx_getAtIndex(offset++));
+          }
+        }
+        break;
+      }
+      default:
+      {
+        throw('Unsupported interpolation for primvar '+name+': '+interpolation);
+      }
+    }
+  }
+  else
+  {
+    throw("Other types of geometry not implemented yet...!");
+  }
+}
+
+function UsdPrim_ReadPolygonMeshSample(UsdPrim prim, UsdTimeCode tc, io PolygonMesh geo)
+{
+  UsdGeomMesh mesh(prim);
+
+  Boolean firstTime = geo == null;
+  if(firstTime)
+  {
+    geo = PolygonMesh();
+  }
+
+  GfVec3fArray points = mesh.GetPointsAttr().GetGfVec3fArray(tc);
+  GfVec3fArray normals;
+  if(mesh.GetNormalsAttr().HasValue())
+    normals = mesh.GetNormalsAttr().GetGfVec3fArray(tc);
+
+  if(firstTime)
+  {
+    GfIntArray faceVertexIndices = mesh.GetFaceVertexIndicesAttr().GetGfIntArray(tc);
+    GfIntArray faceVertexCounts = mesh.GetFaceVertexCountsAttr().GetGfIntArray(tc);
+
+    geo = PolygonMesh();
+    GeometryAttributes geoAttributes = geo.getAttributes();
+
+    geo.createPoints(UInt32(points.size()));
+
+    geo.beginStructureChanges();
+
+
+    UInt64 offset = 0;
+    LocalIndexArray indexArray;
+    for(UInt64 i=0;i<faceVertexCounts.size();i++)
+    {
+      SInt32 count = faceVertexCounts.cxx_getAtIndex(i);
+      indexArray.resize(0);
+      for(SInt32 j=0;j<count;j++)
+        indexArray.push(faceVertexIndices.cxx_getAtIndex(offset++));
+
+      geo.addPolygon(indexArray);
+    }
+
+    geo.endStructureChanges();
+
+    UsdGeomImageable imageable(prim);
+    UsdGeomPrimvar primvars[] = imageable.GetPrimvars();
+    for(Size i=0;i<primvars.size();i++)
+    {
+      UsdGeomPrimvar primvar = primvars[i];
+      UsdAttribute attr = primvar.GetAttr();
+      if(!attr.HasValue())
+        continue;
+      String primvarTypeName = attr.GetTypeName().GetAsToken().GetText();
+      switch(primvarTypeName)
+      {
+        case 'float[]':
+        {
+          UsdPrim_setupScalarGeometryAttribute(geo, primvar, tc);
+          break;
+        }
+        case 'float2[]':
+        case 'vec2f[]':
+        {
+          UsdPrim_setupVec2GeometryAttribute(geo, primvar, tc);
+          break;
+        }
+        case 'float3[]':
+        case 'vec3f[]':
+        {
+          UsdPrim_setupVec3GeometryAttribute(geo, primvar, tc);
+          break;
+        }
+        case 'color3f[]':
+        {
+          UsdPrim_setupColorGeometryAttribute(geo, primvar, tc);
+          break;
+        }
+        default:
+        {
+          report("primvar "+primvar.GetName().GetString()+" of type "+primvarTypeName+' not supported.');
+          break;
+        }
+      }
+    }
+  }
+
+  // now do the stuff we always do :-)
+  for(Size i=0;i<geo.pointCount();i++)
+    geo.setPointPosition(i, points.cxx_getAtIndex(i));
+
+  // just deformation - for now let's update positions + normals only!
+  if(normals.size() > 0)
+  {
+    GeometryAttributes geoAttributes = geo.getAttributes();
+    Ref<Vec3Attribute> normalsAttr = geoAttributes.getOrCreateVec3Attribute('normals');
+
+    String interpolation = mesh.GetNormalsInterpolation().GetText();
+    switch(interpolation)
+    {
+      case 'constant':
+      case 'uniform':
+      {
+        for(Size i=0;i<normalsAttr.values.size();i++)
+          normalsAttr.values[i] = normals.cxx_getAtIndex(0);
+        break;
+      }
+      case 'vertex':
+      {
+        for(Size i=0;i<geo.pointCount();i++)
+          geo.setPointAttribute(i, normalsAttr, normals.cxx_getAtIndex(i));
+        break;
+      }
+      case 'varying':
+      case 'faceVarying':
+      {
+        GfIntArray faceVertexCounts = mesh.GetFaceVertexCountsAttr().GetGfIntArray(tc);
+    
+        UInt32 offset = 0;
+        for(UInt64 i=0;i<faceVertexCounts.size();i++)
+        {
+          SInt32 count = faceVertexCounts.cxx_getAtIndex(i);
+          for(SInt32 j=0;j<count;j++)
+            geo.setPolygonAttribute(UInt32(i), j, normalsAttr, normals.cxx_getAtIndex(offset++));
+        }
+        break;
+      }
+      default:
+      {
+        throw('Unsupported interpolation for normals: '+interpolation);
+      }
+    }
+
+    normalsAttr.incrementVersion();
+  }
+  else
+  {
+    geo.recomputePointNormals(0.4);
+  }
+}

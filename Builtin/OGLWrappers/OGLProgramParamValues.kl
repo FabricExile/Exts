@@ -1,0 +1,1095 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+require Math, Containers;
+
+// Param types
+const UInt8 OGLProgramParamValues_Uniform = 0;
+const UInt8 OGLProgramParamValues_VertexAttribute = 1;
+const UInt8 OGLProgramParamValues_Texture = 2;
+const UInt8 OGLProgramParamValues_FragData = 3;
+
+// Param storage
+const UInt8 OGLProgramParamValues_ProgramDefault = 0;
+const UInt8 OGLProgramParamValues_ProgramCurrent = 1;
+const UInt8 OGLProgramParamValues_Shared = 2;
+const UInt8 OGLProgramParamValues_Inline = 3;
+const UInt8 OGLProgramParamValues_Stored = 4;
+
+struct OGLProgramParamValues_param {
+  UInt32 programParamKey;
+  UInt8 paramType;//OGLProgramParamValues_Uniform or others
+  UInt8 storageState;//OGLProgramParamValues_ProgramDefault or others
+  UInt8 searchedSharedValue;//True if the param was searched among shared values
+  UInt32 dataOffsetOrInlineValue;//Or sharedValues' param index if OGLProgramParamValues_SharedX
+  UInt32 storedSize;
+
+  UInt32 prevBufferVersion;
+  OGLTexture texture;
+//  UInt32 textureBufferID;
+  UInt32 textureType;
+  Boolean shadowTexture;
+  UInt32 textureUnit;
+};
+
+inline OGLProgramParamValues_param() {
+  this.dataOffsetOrInlineValue = InvalidIndex;
+}
+
+/**
+  The OGLProgramParamValues stores values required for drawing an OpenGL primitive,
+  for a specific OGLProgram.
+  
+  The stored values include uniform, textures, attributes and element arrays (contained in the
+  OGLVertexArray "vertexAttribs" member).
+
+  Additionally, it supports chaining of shared OGLProgramParamValues. If a value is not stored
+  in this object, it will use the source shared values if it exists ("sharedValues" member).
+  The shared values can even have a distinct OGLProgram, in which case these will be matched
+  by name.
+
+  See :ref:`rtr_drawinstance` for an example of chained OGLProgramParamValues parameters.
+
+  Note: value version = any parameter value change, structure version = different set of stored parameters
+*/
+object OGLProgramParamValues : BaseVersioned, StatisticSourceWithAutoRegisterMember {
+  OGLProgram program;
+
+  OGLProgramParamValues sharedValues;
+  Ref<OGLProgram> sharedValuesMaterial;
+  //>> TODO: use the actual type when the EDK forward declare error is fixed: OGLProgramParamValues sharedValues;
+  Boolean sharedValuesHasSameProgram;
+  UInt32 sharedValuesLastVersion;
+  UInt32 sharedValuesLastStructureVersion;
+  UInt32 sharedValuesLastSelfStructureVersion;
+  Boolean usesSharedValues;
+
+  OGLVertexArray vertexAttribs;
+  Boolean vertexAttribsAreShared;
+  UInt32 sharedVertexAttribsLastVersion;
+  Boolean usesSharedAttribs;
+
+  UInt32 packedUniformValueData[];//Param value followed by index
+  UInt32 packedUniformValueDataEnd;//Reset won't release the array
+
+  OGLProgramParamValues_param paramsData[];
+  UInt32 paramsDataEnd;
+
+//  Boolean needUpdateTextureBufferIDs;
+//  Boolean usesSharedTextures;
+
+  //Statistics
+  StatisticsAutoRegisterMember autoStats;
+  Boolean tracingParamValues, tracing;
+};
+
+function OGLProgramParamValues() {
+  if(FabricStatisticsEnabled())
+    this.autoStats = StatisticsAutoRegisterMember(this);
+}
+
+/// \internal
+inline Boolean OGLProgramParamValues.tracingParameters() {
+  return Boolean(Fabric_Guarded) && this.tracingParamValues;
+}
+
+/// \internal
+inline Boolean OGLProgramParamValues.tracingEnabled() {
+  return Boolean(Fabric_Guarded) && this.tracing;
+}
+
+/// \internal
+inline OGLProgramParamValues.ensureVertexArraysCreated!() {
+  if( !this.vertexAttribs || this.vertexAttribsAreShared ) {
+    this.vertexAttribs = OGLVertexArray();
+    this.vertexAttribsAreShared = false;
+    if( this.autoStats )
+      AddStatisticsChild(this.autoStats, this.vertexAttribs.autoStats);
+  }
+}
+
+/// Clears all data, but won't release allocated buffers
+function OGLProgramParamValues.reset!() {
+
+  this.program = null;
+  this.sharedValues = null;
+  this.sharedValuesHasSameProgram = false;
+  this.sharedValuesLastVersion = 0;
+  this.sharedValuesLastStructureVersion = InvalidIndex;
+  this.sharedValuesLastSelfStructureVersion = 0;
+  this.usesSharedValues = false;
+  this.sharedVertexAttribsLastVersion = 0;
+  this.usesSharedAttribs = false;
+//  this.needUpdateTextureBufferIDs = false;
+//  this.usesSharedTextures = false;
+
+  for( Size i = 0; i < this.packedUniformValueDataEnd; ++i )
+    this.packedUniformValueData[i] = 0;
+  this.packedUniformValueDataEnd = 0;
+
+  for( Size i = 0; i < this.paramsDataEnd; ++i )
+    this.paramsData[i] = OGLProgramParamValues_param();
+
+  if( this.vertexAttribsAreShared ) {
+    this.vertexAttribs = null;
+    this.vertexAttribsAreShared = false;
+  } else if( this.vertexAttribs )
+    this.vertexAttribs.reset();
+
+  this.incrementStructureVersion_();
+}
+
+inline OGLProgramParamValues.initialize!( Ref<OGLProgram> program, Ref<OGLProgramParamValues> sharedValues ) {
+  if( Boolean( this.program ) )
+    this.reset();
+
+  this.setSharedValues( sharedValues );
+  
+  this.program = program;
+  this.tracingParamValues = program.tracingParamValues;
+  this.tracing = program.tracingEnabled();
+
+  Size prevParamsDataEnd = this.paramsDataEnd;
+  this.paramsDataEnd = this.program.getParameterKeyEnd();
+  if( this.paramsDataEnd > this.paramsData.size() )
+    this.paramsData.resize( this.paramsDataEnd );
+
+  for( Size i = 0; i < this.paramsDataEnd; ++i ) {
+    this.paramsData[i].programParamKey = i;
+    
+    UInt32 paramCategory, index;
+    this.program.getParameterCategoryAndIndex( i, paramCategory, index );
+
+    Boolean shadow;
+    UInt32 expectedTextureType = this.program.getParameterExpectedTextureType(i, shadow);
+    if( expectedTextureType ) {
+      this.paramsData[i].paramType = OGLProgramParamValues_Texture;
+      this.paramsData[i].textureType = expectedTextureType;
+      this.paramsData[i].shadowTexture = shadow;
+      this.paramsData[i].textureUnit = this.program.getTextureUnit(i);
+    } else if ( paramCategory == OGLProgram_uniformParam )
+      this.paramsData[i].paramType = OGLProgramParamValues_Uniform;
+    else if ( paramCategory == OGLProgram_fragDataParam )
+      this.paramsData[i].paramType = OGLProgramParamValues_FragData;
+    else if( paramCategory == OGLProgram_attribParam )
+      this.paramsData[i].paramType = OGLProgramParamValues_VertexAttribute;
+  }
+  this.incrementStructureVersion_();
+}
+
+inline OGLProgramParamValues.setSharedValues!(Ref<OGLProgramParamValues> sharedValues) {
+  Ref<OGLProgramParamValues> prevSharedValues = this.sharedValues;
+  if( prevSharedValues !== sharedValues ) {
+    this.sharedValues = sharedValues;
+    this.incrementStructureVersion_();
+    this.sharedValuesLastStructureVersion = InvalidIndex;
+  }
+}
+
+inline Ref<OGLProgram> OGLProgramParamValues.getProgram() {
+  return this.program;
+}
+
+inline UInt8 OGLProgramParamValues.getParamType( Size programParamKey ) {
+  return this.paramsData[programParamKey].paramType;
+}
+
+/// Note: this should be called after 'update'
+inline UInt8 OGLProgramParamValues.getParamStorage( Size programParamKey ) {
+  return this.paramsData[programParamKey].storageState;
+}
+
+function OGLProgramParamValues.setVertexAttrib!( Size programParamKey, Ref<OGLBuffer_> buffer, UInt32 stride ) {
+
+  if( !buffer && !this.vertexAttribs )
+    return;
+
+  this.ensureVertexArraysCreated();
+  UInt32 paramCategory, index;
+  this.program.getParameterCategoryAndIndex( programParamKey, paramCategory, index );
+  if( Boolean(Fabric_Guarded) && paramCategory != OGLProgram_attribParam )
+    setError("OGLProgramParamValues.setVertexAttrib: programParamKey "+programParamKey+" is not a vertex attribute");
+  UInt32 prevVersion = this.vertexAttribs.getVersion_();
+  Integer location = this.program.getParameterLocation( programParamKey );
+  this.vertexAttribs.setVertexAttribBuffer( location, buffer, stride );
+  if( prevVersion != this.vertexAttribs.getVersion_() ) {
+    if( this.tracingParameters() )
+      this.vertexAttribs.setVertexAttribBufferTracingName(location, this.program.getParameterName(programParamKey));
+
+    this.paramsData[programParamKey].prevBufferVersion = Boolean(buffer) ? buffer.getVersion_() : 0;
+    this.parent.incrementValueVersion();
+
+    if( updateValue( OGLProgramParamValues_Stored, this.paramsData[programParamKey].storageState ) )
+      this.incrementStructureVersion_();
+
+  } else if( Boolean(buffer) && synchronizeVersion( buffer.getVersion_(), this.paramsData[programParamKey].prevBufferVersion ) )
+    this.parent.incrementValueVersion();
+}
+
+inline OGLProgramParamValues.setVertexAttrib!( Size programParamKey, Ref<OGLBuffer_> buffer ) {
+  this.setVertexAttrib( programParamKey, buffer, 0 );
+}
+
+function OGLProgramParamValues.setTexture!( Size programParamKey, Ref<OGLTexture> texture ) {
+  this.program.assertIsTexture( programParamKey );
+  Boolean changed;
+  Ref<OGLTexture> currTexture = this.paramsData[programParamKey].texture;
+  if( currTexture !== texture ) {
+    this.paramsData[programParamKey].texture = texture;
+    this.parent.incrementValueVersion();
+    this.paramsData[programParamKey].prevBufferVersion = Boolean(texture) ? texture.getVersion_() : 0;
+
+    if( !currTexture && updateValue( OGLProgramParamValues_Stored, this.paramsData[programParamKey].storageState ) )
+      this.incrementStructureVersion_();
+
+    changed = true;
+  } else if( Boolean( texture ) && synchronizeVersion( texture.getVersion_(), this.paramsData[programParamKey].prevBufferVersion ) ) {
+    this.parent.incrementValueVersion();
+    changed = true;
+  }
+
+  if( Boolean( Fabric_Guarded ) && changed && Boolean(texture) ) {
+    if( texture.glTextureType != this.paramsData[programParamKey].textureType )
+      setError( "OGLProgramParamValues.activate: " + this.program.getTraceName() + ": param " + this.program.getParameterName( this.paramsData[programParamKey].programParamKey ) + ": texture type mismatch, expected " + this.paramsData[programParamKey].textureType + ", actual " + texture.glTextureType );
+    else if( this.paramsData[programParamKey].shadowTexture != texture.isShadow )
+      setError( "OGLProgramParamValues.activate: " + this.program.getTraceName() + ": param " + this.program.getParameterName( this.paramsData[programParamKey].programParamKey ) + ": shadow texture type mismatch, expected " + this.paramsData[programParamKey].shadowTexture + ", actual " + texture.isShadow );
+  }
+}
+
+/// \internal
+Ref<Object> OGLProgramParamValues.getObjectParamValue( OGLProgramParamValues_param param, Size programParamKey ) {
+  if( param.paramType == OGLProgramParamValues_Texture ) {
+
+    if( param.storageState == OGLProgramParamValues_Stored )
+      return param.texture;//local texture
+    else if( param.storageState == OGLProgramParamValues_Shared ) {
+      Ref<OGLProgramParamValues> sharedSource = this.sharedValues;
+      UInt32 sharedSourceIndex;
+      GetSharedSourceAndIndex( param.dataOffsetOrInlineValue, sharedSource, sharedSourceIndex );
+      return sharedSource.paramsData[sharedSourceIndex].texture;
+    }
+  } else if( param.paramType == OGLProgramParamValues_VertexAttribute ) {
+    if( this.vertexAttribs ) {
+      Integer location = this.program.getParameterLocation( programParamKey );
+      if( location != -1 ) {
+        UInt32 stride;
+        if( location < this.vertexAttribs.getVertexAttribBufferCount() )
+          return this.vertexAttribs.getVertexAttribBuffer( location, stride );
+      }
+    }
+  }
+  return null;
+}
+
+/// Gets active value (stored or shared or default).
+inline Ref<Object> OGLProgramParamValues.getObjectParamValue( Size programParamKey ) {
+  return this.getObjectParamValue( this.paramsData[programParamKey], programParamKey );
+}
+
+/// \internal
+/// Non-const: workaround: .data() is not const...
+function OGLProgramParamValues.getParameterData!( Size programParamKey, io OGLProgramParamValues_param param, io Data structData, io UInt64 structSize, UInt32 subIndex ) {
+  if( param.paramType == OGLProgramParamValues_Uniform ) {
+    if( param.storageState == OGLProgramParamValues_ProgramDefault ) {
+      this.program.getDefaultParamValue(programParamKey, structData, structSize, subIndex);
+    } else if( param.storageState == OGLProgramParamValues_ProgramCurrent ) {
+      this.program.getCurrentParamValue(programParamKey, structData, structSize, subIndex);
+    } else if( param.storageState == OGLProgramParamValues_Inline ) {
+      structSize = 4;
+      structData = param.dataOffsetOrInlineValue.data();
+    } else if( param.storageState == OGLProgramParamValues_Stored ) {
+      Size wordCountPerItem = this.program.getParameterWordCountPerItem( programParamKey );
+      structSize = wordCountPerItem * 4;
+      structData = OffsetByteData( this.packedUniformValueData.data(), (param.dataOffsetOrInlineValue + wordCountPerItem*subIndex) * 4 );
+    }
+  } else {
+    structSize = 0;
+    structData = Data();
+  }
+}
+
+/// Generic version, for any type. Gets active value (stored or shared or default).
+OGLProgramParamValues.getParameterData( Size programParamKey, Data outStructData, UInt64 outStructSize, UInt32 subIndex ) {
+  UInt8 storageState = this.paramsData[programParamKey].storageState;
+  Ref<OGLProgramParamValues> sharedSource = null;
+  UInt32 sharedSourceIndex;
+  if( storageState == OGLProgramParamValues_Shared ) {
+    sharedSource = this.sharedValues;
+    GetSharedSourceAndIndex( this.paramsData[programParamKey].dataOffsetOrInlineValue, sharedSource, sharedSourceIndex );
+  } else {
+    sharedSource = this;
+    sharedSourceIndex = programParamKey;
+  }
+  Data sourceData;
+  UInt64 sourceStructSize;
+  sharedSource.getParameterData( sharedSourceIndex, sharedSource.paramsData[sharedSourceIndex], sourceData, sourceStructSize, subIndex );
+  if( outStructSize > sourceStructSize )
+    setError("OGLProgramParamValues.getParameterData: structSize mismatch");
+  else
+    CopyBytes( outStructData, sourceData, outStructSize );
+}
+
+/// \internal
+inline OGLProgramParamValues.setUniformFromData!( io OGLProgramParamValues_param param, UInt32 value ) {
+  if( updateValue( OGLProgramParamValues_Inline, param.storageState ) )
+    this.incrementStructureVersion_();
+  if( updateValue( value, param.dataOffsetOrInlineValue ) )
+    this.parent.incrementVersion();
+}
+
+/// \internal
+inline OGLProgramParamValues.initStorage!( io OGLProgramParamValues_param param ) {
+  if( updateValue( OGLProgramParamValues_Stored, param.storageState ) ) {
+    param.storedSize = this.program.getParameterTotalWordCount( param.programParamKey );
+    if( param.storedSize > 1 ) {
+      param.dataOffsetOrInlineValue = this.packedUniformValueDataEnd;
+      this.packedUniformValueDataEnd += param.storedSize;
+      if( this.packedUniformValueDataEnd > this.packedUniformValueData.size() )
+        this.packedUniformValueData.resize( this.packedUniformValueDataEnd );
+    }
+    this.incrementStructureVersion_();
+  }
+}
+
+/// \internal
+inline OGLProgramParamValues.setUniformFromData!( io OGLProgramParamValues_param param, Data values, UInt64 valuesSize ) {
+  this.initStorage( param );
+  UInt32 cacheData<> = CastUInt32SubArrayToUInt32Array( this.packedUniformValueData, param.dataOffsetOrInlineValue, param.storedSize );
+  if( CompareAndUpdateBytes( cacheData.data(), values, valuesSize ) )
+    this.parent.incrementVersion();
+}
+
+/// \internal
+inline OGLProgramParamValues.setUniformFromData!( io OGLProgramParamValues_param param, Size subUInt32Offset, Data values, UInt64 valuesSize ) {
+  this.initStorage( param );
+  UInt32 cacheData<> = CastUInt32SubArrayToUInt32Array( this.packedUniformValueData, param.dataOffsetOrInlineValue+subUInt32Offset, Size(valuesSize) );
+  if( CompareAndUpdateBytes( cacheData.data(), values, valuesSize ) )
+    this.parent.incrementVersion();
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, SInt32 value ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value );
+  this.setUniformFromData( this.paramsData[programParamKey], value );
+}
+
+SInt32 OGLProgramParamValues.getSInt32Uniform( Size programParamKey ) {
+  SInt32 value;
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value );
+  this.getParameterData(programParamKey, value.data(), value.dataSize(), 0);
+  return value;
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, SInt32 values<> ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, values );
+  this.setUniformFromData( this.paramsData[programParamKey], values.data(), values.dataSize() );
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, SInt32 value, Size arrayIndex ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value, arrayIndex );
+  SInt32 ioValue = value;
+  this.setUniformFromData( this.paramsData[programParamKey], arrayIndex, ioValue.data(), 4 );
+}
+
+SInt32 OGLProgramParamValues.getSInt32Uniform( Size programParamKey, Size arrayIndex ) {
+  SInt32 value;
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value, arrayIndex );
+  this.getParameterData(programParamKey, value.data(), value.dataSize(), arrayIndex);
+  return value;
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, Scalar value ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value );
+  this.setUniformFromData( this.paramsData[programParamKey], bitcastFloatToUInt(value) );
+}
+
+Scalar OGLProgramParamValues.getScalarUniform( Size programParamKey ) {
+  Scalar value;
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value );
+  this.getParameterData(programParamKey, value.data(), value.dataSize(), 0);
+  return value;
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, Scalar values<> ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, values );
+  this.setUniformFromData( this.paramsData[programParamKey], values.data(), values.dataSize() );
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, Scalar value, Size arrayIndex ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value, arrayIndex );
+  Scalar ioValue = value;
+  this.setUniformFromData( this.paramsData[programParamKey], arrayIndex, ioValue.data(), 4 );
+}
+
+Scalar OGLProgramParamValues.getScalarUniform( Size programParamKey, Size arrayIndex ) {
+  Scalar value;
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value, arrayIndex );
+  this.getParameterData(programParamKey, value.data(), value.dataSize(), arrayIndex);
+  return value;
+}
+
+/// \internal
+inline OGLProgramParamValues.setUniform!( io OGLProgramParamValues_param param, Vec2 value ) {
+  this.initStorage( param );
+  if( CompareAndUpdate( this.packedUniformValueData, param.dataOffsetOrInlineValue, value ) )
+    this.parent.incrementVersion();
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, Vec2 value ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value );
+  this.setUniform( this.paramsData[programParamKey], value );
+}
+
+Vec2 OGLProgramParamValues.getVec2Uniform( Size programParamKey ) {
+  Vec2 value;
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value );
+  this.getParameterData(programParamKey, value.data(), value.dataSize(), 0);
+  return value;
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, Vec2 values<> ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, values );
+  this.setUniformFromData( this.paramsData[programParamKey], values.data(), values.dataSize() );
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, Vec2 value, Size arrayIndex ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value, arrayIndex );
+  this.setUniformFromData( this.paramsData[programParamKey], 2*arrayIndex, value.data(), 8 );
+}
+
+Vec2 OGLProgramParamValues.getVec2Uniform( Size programParamKey, Size arrayIndex ) {
+  Vec2 value;
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value, arrayIndex );
+  this.getParameterData(programParamKey, value.data(), value.dataSize(), arrayIndex);
+  return value;
+}
+
+/// \internal
+inline OGLProgramParamValues.setUniform!( io OGLProgramParamValues_param param, Vec3 value ) {
+  this.initStorage( param );
+  if( CompareAndUpdate( this.packedUniformValueData, param.dataOffsetOrInlineValue, value ) )
+    this.parent.incrementVersion();
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, Vec3 value ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value );
+  this.setUniform( this.paramsData[programParamKey], value );
+}
+
+Vec3 OGLProgramParamValues.getVec3Uniform( Size programParamKey ) {
+  Vec3 value;
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value );
+  this.getParameterData(programParamKey, value.data(), value.dataSize(), 0);
+  return value;
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, Vec3 values<> ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, values );
+  this.setUniformFromData( this.paramsData[programParamKey], values.data(), values.dataSize() );
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, Vec3 value, Size arrayIndex ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value, arrayIndex );
+  this.setUniformFromData( this.paramsData[programParamKey], 3*arrayIndex, value.data(), 12 );
+}
+
+Vec3 OGLProgramParamValues.getVec3Uniform( Size programParamKey, Size arrayIndex ) {
+  Vec3 value;
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value, arrayIndex );
+  this.getParameterData(programParamKey, value.data(), value.dataSize(), arrayIndex);
+  return value;
+}
+
+/// \internal
+inline OGLProgramParamValues.setUniform!( io OGLProgramParamValues_param param, Vec4 value ) {
+  this.initStorage( param );
+  if( CompareAndUpdate( this.packedUniformValueData, param.dataOffsetOrInlineValue, value ) )
+    this.parent.incrementVersion();
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, Vec4 value ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value );
+  this.setUniform( this.paramsData[programParamKey], value );
+}
+
+Vec4 OGLProgramParamValues.getVec4Uniform( Size programParamKey ) {
+  Vec4 value;
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value );
+  this.getParameterData(programParamKey, value.data(), value.dataSize(), 0);
+  return value;
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, Vec4 values<> ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, values );
+  this.setUniformFromData( this.paramsData[programParamKey], values.data(), values.dataSize() );
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, Vec4 value, Size arrayIndex ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value, arrayIndex );
+  this.setUniformFromData( this.paramsData[programParamKey], 4*arrayIndex, value.data(), 16 );
+}
+
+Vec4 OGLProgramParamValues.getVec4Uniform( Size programParamKey, Size arrayIndex ) {
+  Vec4 value;
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value, arrayIndex );
+  this.getParameterData(programParamKey, value.data(), value.dataSize(), arrayIndex);
+  return value;
+}
+
+/// \internal
+inline OGLProgramParamValues.setUniform!( io OGLProgramParamValues_param param, Color value ) {
+  this.initStorage( param );
+  if( CompareAndUpdate( this.packedUniformValueData, param.dataOffsetOrInlineValue, value ) )
+    this.parent.incrementVersion();
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, Color value ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value );
+  this.setUniform( this.paramsData[programParamKey], value );
+}
+
+Color OGLProgramParamValues.getColorUniform( Size programParamKey ) {
+  Color value;
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value );
+  this.getParameterData(programParamKey, value.data(), value.dataSize(), 0);
+  return value;
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, Color values<> ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, values );
+  this.setUniformFromData( this.paramsData[programParamKey], values.data(), values.dataSize() );
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, Color value, Size arrayIndex ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value, arrayIndex );
+  this.setUniformFromData( this.paramsData[programParamKey], 4*arrayIndex, value.data(), 16 );
+}
+
+Color OGLProgramParamValues.getColorUniform( Size programParamKey, Size arrayIndex ) {
+  Color value;
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value, arrayIndex );
+  this.getParameterData(programParamKey, value.data(), value.dataSize(), arrayIndex);
+  return value;
+}
+
+/// \internal
+inline OGLProgramParamValues.setUniform!( io OGLProgramParamValues_param param, Mat22 value ) {
+  this.initStorage( param );
+  if( CompareTransposedAndUpdate( this.packedUniformValueData, param.dataOffsetOrInlineValue, value ) )
+    this.parent.incrementVersion();
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, Mat22 value ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value );
+  this.setUniform( this.paramsData[programParamKey], value );
+}
+
+Mat22 OGLProgramParamValues.getMat22Uniform( Size programParamKey ) {
+  Mat22 value;
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value );
+  this.getParameterData(programParamKey, value.data(), value.dataSize(), 0);
+  return value.transpose();
+}
+
+/// \internal
+inline OGLProgramParamValues.setUniform!( io OGLProgramParamValues_param param, Mat22 values<> ) {
+  this.initStorage( param );
+  if( CompareTransposedAndUpdate( this.packedUniformValueData, param.dataOffsetOrInlineValue, values ) )
+    this.parent.incrementVersion();
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, Mat22 values<> ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, values );
+  this.setUniform( this.paramsData[programParamKey], values );
+}
+
+/// \internal
+inline OGLProgramParamValues.setUniform!( io OGLProgramParamValues_param param, Mat22 value, Size arrayIndex ) {
+  this.initStorage( param );
+  if( CompareTransposedAndUpdate( this.packedUniformValueData, param.dataOffsetOrInlineValue + arrayIndex*4, value ) )
+    this.parent.incrementVersion();
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, Mat22 value, Size arrayIndex ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value, arrayIndex );
+  this.setUniform( this.paramsData[programParamKey], value, arrayIndex );
+}
+
+Mat22 OGLProgramParamValues.getMat22Uniform( Size programParamKey, Size arrayIndex ) {
+  Mat22 value;
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value, arrayIndex );
+  this.getParameterData(programParamKey, value.data(), value.dataSize(), arrayIndex);
+  return value.transpose();
+}
+
+/// \internal
+inline OGLProgramParamValues.setUniform!( io OGLProgramParamValues_param param, Mat33 value ) {
+  this.initStorage( param );
+  if( CompareTransposedAndUpdate( this.packedUniformValueData, param.dataOffsetOrInlineValue, value ) )
+    this.parent.incrementVersion();
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, Mat33 value ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value );
+  this.setUniform( this.paramsData[programParamKey], value );
+}
+
+Mat33 OGLProgramParamValues.getMat33Uniform( Size programParamKey ) {
+  Mat33 value;
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value );
+  this.getParameterData(programParamKey, value.data(), value.dataSize(), 0);
+  return value.transpose();
+}
+
+/// \internal
+inline OGLProgramParamValues.setUniform!( io OGLProgramParamValues_param param, Mat33 values<> ) {
+  this.initStorage( param );
+  if( CompareTransposedAndUpdate( this.packedUniformValueData, param.dataOffsetOrInlineValue, values ) )
+    this.parent.incrementVersion();
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, Mat33 values<> ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, values );
+  this.setUniform( this.paramsData[programParamKey], values );
+}
+
+/// \internal
+inline OGLProgramParamValues.setUniform!( io OGLProgramParamValues_param param, Mat33 value, Size arrayIndex ) {
+  this.initStorage( param );
+  if( CompareTransposedAndUpdate( this.packedUniformValueData, param.dataOffsetOrInlineValue + arrayIndex*9, value ) )
+    this.parent.incrementVersion();
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, Mat33 value, Size arrayIndex ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value, arrayIndex );
+  this.setUniform( this.paramsData[programParamKey], value, arrayIndex );
+}
+
+Mat33 OGLProgramParamValues.getMat33Uniform( Size programParamKey, Size arrayIndex ) {
+  Mat33 value;
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value, arrayIndex );
+  this.getParameterData(programParamKey, value.data(), value.dataSize(), arrayIndex);
+  return value.transpose();
+}
+
+/// \internal
+inline OGLProgramParamValues.setUniform!( io OGLProgramParamValues_param param, Mat44 value ) {
+  this.initStorage( param );
+  if( CompareTransposedAndUpdate( this.packedUniformValueData, param.dataOffsetOrInlineValue, value ) )
+    this.parent.incrementVersion();
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, Mat44 value ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value );
+  this.setUniform( this.paramsData[programParamKey], value );
+}
+
+Mat44 OGLProgramParamValues.getMat44Uniform( Size programParamKey ) {
+  Mat44 value;
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value );
+  this.getParameterData(programParamKey, value.data(), value.dataSize(), 0);
+  return value.transpose();
+}
+
+/// \internal
+inline OGLProgramParamValues.setUniform!( io OGLProgramParamValues_param param, Mat44 values<> ) {
+  this.initStorage( param );
+  if( CompareTransposedAndUpdate( this.packedUniformValueData, param.dataOffsetOrInlineValue, values ) )
+    this.parent.incrementVersion();
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, Mat44 values<> ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, values );
+  this.setUniform( this.paramsData[programParamKey], values );
+}
+
+/// \internal
+inline OGLProgramParamValues.setUniform!( io OGLProgramParamValues_param param, Mat44 value, Size arrayIndex ) {
+  this.initStorage( param );
+  if( CompareTransposedAndUpdate( this.packedUniformValueData, param.dataOffsetOrInlineValue + arrayIndex*16, value ) )
+    this.parent.incrementVersion();
+}
+
+inline OGLProgramParamValues.setUniform!( Size programParamKey, Mat44 value, Size arrayIndex ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value, arrayIndex );
+  this.setUniform( this.paramsData[programParamKey], value, arrayIndex );
+}
+
+Mat44 OGLProgramParamValues.getMat44Uniform( Size programParamKey, Size arrayIndex ) {
+  Mat44 value;
+  if( Boolean( Fabric_Guarded ) )
+    this.program.assertCompatible( programParamKey, value, arrayIndex );
+  this.getParameterData(programParamKey, value.data(), value.dataSize(), arrayIndex);
+  return value.transpose();
+}
+
+/// \internal
+/// NOTE: "io OGLProgramParamValues_param param" because ".data()" is not read-only...
+function OGLProgramParamValues.getStoredParameterData( Size programParamKey, io OGLProgramParamValues_param param, io Data structData, io UInt64 structSizeOrBufferStride, io Object objectValue ) {
+  structData = Data();
+  structSizeOrBufferStride = 0;
+  objectValue = null;
+
+  if( param.storageState == OGLProgramParamValues_Inline || param.storageState == OGLProgramParamValues_Stored ) {
+    if( param.paramType == OGLProgramParamValues_Uniform ) {
+      if( param.storageState == OGLProgramParamValues_Inline ) {
+        structSizeOrBufferStride = 4;
+        structData = param.dataOffsetOrInlineValue.data();
+      } else {
+        structSizeOrBufferStride = param.storedSize * 4;
+        structData = OffsetByteData( this.packedUniformValueData.data(), param.dataOffsetOrInlineValue * 4 );
+      }
+    } else if( param.paramType == OGLProgramParamValues_Texture ) {
+      objectValue = param.texture;
+    } else if( param.paramType == OGLProgramParamValues_VertexAttribute ) {
+      if( Boolean( this.vertexAttribs ) && !this.vertexAttribsAreShared ) {
+        Integer location = this.program.getParameterLocation( programParamKey );
+        if( location < this.vertexAttribs.getVertexAttribBufferCount() ) {
+          UInt32 stride;
+          objectValue = this.vertexAttribs.getVertexAttribBuffer( location, stride );
+          structSizeOrBufferStride = stride;
+        }
+      }
+    }
+  }
+}
+
+/// Generic version, for any type.
+/// If structData == NULL and objectValue == null: not stored.
+/// NOTE: for a vertex attribute (OGLBuffer_), structSize will be set as the 'stride'
+inline OGLProgramParamValues.getStoredParameterData( Size programParamKey, io Data structData, io UInt64 structSizeOrBufferStride, io Object objectValue ) {
+  Ref<OGLProgramParamValues> mutableThis = this;
+  mutableThis.getStoredParameterData( programParamKey, mutableThis.paramsData[programParamKey], structData, structSizeOrBufferStride, objectValue );
+}
+
+/// Generic version, for any type.
+function OGLProgramParamValues.setUniform!( Size programParamKey, Data valueData, UInt64 valueDataSize, Boolean transposeIfRequired ) {
+  Size wordCount = (UInt32(valueDataSize)+3)/4;
+
+  Size wordCountPerItem = this.program.getParameterWordCountPerItem( programParamKey );
+  Size itemCount = this.program.getParameterArrayCount( programParamKey );
+  Size expectedWordCount = wordCountPerItem * itemCount;
+
+  if( wordCount != expectedWordCount ) {
+    setError( "OGLProgram.setUniform: parameter " + this.program.getParameterName(programParamKey) + " has a size of " + expectedWordCount*4 + " bytes, " + valueDataSize + " provided.");
+    return;
+  }
+  if( transposeIfRequired ) {
+    //Transpose matrix data, if any
+    Integer glType = this.program.getParameterGLType( programParamKey );
+    if( glType == GL_FLOAT_MAT2 ) {
+      Mat22 matData<> = CastDataToMat22Array( valueData, itemCount );
+      if( itemCount == 1 )
+        this.setUniform( this.paramsData[programParamKey], matData[0] );
+      else
+        this.setUniform( this.paramsData[programParamKey], matData );
+      return;
+    } else if( glType == GL_FLOAT_MAT3 ) {
+      Mat33 matData<> = CastDataToMat33Array( valueData, itemCount );
+      if( itemCount == 1 )
+        this.setUniform( this.paramsData[programParamKey], matData[0] );
+      else
+        this.setUniform( this.paramsData[programParamKey], matData );
+      return;
+    } else if( glType == GL_FLOAT_MAT4 ) {
+      Mat44 matData<> = CastDataToMat44Array( valueData, itemCount );
+      if( itemCount == 1 )
+        this.setUniform( this.paramsData[programParamKey], matData[0] );
+      else
+        this.setUniform( this.paramsData[programParamKey], matData );
+      return;
+    }
+  }
+  if( wordCount == 1 ) {
+    UInt32 intData<> = CastDataToUInt32Array( valueData, 1 );
+    this.setUniformFromData( this.paramsData[programParamKey], intData[0] );
+  } else
+    this.setUniformFromData( this.paramsData[programParamKey], valueData, valueDataSize );
+}
+
+/// Generic version, for any type.
+inline OGLProgramParamValues.setUniform!(Size programParamKey, Data valueData, UInt64 valueDataSize) {
+  this.setUniform( programParamKey, valueData, valueDataSize, true );
+}
+
+inline OGLProgramParamValues.resetToProgramDefault!( Size programParamKey ) {
+  if( updateValue( OGLProgramParamValues_ProgramDefault, this.paramsData[programParamKey].storageState ) ) {
+    this.paramsData[programParamKey].searchedSharedValue = 0;
+    this.incrementStructureVersion_();
+
+    UInt8 paramType = this.getParamType( programParamKey );
+    if( paramType == OGLProgramParamValues_VertexAttribute ) {
+      this.setVertexAttrib( programParamKey, null );
+      this.paramsData[programParamKey].storageState = OGLProgramParamValues_ProgramDefault;
+    }
+    else if( paramType == OGLProgramParamValues_Texture ) {
+      this.setTexture( programParamKey, null );
+      this.paramsData[programParamKey].storageState = OGLProgramParamValues_ProgramDefault;
+    }
+  }
+}
+
+inline OGLProgramParamValues.setUniformToProgramCurrentValue!( Size programParamKey ) {
+  if( updateValue( OGLProgramParamValues_ProgramCurrent, this.paramsData[programParamKey].storageState ) )
+    this.incrementStructureVersion_();
+}
+
+/// \internal
+function OGLProgramParamValues.updateParamValueFromShared!( Ref<OGLProgramParamValues> sharedValues, io OGLProgramParamValues_param param ) {
+  if( param.storageState == OGLProgramParamValues_ProgramDefault ) {
+    //Check if a value exists on the shared container.
+    if( !param.searchedSharedValue ) {
+      param.searchedSharedValue = 1;
+      if( this.sharedValuesHasSameProgram )
+        param.dataOffsetOrInlineValue = param.programParamKey;
+      else
+        param.dataOffsetOrInlineValue = sharedValues.program.getParameterKey( this.program.getParameterName(param.programParamKey) );
+    }
+
+    if( param.dataOffsetOrInlineValue != InvalidIndex ) {
+      // Check if it is defined on the source
+      UInt8 sourceStorageState = sharedValues.paramsData[param.dataOffsetOrInlineValue].storageState;
+      if( sourceStorageState != OGLProgramParamValues_ProgramDefault && sourceStorageState != OGLProgramParamValues_ProgramCurrent
+          && sharedValues.paramsData[param.dataOffsetOrInlineValue].paramType == param.paramType ) {
+
+        //TODO: more type compatibility checks
+        this.incrementStructureVersion_();
+        param.storageState = OGLProgramParamValues_Shared;
+        // Check if vertex attribute locations match. If they don't, we need to have our own VAO.
+        if( param.paramType == OGLProgramParamValues_VertexAttribute ) {
+          this.usesSharedAttribs = true;
+          if( !this.vertexAttribs || this.vertexAttribsAreShared ) {
+            Boolean compatible = true;
+            if( !this.sharedValuesHasSameProgram ) {
+              if( sharedValues.program.getParameterCategory(param.dataOffsetOrInlineValue) != OGLProgramParamValues_VertexAttribute )
+                compatible = false;
+              else if( sharedValues.program.getParameterLocation(param.dataOffsetOrInlineValue) != this.program.getParameterLocation(param.programParamKey) )
+                compatible = false;
+            }
+            if( compatible ) {
+              if( !this.vertexAttribsAreShared ) {
+                this.vertexAttribs = sharedValues.vertexAttribs;
+                this.vertexAttribsAreShared = true;
+              }
+            } else {
+              this.ensureVertexArraysCreated();
+              this.vertexAttribsAreShared = false;
+            }
+          }
+        }
+      }
+    }
+  } else if( param.storageState == OGLProgramParamValues_Shared ) {
+    //Check if it is still defined on the source
+    UInt8 sourceStorageState = sharedValues.paramsData[param.dataOffsetOrInlineValue].storageState;
+    if( sourceStorageState == OGLProgramParamValues_ProgramDefault || sourceStorageState == OGLProgramParamValues_ProgramCurrent ) {
+      param.storageState = OGLProgramParamValues_ProgramDefault;
+      this.incrementStructureVersion_();
+    }
+  }
+}
+
+function OGLProgramParamValues.completeValuesWithSharedOnes!() {
+
+  Ref<OGLProgramParamValues> sharedValues = this.sharedValues;
+  Boolean paramSetChanged;
+
+  updateValue( sharedValues ? sharedValues.getStructureVersion_() : 0, this.sharedValuesLastStructureVersion, paramSetChanged );
+  updateValue( this.parent.getStructureVersion(), this.sharedValuesLastSelfStructureVersion, paramSetChanged );
+
+  if( paramSetChanged ) {
+    //report( "UPDATE SHARED: this=" + this.program.getName() + " other=" + this.sharedValues.program.getName() );
+    this.sharedValuesHasSameProgram = Boolean( sharedValues ) && sharedValues.program === this.program;
+    this.incrementStructureVersion_();
+    for( Size i = 0; i < this.paramsDataEnd; ++i ) {
+      this.paramsData[i].searchedSharedValue = 0;
+      if( this.paramsData[i].storageState == OGLProgramParamValues_Shared )
+        this.paramsData[i].storageState = OGLProgramParamValues_ProgramDefault;
+    }
+
+    if( paramSetChanged && Boolean( sharedValues ) ) {
+      for( Size i = 0; i < this.paramsDataEnd; ++i )
+        this.updateParamValueFromShared( sharedValues, this.paramsData[i] );
+    }
+    this.sharedValuesLastSelfStructureVersion = this.parent.getStructureVersion();
+
+    if( sharedValues ) {
+      if( this.vertexAttribsAreShared && this.vertexAttribs !== sharedValues.vertexAttribs )
+        this.vertexAttribs = sharedValues.vertexAttribs; // refresh
+    } else {
+      if( this.vertexAttribsAreShared ) {
+        this.vertexAttribsAreShared = false;
+        this.vertexAttribs = null;
+      }
+    }
+    this.sharedValuesLastVersion = 0;
+    this.sharedVertexAttribsLastVersion = 0;
+  }
+
+  // Update version & copy shared attribute values if required
+  if( this.usesSharedAttribs && synchronizeVersion( sharedValues.getVersion_(), this.sharedValuesLastVersion ) ) {
+    this.parent.incrementValueVersion();
+    if( !this.vertexAttribsAreShared && synchronizeVersion( sharedValues.vertexAttribs.getVersion_(), this.sharedVertexAttribsLastVersion ) ) {
+
+      //Recopy values
+      Size attrCount = this.program.getParameterCount( OGLProgram_attribParam );
+      for( Size i = 0; i < attrCount; ++i ) {
+        Size paramKey = this.program.getParameterKey( OGLProgram_attribParam, i );
+        if( this.paramsData[paramKey].storageState == OGLProgramParamValues_Shared ) {
+          Integer location = this.program.getParameterLocation( paramKey );
+          Size sourceAttributeLocation = location;
+          if( !this.sharedValuesHasSameProgram ) {
+            Size sourceParamKey = this.paramsData[paramKey].dataOffsetOrInlineValue;
+            sourceAttributeLocation = sharedValues.program.getParameterLocation( sourceParamKey );
+          }
+          Ref<OGLBuffer_> buffer = sharedValues.vertexAttribs.getVertexAttribBuffer( sourceAttributeLocation );
+          this.vertexAttribs.setVertexAttribBuffer( location, buffer );
+        }
+      }
+    }
+  }
+}
+
+/// \internal
+inline GetSharedSourceAndIndex( UInt32 paramIndex, io Ref<OGLProgramParamValues> sharedSource, io UInt32 sharedIndex ) {
+  sharedIndex = paramIndex;
+  while( true ) {
+    if( sharedSource.paramsData[sharedIndex].storageState != OGLProgramParamValues_Shared )
+      break;
+    if( !sharedSource.sharedValues )
+      break;
+    sharedIndex = sharedSource.paramsData[sharedIndex].dataOffsetOrInlineValue;
+    sharedSource = sharedSource.sharedValues;
+  }
+}
+
+/// \internal
+inline OGLProgramParamValues.activate!( io OGLProgramParamValues_param param, io Ref<OGLContext> context ) {
+  if( param.storageState == OGLProgramParamValues_ProgramDefault )
+    this.program.resetToDefault( param.programParamKey );
+  else if( param.paramType == OGLProgramParamValues_Uniform ) {
+    if( param.storageState == OGLProgramParamValues_Inline )
+      this.program.loadUniformFromData( param.programParamKey, param.dataOffsetOrInlineValue );
+    else if( param.storageState == OGLProgramParamValues_Stored ) {
+      UInt32 cacheData<> = CastUInt32SubArrayToUInt32Array( this.packedUniformValueData, param.dataOffsetOrInlineValue, param.storedSize );
+      this.program.loadUniformFromData( param.programParamKey, cacheData );
+    } else if ( param.storageState == OGLProgramParamValues_Shared ) {
+      Ref<OGLProgramParamValues> sharedSource = this.sharedValues;
+      UInt32 sharedSourceIndex;
+      GetSharedSourceAndIndex( param.dataOffsetOrInlineValue, sharedSource, sharedSourceIndex );
+      UInt8 storageState = sharedSource.paramsData[sharedSourceIndex].storageState;
+
+      if( storageState == OGLProgramParamValues_Inline )
+        this.program.loadUniformFromData( param.programParamKey, sharedSource.paramsData[sharedSourceIndex].dataOffsetOrInlineValue );
+      else if( storageState == OGLProgramParamValues_Stored ) {
+        UInt32 cacheData<> = CastUInt32SubArrayToUInt32Array( sharedSource.packedUniformValueData, sharedSource.paramsData[sharedSourceIndex].dataOffsetOrInlineValue, sharedSource.paramsData[sharedSourceIndex].storedSize );
+        this.program.loadUniformFromData( param.programParamKey, cacheData );
+      }
+    }
+  } else if( param.paramType == OGLProgramParamValues_Texture ) {
+    if ( param.storageState == OGLProgramParamValues_ProgramDefault )
+      context.stateCache.bindTexture( param.textureUnit, param.textureType, 0 );
+    else if ( param.storageState == OGLProgramParamValues_Stored ) {
+      UInt32 bufferID = param.texture ? param.texture.bufferID : 0;
+      context.stateCache.bindTexture( param.textureUnit, param.textureType, bufferID );
+      if( this.tracingParameters() )
+        report( "OGLVertexArray.activate: texture #" + param.textureUnit +" = " + bufferID );
+    } else if ( param.storageState == OGLProgramParamValues_Shared ) {
+      Ref<OGLProgramParamValues> sharedSource = this.sharedValues;
+      UInt32 sharedSourceIndex;
+      GetSharedSourceAndIndex( param.dataOffsetOrInlineValue, sharedSource, sharedSourceIndex );
+      UInt32 textureType = sharedSource.paramsData[sharedSourceIndex].textureType;
+      Ref<OGLTexture> texture = sharedSource.paramsData[sharedSourceIndex].texture;
+      UInt32 bufferID = texture ? texture.bufferID : 0;
+      context.stateCache.bindTexture( param.textureUnit,  textureType,  bufferID );
+      if( this.tracingParameters() )
+        report( "OGLVertexArray.activate: texture #" + param.textureUnit +" = " + bufferID );
+    }
+  }
+}
+
+function OGLProgramParamValues.activate!( io Ref<OGLContext> context ) {
+  if( this.program ) {
+    this.program.activate(context);
+
+    //this.updateTextureBufferIDsIfRequired( context );
+
+    Size paramCount = this.paramsDataEnd;
+    for( Size i = 0; i < paramCount; ++i )
+      this.activate( this.paramsData[i], context );
+
+    if( this.vertexAttribs )
+      this.vertexAttribs.activate( context, this.program.maxAttributeLocation+1 );
+  }
+}
+
+function OGLProgramParamValues.synchronizeWithBufferVersions!() {
+  Boolean changed;
+  UInt32 attribBufferCount = this.vertexAttribs.getVertexAttribBufferCount();
+  for( Size i = 0; i < attribBufferCount; ++i ) {
+    Ref<OGLBuffer_> buffer = this.vertexAttribs.getVertexAttribBuffer(i);
+    updateValue( buffer ? 0 : buffer.getVersion_(), this.paramsData[i].prevBufferVersion, changed );
+  }
+
+  UInt32 textureUnitCount = this.program.getTextureUnitCount();
+  for( Size i = 0; i < textureUnitCount; ++i ) {
+    UInt32 paramKey = this.program.getParamKeyForTextureUnit(i);
+    Ref<OGLTexture> texture = this.paramsData[paramKey].texture;
+    updateValue( texture ? 0 : texture.getVersion_(), this.paramsData[paramKey].prevBufferVersion, changed );
+  }
+  if(changed)
+    this.parent.incrementVersion();
+}
+
+///Implementation of StatisticSource interface's 'getStatistics()'.
+/// \internal
+function StatisticRecord[] OGLProgramParamValues.getStatistics() {
+  StatisticRecord stats[];
+  stats.push( StatisticRecord( Statistic_Category, "OGL" ) );
+  stats.push( StatisticRecord( Statistic_MemoryUsage, 20+this.packedUniformValueData.size()*4+this.paramsData.size()*10*4 ) );
+  return stats;
+}

@@ -1,0 +1,50 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+require FabricInterfaces;
+
+namespace Tool {
+
+  /**
+    \versionadded 2.6.0
+
+    OpenVisibleToolOptionsEditorCommand opens the options editors of all visible tools.
+
+    See :ref:`TPG.app_command` for more information about option editor.
+  */
+  object OpenVisibleToolOptionsEditorCommand : BaseCommand{
+  };
+
+  /// Implementation of Command.
+  Boolean OpenVisibleToolOptionsEditorCommand.doIt!( io String error ) {
+    if( !this.parent.doIt( error ) )
+      return false;
+
+    BaseTool tools[] = GetToolsManager().getActiveTools( true );
+
+    for( UInt32 i = 0; i < tools.size(); ++i ) {
+      if( tools[i].isVisible() ) {
+        Ref<OptionsTarget> optionsTarget = tools[i];
+        if( optionsTarget ) {
+          Ref<OptionsTarget> globalOptionsTarget = optionsTarget.getGlobalOptions();
+          if( globalOptionsTarget )
+            GetOptionsTargetRegistry().openAppOptionsEditor(
+              globalOptionsTarget );
+
+          GetOptionsTargetRegistry().openAppOptionsEditor(
+            tools[i].getName(),
+            tools[i] );
+        }
+      }
+    }
+
+    return true;
+  }
+
+  /// Implementation of Command.
+  String OpenVisibleToolOptionsEditorCommand.getHelp() {
+    return "Opens the options editors of all visible tools.";
+  }
+
+}// namespace Tool

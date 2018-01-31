@@ -1,0 +1,1048 @@
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+private function Boolean BaseGeometry.fillIntegerAttributeRandomly(
+  io IntegerAttribute attr,
+  SInt32 mode,
+  UInt32 seed,
+  Vec2 range
+) {
+
+  PolygonMesh mesh = this;
+  Index offset = 19;
+
+  Ref<IntegerAttribute> attrRef = attr;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      if(mesh == null)
+      {
+        for(Size i=0;i<attr.size();i++)
+        {
+          attr.values[i] = mathRandomSInt32(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3;
+        }
+      }
+      else
+      {
+        for(Size i=0;i<mesh.pointCount();i++)
+        {
+          SInt32 v = mathRandomSInt32(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3;
+
+          mesh.setPointAttribute(i, attrRef, v);
+        }
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      if(mesh == null)
+      {
+        report('Error: MathRandom: Mode 1 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        SInt32 v = mathRandomSInt32(seed + i * 7, offset, range.x, range.y);
+        offset += i * 3;
+
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+      }
+      break;
+    }
+    case 2: // per face corner!
+    {
+      if(mesh == null)
+      {
+        report('Error: MathRandom: Mode 2 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+        {
+          SInt32 v = mathRandomSInt32(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3 + j;
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+        }
+      }
+      break;
+    }
+    default:
+    {
+      report('Error: MathRandom: Unsupported mode '+mode+'.');
+      return false;
+    }
+  }
+
+  attr.incrementVersion();
+  return true;
+}
+
+/// \internal
+private function Boolean BaseGeometry.fillUInt32AttributeRandomly(
+  io UInt32Attribute attr,
+  SInt32 mode,
+  UInt32 seed,
+  Vec2 range
+) {
+
+  PolygonMesh mesh = this;
+  Index offset = 19;
+
+  Ref<UInt32Attribute> attrRef = attr;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      if(mesh == null)
+      {
+        for(Size i=0;i<attr.size();i++)
+        {
+          attr.values[i] = mathRandomUInt32(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3;
+        }
+      }
+      else
+      {
+        for(Size i=0;i<mesh.pointCount();i++)
+        {
+          UInt32 v = mathRandomUInt32(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3;
+
+          mesh.setPointAttribute(i, attrRef, v);
+        }
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      if(mesh == null)
+      {
+        report('Error: MathRandom: Mode 1 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        UInt32 v = mathRandomUInt32(seed + i * 7, offset, range.x, range.y);
+        offset += i * 3;
+
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+      }
+      break;
+    }
+    case 2: // per face corner!
+    {
+      if(mesh == null)
+      {
+        report('Error: MathRandom: Mode 2 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+        {
+          UInt32 v = mathRandomUInt32(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3 + j;
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+        }
+      }
+      break;
+    }
+    default:
+    {
+      report('Error: MathRandom: Unsupported mode '+mode+'.');
+      return false;
+    }
+  }
+
+  attr.incrementVersion();
+  return true;
+}
+
+/// \internal
+private function Boolean BaseGeometry.fillScalarAttributeRandomly(
+  io ScalarAttribute attr,
+  SInt32 mode,
+  UInt32 seed,
+  Vec2 range
+) {
+
+  PolygonMesh mesh = this;
+  Index offset = 19;
+
+  Ref<ScalarAttribute> attrRef = attr;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      if(mesh == null)
+      {
+        for(Size i=0;i<attr.size();i++)
+        {
+          attr.values[i] = mathRandomFloat32(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3;
+        }
+      }
+      else
+      {
+        for(Size i=0;i<mesh.pointCount();i++)
+        {
+          Float32 v = mathRandomFloat32(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3;
+
+          mesh.setPointAttribute(i, attrRef, v);
+        }
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      if(mesh == null)
+      {
+        report('Error: MathRandom: Mode 1 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Float32 v = mathRandomFloat32(seed + i * 7, offset, range.x, range.y);
+        offset += i * 3;
+
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+      }
+      break;
+    }
+    case 2: // per face corner!
+    {
+      if(mesh == null)
+      {
+        report('Error: MathRandom: Mode 2 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+        {
+          Float32 v = mathRandomFloat32(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3 + j;
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+        }
+      }
+      break;
+    }
+    default:
+    {
+      report('Error: MathRandom: Unsupported mode '+mode+'.');
+      return false;
+    }
+  }
+
+  attr.incrementVersion();
+  return true;
+}
+
+/// \internal
+private function Boolean BaseGeometry.fillVec2AttributeRandomly(
+  io Vec2Attribute attr,
+  SInt32 mode,
+  UInt32 seed,
+  Vec2 range
+) {
+
+  PolygonMesh mesh = this;
+  Index offset = 19;
+
+  Ref<Vec2Attribute> attrRef = attr;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      if(mesh == null)
+      {
+        for(Size i=0;i<attr.size();i++)
+        {
+          attr.values[i] = mathRandomVec2(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3;
+        }
+      }
+      else
+      {
+        for(Size i=0;i<mesh.pointCount();i++)
+        {
+          Vec2 v = mathRandomVec2(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3;
+
+          mesh.setPointAttribute(i, attrRef, v);
+        }
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      if(mesh == null)
+      {
+        report('Error: MathRandom: Mode 1 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Vec2 v = mathRandomVec2(seed + i * 7, offset, range.x, range.y);
+        offset += i * 3;
+
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+      }
+      break;
+    }
+    case 2: // per face corner!
+    {
+      if(mesh == null)
+      {
+        report('Error: MathRandom: Mode 2 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+        {
+          Vec2 v = mathRandomVec2(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3 + j;
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+        }
+      }
+      break;
+    }
+    default:
+    {
+      report('Error: MathRandom: Unsupported mode '+mode+'.');
+      return false;
+    }
+  }
+
+  attr.incrementVersion();
+  return true;
+}
+
+/// \internal
+private function Boolean BaseGeometry.fillVec3AttributeRandomly(
+  io Vec3Attribute attr,
+  SInt32 mode,
+  UInt32 seed,
+  Vec2 range
+) {
+
+  PolygonMesh mesh = this;
+  Index offset = 19;
+
+  Ref<Vec3Attribute> attrRef = attr;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      if(mesh == null)
+      {
+        for(Size i=0;i<attr.size();i++)
+        {
+          attr.values[i] = mathRandomVec3(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3;
+        }
+      }
+      else
+      {
+        for(Size i=0;i<mesh.pointCount();i++)
+        {
+          Vec3 v = mathRandomVec3(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3;
+
+          mesh.setPointAttribute(i, attrRef, v);
+        }
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      if(mesh == null)
+      {
+        report('Error: MathRandom: Mode 1 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Vec3 v = mathRandomVec3(seed + i * 7, offset, range.x, range.y);
+        offset += i * 3;
+
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+      }
+      break;
+    }
+    case 2: // per face corner!
+    {
+      if(mesh == null)
+      {
+        report('Error: MathRandom: Mode 2 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+        {
+          Vec3 v = mathRandomVec3(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3 + j;
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+        }
+      }
+      break;
+    }
+    default:
+    {
+      report('Error: MathRandom: Unsupported mode '+mode+'.');
+      return false;
+    }
+  }
+
+  attr.incrementVersion();
+  return true;
+}
+
+/// \internal
+private function Boolean BaseGeometry.fillVec4AttributeRandomly(
+  io Vec4Attribute attr,
+  SInt32 mode,
+  UInt32 seed,
+  Vec2 range
+) {
+
+  PolygonMesh mesh = this;
+  Index offset = 19;
+
+  Ref<Vec4Attribute> attrRef = attr;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      if(mesh == null)
+      {
+        for(Size i=0;i<attr.size();i++)
+        {
+          attr.values[i] = mathRandomVec4(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3;
+        }
+      }
+      else
+      {
+        for(Size i=0;i<mesh.pointCount();i++)
+        {
+          Vec4 v = mathRandomVec4(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3;
+
+          mesh.setPointAttribute(i, attrRef, v);
+        }
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      if(mesh == null)
+      {
+        report('Error: MathRandom: Mode 1 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Vec4 v = mathRandomVec4(seed + i * 7, offset, range.x, range.y);
+        offset += i * 3;
+
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+      }
+      break;
+    }
+    case 2: // per face corner!
+    {
+      if(mesh == null)
+      {
+        report('Error: MathRandom: Mode 2 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+        {
+          Vec4 v = mathRandomVec4(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3 + j;
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+        }
+      }
+      break;
+    }
+    default:
+    {
+      report('Error: MathRandom: Unsupported mode '+mode+'.');
+      return false;
+    }
+  }
+
+  attr.incrementVersion();
+  return true;
+}
+
+/// \internal
+private function Boolean BaseGeometry.fillQuatAttributeRandomly(
+  io QuatAttribute attr,
+  SInt32 mode,
+  UInt32 seed,
+  Vec2 range
+) {
+
+  PolygonMesh mesh = this;
+  Index offset = 19;
+
+  Ref<QuatAttribute> attrRef = attr;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      if(mesh == null)
+      {
+        for(Size i=0;i<attr.size();i++)
+        {
+          attr.values[i] = mathRandomQuat(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3;
+        }
+      }
+      else
+      {
+        for(Size i=0;i<mesh.pointCount();i++)
+        {
+          Quat v = mathRandomQuat(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3;
+
+          mesh.setPointAttribute(i, attrRef, v);
+        }
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      if(mesh == null)
+      {
+        report('Error: MathRandom: Mode 1 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Quat v = mathRandomQuat(seed + i * 7, offset, range.x, range.y);
+        offset += i * 3;
+
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+      }
+      break;
+    }
+    case 2: // per face corner!
+    {
+      if(mesh == null)
+      {
+        report('Error: MathRandom: Mode 2 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+        {
+          Quat v = mathRandomQuat(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3 + j;
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+        }
+      }
+      break;
+    }
+    default:
+    {
+      report('Error: MathRandom: Unsupported mode '+mode+'.');
+      return false;
+    }
+  }
+
+  attr.incrementVersion();
+  return true;
+}
+
+/// \internal
+private function Boolean BaseGeometry.fillMat33AttributeRandomly(
+  io Mat33Attribute attr,
+  SInt32 mode,
+  UInt32 seed,
+  Vec2 range
+) {
+
+  PolygonMesh mesh = this;
+  Index offset = 19;
+
+  Ref<Mat33Attribute> attrRef = attr;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      if(mesh == null)
+      {
+        for(Size i=0;i<attr.size();i++)
+        {
+          attr.values[i] = mathRandomMat33(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3;
+        }
+      }
+      else
+      {
+        for(Size i=0;i<mesh.pointCount();i++)
+        {
+          Mat33 v = mathRandomMat33(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3;
+
+          mesh.setPointAttribute(i, attrRef, v);
+        }
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      if(mesh == null)
+      {
+        report('Error: MathRandom: Mode 1 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Mat33 v = mathRandomMat33(seed + i * 7, offset, range.x, range.y);
+        offset += i * 3;
+
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+      }
+      break;
+    }
+    case 2: // per face corner!
+    {
+      if(mesh == null)
+      {
+        report('Error: MathRandom: Mode 2 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+        {
+          Mat33 v = mathRandomMat33(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3 + j;
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+        }
+      }
+      break;
+    }
+    default:
+    {
+      report('Error: MathRandom: Unsupported mode '+mode+'.');
+      return false;
+    }
+  }
+
+  attr.incrementVersion();
+  return true;
+}
+
+/// \internal
+private function Boolean BaseGeometry.fillMat44AttributeRandomly(
+  io Mat44Attribute attr,
+  SInt32 mode,
+  UInt32 seed,
+  Vec2 range
+) {
+
+  PolygonMesh mesh = this;
+  Index offset = 19;
+
+  Ref<Mat44Attribute> attrRef = attr;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      if(mesh == null)
+      {
+        for(Size i=0;i<attr.size();i++)
+        {
+          attr.values[i] = mathRandomMat44(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3;
+        }
+      }
+      else
+      {
+        for(Size i=0;i<mesh.pointCount();i++)
+        {
+          Mat44 v = mathRandomMat44(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3;
+
+          mesh.setPointAttribute(i, attrRef, v);
+        }
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      if(mesh == null)
+      {
+        report('Error: MathRandom: Mode 1 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Mat44 v = mathRandomMat44(seed + i * 7, offset, range.x, range.y);
+        offset += i * 3;
+
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+      }
+      break;
+    }
+    case 2: // per face corner!
+    {
+      if(mesh == null)
+      {
+        report('Error: MathRandom: Mode 2 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+        {
+          Mat44 v = mathRandomMat44(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3 + j;
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+        }
+      }
+      break;
+    }
+    default:
+    {
+      report('Error: MathRandom: Unsupported mode '+mode+'.');
+      return false;
+    }
+  }
+
+  attr.incrementVersion();
+  return true;
+}
+
+/// \internal
+private function Boolean BaseGeometry.fillColorAttributeRandomly(
+  io ColorAttribute attr,
+  SInt32 mode,
+  UInt32 seed,
+  Vec2 range
+) {
+
+  PolygonMesh mesh = this;
+  Index offset = 19;
+
+  Ref<ColorAttribute> attrRef = attr;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      if(mesh == null)
+      {
+        for(Size i=0;i<attr.size();i++)
+        {
+          attr.values[i] = mathRandomColor(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3;
+        }
+      }
+      else
+      {
+        for(Size i=0;i<mesh.pointCount();i++)
+        {
+          Color v = mathRandomColor(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3;
+
+          mesh.setPointAttribute(i, attrRef, v);
+        }
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      if(mesh == null)
+      {
+        report('Error: MathRandom: Mode 1 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Color v = mathRandomColor(seed + i * 7, offset, range.x, range.y);
+        offset += i * 3;
+
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+      }
+      break;
+    }
+    case 2: // per face corner!
+    {
+      if(mesh == null)
+      {
+        report('Error: MathRandom: Mode 2 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+        {
+          Color v = mathRandomColor(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3 + j;
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+        }
+      }
+      break;
+    }
+    default:
+    {
+      report('Error: MathRandom: Unsupported mode '+mode+'.');
+      return false;
+    }
+  }
+
+  attr.incrementVersion();
+  return true;
+}
+
+/// \internal
+private function Boolean BaseGeometry.fillRGBAttributeRandomly(
+  io RGBAttribute attr,
+  SInt32 mode,
+  UInt32 seed,
+  Vec2 range
+) {
+
+  PolygonMesh mesh = this;
+  Index offset = 19;
+
+  Ref<RGBAttribute> attrRef = attr;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      if(mesh == null)
+      {
+        for(Size i=0;i<attr.size();i++)
+        {
+          attr.values[i] = mathRandomRGB(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3;
+        }
+      }
+      else
+      {
+        for(Size i=0;i<mesh.pointCount();i++)
+        {
+          RGB v = mathRandomRGB(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3;
+
+          mesh.setPointAttribute(i, attrRef, v);
+        }
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      if(mesh == null)
+      {
+        report('Error: MathRandom: Mode 1 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        RGB v = mathRandomRGB(seed + i * 7, offset, range.x, range.y);
+        offset += i * 3;
+
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+      }
+      break;
+    }
+    case 2: // per face corner!
+    {
+      if(mesh == null)
+      {
+        report('Error: MathRandom: Mode 2 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+        {
+          RGB v = mathRandomRGB(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3 + j;
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+        }
+      }
+      break;
+    }
+    default:
+    {
+      report('Error: MathRandom: Unsupported mode '+mode+'.');
+      return false;
+    }
+  }
+
+  attr.incrementVersion();
+  return true;
+}
+
+/// \internal
+private function Boolean BaseGeometry.fillRGBAAttributeRandomly(
+  io RGBAAttribute attr,
+  SInt32 mode,
+  UInt32 seed,
+  Vec2 range
+) {
+
+  PolygonMesh mesh = this;
+  Index offset = 19;
+
+  Ref<RGBAAttribute> attrRef = attr;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      if(mesh == null)
+      {
+        for(Size i=0;i<attr.size();i++)
+        {
+          attr.values[i] = mathRandomRGBA(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3;
+        }
+      }
+      else
+      {
+        for(Size i=0;i<mesh.pointCount();i++)
+        {
+          RGBA v = mathRandomRGBA(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3;
+
+          mesh.setPointAttribute(i, attrRef, v);
+        }
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      if(mesh == null)
+      {
+        report('Error: MathRandom: Mode 1 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        RGBA v = mathRandomRGBA(seed + i * 7, offset, range.x, range.y);
+        offset += i * 3;
+
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+      }
+      break;
+    }
+    case 2: // per face corner!
+    {
+      if(mesh == null)
+      {
+        report('Error: MathRandom: Mode 2 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+        {
+          RGBA v = mathRandomRGBA(seed + i * 7, offset, range.x, range.y);
+          offset += i * 3 + j;
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+        }
+      }
+      break;
+    }
+    default:
+    {
+      report('Error: MathRandom: Unsupported mode '+mode+'.');
+      return false;
+    }
+  }
+
+  attr.incrementVersion();
+  return true;
+}

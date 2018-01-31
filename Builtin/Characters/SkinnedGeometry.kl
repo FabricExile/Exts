@@ -1,0 +1,128 @@
+/*
+ *  Copyright 2010-2015 Fabric Software Inc. All rights reserved.
+ */
+
+require Geometry;
+
+object SkinnedCharacter;
+
+/*
+*/
+object SkinnedGeometry {
+  /// \Internal
+  /// The default geometry (i.e the T-Pose)
+  private Geometry geometry;
+  /// \Internal
+  /// The skinned deformed geometry
+  private Geometry deformedGeometry;
+  /// \Internal
+  /// The bind shape matrix
+  private Mat44 bindShape;
+  /// \Internal
+  /// A reference to 
+  private Ref<SkinnedCharacter> character;
+};
+
+/// Default Constructor
+SkinnedGeometry(io Ref<SkinnedCharacter> character) {
+  this.character = character;
+}
+
+/// Get a refenrence to the Skinned Character
+SkinnedGeometry.setCharacter!(io Ref<SkinnedCharacter> character) {
+  this.character = character;
+}
+
+/// Get a refenrence to the Skinned Character
+Ref<SkinnedCharacter> SkinnedGeometry.getCharacter() {
+  return this.character;
+}
+
+/// Set the bind shape matrix
+SkinnedGeometry.setBindShape!(Mat44 bindShape) {
+  this.bindShape = bindShape;
+} 
+
+/// Get the bind shape matrix
+Mat44 SkinnedGeometry.getBindShape() {
+  return this.bindShape;
+} 
+
+/// Set the defaut geometry (T-Pose)
+SkinnedGeometry.setGeometry!(Geometry geometry) {
+  this.geometry = geometry;
+}
+
+/// \Internal
+/// Apply the skinning deformation using a linear blend
+Boolean SkinnedGeometry.applySkinning!() {
+
+  if(this.character)
+  {
+    Ref<GeometryAttributes> srcAttributes = this.geometry.getAttributes();
+    if( !srcAttributes.has("skinningData") )
+    {
+      setError("ERROR: mesh does not have skinningData");
+      return false;
+    }
+
+    Mat44 skinningMatrices[] = this.character.getSkinningMatrices();
+    Mat44 skinningPosAndNormMatrices[]; skinningPosAndNormMatrices.resize( skinningMatrices.size()*2 );
+    for( UInt32 i = 0; i < skinningMatrices.size(); ++i ) 
+    {
+      skinningPosAndNormMatrices[i*2] = this.bindShape.inverse() * skinningMatrices[i] * this.bindShape;
+      skinningPosAndNormMatrices[i*2 + 1] = skinningPosAndNormMatrices[i*2];
+      skinningPosAndNormMatrices[i*2 + 1].zeroTranslation();
+    }
+
+    if(!this.deformedGeometry) this.deformedGeometry = this.geometry.clone();
+    Ref<GeometryAttributes> targAttributes = this.deformedGeometry.getAttributes();
+
+    Vec3Attribute srcPositionsAttribute = srcAttributes.positionsAttribute;
+    Vec3Attribute srcNormalsAttribute = srcAttributes.normalsAttribute;
+    Vec3Attribute targPositionsAttribute = targAttributes.positionsAttribute;
+
+    if(srcNormalsAttribute == null)
+    {
+      skinPositions<<<targAttributes.size()>>>(
+        srcPositionsAttribute.values,
+        targPositionsAttribute.values,
+        srcAttributes.getAttribute("skinningData"),
+        skinningPosAndNormMatrices);
+      targPositionsAttribute.incrementVersion();
+    }
+    else
+    {
+      Vec3Attribute targNormalsAttribute = targAttributes.normalsAttribute;
+      skinPositionsAndNormals<<<targAttributes.size()>>>(
+        srcPositionsAttribute.values,
+        srcNormalsAttribute.values,
+        targPositionsAttribute.values,
+        targNormalsAttribute.values,
+        srcAttributes.getAttribute("skinningData"),
+        skinningPosAndNormMatrices);
+      targPositionsAttribute.incrementVersion();
+      targNormalsAttribute.incrementVersion();
+    }
+
+    return true;
+  }
+  else return false;
+}
+
+/// Get the deformed geometry (when skinning is appplied)
+Ref<Geometry> SkinnedGeometry.getGeometry() {
+  return this.geometry;
+}
+
+/// Get the deformed geometry (when skinning is appplied)
+Ref<Geometry> SkinnedGeometry.getDeformedGeometry() {
+  if(this.deformedGeometry) return this.deformedGeometry;
+  else return this.geometry;
+}
+
+/// Get the deformed geometry (when skinning is appplied)
+Ref<Geometry> SkinnedGeometry.getSkinnedGeometry!() {
+  return this.applySkinning() ? this.deformedGeometry : this.geometry;
+}
+

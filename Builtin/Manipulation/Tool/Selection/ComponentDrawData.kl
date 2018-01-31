@@ -1,0 +1,313 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// \internal
+  /// Some geometries, like Curves, have different points than sampled points
+  object PointsDrawData{
+    OGLBuffer_ positionsBuffer;//For curves + points (control points, not sampled points!)
+    Size lastPosUID;
+    Size lastPosVersion;
+  };
+
+  PointsDrawData.update!( Ref<Geometry> geo, io Ref<OGLContext> context ) {
+
+    Ref<Vec3Attribute> positions = geo.getAttributes().positionsAttribute;
+
+    if( positions.uid() != this.lastPosUID ) {
+      this.lastPosUID = positions.uid();
+      this.lastPosVersion = InvalidIndex;
+    }
+
+    if( synchronizeVersion( positions.getVersion(), this.lastPosVersion ) ) {
+      if( !this.positionsBuffer )
+        this.positionsBuffer = OGLBuffer_();
+      this.positionsBuffer.load( positions.values, context );
+    }
+  }
+
+  /// Note: this should only be used for a Curves geometry, which has a different positions buffer than its sampled points
+  Ref<PointsDrawData> GetOrCreatePointsDrawData( io Ref<ItemReference> itemReference, io Ref<OGLContext> context ) {
+    Ref<Geometry> geo = itemReference.getReferencedObject();
+    if( !geo )
+      return null;
+
+    Ref<ThreadsafeMetaDataContainer> metaData = geo.getMetaData();
+    Ref<PointsDrawData> pointsData = metaData.getOrCreate( "ptsDrawData", PointsDrawData );
+    pointsData.update( geo, context );
+    return pointsData;
+  }
+
+  /// \internal
+  /// Service for storing and drawing components for built-in Geometry types, to be used for :kl-ref:`Tool::SelectionDrawableItem.drawGLComponents` and stored as its userComponentDrawData.
+  object ComponentDrawData{
+    String componentType;
+    Ref<SelectionSharedDrawData> sharedDrawData;
+
+    Integer elementsGLPrimitiveType;
+    Integer otherElementsGLPrimitiveType;
+
+    // Holding partial element list
+    OGLBuffer_ componentGLElements;//Main primitives
+    OGLBuffer_ componentGLOtherElements;//For polygons draw: contains edges
+
+    Size lastDrawableGeomUID;
+    Size lastDrawableGeomVersion;
+
+    Size lastGeomUID;
+    Size lastGeomVersion;
+  };
+
+  /// \internal
+  ComponentDrawData.update!( Ref<Geometry> geo, String componentType, IndexSet componentIndices, io Ref<OGLContext> context ) {
+
+    this.elementsGLPrimitiveType = -1;//Note: GL_POINTS == GL_NONE, so we use -1
+    this.otherElementsGLPrimitiveType = -1;//Note: GL_POINTS == GL_NONE, so we use -1
+
+    if( componentType == ComponentType_object )
+      throw( "ComponentDrawData: should only be used for drawing a component list" );
+
+    if( !componentIndices.size() )
+      return;
+
+    this.sharedDrawData = Singleton_get( "SelectDrawData" );
+
+    this.componentType = componentType;
+    this.componentGLElements = OGLBuffer_();
+
+    if( componentType == ComponentType_points || geo.type().isA( Points ) ) {
+      this.elementsGLPrimitiveType = GL_POINTS;
+      // Be robust: ensure that point range matches geo point range, in case the geo structure has changed but component indices didn't
+      Size pointCount = geo.pointCount();
+      Size indices<> = componentIndices.getIndices();
+      Size truncIndices[];
+
+      Boolean needsTruncate;
+      for( Size i = 0; i < indices.size(); ++i ) {
+        if( indices[i] >= pointCount ) {
+          needsTruncate = true;
+          break;
+        }
+      }
+      if( needsTruncate ) {
+        truncIndices.reserve( indices.size() );
+        for( Size i = 0; i < indices.size(); ++i ) {
+          if( indices[i] < pointCount )
+            truncIndices.push( indices[i] );
+        }
+        indices = truncIndices;
+      }
+      this.componentGLElements.loadElementArray( indices, context );
+    }
+    if( componentType == ComponentType_elements ) {
+      UInt32 elements[];
+
+      Ref<Lines> lines = geo;
+      if( lines ) {
+        this.elementsGLPrimitiveType = GL_LINES;
+        Size lineCount = lines.lineCount();
+        elements.reserve( componentIndices.size() * 2 );
+        for( Size i = 0; i < componentIndices.size(); ++i ) {
+          Size line = componentIndices.get( i );
+          if( line < lineCount ) {
+            Size start, end;
+            lines.getLineAttributeIndices( line, start, end );
+            elements.push( start );
+            elements.push( end );
+          }
+        }
+        this.componentGLElements.loadElementArray( elements, context );
+      }
+
+      Ref<Curves> curves = geo;
+      if( curves ) {
+        this.elementsGLPrimitiveType = GL_LINES;
+
+        Ref<Curves_samplingData> curvesSampling = curves.getUpdatedSampling( false );
+        Curves_curveSamplingInfo samplingInfo[] = curvesSampling.getCurvesSamplingInfo();
+        Size curveCount = curves.curveCount();
+
+        for( Size i = 0; i < componentIndices.size(); ++i ) {
+          UInt32 subCurve = componentIndices.get( i );
+          if( subCurve < curveCount ) {
+            UInt32 firstLineSegment = samplingInfo[subCurve].firstLineSegment;
+            UInt32 lineSegmentCount = samplingInfo[subCurve].lineSegmentCount;
+
+            for( Size j = 0; j < lineSegmentCount; ++j ) {
+              UInt32 segIndex = ( firstLineSegment + j ) * 2;
+              if( curvesSampling.lineElements ) {
+                elements.push( curvesSampling.lineElements[segIndex] );
+                elements.push( curvesSampling.lineElements[segIndex + 1] );
+              } else if( curvesSampling.lineElements_16 ) {
+                elements.push( curvesSampling.lineElements_16[segIndex] );
+                elements.push( curvesSampling.lineElements_16[segIndex + 1] );
+              }
+            }
+          }
+        }
+        this.componentGLElements.loadElementArray( elements, context );
+      }
+
+      Ref<PolygonMesh> mesh = geo;
+      if( mesh ) {
+        this.elementsGLPrimitiveType = GL_TRIANGLES;
+        this.otherElementsGLPrimitiveType = GL_LINES;
+
+        elements.reserve( componentIndices.size() * 6 );
+
+        UInt32 otherElements[];//edges
+        otherElements.reserve( componentIndices.size() * 8 );
+        if( !this.componentGLOtherElements )
+          this.componentGLOtherElements = OGLBuffer_();
+
+        Size polygonCount = mesh.polygonCount();
+
+        for( UInt32 i = 0; i < componentIndices.size(); ++i ) {
+          Size polygon = componentIndices.get( i );
+          if( polygon < polygonCount ) {
+            // Code similar to PolygonMesh.generateTriangleList
+            DataIter polyIter = mesh.topology.getPolygonIter( polygon );
+            UInt32 count = mesh.topology.getPolyIterSize( polyIter );
+
+            if( count >= 3 ) {
+              UInt32 start = mesh.topology.getPolyIterPoint( polyIter, 0 );
+              UInt32 prev = mesh.topology.getPolyIterPoint( polyIter, 1 );
+              for( UInt32 j = 2; j < count; ++j ) {
+                UInt32 next = mesh.topology.getPolyIterPoint( polyIter, j );
+                elements.push( start );
+                elements.push( prev );
+                elements.push( next );
+                prev = next;
+              }
+            }
+            for( Size j = 0; j < count; ++j ) {
+              UInt32 start = mesh.topology.getPolyIterPoint( polyIter, j );
+              UInt32 end = mesh.topology.getPolyIterPoint( polyIter, NextOff( j, count ) );
+              otherElements.push( start );
+              otherElements.push( end );
+            }
+          }
+        }
+        this.componentGLElements.loadElementArray( elements, context );
+        this.componentGLOtherElements.loadElementArray( otherElements, context );
+      }
+    }
+  }
+
+  ComponentDrawData.update!( Ref<DrawableGeometryComponents> drawableGeom, io Ref<OGLContext> context ) {
+    Ref<Geometry> geo = drawableGeom.getReferencedObject();
+    if( drawableGeom.uid() != this.lastDrawableGeomUID ) {
+      this.lastDrawableGeomUID = drawableGeom.uid();
+      this.lastDrawableGeomVersion = InvalidIndex;
+    }
+    if( geo.uid() != this.lastGeomUID ) {
+      this.lastGeomUID = geo.uid();
+      this.lastGeomVersion = InvalidIndex;
+    }
+
+    Boolean changed;
+    updateValue( drawableGeom.getVersion(), this.lastDrawableGeomVersion, changed );
+
+    Size structureVersion = geo.getStructureVersion();
+    Ref<PolygonMesh> mesh = geo;
+    if( mesh )
+      structureVersion = mesh.attributeSharingVersion;
+
+    updateValue( structureVersion, this.lastGeomVersion, changed );
+
+    if( changed )
+      this.update( geo, drawableGeom.componentType, drawableGeom.componentIndices, context );
+  }
+
+  ComponentDrawData.drawElements!( Ref<SelectionDrawableItem> drawable, Ref<Viewport> viewport, io Ref<OGLContext> context ) {
+    if( !this.componentGLElements || this.elementsGLPrimitiveType == -1 )
+      return;
+
+    context.stateCache.pointSize( this.elementsGLPrimitiveType == GL_POINTS ? (GetSelectionManager().defaultPointDrawSize+2) : 1 );
+    context.stateCache.lineWidth( this.elementsGLPrimitiveType == GL_LINES ? 3 : 1 );
+
+    Ref<SelectionSharedDrawData_shaderData> shaderData = this.sharedDrawData.getOrCreateShader( drawable, context );
+
+    // XRay: only for triangles
+    shaderData.shaderValues.setUniform( shaderData.shaderXRayMaskKey, Integer( this.elementsGLPrimitiveType == GL_TRIANGLES ? ( this.sharedDrawData.useXRayMask ? 1 : 0 ) : 0 ) );
+    shaderData.shaderValues.activate( context );
+
+    Data NULL;
+    context.stateCache.bindBuffer( GL_ELEMENT_ARRAY_BUFFER, this.componentGLElements.bufferID );
+    glDrawElements( this.elementsGLPrimitiveType, this.componentGLElements.elementCount, this.componentGLElements.elementGLType, NULL );
+
+    if( !this.componentGLOtherElements || this.otherElementsGLPrimitiveType == -1 )
+      return;
+
+    // XRay: only for triangles
+    shaderData.shaderValues.setUniform( shaderData.shaderXRayMaskKey, Integer( this.otherElementsGLPrimitiveType == GL_TRIANGLES ? ( this.sharedDrawData.useXRayMask ? 1 : 0 ) : 0 ) );
+    shaderData.shaderValues.activate( context );
+
+    context.stateCache.lineWidth( 1 );
+
+    context.stateCache.bindBuffer( GL_ELEMENT_ARRAY_BUFFER, this.componentGLOtherElements.bufferID );
+    glDrawElements( this.otherElementsGLPrimitiveType, this.componentGLOtherElements.elementCount, this.componentGLOtherElements.elementGLType, NULL );
+  }
+
+  /// Note: this should only be used for a Curves geometry, which has a different positions buffer than its sampled points
+  Ref<ComponentDrawData> GetOrCreateComponentDrawData( io Ref<DrawableGeometryComponents> drawableGeom, io Ref<OGLContext> context ) {
+
+    if( !drawableGeom.attachedDrawData )
+      drawableGeom.attachedDrawData = ComponentDrawData();
+
+    Ref<ComponentDrawData> compDrawData = drawableGeom.attachedDrawData;
+    compDrawData.update( drawableGeom, context );
+    return compDrawData;
+  }
+
+  /// \internal
+  /// Some geometries, like Curves, have different points than sampled points
+  /// TODO: for Curves: not all points might be used; could use an additional element buffer.
+  object WireframeDrawData{
+    OGLBuffer_ componentGLElements;//Main primitives
+    Size lastGeomUID;
+    Size lastGeomStructureVersion;
+  };
+
+  WireframeDrawData.update!( Ref<Geometry> geo, io Ref<OGLContext> context ) {
+
+    if( geo.uid() != this.lastGeomUID ) {
+      this.lastGeomUID = geo.uid();
+      this.lastGeomStructureVersion = InvalidIndex;
+    }
+
+    if( synchronizeVersion( geo.getStructureVersion(), this.lastGeomStructureVersion ) ) {
+      Ref<PolygonMesh> mesh = geo;
+      if( mesh ) {
+        UInt32 elements[];//edges
+        elements.reserve( mesh.polygonPointsCount() * 2 );
+        if( !this.componentGLElements )
+          this.componentGLElements = OGLBuffer_();
+
+        Size polyCount = mesh.polygonCount();
+        for( UInt32 i = 0; i < polyCount; ++i ) {
+
+          DataIter polyIter = mesh.topology.getPolygonIter( i );
+          UInt32 count = mesh.topology.getPolyIterSize( polyIter );
+          for( Size j = 0; j < count; ++j ) {
+            UInt32 start = mesh.topology.getPolyIterPoint( polyIter, j );
+            UInt32 end = mesh.topology.getPolyIterPoint( polyIter, NextOff( j, count ) );
+            elements.push( start );
+            elements.push( end );
+          }
+        }
+        this.componentGLElements.loadElementArray( elements, context );
+      }
+    }
+  }
+
+  /// Note: this should only be used for a Curves geometry, which has a different positions buffer than its sampled points
+  Ref<WireframeDrawData> GetOrCreateWireframeDrawData( io Ref<Geometry> geo, io Ref<OGLContext> context ) {
+    Ref<ThreadsafeMetaDataContainer> metaData = geo.getMetaData();
+    Ref<WireframeDrawData> wireData = metaData.getOrCreate( "wireDrawData", WireframeDrawData );
+    wireData.update( geo, context );
+    return wireData;
+  }
+}// namespace Tool

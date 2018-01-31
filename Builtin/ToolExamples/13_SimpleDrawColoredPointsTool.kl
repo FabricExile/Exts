@@ -1,0 +1,172 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+using namespace Tool;
+
+/// This command adds a colored point array to a Points geometry.
+object DrawColoredPointsExampleCommand : DrawPointsExampleCommand{};
+
+DrawColoredPointsExampleCommand() {
+  this.declareArg( "size", // name
+                   Float32, // arg data type (Vec3Array is an alias; using Vec3[] directly causes a syntax error)
+                   CommandArgFlag_IN, // input arg
+                   RTVal( 5.0f ) ); // default value
+
+  this.declareArg( "color", // name
+                   Color, // arg data type
+                   CommandArgFlag_IN, // input arg
+                   RTVal( Color(1.0f) ) ); // default value
+}
+
+Boolean DrawColoredPointsExampleCommand.redoIt!( ) {
+  if( !this.parent.redoIt() )// Call parent first
+    return false;
+
+  // Parent already created the points;
+  // set colors and sizes for the last N points
+  Points points = this.getArgValue( "pointCloud" );
+  Vec3 posArray[] = this.getArgValue( "posArray" );
+  Size count = posArray.size();
+
+  Float32 size = this.getArgValue( "size" );
+  Color color = this.getArgValue( "color" );
+
+  Ref<ScalarAttribute> sizesAttr = points.getOrCreateSizesAttribute();
+  GeometryAttributes attributes = points.getAttributes();
+  Ref<ColorAttribute> colorAttr = attributes.getOrCreateColorAttribute( "vertexColors" );
+
+  for( Size i = points.size() - count; i < points.size(); ++i ) {
+    sizesAttr.values[i] = size;
+    colorAttr.values[i] = color;
+  }
+
+  return true;
+}
+
+/// Similar to SimpleDrawPointsTool2, but adds two buttons:
+///
+/// - one that opens options for pen color and size (OptionsTarget interface)
+///
+/// - one that opens a text dialog (help)
+///
+object SimpleDrawColoredPointsTool : Tool::BaseTool, OptionsTarget{
+  String targetPath;
+  Points points;
+  SInt32 commandMergeID;
+  Color color;
+  Float32 size;
+};
+
+SimpleDrawColoredPointsTool() {
+  this.commandMergeID = NoCanMergeID;// set as uninitialized
+  this.color = Color( 1.0f );
+  this.size = 5;
+
+  // Register for options.
+  Ref<OptionsTarget> target = this;
+  GetOptionsTargetRegistry().registerTarget( target, "Draw points options" );
+
+  // Use a mouse click and drag interaction to manage the mouse states
+  MouseClickDragInteraction interaction();
+  interaction.addListener( this, false, ToolEvent_DragMove, "drawMove" );
+  interaction.addListener( this, false, ToolEvent_DragEnd, "drawDone" );
+  this.attachComponent( interaction );
+
+  // Add a button for the options (color, size) and another for the help
+  PushButtonWidget colorButton( Vec2( 30 ), this.color, Color( 1.0f ), Color( 1.0f ) );
+  this.addChild( "colorWidget", colorButton );
+  colorButton.addListener( this, false, PushButtonWidget_onTrigger, "editColor" );
+  colorButton.setPixelCoordinatesTransform( Vec2( 10 ), Vec2( 40 ), Tool::DrawContext() );
+
+  PushButtonWidget helpButton = CreateDefaultHelpPushButton();
+  this.addChild( "helpWidget", helpButton );
+  helpButton.setPixelCoordinatesTransform( Vec2( 40, 10 ), Vec2( 70, 40 ), Tool::DrawContext() );
+  helpButton.addListener( this, false, PushButtonWidget_onTrigger, "showHelp" );
+}
+
+~SimpleDrawColoredPointsTool() {
+  // Unregister from options.
+  Ref<OptionsTarget> target = this;
+  GetOptionsTargetRegistry().unregisterTarget( target );
+}
+
+SimpleDrawColoredPointsTool.update!( String targetPath, Points points ) {
+  // Copy the target path so the command can target the right data
+  this.targetPath = targetPath;
+
+  // We don't actually need "points" in this simple example, but we could use it to display hints or various computations
+  this.points = points;
+}
+
+SimpleDrawColoredPointsTool.onEvent!( ToolEvent event, ToolEventUserID userID ) {
+  Boolean dragMove = event.name == "drawMove";
+  Boolean dragDone = event.name == "drawDone";
+
+  if( dragMove || dragDone ) {
+    Vec3 positions[];
+    if( !dragDone ) {
+      // Add a point at the current mouse position.
+      // Make this very simple: add a point at a distance of 5 from the camera
+      Viewport viewport = this.getManager().getCurrentEventContext().viewport;
+      Ray mouseRay = viewport.calcRayFromScreenPos( this.getManager().getLastMousePosition() );
+      positions.push( mouseRay.start + mouseRay.direction * 5 );
+    }
+
+    // If not done already, start a new stroke.
+    // Commands of a same stroke will have the same "mergeID"
+    // and will then be automatically merged.
+    if( this.commandMergeID == NoCanMergeID )
+      this.commandMergeID = GetCommandManager().getNewCanMergeID();
+
+    RTVal args[String];
+    // set the pointCloud as a target path instead of an actual value
+    // to instruct the CommandManager that it must be fetched before/after
+    // executing the command
+    args["pointCloud"] = PathValue( this.targetPath );
+    args["posArray"] = positions;
+    args["size"] = this.size;
+    args["color"] = this.color;
+
+    // create and schedule the command
+    Ref<CommandManager> commandManager = GetCommandManager();
+    DrawPointsExampleCommand cmd = commandManager.scheduleCommand( "DrawColoredPointsExampleCommand", args, this.commandMergeID );
+
+    if( dragDone )
+      this.commandMergeID = NoCanMergeID;// Next click/move will be a new stroke
+    else
+      cmd.blockLog(); // We only want the command to be logged and added to undo stack at the end of the stroke
+
+  } else if( event.name == "editColor" )
+    GetOptionsTargetRegistry().openAppOptionsEditor( this );
+  else if( event.name == "showHelp" ) {
+
+    ShowTextDialog( 
+      "Edit curve tool help",
+      "This button opens a text dialog that can show help for the tool." );
+  }
+  this.parent.onEvent( event, userID );
+}
+
+/// Sets the options from a new RTVal dictionary of options
+SimpleDrawColoredPointsTool.setOptions!( RTVal options ) {
+  RTVal optionsDict[String] = options;
+  this.color = optionsDict['Color'];
+  this.size = optionsDict['Size'];
+  //update button's color
+  PushButtonWidget colorButton = this.getChild("colorWidget");
+  colorButton.setColors( RTVal( this.color ), RTVal( Color( 1.0f ) ), RTVal( Color( 1.0f ) ) );
+}
+
+/// Gets the options; return a RTVal dictionary of options
+RTVal SimpleDrawColoredPointsTool.getOptions() {
+  RTVal optionsDict[String];
+  optionsDict['Color'] = this.color;
+  optionsDict['Size'] = this.size;
+  return optionsDict;
+}
+
+/// Gets the global options. We don't use this in the example.
+Ref<OptionsTarget> SimpleDrawColoredPointsTool.getGlobalOptions() {
+  return null;
+}

@@ -1,0 +1,156 @@
+{
+  "objectType" : "Graph",
+  "title" : "Current EvalContext",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "context",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "$TYPE$"
+      }
+    ],
+  "extDeps" : {},
+  "presetGUID" : "2E1062513BB50662796AC760026D1F7B",
+  "nodes" : [
+    {
+      "objectType" : "Inst",
+      "metadata" : {
+        "uiGraphPos" : "{\"x\": 297, \"y\": 96}"
+        },
+      "name" : "EvalContext",
+      "ports" : [
+        {
+          "objectType" : "InstPort",
+          "name" : "exec",
+          "nodePortType" : "IO"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "result",
+          "nodePortType" : "Out"
+          }
+        ],
+      "executable" : "Fabric.Exts.Util.EvalContext.EvalContext",
+      "presetGUID" : "BECDFD03F91B2BEA007D60FBE06A798D"
+      },
+    {
+      "objectType" : "Inst",
+      "metadata" : {
+        "uiGraphPos" : "{\"x\": 454, \"y\": 84}"
+        },
+      "name" : "GetInstance",
+      "ports" : [
+        {
+          "objectType" : "InstPort",
+          "name" : "exec",
+          "nodePortType" : "IO"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "this",
+          "nodePortType" : "In"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "result",
+          "nodePortType" : "Out"
+          }
+        ],
+      "executable" : "Fabric.Exts.Util.EvalContext.GetInstance",
+      "presetGUID" : "EDAEAA46AC4F548342977F2BDB08E489"
+      }
+    ],
+  "connections" : {
+    "EvalContext.result" : [
+      "GetInstance.this"
+      ],
+    "GetInstance.result" : [
+      "context"
+      ]
+    },
+  "requiredPresets" : {
+    "Fabric.Exts.Util.EvalContext.EvalContext" : {
+      "objectType" : "Func",
+      "metadata" : {
+        "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Util/EvalContext.html",
+        "uiTooltip" : "\n\n Supported by EvalContext"
+        },
+      "title" : "EvalContext",
+      "ports" : [
+        {
+          "objectType" : "ExecPort",
+          "name" : "exec",
+          "nodePortType" : "IO",
+          "execPortType" : "IO",
+          "typeSpec" : "Execute"
+          },
+        {
+          "objectType" : "ExecPort",
+          "name" : "result",
+          "nodePortType" : "In",
+          "execPortType" : "Out",
+          "typeSpec" : "EvalContext"
+          }
+        ],
+      "extDeps" : {
+        "Util" : "*"
+        },
+      "presetGUID" : "BECDFD03F91B2BEA007D60FBE06A798D",
+      "code" : "require Util;
+
+dfgEntry {
+  result = EvalContext();
+}
+"
+      },
+    "Fabric.Exts.Util.EvalContext.GetInstance" : {
+      "objectType" : "Func",
+      "metadata" : {
+        "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Util/EvalContext.html",
+        "uiTooltip" : "Get the EvalContext singleton, but through a method\n\n Supported by EvalContext"
+        },
+      "title" : "GetInstance",
+      "ports" : [
+        {
+          "objectType" : "ExecPort",
+          "name" : "exec",
+          "nodePortType" : "IO",
+          "execPortType" : "IO",
+          "typeSpec" : "Execute"
+          },
+        {
+          "objectType" : "ExecPort",
+          "name" : "this",
+          "nodePortType" : "Out",
+          "execPortType" : "In",
+          "typeSpec" : "EvalContext"
+          },
+        {
+          "objectType" : "ExecPort",
+          "name" : "result",
+          "nodePortType" : "In",
+          "execPortType" : "Out",
+          "typeSpec" : "EvalContext"
+          }
+        ],
+      "extDeps" : {
+        "Util" : "*"
+        },
+      "presetGUID" : "EDAEAA46AC4F548342977F2BDB08E489",
+      "code" : "require Util;
+
+dfgEntry {
+  result = this.getInstance();
+}
+"
+      }
+    }
+  }

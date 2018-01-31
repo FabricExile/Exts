@@ -1,0 +1,64 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Quat.html",
+    "uiTooltip" : "Reflects this Quaternion according to the axis provided.\n\n Supported by Quat,Quat_d,Quat_i"
+    },
+  "title" : "Mirror[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "$TYPE$[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "axisIndex",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Integer[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Integer[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "5CBDE79526EF474B267F00888011BE1A",
+  "code" : "require Math;
+
+operator Math_Quat_mirror_task<<<index>>>(
+  io $TYPE$[] this
+, in Integer[] axisIndex
+) {
+  this[index < this.size() ? index : this.size() - 1].mirror(axisIndex[index < axisIndex.size() ? index : axisIndex.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( axisIndex.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < axisIndex.size()) task_size = axisIndex.size();
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Quat_mirror_task(index, this, axisIndex);
+    }
+  } else {
+    Math_Quat_mirror_task<<<task_size>>>(this, axisIndex);
+  }
+}
+"
+  }

@@ -1,0 +1,49 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Box2.html",
+    "uiTooltip" : "setting this box to an empty box\n\n Supported by Box2,Box3"
+    },
+  "title" : "SetEmpty[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "$TYPE$[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "5E308639DC32D46412C88B5CE4287C98",
+  "code" : "require Math;
+
+operator Math_Box2_setEmpty_task<<<index>>>(
+  io $TYPE$[] this
+) {
+  this[index < this.size() ? index : this.size() - 1].setEmpty();
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Box2_setEmpty_task(index, this);
+    }
+  } else {
+    Math_Box2_setEmpty_task<<<task_size>>>(this);
+  }
+}
+"
+  }

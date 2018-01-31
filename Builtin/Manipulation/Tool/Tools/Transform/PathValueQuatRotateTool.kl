@@ -1,0 +1,37 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// The PathValueQuatRotateTool defines a tool that can rotate a Quat target
+  /// by being attached by the host application without a Canvas node
+  /// (PathValueTool interface).
+  ///
+  /// See :ref:`TPG.command_tool_type` for more information about default tools.
+  object PathValueQuatRotateTool : RotateTool, PathValueTool {
+  };
+
+  PathValueQuatRotateTool() {
+    this.construct( PathValueQuatTransformTarget(), Color( 1.0, 1.0, 0 ), true );
+  }
+
+  /// \implementation of PathValueTool.
+  PathValueQuatRotateTool.setTargetPath!( String path ) {
+    Ref<PathValueQuatTransformTarget> target = this.transformTarget;
+    target.setTargetPath( path );
+  }
+
+  /// \implementation of PathValueTool.
+  String PathValueQuatRotateTool.getTargetPath() {
+    Ref<PathValueQuatTransformTarget> target = this.transformTarget;
+    return target.getTargetPath();
+  }
+
+  /// \implementation of PathValueTool.
+  PathValueQuatRotateTool.valueChanged!( RTVal val ) {
+    Ref<PathValueQuatTransformTarget> target = this.transformTarget;
+    target.valueChanged( val );
+  }
+
+}// namespace Tool

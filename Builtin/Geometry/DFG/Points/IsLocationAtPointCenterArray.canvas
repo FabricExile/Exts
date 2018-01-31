@@ -1,0 +1,83 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/Points.html",
+    "uiTooltip" : "Returns 'true' if the point location is defined at point's center.\nSee :kl-ref:`Points.getLocationBoundingSphereCoordinate` for more details relatively to sized points' GeometryLocation positions.\n\n Supported by Points"
+    },
+  "title" : "IsLocationAtPointCenter[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Points[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "location",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "GeometryLocation[]" : [
+          {
+            "index" : -1,
+            "subIndex" : 0,
+            "barycentric" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "GeometryLocation[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "0C5BD607F1EED8E0BDA2B6D7C06C19F2",
+  "code" : "require Geometry;
+
+operator Geometry_Points_isLocationAtPointCenter_task<<<index>>>(
+  io Boolean[] result
+, in Points[] this
+, in GeometryLocation[] location
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].isLocationAtPointCenter(location[index < location.size() ? index : location.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( location.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < location.size()) task_size = location.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Geometry_Points_isLocationAtPointCenter_task(index, result, this, location);
+    }
+  } else {
+    Geometry_Points_isLocationAtPointCenter_task<<<task_size>>>(result, this, location);
+  }
+}
+"
+  }

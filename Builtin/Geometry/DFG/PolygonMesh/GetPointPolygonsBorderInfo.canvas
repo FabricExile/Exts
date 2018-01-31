@@ -1,0 +1,51 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/PolygonMesh.html",
+    "uiTooltip" : "Equivalent to :kl-ref:`PolygonMesh.getPointBorderInfo`, where all neighbor polygon border and wing information is packed in the neighborPolygonsInfo array.\nThe neighborPolygonsInfo will have a size of :kl-ref:`PolygonMesh.getPointPolygonCount`.\nFor each neighbor value (UInt32):\n- if the :kl-ref:`PolygonMesh_precededByBorder` bit is set, the neighbor polygon is preceded by a border\n- if the :kl-ref:`PolygonMesh_atClosedWingStart` bit is set, the neighbor is the first polygon of a closed wing\n\n\n Supported by PolygonMesh"
+    },
+  "title" : "GetPointPolygonsBorderInfo",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "PolygonMesh"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "point",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Size"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "neighborPolygonsInfo",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "LocalL8UInt32Array"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "859D69A5BFDAA600B91914FE1B67B6A5",
+  "code" : "require Geometry;
+
+dfgEntry {
+  this.getPointPolygonsBorderInfo(point, neighborPolygonsInfo);
+}
+"
+  }

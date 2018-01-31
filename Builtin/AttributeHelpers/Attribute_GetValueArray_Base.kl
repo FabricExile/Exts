@@ -1,0 +1,89 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Geometry;
+
+private function Boolean BaseGeometry.getAttributeValueArray_CheckIndex(
+  SInt32 mode,
+  io Size vertexCount,
+  io Size faceCount,
+  io Size faceCornerTotalCount,
+  io Size resultSize,
+  io UInt32 idxs[]
+) {
+  vertexCount = 0;
+  faceCount = 0;
+  faceCornerTotalCount = 0;
+  resultSize = 0;
+
+  Geometry geometry = this;
+  if(geometry == null)
+    return false;
+
+  vertexCount = geometry.getAttributes().size();
+  faceCount = 0;
+  faceCornerTotalCount = 0;
+
+  // all of the other modes only work with PolygonMeshes
+  PolygonMesh mesh = null;
+  mesh = geometry;
+  if(mesh == null && mode > 0)
+    return false;
+  else if(mesh != null)
+  {
+    vertexCount = mesh.pointCount();
+    faceCount = mesh.polygonCount();
+    faceCornerTotalCount = mesh.polygonPointsCount();
+  }
+
+  resultSize = idxs.size();
+  if(resultSize == 0)
+  {
+    switch(mode)
+    {
+      case 0:
+      case 3: // per vertex modes
+      {
+        resultSize = vertexCount;
+        break;
+      }
+      case 1: // per face
+      {
+        resultSize = faceCount;
+        break;
+      }
+      case 2: // per face corner
+      {
+        resultSize = 0;
+        UInt32 newIdxs[](faceCornerTotalCount);
+        for(Size i=0;i<faceCount;i++) {
+          Size count = mesh.getPolygonSize(i);
+          for(Size j=0;j<count;j++)
+            newIdxs[resultSize++] = mesh.getPolygonAttributeIndex(i, j);
+        }
+        idxs = newIdxs;
+        break;
+      }
+    }
+  }
+  else if(mode == 2)
+  {
+    // in case we are using face corners
+    // we need to go through all of them and sum up
+    // the face corners
+    resultSize = 0;
+    UInt32 newIdxs[](faceCornerTotalCount);
+    for(Size i=0;i<idxs.size();i++) {
+      if(idxs[i] >= faceCount)
+        continue;
+      Size count = mesh.getPolygonSize(idxs[i]);
+      for(Size j=0;j<count;j++)
+        newIdxs[resultSize++] = mesh.getPolygonAttributeIndex(idxs[i], j);
+    }
+    newIdxs.resize(resultSize);
+    idxs = newIdxs;
+  }
+
+  return true;
+}

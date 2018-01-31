@@ -1,0 +1,247 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// \internal
+  object BaseEventSource_listenerData{
+    WeakPointer listenerWP;
+    EventListener ownedListener;
+    ToolEventUserID userID;
+    String eventMapping[String];
+  };
+
+  inline Ref<EventListener> BaseEventSource_listenerData.getListener() {
+    // Silently ignore destroyed sources; destruction order can vary
+    if( this.listenerWP.isValid() )
+      return this.listenerWP.getOwner();
+    else
+      return null;
+  }
+
+  /// Implements base functionality for the the EventSource interface.
+  /// See :ref:`TPG.events` for more information and examples.
+  object BaseEventSource : BaseWeakPointerable, EventSource{
+    FewObjectsStableList listeners;
+    Ref<EventSource> container;//If we are a sub-component, this should be the interface entry point being used
+  };
+
+  BaseEventSource() {
+    this.listeners = FewObjectsStableList();
+    this.container = this;
+  }
+
+  /// \internal
+  /// \param container This is not the parent, but rather "this" owner under a composition usage (HasA)
+  BaseEventSource.setContainer!( Ref<EventSource> container ) {
+    this.container = container;
+  }
+
+  /// Implementation of EventSource
+  /// \note If "owned", not only the this object will create an owner reference, but it will consider the owned listener as its child if it is a Component (setParent, invalidate).
+  BaseEventSource.addListener!( Ref<EventListener> listener, Boolean owned, String sourceEvent, String mappedListenerEvent, ToolEventUserID userID ) {
+
+    if( !listener )
+      return;
+
+    Ref<WeakPointerable> listenerWPAble = listener;
+    if( !listenerWPAble ) {
+      setError( "BaseEventSource.addListener: listener must support the WeakPointerable interface" );
+      return;
+    }
+
+    BaseEventSource_listenerData data = null;
+    FewObjectsStableListIterator it( this.listeners );
+    Ref<BaseEventSource_listenerData> listenerData = null;
+    while( listenerData = it.next() ) {
+      Ref<EventListener> dataListener = listenerData.getListener();
+      if( listener === dataListener && listenerData.userID == userID ) {
+        data = listenerData;
+        break;
+      }
+    }
+    if( !data ) {
+      data = BaseEventSource_listenerData();
+      data.listenerWP = listenerWPAble.getWeakPointer();
+      if( !data.listenerWP )
+        setError( "BaseEventSource.addListener: listener returned a null WeakPointer" );
+      data.userID = userID;
+      this.listeners.pushBack( data );
+    }
+
+    if( owned && !data.ownedListener ) {
+      data.ownedListener = listener;
+      Ref<Component> listenerComponent = listener;
+      if( listenerComponent ) {
+        // Only set as a parent if not done already
+        Ref<Object> parent = listenerComponent.getParent();
+        if( !parent )
+          listenerComponent.setParent( this.container );
+      }
+    }
+
+    if( EventConnectDebugTrace )
+      report( "Connecting source " + GetComponentName( this.container )
+              + ( sourceEvent ? ( "." + sourceEvent ) : String() )
+              + " to listener " + GetComponentName( listener )
+              + ( mappedListenerEvent ? ( "." + mappedListenerEvent ) : String() ) );
+
+    if( Boolean( sourceEvent ) || Boolean( mappedListenerEvent ) ) {
+      if( data.eventMapping.has( sourceEvent ) && data.eventMapping[sourceEvent] != mappedListenerEvent )
+        setError( "BaseEventSource.addListener: " + GetComponentName( this.container )
+                  + ": error : source event " + sourceEvent
+                  + " already mapped to " + data.eventMapping[sourceEvent]
+                  + "; cannot map to " + mappedListenerEvent );
+      else
+        data.eventMapping[sourceEvent] = mappedListenerEvent;
+    }
+  }
+
+  BaseEventSource.addListener!( Ref<EventListener> listener, Boolean owned, String sourceEvent, String mappedListenerEvent ) {
+    this.addListener( listener, owned, sourceEvent, mappedListenerEvent, ToolEventUserID() );
+  }
+
+  BaseEventSource.addListener!( Ref<EventListener> listener, Boolean owned, String sourceEvent ) {
+    this.addListener( listener, owned, sourceEvent, String(), ToolEventUserID() );
+  }
+
+  BaseEventSource.addListener!( Ref<EventListener> listener, Boolean owned ) {
+    this.addListener( listener, owned, String(), String(), ToolEventUserID() );
+  }
+
+  BaseEventSource.removeListener!( Ref<EventListener> listener, String mappedSourceEvent, ToolEventUserID userID ) {
+    FewObjectsStableListIterator it( this.listeners );
+    Ref<BaseEventSource_listenerData> listenerData = null;
+    while( listenerData = it.next() ) {
+      Ref<EventListener> dataListener = listenerData.getListener();
+      if( listener === dataListener && listenerData.userID == userID ) {
+        if( EventConnectDebugTrace )
+          report( "Disconnecting source " + GetComponentName( this.container )
+                  + ( mappedSourceEvent ? ( "." + mappedSourceEvent ) : String() )
+                  + " from listener " + GetComponentName( listener ) );
+
+        if( mappedSourceEvent ) {
+          if( !listenerData.eventMapping.has( mappedSourceEvent ) )
+            setError( "BaseEventSource.removeListener: " + GetComponentName( this.container )
+                      + ": error : source event " + mappedSourceEvent
+                      + " not mapped to " + GetComponentName( listener ) );
+        }
+        if( listenerData.eventMapping.has( mappedSourceEvent ) )
+          listenerData.eventMapping.delete( mappedSourceEvent );
+
+        if( !mappedSourceEvent || !listenerData.eventMapping )
+          this.listeners.remove( listenerData );
+      }
+    }
+  }
+
+  BaseEventSource.removeListener!( Ref<EventListener> listener, String mappedSourceEvent ) {
+    this.removeListener( listener, mappedSourceEvent, ToolEventUserID() );
+  }
+
+  BaseEventSource.removeListener!( Ref<EventListener> listener ) {
+    FewObjectsStableListIterator it( this.listeners );
+    Ref<BaseEventSource_listenerData> listenerData = null;
+    while( listenerData = it.next() ) {
+      Ref<EventListener> dataListener = listenerData.getListener();
+      if( listener === dataListener ) {
+        if( EventConnectDebugTrace )
+          report( "Disconnecting source " + GetComponentName( this.container ) + " from listener " + GetComponentName( listener ) );
+        this.listeners.remove( listenerData );
+      }
+    }
+  }
+
+  BaseEventSource.sendEvent( EventName name, EventPropagationType propagationType, String tag, Ref<Object> customData ) {
+    ToolEvent event;
+    event.sender = this.container;//Note: ensures that we are kept alive
+    event.name = name;
+    event.propagationType = propagationType;
+    event.tag = tag;
+    event.customData = customData;
+
+    FewObjectsStableListIterator it( this.listeners );
+    Ref<BaseEventSource_listenerData> listenerData = null;
+    while( listenerData = it.next() ) {
+
+      // Map to specific target event, if applicable
+      String specificTarget;
+      if( listenerData.eventMapping.has( name ) )
+        specificTarget = listenerData.eventMapping[name];
+      else if( listenerData.eventMapping.has( String() ) )
+        specificTarget = listenerData.eventMapping[String()];
+      else if( listenerData.eventMapping.size() )
+        continue; // This event is not mapped
+
+      if( specificTarget )
+        event.name = specificTarget;
+
+      Ref<EventListener> listener = listenerData.getListener();
+      if( !listener )
+        continue;
+
+      if( ShouldTraceEvent( event ) ) {
+        report( "send event " + DescribeEvent( event )
+                + ": from " + GetComponentName( this.container ) + " to " + GetComponentName( listener )
+                + " " + DescribeUserIDIfAny( listenerData.userID ) );
+      }
+      listener.onEvent( event, listenerData.userID );
+
+      if( specificTarget )
+        event.name = name;
+    }
+  }
+
+  inline BaseEventSource.sendEvent( EventName name, EventPropagationType propagationType, String tag ) {
+    this.sendEvent( name, propagationType, tag, null );
+  }
+
+  inline BaseEventSource.sendEvent( EventName name, EventPropagationType propagationType ) {
+    this.sendEvent( name, propagationType, String() );
+  }
+
+  /// Sends an event with no parent/children propagation.
+  inline BaseEventSource.sendEvent( EventName name ) {
+    this.sendEvent( name, EventPropagationType_none, String() );
+  }
+
+  /// \internal
+  /// Non-virtual version that can be safely called from the destructor
+  /// This can be removed once KL is fixed to not call specialized methods in destructors
+  BaseEventSource.invalidateInternal!( ) {
+    if( !this.container )
+      return; //Already invalidated
+
+    this.parent.invalidate();//First make sure our week pointer container is null to avoid any circular refs
+
+    Object keepAlive = this;// in case we are owned by our listeners
+
+    this.sendEvent( Event_Invalidated );
+
+    this.container = null;
+
+    FewObjectsStableListIterator it( this.listeners );
+    Ref<BaseEventSource_listenerData> listenerData = null;
+    while( listenerData = it.next() ) {
+      Ref<EventListener> listener = listenerData.getListener();
+      if( !listener )
+        continue;
+
+      listener.eventSourceDestroying( this, listenerData.userID );
+
+      Ref<Component> listenerComponent = listener;
+      if( Boolean( listenerComponent ) && listenerComponent.getParent() === this )
+        listenerComponent.invalidate();
+    }
+    this.listeners.clear();
+  }
+
+  BaseEventSource.invalidate!( ) {
+    this.invalidateInternal();
+  }
+
+  ~BaseEventSource() {
+    this.invalidateInternal();
+  }
+}// namespace Tool

@@ -1,0 +1,78 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+
+  /**
+  \versionadded 2.6.0
+
+  The DrawUnderMouseCursorModifier, when attached to a BaseTool (:kl-ref:`Tool::BaseTool.addDrawModifier` ),
+  will constraint it to the mouse pixel position, and can additionally apply a pixel offset.
+  See :ref:`TPG.tooldrawmodifier` for more information about draw modifiers.
+  */
+  object DrawUnderMouseCursorModifier : BaseDrawModifier, RawEventHandler{
+    Vec2 pixelOffset;
+    ToolsManager manager;
+  };
+
+  DrawUnderMouseCursorModifier() {
+    this.init( Vec2() );
+  }
+
+  DrawUnderMouseCursorModifier( Vec2 pixelOffset ) {
+    this.init( pixelOffset );
+  }
+
+  /// \internal
+  DrawUnderMouseCursorModifier.init!( Vec2 pixelOffset ) {
+    this.setPixelOffset( pixelOffset );
+    this.manager = GetToolsManager();
+    this.manager.addEventHandler( this );
+  }
+
+  DrawUnderMouseCursorModifier.setPixelOffset!( Vec2 pixelOffset ) {
+    this.pixelOffset = pixelOffset;
+  }
+
+  DrawUnderMouseCursorModifier.updateDrawData!( io DrawContext context, Ref<Object> target ) {
+    this.parent.updateDrawData( context, target );
+
+    Vec2 position = this.manager.getLastMousePosition() + this.pixelOffset;
+    Mat44 transform;
+    transform.setTranslation( Vec3( position.x, position.y, 0 ) );
+
+    SetTransform( context.contextualProperties, transform );
+    SetTransformSpace( context.contextualProperties, PixelCoordinatesSpace );
+
+    // Update the renderTransform (viewport space) accordingly
+    UpdateRenderTransform( context );
+  }
+
+  /// \internal
+  DrawUnderMouseCursorModifier.onRawEvent!( io Event event ) {
+    Ref<MouseEvent> mouseEvent = event;
+    if( mouseEvent ) {
+      // Make sure there is a redraw if the mouse moves
+      ToolChanged();
+    }
+  }
+
+  /// \internal
+  /// Non-virtual version that can be safely called from the destructor
+  /// This can be removed once KL is fixed to not call specialized methods in destructors
+  DrawUnderMouseCursorModifier.invalidateInternal!( Ref<BaseTool> ownerTool ) {
+    this.manager.removeEventHandler( this );
+    if( ownerTool )
+      this.parent.invalidate( ownerTool );
+  }
+
+  DrawUnderMouseCursorModifier.invalidate!( Ref<BaseTool> ownerTool ) {
+    this.invalidateInternal( ownerTool );
+  }
+
+  ~DrawUnderMouseCursorModifier() {
+    this.invalidateInternal( null );
+  }
+}// namespace Tool

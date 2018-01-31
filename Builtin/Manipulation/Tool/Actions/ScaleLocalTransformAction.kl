@@ -1,0 +1,59 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /**
+    \versionadded 2.6.0
+
+    The ScaleLocalTransformAction is an example of specialization of SetPropertyAction
+    which will apply a local scale factor to the owner BaseTool, and can restore
+    the previous scaling upon destruction( ~ScaleLocalTransformAction ).
+
+    The action's do and undo can be linked to a BaseTool state and simplify tool's logic and data management (see :kl-ref:`Tool::BaseTool.attachAndDoStateSpecificAction` ).
+    The action can also be triggered (do + undo) by connected events; see :kl-ref:`Tool::BaseAction.connectToDo` and :kl-ref:`Tool::BaseAction.connectToUndo` .
+
+    The overriding of the property by the action is robust, since a special stack tracks overrides and maintains the right
+    order and values even if the overrides are removed in a different order.
+    See :ref:`TPG.state-actions` for more details and examples related to states and actions.
+
+  */
+  object ScaleLocalTransformAction : SetPropertyAction{
+    Scalar scale;
+  };
+
+  ScaleLocalTransformAction() {
+    this.setPropertyName( LocalTransformProperty );
+    this.scale = 1.2;
+  }
+
+  ScaleLocalTransformAction( Scalar scale, Boolean restorePrevValueOnDestroy ) {
+    this.setPropertyName( LocalTransformProperty );
+    this.setScale( scale );
+    this.restorePrevValueOnDestroy( restorePrevValueOnDestroy );
+  }
+
+  /// Connects and attaches to the eventSource.
+  ScaleLocalTransformAction( Ref<EventSource> eventSource, EventName sourceEventName, Scalar scale, Boolean restorePrevValueOnDestroy ) {
+    this.setPropertyName( LocalTransformProperty );
+    this.setScale( scale );
+    this.restorePrevValueOnDestroy( restorePrevValueOnDestroy );
+    this.connectToDoAndAttach( eventSource, sourceEventName );
+  }
+
+  ScaleLocalTransformAction.setScale!( Float32 scale ) {
+    this.scale = scale;
+  }
+
+  /// \internal
+  ScaleLocalTransformAction.doAction!( ) {
+    if( !this.wasSet ) {
+      Ref<PropertyContainer> propContainer = this.getPropertyContainer();
+      Xfo localTransform = GetLocalTransform( propContainer );
+      localTransform.sc *= this.scale;
+      this.setValue( RTVal( localTransform ) );
+    }
+    this.parent.doAction();
+  }
+}// namespace Tool

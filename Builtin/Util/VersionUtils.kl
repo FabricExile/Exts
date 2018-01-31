@@ -1,0 +1,419 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// returns true if the observer version needs to be synchronized with the source
+inline Boolean synchronizeVersion( UInt32 source, io UInt32 observer ) {
+  if( observer != source ) {
+    observer = source;
+    return true;
+  }
+  return false;
+}
+
+/// returns true if the observer version needs to be synchronized with the source
+inline Boolean synchronizeVersion( UInt64 source, io UInt64 observer ) {
+  if( observer != source ) {
+    observer = source;
+    return true;
+  }
+  return false;
+}
+
+inline Boolean updateValue( Boolean source, io Boolean target ) {
+  if( source != target ) {
+    target = source;
+    return true;
+  }
+  return false;
+}
+
+inline updateValue( Boolean source, io Boolean target, io Boolean changedAccumulator ) {
+  if( source != target ) {
+    target = source;
+    changedAccumulator = true;
+  }
+}
+
+inline updateValue( Boolean source, io Boolean target, io UInt32 version ) {
+  if( source != target ) {
+    target = source;
+    ++version;
+  }
+}
+
+inline Boolean updateValue( UInt8 source, io UInt8 target ) {
+  if( source != target ) {
+    target = source;
+    return true;
+  }
+  return false;
+}
+
+inline updateValue( UInt8 source, io UInt8 target, io Boolean changedAccumulator ) {
+  if( source != target ) {
+    target = source;
+    changedAccumulator = true;
+  }
+}
+
+inline updateValue( UInt8 source, io UInt8 target, io UInt32 version ) {
+  if( source != target ) {
+    target = source;
+    ++version;
+  }
+}
+
+inline Boolean updateValue( UInt32 source, io UInt32 target ) {
+  if( source != target ) {
+    target = source;
+    return true;
+  }
+  return false;
+}
+
+inline updateValue( UInt32 source, io UInt32 target, io Boolean changedAccumulator ) {
+  if( source != target ) {
+    target = source;
+    changedAccumulator = true;
+  }
+}
+
+inline updateValue( UInt32 source, io UInt32 target, io UInt32 version ) {
+  if( source != target ) {
+    target = source;
+    ++version;
+  }
+}
+
+inline Boolean updateValue( SInt32 source, io SInt32 target ) {
+  if( source != target ) {
+    target = source;
+    return true;
+  }
+  return false;
+}
+
+inline updateValue( SInt32 source, io SInt32 target, io Boolean changedAccumulator ) {
+  if( source != target ) {
+    target = source;
+    changedAccumulator = true;
+  }
+}
+
+inline updateValue( SInt32 source, io SInt32 target, io UInt32 version ) {
+  if( source != target ) {
+    target = source;
+    ++version;
+  }
+}
+
+inline Boolean updateValue( Float32 source, io Float32 target ) {
+  if( source != target ) {
+    target = source;
+    return true;
+  }
+  return false;
+}
+
+inline updateValue( Float32 source, io Float32 target, io Boolean changedAccumulator ) {
+  if( source != target ) {
+    target = source;
+    changedAccumulator = true;
+  }
+}
+
+inline updateValue( Float32 source, io Float32 target, io UInt32 version ) {
+  if( source != target ) {
+    target = source;
+    ++version;
+  }
+}
+
+inline Boolean updateValue( Float32 source, io UInt32 target ) {
+  if( bitcastFloatToUInt(source) != target ) {
+    target = bitcastFloatToUInt(source);
+    return true;
+  }
+  return false;
+}
+
+/// Compare bitcast to UInt32
+inline updateValue( Float32 source, io UInt32 target, io Boolean changedAccumulator ) {
+  if( bitcastFloatToUInt(source) != target ) {
+    target = bitcastFloatToUInt(source);
+    changedAccumulator = true;
+  }
+}
+
+/// Compare bitcast to UInt32
+inline updateValue( Float32 source, io UInt32 target, io UInt32 version ) {
+  if( bitcastFloatToUInt(source) != target ) {
+    target = bitcastFloatToUInt(source);
+    ++version;
+  }
+}
+
+inline Boolean updateValue( Float64 source, io Float64 target ) {
+  if( source != target ) {
+    target = source;
+    return true;
+  }
+  return false;
+}
+
+inline updateValue( Float64 source, io Float64 target, io Boolean changedAccumulator ) {
+  if( source != target ) {
+    target = source;
+    changedAccumulator = true;
+  }
+}
+
+inline updateValue( Float64 source, io Float64 target, io UInt32 version ) {
+  if( source != target ) {
+    target = source;
+    ++version;
+  }
+}
+
+inline Boolean updateValue( String source, io String target ) {
+  if( source != target ) {
+    target = source;
+    return true;
+  }
+  return false;
+}
+
+inline updateValue( String source, io String target, io Boolean changedAccumulator ) {
+  if( source != target ) {
+    target = source;
+    changedAccumulator = true;
+  }
+}
+
+inline updateValue( String source, io String target, io UInt32 version ) {
+  if( source != target ) {
+    target = source;
+    ++version;
+  }
+}
+
+inline Boolean updateValue( Ref<Object> source, io Ref<Object> target ) {
+  if( source != target ) {
+    target = source;
+    return true;
+  }
+  return false;
+}
+
+inline updateValue( Ref<Object> source, io Ref<Object> target, io Boolean changedAccumulator ) {
+  if( source != target ) {
+    target = source;
+    changedAccumulator = true;
+  }
+}
+
+inline updateValue( Ref<Object> source, io Ref<Object> target, io UInt32 version ) {
+  if( source != target ) {
+    target = source;
+    ++version;
+  }
+}
+
+inline Boolean updateValue( Object source, io Object target ) {
+  if( source != target ) {
+    target = source;
+    return true;
+  }
+  return false;
+}
+
+inline updateValue( Object source, io Object target, io Boolean changedAccumulator ) {
+  if( source != target ) {
+    target = source;
+    changedAccumulator = true;
+  }
+}
+
+inline updateValue( Object source, io Object target, io UInt32 version ) {
+  if( source != target ) {
+    target = source;
+    ++version;
+  }
+}
+
+/** 
+  A data structure used to express value + topology version changes.
+*/
+struct Versions {
+  UInt32 value;
+  UInt32 topo;
+};
+
+/// Increments the topology version
+inline Versions.incTopo!() {
+  ++this.topo;
+  ++this.value;
+}
+
+/// Increments the value version
+inline Versions.incValue!() {
+  ++this.value;
+}
+
+/// returns true if the version had to be updated based on another one.
+inline Boolean Versions.synchronize!( Versions source ) {
+  Boolean changed = false;
+  if( synchronizeVersion( source.topo, this.topo ) )
+    changed = true;
+
+  if( synchronizeVersion( source.value, this.value ) )
+    changed = true;
+
+  return changed;
+}
+
+/// returns true if the version had to be updated based on another.
+/// if a synchronization is required, the parent will be incremented as well.
+inline Boolean Versions.synchronize!( Versions source, io Versions parent ) {
+  Boolean changed = false;
+  if( this.topo != source.topo ) {
+    this.topo = source.topo;
+    parent.incTopo();
+    changed = true;
+  }
+  if( this.value != source.value ) {
+    this.value = source.value;
+    parent.incValue();
+    changed = true;
+  }
+  return changed;
+}
+
+/**
+  Version and valueVersion are actually the same.
+  Users that don't care about the distinction between
+  container and value versions can simply use 'version'.
+  
+  The usage of containerVersion is optional, and
+  its interpretation is implementation dependant. In general,
+  it implies changes that are more fundamental than
+  value changes, such as structural changes.
+
+  For example, an Image that changes its size or pixel type
+  can be a container change, while pixel data changes are
+  value changes.
+*/
+interface Versioned {
+  UInt32 getVersion();
+  initVersion!( UInt32 version );
+  incrementVersion!();
+
+  UInt32 getValueVersion();
+  initValueVersion!( UInt32 version );
+  incrementValueVersion!();
+
+  UInt32 getStructureVersion();
+  initStructureVersion!( UInt32 version );
+  incrementStructureVersion!();
+};
+
+object BaseVersioned : Versioned {
+  Versions version;
+};
+
+inline UInt32 BaseVersioned.getVersion() {
+  return this.version.value;
+}
+
+/// \internal non-virtual version (avoids virtual call)
+inline UInt32 BaseVersioned.getVersion_() {
+  return this.version.value;
+}
+
+inline BaseVersioned.initVersion!( UInt32 version ) {
+  this.version.value = version;
+}
+
+inline BaseVersioned.incrementVersion!() {
+  ++this.version.value;
+}
+
+/// \internal non-virtual version (avoids virtual call)
+inline BaseVersioned.incrementVersion_!() {
+  ++this.version.value;
+}
+
+inline UInt32 BaseVersioned.getValueVersion() {
+  return this.version.value;
+}
+
+/// \internal non-virtual version (avoids virtual call)
+inline UInt32 BaseVersioned.getValueVersion_() {
+  return this.version.value;
+}
+
+inline BaseVersioned.initValueVersion!( UInt32 version ) {
+  this.version.value = version;
+}
+
+inline BaseVersioned.incrementValueVersion!() {
+  ++this.version.value;
+}
+
+/// \internal non-virtual version (avoids virtual call)
+inline BaseVersioned.incrementValueVersion_!() {
+  ++this.version.value;
+}
+
+inline UInt32 BaseVersioned.getStructureVersion() {
+  return this.version.topo;
+}
+
+/// \internal non-virtual version (avoids virtual call)
+inline UInt32 BaseVersioned.getStructureVersion_() {
+  return this.version.topo;
+}
+
+inline BaseVersioned.initStructureVersion!( UInt32 version ) {
+  this.version.topo = version;
+}
+
+inline BaseVersioned.incrementStructureVersion!() {
+  this.version.incTopo();
+}
+
+/// \internal non-virtual version (avoids virtual call)
+inline BaseVersioned.incrementStructureVersion_!() {
+  this.version.incTopo();
+}
+
+inline Boolean BaseVersioned.incrementVersionIf!( Boolean condition ) {
+  if( condition )
+    ++this.version.value;
+  return condition;
+}
+
+inline Boolean BaseVersioned.incrementStructureVersionIf!( Boolean condition ) {
+  if( condition )
+    this.version.incTopo();
+  return condition;
+}
+
+struct VersionedSynch {
+  UInt32 lastVersion;
+  UInt64 lastVersionedUID;
+};
+
+Boolean VersionedSynch.synchronize!( Ref<Versioned> versioned ) {
+  Boolean changed;
+  if( versioned ) {
+    changed = synchronizeVersion( versioned.uid(), this.lastVersionedUID );
+    if( synchronizeVersion( versioned.getVersion(), this.lastVersion ) )
+      changed = true;
+  } else {
+    changed = synchronizeVersion( 0, this.lastVersionedUID );
+    this.lastVersion = 0;
+  }
+  return changed;
+}

@@ -1,0 +1,86 @@
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 2.0.1
+
+  :kl-ref:`LegacyHandlerDispatcher` interface declares the methods to manages several handlers and to create a manipulation tree.
+  In the manipulation tree, dispatchers are the nodes used to organize the manipulation system and propagate the events througt it.
+
+  \seealso :kl-ref:`BaseHandlerDispatcher`, :kl-ref:`Tool`.
+
+  \dfgPresetOmit
+*/
+
+interface LegacyHandlerDispatcher {
+  /// Registers a new handler with a given name.
+  /// \param name The name to register the handler with.
+  /// \param handler The handler to register.
+  registerHandler!(String name, io Ref<LegacyEventHandler> handler);
+  
+  /// Unregisters an existing handler.
+  /// \param The name of the handler.
+  unregisterHandler!(String name);
+
+  /// Unregisters an existing handler.
+  /// \param A reference to the handler.
+  unregisterHandler!(Ref<LegacyEventHandler> handler);
+
+  /// Gets true if a handler with the given name has been registered.
+  /// \param name Handler's name.
+  Boolean hasHandler(String name);
+
+  /// Gets the handler's name. 
+  /// \param handler A reference to an handler.
+  String getHandlerName(Ref<LegacyEventHandler> handler);
+
+  /// Gets a reference to the current handler.
+  Ref<LegacyEventHandler> getActiveHandler();
+
+  /// Activates a specific handler in the stack. 
+  /// It will receive the events. 
+  /// \param handler A reference to an handler.
+  setActiveHandler!(Ref<LegacyEventHandler> handler);
+
+  /// Activates a specific handler in the stack. 
+  /// It will receive the events. 
+  /// \param The name of the handler.
+  setActiveHandler!(String name);
+
+  /// Updates the manipulation-tree as the scene might have changed.
+  sceneChanged!();
+
+  /// Activates one or several handlers within this dispatcher stack.
+  /// Recursive call that visit the whole manipulation tree.
+  /// Must be called from the manipualtion-tree root dispatcher.
+  /// \note This is applied to the manipulation tree leaves, e.g. the tools.
+  /// \param key A enable key-stroke.
+  /// \param switchDisableNone Is true if the activated handler has switchDisableNone exclusivity.
+  /// \param switchDisableOthers Is true if the activated handler has switchDisableOthers exclusivity.
+  /// \param switchDisableAll Is true if the activated handler has switchDisableAll exclusivity.
+  /// \param isAccepted Is true if an handler has been activated/deactived.
+  activateHandlers!(
+    io Key key, 
+    io Boolean switchDisableNone,
+    io Boolean switchDisableOthers,
+    io Boolean switchDisableAll,
+    io Boolean isAccepted);
+
+  /// Activates a specific dispatcher within the manipulation tree and  its parents and children dispatcher.
+   // Recursive call that visit the whole manipulation tree.
+  /// Must be called from the manipualtion-tree root dispatcher.
+  /// \note This is applied to the manipulation tree leaves, e.g. the tools.
+  /// \param keyEvent A key event.
+  /// \param isAccepted Is true if an handler has been activated/deactived.
+  activateDispatcher!(Key key, io Boolean isAccepted);
+
+  /// Process a mouse event.
+  /// \param event A mouse or mouseWheel event.
+  processMouseEvent!(io Event event);
+
+  /// Process a key event + manages tool switching.
+  /// \param event A key event.
+  processKeyEvent!(io Event event);
+};

@@ -1,0 +1,142 @@
+/*
+*  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+*/
+
+/**
+  \versionadded 2.0
+  
+  :kl-ref:`LegacyBaseToolDispatcher` class owns and manages one or several :kl-ref:`Tool`.
+  It provides high level controls such as selecting the current tool, dispatch the user events and activate/deactivate the manipulation.
+
+  \seealso :kl-ref:`Tool`, :kl-ref:`SRTtool`
+
+  \dfgPresetOmit
+*/
+interface LegacySelectionTool;
+
+object LegacyBaseToolDispatcher : LegacyBaseHandlerDispatcher, LegacyToolDispatcher{
+  /// Current selected tool from rayCast.
+  protected Ref<LegacyBaseTool> rayCastActiveTool;
+  /// Reference to the LegacySelectionTool.
+  protected Ref<LegacySelectionTool> selectionTool;
+};
+
+/// Initializes a LegacyBaseToolDispatcher.
+/// \param selectionTool Reference to the LegacySelectionTool.
+/// \param enableKey Key that enables/disables the dispatcher.
+/// \param isOwnedByDispatcher If true, owned by the dispatcher when registered.
+protected LegacyBaseToolDispatcher.init!(
+  Ref<LegacySelectionTool> selectionTool,
+  Key enableKey, 
+  Boolean isOwnedByDispatcher) 
+{
+  this.init(enableKey, isOwnedByDispatcher);
+  this.selectionTool = selectionTool;
+  this.selectionTool.registerToolDispatcher(this);
+}
+
+/// Destructor. 
+~LegacyBaseToolDispatcher() {
+  if(this.selectionTool)
+    this.selectionTool.unregisterToolDispatcher(this);
+}
+
+Ref<LegacySelectionTool> LegacyBaseToolDispatcher.getSelectionTool() {
+  return this.selectionTool;
+}
+ 
+/// Implementation of :kl-ref:`LegacyHandlerDispatcher`.
+LegacyBaseToolDispatcher.sceneChanged!() {
+  for(name, handler in this.handlers) 
+  {
+    Ref<LegacyBaseTool> tool = handler;
+    if(Boolean(tool) && tool.isEnabled()) 
+      tool.updateFromTarget();
+  }
+  this.parent.sceneChanged();
+}
+
+/// Implementation of :kl-ref:`LegacyToolDispatcher`.
+/// To override.
+LegacyBaseToolDispatcher.updateTargetSelection!() {
+}
+
+/// Implementation of :kl-ref:`LegacyToolDispatcher`.
+/// To override.
+protected Ref<LegacyTool> LegacyBaseToolDispatcher.getActiveToolFromRayCast!(io MouseEvent event) {
+  // Deactivate all the tools
+  for(name, handler in this.handlers)
+  {
+    Ref<LegacyTool> tool = handler;
+    if(tool) tool.deActivate();
+  }
+  return null;
+}
+
+/// Implementation of :kl-ref:`LegacyHandlerDispatcher`.
+protected LegacyBaseToolDispatcher.processMouseEvent!(io Event event) {
+  
+  if(!this.isEnabled()) return;
+
+  // Get the current takeAllEventTool if set.
+  Ref<LegacyBaseTool> takeAllEventTool = this.getActiveHandler();
+  if(Boolean(takeAllEventTool) && takeAllEventTool.takeAllEvents() != LegacyHandlerDisableAll)
+    takeAllEventTool = null;
+
+  // Ray-casting tool selection
+  if(event.eventType() == Event_MouseButtonPress)        
+  {
+    MouseEvent mouseEvent = event;
+    this.rayCastActiveTool = this.getActiveToolFromRayCast(mouseEvent);
+    Ref<LegacyBaseSelectionTool> baseSelectionTool = this.selectionTool;
+    if(Boolean(this.rayCastActiveTool) && !baseSelectionTool.isDragging()) 
+      this.rayCastActiveTool.onEvent(event);
+  }
+  
+  // Tools manipulation
+  if(this.rayCastActiveTool) 
+  {
+    this.rayCastActiveTool.onEvent(event);
+    if(event.eventType() == Event_MouseButtonRelease)
+      this.rayCastActiveTool = null;
+  }
+  
+  else
+  {      
+    // If the current tool is LegacyHandlerDisableAll, it takes the event
+    if(takeAllEventTool) 
+      takeAllEventTool.onEvent(event);
+
+    // Highlights selection + tools
+    if(!event.isAccepted() && event.eventType() == Event_MouseMove)
+    {
+      MouseEvent mouseEvent = event;
+      if(!mouseEvent.buttons) 
+      {
+        if(this.getActiveToolFromRayCast(mouseEvent))
+          this.selectionTool.clearHighlightSet();        
+      }
+    }
+  }   
+
+  this.parent.processMouseEvent(event);
+}
+
+/// Implementation of :kl-ref:`LegacyHandlerDispatcher`.
+LegacyBaseToolDispatcher.activateHandlers!(
+  io Key key, 
+  io Boolean switchDisableNone,
+  io Boolean switchDisableOthers,
+  io Boolean switchDisableAll,
+  io Boolean isAccepted) 
+{
+  this.parent.activateHandlers(
+    key, 
+    switchDisableNone,
+    switchDisableOthers,
+    switchDisableAll,
+    isAccepted);
+
+  if(switchDisableAll)
+    this.selectionTool.clearHighlightSet();
+}

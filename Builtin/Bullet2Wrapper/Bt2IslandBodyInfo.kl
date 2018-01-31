@@ -1,0 +1,54 @@
+//
+// Copyright 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+struct Bt2IslandBodyInfo : Bt2Item permits Bt2World
+{
+  Vec3 pos[];
+  Vec3 normal[];
+  SInt32 vertexChunkID[];
+  SInt32 cornerChunkID[];
+  SInt32 bodyIdxs[];
+};
+
+function Bt2IslandBodyInfo.deformMesh!(io PolygonMesh mesh)
+{
+  if(mesh == null)
+    return;
+  if(mesh.pointCount() != this.pos.size())
+    return;
+  if(!this.world)
+    return;
+
+  Xfo xfos[](this.bodyIdxs.size());
+  for(Size i=0;i<this.bodyIdxs.size();i++)
+    xfos[i] = this.world.getRigidBody(this.bodyIdxs[i]).getXfo();
+
+  for(Size i=0;i<this.pos.size();i++)
+  {
+    SInt32 chunk = this.vertexChunkID[i];
+    Vec3 p = xfos[chunk].transformVector(this.pos[i]);
+    mesh.setPointPosition(i, p);
+  }
+
+  if(this.cornerChunkID.size() > 0)
+  {
+    GeometryAttributes attributes = mesh.getAttributes();
+    Ref<Vec3Attribute> normals = attributes.getAttribute('normals');
+    if(normals)
+    {
+      Size offset = 0;
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Size size = mesh.getPolygonSize(i);
+        for(Size j=0;j<size;j++)
+        {
+          SInt32 chunk = this.cornerChunkID[offset];
+          Vec3 n = xfos[chunk].ori.rotateVector(this.normal[offset]);
+          mesh.setPolygonAttribute(i, j, normals, n);
+          offset++;
+        }
+      }
+    }
+  }
+}

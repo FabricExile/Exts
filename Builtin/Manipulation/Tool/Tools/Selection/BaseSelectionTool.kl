@@ -1,0 +1,580 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  const String Event_BaseSelectionToolRectangleRelease = "SelRectRelease";
+  const String Event_BaseSelectionToolRectangleUpdate = "SelRectUpdate";
+  const String Event_BaseSelectionToolClickNoDrag = "SelClickNoDrag";
+
+  const String BaseSelectionTool_draggingRectangleState = "SelRectDraggingState";
+
+  const UInt8 BaseSelectionTool_opType_set = 0;
+  const UInt8 BaseSelectionTool_opType_add = 1;
+  const UInt8 BaseSelectionTool_opType_remove = 2;
+  const UInt8 BaseSelectionTool_opType_toggle = 3;
+
+  interface BaseSelectionTool_virtuals {
+
+    /// This is called just before selecting. If required, the specialized class must update the drawList by calling setDrawList().
+    updateDrawListForDraw!( DrawContext context );
+
+    /// If false, no selection changes will be made as a result of this selection interaction.
+    /// \param opType Active operation type: BaseSelectionTool_opType_set, BaseSelectionTool_opType_add, BaseSelectionTool_opType_remove or BaseSelectionTool_opType_toggle
+    /// \param dragging True if this interaction is the result of a drag release
+    /// \param selectionMode Active selection mode: SelectionMode_Objects, SelectionMode_Elements_includePartial, SelectionMode_Elements_excludePartial, SelectionMode_Points.
+    /// \param selectedDrawListItemIndices Indices of selected objects, corresponding to drawList items.
+    /// \param selectedPrimitivesPerDrawListItemIndex selectionMode != SelectionMode_Objects, indices of selected components, corresponding to selectedDrawListItemIndices.
+    Boolean processSelection!( UInt8 opType, Boolean dragging, UInt8 selectionMode, UInt32 selectedDrawListItemIndices[], UInt32 selectedPrimitivesPerDrawListItemIndex[][] );
+
+    /// Signals a selection change, along with changed components. If opType is BaseSelectionTool_opType_set, previous selection was cleared (but is not reported in removedComponents).
+    /// \param opType Operation type: BaseSelectionTool_opType_set, BaseSelectionTool_opType_add, BaseSelectionTool_opType_remove or BaseSelectionTool_opType_toggle.
+    selectionChanged!( UInt8 opType, ItemReferences added, ItemReferences removed );
+
+    /// Returns BaseSelectionTool_opType_X based on the current event modifiers (mouse release)
+    UInt8 getSelectionOperation( Ref<Event> event );
+
+    /// Called upon selection mode change
+    selectionModeChanged!( UInt8 selectionMode, Boolean fromUI );
+  };
+
+  /// The BaseSelectionTool provides a generic handling of selection.
+  /// By using :kl-ref:`ItemReferences`, :kl-ref:`Tool::SelectionManagerDrawList` and
+  /// :kl-ref:`Tool::SelectionManager` to perform and process the selection, it allows
+  /// to be very generic while taking care of various selection interactions such
+  /// as rectangle selection, and support for Maya-like modifiers (Shift, Ctrl).
+  /// In particular, the selection list might be built-in geometries or not.
+  /// The :kl-ref:`ItemReferences` allows to persist the selection, if desired.
+  /// However, the specialized tool must then properly remap named selected
+  /// items to actual, live scene items.
+  ///
+  /// It can also optionally create a tool shelf for visually toggling
+  /// the selection modes.
+  ///
+  /// The :kl-ref:`GeometrySelectionTool` provides a specialization
+  /// that supports selection on an array of geometries.
+  ///
+  /// See :ref:`TPG.selection` for more information and examples.
+  object BaseSelectionTool : BaseTool, BaseSelectionTool_virtuals{
+
+    SelectionManager selectionManager;
+
+    SelectionManagerDrawList drawList;
+    ItemReferences selection;
+
+    Color unselectedColor;
+    Color selectionColor;
+    Boolean drawWithXRayMask;
+
+    Boolean highlightUnderCursor;
+    ItemReferences highlightComponent;
+    Color highlightColor;
+
+    UInt8 selectionMode;
+    Boolean clearSelectionIfModeChanges;
+    Color rectangDragColor;
+
+    Vec2 pixelTolerance;
+
+    Size itemReferenceToDrawListIndex[ItemReferences_itemKey];
+    ItemReference itemReferencePerDrawListIndex[];
+
+    IconShelfLayout shelf;
+  };
+
+  BaseSelectionTool() {
+    // debug
+    cpglSetCheckErrors( true );
+    //cpglSetDebugTrace( true );
+
+    this.selectionManager = GetSelectionManager();
+    this.clearSelectionIfModeChanges = true;
+
+    this.pixelTolerance = Vec2( 5 );
+
+    this.unselectedColor = Color( 0.1f, 0.1f, 0.8f, 0.8f );
+    this.selectionColor = Color( 1.0f, 0, 0, 0.5f );
+    this.drawWithXRayMask = true;
+    this.enableHighlightUnderCursor( true, Color( 0, 1.0f, 0 ) );
+
+    this.rectangDragColor = Color( 0, 1.0f, 0 );
+    this.selectionMode = SelectionMode_Objects;// true;
+
+    this.selection = ItemReferences();
+  }
+
+  BaseSelectionTool.enableHighlightUnderCursor!( Boolean enable, Color highlightColor ) {
+    this.highlightColor = highlightColor;
+    if( this.highlightUnderCursor != enable ) {
+      this.highlightUnderCursor = enable;
+      if( enable ) {
+        this.highlightComponent = ItemReferences();
+        this.registerToRawEvents( true );
+      } else
+        this.highlightComponent = null;
+    }
+  }
+
+  BaseSelectionTool.activating!( ) {
+    this.parent.activating();
+    // Have a rectangleDrag interaction only when we are active.
+    MouseClickDragInteraction rectangleDrag( MouseButton_LeftButton, ModiferKey_Ctrl | ModiferKey_Shift );
+    this.addActiveSpecificComponent( rectangleDrag );
+    this.addActiveSpecificComponent( AddStateAction( rectangleDrag, ToolEvent_DragBegin, rectangleDrag, ToolEvent_DragEnd, BaseSelectionTool_draggingRectangleState ) );
+    rectangleDrag.addListener( this, false, ToolEvent_DragEnd, Event_BaseSelectionToolRectangleRelease );
+    rectangleDrag.addListener( this, false, ToolEvent_DragMove, Event_BaseSelectionToolRectangleUpdate );
+    rectangleDrag.addListener( this, false, ToolEvent_DragBeginEndNoMove, Event_BaseSelectionToolClickNoDrag );
+  }
+
+  BaseSelectionTool.onEnterState!( String newState, Boolean mainState ) {
+
+    switch( newState ) {
+      case BaseSelectionTool_draggingRectangleState:
+      {
+        // Create the rectangle drag widget
+        RectangleLinesShape rect();
+        rect.setColor( this.rectangDragColor );
+        rect.setVisibleToActiveViewportOnly( true );
+        this.attachAndDoStateSpecificAction( newState, AddChildAction( "rect", rect, true ) );
+        return;
+      }
+    }
+  }
+
+  /// \internal
+  BaseSelectionTool.setSelectionMode!( UInt8 selectionMode, Boolean fromUI ) {
+
+    if( selectionMode >= SelectionModeCount ) {
+      setError( "BaseSelectionTool.setSelectionMode: undefined selection mode, should be one of: SelectionMode_Objects, SelectionMode_Elements_includePartial, SelectionMode_Elements_excludePartial, SelectionMode_Points" );
+      return;
+    }
+    if( selectionMode != this.selectionMode ) {
+      if( this.clearSelectionIfModeChanges ) {
+        // elements selection mode are still compatible
+        Boolean allElements = ( selectionMode == SelectionMode_Elements_includePartial || selectionMode == SelectionMode_Elements_excludePartial )
+          && ( this.selectionMode == SelectionMode_Elements_includePartial || this.selectionMode == SelectionMode_Elements_excludePartial );
+        if( !allElements )
+          this.clearSelection();
+      }
+      this.selectionMode = selectionMode;
+
+      if( this.shelf )
+        this.shelf.radioButtonBehavior.setSelectedItem( this.selectionMode );
+
+      this.selectionModeChanged( this.selectionMode, fromUI );
+    }
+  }
+
+  /// Sets the selection type. Can be one of these: SelectionMode_Objects, SelectionMode_Elements_includePartial, SelectionMode_Elements_excludePartial, SelectionMode_Points
+  inline BaseSelectionTool.setSelectionMode!( UInt8 selectionMode ) {
+    this.setSelectionMode( selectionMode, false );
+  }
+
+  /// To be overriden
+  BaseSelectionTool.selectionModeChanged!( UInt8 selectionMode, Boolean fromUI ) {}
+
+  /// \param keepCurrentSelectionForSameDrawListIndex If true and !clearSelection, drawList items will replace current items (for a same index), but the selection will be kept for it if applicable.
+  BaseSelectionTool.setDrawList!( Ref<SelectionManagerDrawList> drawList, ItemReference referencePerDrawListItem[], Boolean clearSelection, Boolean keepCurrentSelectionForSameDrawListIndex ) {
+    // Merge with current list
+    if( clearSelection )
+      this.clearSelection();
+    else if( keepCurrentSelectionForSameDrawListIndex && Boolean( this.drawList ) ) {
+
+      Ref<ItemReference> itemsToRemove[];
+      ItemReference itemsToAdd[];
+
+      Ref<ItemReference> subItems[];
+      for( Size i = 0; i < this.selection.size(); ++i ) {
+
+        this.selection.getAllSubTypeItems( i, subItems );
+        for( Size j = 0; j < subItems.size(); ++j ) {
+          Ref<DrawableGeometryComponents> geomComponents = subItems[j];
+          if( geomComponents ) {
+            Size prevIndex = this.drawList.getIndex( geomComponents.drawable, geomComponents.key );
+            Size newIndex = drawList.getIndex( geomComponents.drawable, geomComponents.key );
+            if( prevIndex == newIndex )// no change
+              continue;
+            if( newIndex == InvalidIndex || prevIndex == InvalidIndex || prevIndex > drawList.size() )
+              itemsToRemove.push( geomComponents );// No longer part of the list; remove
+            else {
+              // Move to the new draw item. Since the key changes, it has to be removed and re-added.
+              SelectionManagerDrawListKey newKey;
+              Ref<SelectionDrawableItem> newDrawable = drawList.get( prevIndex, newKey );
+
+              DrawableGeometryComponents newComponents();
+              newComponents.key = newKey;
+              newComponents.drawable = newDrawable;
+              newComponents.itemReference = geomComponents.itemReference;
+              newComponents.componentType = geomComponents.componentType;
+              newComponents.componentIndices = geomComponents.componentIndices;
+              newComponents.attachedDrawData = geomComponents.attachedDrawData;
+
+              itemsToRemove.push( geomComponents );
+              itemsToAdd.push( newComponents );
+            }
+          }
+        }
+      }
+      Size dummy[];
+      for( Size i = 0; i < itemsToRemove.size(); ++i )
+        this.selection.remove( itemsToRemove[i], dummy );
+
+      for( Size i = 0; i < itemsToAdd.size(); ++i )
+        this.selection.add( itemsToAdd[i], dummy );
+    }
+    this.drawList = drawList;
+
+    // Refresh the itemReference->drawList index map
+    this.itemReferencePerDrawListIndex.resize( this.drawList.size() );
+    this.itemReferenceToDrawListIndex.clear();
+
+    for( Size i = 0; i < this.itemReferencePerDrawListIndex.size(); ++i ) {
+      this.itemReferencePerDrawListIndex[i] = referencePerDrawListItem[i];
+      if( this.itemReferencePerDrawListIndex[i] )
+        this.itemReferenceToDrawListIndex[ItemReferences_itemKey( this.itemReferencePerDrawListIndex[i] )] = i;
+    }
+  }
+
+  inline BaseSelectionTool.clearSelection!( ) {
+    this.selection.clear();
+  }
+
+  // Returns a copy of the selection that is safe to keep as task undo/redo data
+  inline ItemReferences BaseSelectionTool.getSelectionSafeCopy() {
+    return this.selection.cloneAsBaseItemReferenceData();
+  }
+
+  // Returns the selection, however it might not be safe to be kept as task undo/redo data
+  inline Ref<ItemReferences> BaseSelectionTool.getSelection() {
+    return this.selection;
+  }
+
+  /// Initializes drawn selection from provided selection
+  /// Note: a compatible draw list should have been previously set, only
+  /// selection item references that are found in the draw list will be reflected.
+  /// Returns true if the selection changed.
+  Boolean BaseSelectionTool.setSelection!( ItemReferences selection ) {
+
+    ItemReferences prevSelection = this.getSelectionSafeCopy();//TODO: avoid this by doing proper incremental update
+
+    this.clearSelection();
+    if( !selection )
+      return prevSelection.size() > 0;
+
+    Ref<ItemReference> subItems[];
+    Size addedComponents[];
+
+    for( Size i = 0; i < selection.size(); ++i ) {
+      selection.getAllSubTypeItems( i, subItems );
+
+      for( Size j = 0; j < subItems.size(); ++j ) {
+        Ref<ItemReference> itemRef = subItems[j];
+        // Search for the associated draw list item
+        Size index = this.itemReferenceToDrawListIndex.get( ItemReferences_itemKey( itemRef ), InvalidIndex );
+        if( index == InvalidIndex )
+          continue;//unknown, can't translate (should we keep?)
+
+        SelectionManagerDrawListKey userKey;
+        Ref<SelectionDrawableItem> drawable = this.drawList.get( index, userKey );
+        String componentsType = itemRef.getComponentsType();
+
+        // Should we ignore if componentsType doesn't match this.selectionMode?
+        DrawableGeometryComponents selectedGeom = null;
+        if( componentsType == ComponentType_object )
+          selectedGeom = DrawableGeometryComponents( drawable, userKey );
+        else
+          selectedGeom = DrawableGeometryComponents( drawable, userKey, componentsType, itemRef.getComponentIndices() );
+
+        selectedGeom.itemReference = this.itemReferencePerDrawListIndex[index];
+
+        this.selection.add( selectedGeom, addedComponents );
+      }
+    }
+    return prevSelection.equals( this.selection );
+  }
+
+  /// \internal
+  BaseSelectionTool.select!( DrawContext context, Vec2 upperLeftPixelCoord, Vec2 lowerRightPixelCoord, UInt8 selectionMode, UInt8 selectedGroupType, Boolean highlightElseSelection ) {
+
+    this.updateDrawListForDraw( context );
+
+    if( !this.drawList )
+      return;
+
+    ItemReferences target = highlightElseSelection ? this.highlightComponent : this.selection;
+
+    UInt32 results[];
+    UInt32 primitivesPerItem[][];
+
+    if( selectionMode == SelectionMode_Objects )
+      results = this.selectionManager.selectObjects( this.drawList, context.viewport, upperLeftPixelCoord, lowerRightPixelCoord, selectedGroupType );
+    else
+      this.selectionManager.select( this.drawList, context.viewport, upperLeftPixelCoord, lowerRightPixelCoord, selectionMode, selectedGroupType, true, results, primitivesPerItem );
+
+    UInt8 opType = highlightElseSelection ? BaseSelectionTool_opType_set : this.getSelectionOperation( this.getManager().getCurrentEvent() );
+
+    if( !this.processSelection( opType, this.hasState( BaseSelectionTool_draggingRectangleState ), selectionMode, results, primitivesPerItem ) )
+      return;
+
+    ItemReferences prevTargetIfSet = null;
+    if( opType == BaseSelectionTool_opType_set ) {
+      prevTargetIfSet = target.cloneAsBaseItemReferenceData();
+      target.clear();
+    }
+
+    ItemReferences added();
+    ItemReferences removed();
+
+    for( Size i = 0; i < results.size(); ++i ) {
+
+      SelectionManagerDrawListKey userKey;
+      Ref<SelectionDrawableItem> drawable = this.drawList.get( results[i], userKey );
+      DrawableGeometryComponents selectedGeom = null;
+      if( selectionMode == SelectionMode_Objects )
+        selectedGeom = DrawableGeometryComponents( drawable, userKey );
+      else
+        selectedGeom = DrawableGeometryComponents( drawable, userKey, selectionMode == SelectionMode_Points ? ComponentType_points : ComponentType_elements, primitivesPerItem[i] );
+
+      Ref<ItemReference> itemRef = this.itemReferencePerDrawListIndex[results[i]];
+      selectedGeom.itemReference = itemRef;
+
+      Size addedComponents[];
+      Size removedComponents[];
+      Size dummy[];
+
+      if( opType == BaseSelectionTool_opType_set || opType == BaseSelectionTool_opType_add )
+        target.add( selectedGeom, addedComponents );
+      else if( opType == BaseSelectionTool_opType_remove )
+        target.remove( selectedGeom, removedComponents );
+      else if( opType == BaseSelectionTool_opType_toggle )
+        target.toggle( selectedGeom, addedComponents, removedComponents );
+
+      // Create the delta
+      if( addedComponents ) {
+        ItemReference delta = itemRef;
+        if( selectionMode != SelectionMode_Objects )
+          delta = BaseComponentItemReference( itemRef, selectionMode == SelectionMode_Points ? ComponentType_points : ComponentType_elements, addedComponents );
+        added.add( delta, dummy );
+      }
+      if( removedComponents ) {
+        ItemReference delta = itemRef;
+        if( selectionMode != SelectionMode_Objects )
+          delta = BaseComponentItemReference( itemRef, selectionMode == SelectionMode_Points ? ComponentType_points : ComponentType_elements, removedComponents );
+        removed.add( delta, dummy );
+      }
+    }
+
+    if( opType == BaseSelectionTool_opType_set ) {
+      // Compare to see if it changed
+      if( !prevTargetIfSet.equals( this.selection ) ) {
+        if( highlightElseSelection )
+          ToolChanged();// request redraw
+        else
+          this.selectionChanged( opType, added, removed );
+      }
+    } else if( added.size() != 0 || removed.size() != 0 ) {
+      if( highlightElseSelection )
+        ToolChanged();// request redraw
+      else
+        this.selectionChanged( opType, added, removed );
+    }
+  }
+
+  /// \internal
+  BaseSelectionTool.onEvent!( ToolEvent event, ToolEventUserID userID ) {
+    if( event.name == Event_BaseSelectionToolRectangleRelease ) {
+      Ref<DragInteraction> dragInter = event.sender;
+      if( dragInter ) {
+        Box2 bbox;
+        bbox += dragInter.getInitialPixelPosition();
+        bbox += dragInter.getCurrentPixelPosition();
+
+        if( bbox.min.x == bbox.max.x || bbox.min.y == bbox.max.y )
+          return;//avoid div by 0
+
+        this.select( this.getManager().getCurrentEventContext(), bbox.min, bbox.max, this.selectionMode, SelectedGroupType_all, false );
+        ToolChanged();
+        return;
+      }
+    } else if( event.name == Event_BaseSelectionToolRectangleUpdate ) {
+      Ref<BaseTool> rect = this.getChild( "rect" );
+      if( rect ) {
+        Ref<DragInteraction> dragInter = event.sender;
+        if( dragInter ) {
+          Box2 bbox;
+          bbox += dragInter.getInitialPixelPosition();
+          bbox += dragInter.getCurrentPixelPosition();
+          rect.setPixelCoordinatesTransform( bbox.min, bbox.max, GetCurrentEventContext() );
+        }
+      }
+      return;
+    } else if( event.name == Event_BaseSelectionToolClickNoDrag ) {
+      Ref<MouseEvent> mouseEvent = this.getManager().getCurrentEvent();
+      if( mouseEvent ) {
+        UInt8 selectionMode = this.selectionMode == SelectionMode_Elements_excludePartial ? SelectionMode_Elements_includePartial : this.selectionMode;
+        this.select( this.getManager().getCurrentEventContext(), mouseEvent.pos - this.pixelTolerance, mouseEvent.pos + this.pixelTolerance, selectionMode, SelectedGroupType_closest, false );
+        ToolChanged();
+        return;
+      }
+    } else if( event.name == "onSelectionModeUIChanged" ) {
+      Size mode = this.shelf.radioButtonBehavior.getSelectedItem();
+      if( mode != InvalidIndex )
+        this.setSelectionMode( UInt8( mode ), true );// clear if changed... should be an option?
+      return;
+    }
+    this.parent.onEvent( event, userID );
+  }
+
+  /// \internal
+  BaseSelectionTool.onRawEvent!( io Event event ) {
+    if( this.highlightUnderCursor ) {
+      MouseEvent mouseEvent = event;
+      if( Boolean( mouseEvent ) ) {
+        // Don't accept events since we don't want to block other tools
+        if( this.isActive() && !mouseEvent.isAccepted()
+            && !mouseEvent.buttons && mouseEvent.eventType() == Event_MouseMove ) {
+          // Set highlight
+          UInt8 selectionMode = this.selectionMode == SelectionMode_Elements_excludePartial ? SelectionMode_Elements_includePartial : this.selectionMode;
+          this.select( this.getManager().getCurrentEventContext(), mouseEvent.pos - this.pixelTolerance, mouseEvent.pos + this.pixelTolerance, selectionMode, SelectedGroupType_closest, true );
+        } else if( mouseEvent.eventType() == Event_Leave && this.highlightComponent.size() > 0 ) {
+          this.highlightComponent.clear();
+          ToolChanged();
+        }
+      }
+    }
+    this.parent.onRawEvent( event );
+  }
+
+  /// \internal
+  /// Update the selectable shape draw data (had to be done after 1st draw)
+  BaseSelectionTool.postUpdateDrawData!( io DrawContext context ) {
+    this.parent.postUpdateDrawData( context );
+    if( this.isVisible() )
+      this.updateDrawListForDraw( context );
+  }
+
+
+  /// To be overriden.
+  /// If false, no selection changes will be made as a result of this selection interaction.
+  /// \param opType Active operation type: BaseSelectionTool_opType_set, BaseSelectionTool_opType_add, BaseSelectionTool_opType_remove or BaseSelectionTool_opType_toggle
+  /// \param dragging True if this interaction is the result of a drag release
+  /// \param selectionMode Active selection mode: SelectionMode_Objects, SelectionMode_Elements_includePartial, SelectionMode_Elements_excludePartial, SelectionMode_Points.
+  /// \param selectedDrawListItemIndices Indices of selected objects, corresponding to drawList items.
+  /// \param selectedPrimitivesPerDrawListItemIndex selectionMode != SelectionMode_Objects, indices of selected components, corresponding to selectedDrawListItemIndices.
+  Boolean BaseSelectionTool.processSelection!( UInt8 opType, Boolean dragging, UInt8 selectionMode, UInt32 selectedDrawListItemIndices[], UInt32 selectedPrimitivesPerDrawListItemIndex[][] ) {
+    return true;
+  }
+
+  /// \internal
+  /// Draw the selection on top of the viewport
+  BaseSelectionTool.postDraw!( DrawContext context, String drawPass, io Boolean drawChildren ) {
+    this.parent.postDraw( context, drawPass, drawChildren );
+    if( drawPass == MainRenderPass ) {
+      Boolean visible = this.isVisible();
+      if( this.isVisible() && Boolean( this.drawList ) ) {
+        if( this.selectionMode == SelectionMode_Points )
+          DrawComponentOverlayIfRequired( this.drawList, ComponentType_points, context.viewport, this.unselectedColor, false );
+        else if( this.selectionMode == SelectionMode_Elements_excludePartial || this.selectionMode == SelectionMode_Elements_includePartial )
+          DrawComponentOverlayIfRequired( this.drawList, ComponentType_elements, context.viewport, this.unselectedColor, false );
+
+        //report( "DRAW: SELECTION LIST SIZE " + selection.size() );
+        DrawItems( this.selection, context.viewport, this.selectionColor, this.drawWithXRayMask );
+
+        DrawItems( this.highlightComponent, context.viewport, this.highlightColor, this.drawWithXRayMask );
+      }
+    }
+  }
+
+  /// To be overriden
+  BaseSelectionTool.selectionChanged!( UInt8 opType, ItemReferences added, ItemReferences removed ) {
+    //for( Size i = 0; i < drawListIndices.size(); ++i )
+    //  report( "SEL CHANGED FOR " + drawListIndices[i] + " ADDED: " + addedComponents[i] + " REMOVED: " + removedComponents[i] );
+  }
+
+  /// Returns the selection operation type to be used right after this call. 
+  /// Should be one of these:
+  ///
+  /// - BaseSelectionTool_opType_set
+  /// - BaseSelectionTool_opType_add
+  /// - BaseSelectionTool_opType_remove
+  /// - BaseSelectionTool_opType_toggle
+  ///
+  /// By default: like in Maya:
+  ///
+  /// - no modifier = set
+  /// - Shift = toggle
+  /// - Ctrl = subtract
+  /// - Shift+Ctrl = add
+  ///
+  UInt8 BaseSelectionTool.getSelectionOperation( Ref<Event> event ) {
+    Ref<BaseEvent> baseEvent = event;
+    ModiferKey modifiers = event.getModifiers();
+
+    // By default: like in Maya
+    Boolean hasCtrl( modifiers & ModiferKey_Ctrl );
+    Boolean hasShift( modifiers & ModiferKey_Shift );
+
+    if( hasCtrl && hasShift )
+      return BaseSelectionTool_opType_add;
+
+    if( hasCtrl )
+      return BaseSelectionTool_opType_remove;
+
+    if( hasShift )
+      return BaseSelectionTool_opType_toggle;
+
+    return BaseSelectionTool_opType_set;
+  }
+
+  /// Virtual method to be overriden
+  BaseSelectionTool.updateDrawListForDraw!( DrawContext context ) {}
+
+  BaseSelectionTool.buildShelf!( ) {
+    if( !this.shelf ) {
+      this.shelf = IconShelfLayout();
+      this.shelf.addCollapseAllIcon( true );
+      this.shelf.setAlignment( Alignment_upperLeft );
+      this.shelf.setSpacing( 15, Vec2( 30 ), 5 );
+
+      // Add in order of SelectionMode constants
+      CheckBoxWidget selObjects( null, Vec2( 30 ),
+                                 ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/MoveObjects.png" ),
+                                 ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/MoveObjectsHighlight.png" ),
+                                 ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/MoveObjectsChecked.png" ),
+                                 ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/MoveObjectsCheckedHighlight.png" ) );
+      selObjects.setToolTip( "Select objects" );
+      this.shelf.addIcon( selObjects, "selObjectsIcon" );
+
+      CheckBoxWidget selPoints( null, Vec2( 30 ),
+                                ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/MovePoints.png" ),
+                                ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/MovePointsHighlight.png" ),
+                                ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/MovePointsChecked.png" ),
+                                ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/MovePointsCheckedHighlight.png" ) );
+      selPoints.setToolTip( "Select points" );
+      this.shelf.addIcon( selPoints, "selPointsIcon" );
+
+      CheckBoxWidget selElts( null, Vec2( 30 ),
+                              ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/MovePolygons.png" ),
+                              ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/MovePolygonsHighlight.png" ),
+                              ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/MovePolygonsChecked.png" ),
+                              ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/MovePolygonsCheckedHighlight.png" ) );
+      selElts.setToolTip( "Select elements" );
+      this.shelf.addIcon( selElts, "selEltsIcon" );
+
+      CheckBoxWidget selEltsIncl( null, Vec2( 30 ),
+                                  ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/MovePolygonsIncl.png" ),
+                                  ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/MovePolygonsInclHighlight.png" ),
+                                  ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/MovePolygonsInclChecked.png" ),
+                                  ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/MovePolygonsInclCheckedHighlight.png" ) );
+      selEltsIncl.setToolTip( "Select elements (inclusive)" );
+      this.shelf.addIcon( selEltsIncl, "selEltsInclIcon" );
+
+      this.shelf.addRadioButtonBehaviorToAllCheckBoxes( this.selectionMode );
+      this.shelf.radioButtonBehavior.addListener( this, false, RadioButtonBehavior_onItemChanged, "onSelectionModeUIChanged" );
+
+      this.addChild( "shelf", this.shelf );
+    }
+  }
+
+}// namespace Tool

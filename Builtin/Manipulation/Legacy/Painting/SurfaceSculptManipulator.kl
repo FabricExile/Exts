@@ -1,0 +1,332 @@
+
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+
+
+require Singletons;
+require InlineDrawing;
+
+
+
+//////////////////////////////////////
+// SurfaceSculptManipulator_SculptData
+//
+
+
+/**
+\versionadded 1.12.0
+
+A collection of points, and the generated value changes used to modify the
+shape of the painted PolygonMesh. A dictionary of these structures are stored
+in the SurfaceSculptCommand. 
+
+\seealso PolygonMesh, SurfaceSculptCommand
+\internal
+\dfgPresetOmit
+*/
+struct SurfaceSculptManipulator_SculptData {
+  /// The mesh that was under the mouse during the event that generated the paint data.
+  PolygonMesh mesh;
+  /// The points collected and modified during this paint stroke.
+  Integer pointIds[];
+  /// The previous values that existed before the paint stroke was applied to the mesh.
+  Vec3 oldValues[];
+  /// The new values that exist after the paint stroke is applied to the mesh.
+  Vec3 newValues[];
+  Boolean recomputePointNormals;
+};
+
+function SurfaceSculptManipulator_SculptData(PolygonMesh mesh){
+  this.mesh = mesh;
+}
+
+/// Merge the new paint data into the existing paint data to create one set that can be undone/redone
+function SurfaceSculptManipulator_SculptData.mergeIn!(SurfaceSculptManipulator_SculptData sculptData){
+  for (Integer i = 0; i < sculptData.pointIds.size(); i++) {
+    Integer id = -1;
+    for (Integer j = 0; j < this.pointIds.size(); j++) {
+      if(sculptData.pointIds[i] == this.pointIds[j]){
+        id = j;
+        break;
+      }
+    }
+    if(id != -1){
+      this.newValues[id] = sculptData.newValues[i];
+    }
+    else{
+      this.pointIds.push(sculptData.pointIds[i]);
+      this.oldValues.push(sculptData.oldValues[i]);
+      this.newValues.push(sculptData.newValues[i]);
+    }
+  }
+}
+
+function SurfaceSculptManipulator_SculptData.doAction!(){
+  for (Integer i = 0; i < this.pointIds.size(); i++) {
+    this.mesh.setPointPosition(this.pointIds[i], this.newValues[i]);
+  }
+  this.mesh.incrementPointPositionsVersion();
+  if(this.recomputePointNormals)
+    this.mesh.recomputePointNormals();
+}
+
+
+function SurfaceSculptManipulator_SculptData.undoAction!(){
+  for (Integer i = 0; i < this.pointIds.size(); i++) {
+    this.mesh.setPointPosition(this.pointIds[i], this.oldValues[i]);
+  }
+  this.mesh.incrementPointPositionsVersion();
+  if(this.recomputePointNormals)
+    this.mesh.recomputePointNormals();
+}
+
+//////////////////////////////////////
+// SurfaceSculptCommand
+
+/**
+\versionadded 1.12.0
+
+The SurfaceSculptCommand contains a dictionary of
+SurfaceSculptManipulator_SculptData object. One for
+each geometry. As a paint stoke moves from one geometry to another
+the data is added to the relevant container in the 
+SurfaceSculptCommand. The SurfaceSculptCommand accumulates all the paint data
+generated over the course of a paint stroke into the dictionary of 'SurfaceSculptManipulator_SculptData'
+
+\seealso SurfacePaintManipulator, SurfaceAttributePaintManipulator, SurfaceSculptManipulator
+\internal
+\dfgPresetOmit
+*/
+object SurfaceSculptCommand : UndoRedoCommand {
+  SurfaceSculptManipulator_SculptData sculptData[PolygonMesh];
+};
+
+function SurfaceSculptCommand(){
+}
+
+function String SurfaceSculptCommand.getDesc(){
+  return "Surface Sculpt";
+}
+
+function SurfaceSculptCommand.doAction!(){
+  for(mesh in this.sculptData){
+    this.sculptData[mesh].doAction();
+  }
+}
+
+function SurfaceSculptCommand.undoAction!(){
+  for(mesh in this.sculptData){
+    this.sculptData[mesh].undoAction();
+  }
+}
+
+function SurfaceSculptCommand.addSculptData!(SurfaceSculptManipulator_SculptData sculptData){
+  if(this.sculptData.has(sculptData.mesh)){
+    this.sculptData[sculptData.mesh].mergeIn(sculptData); 
+  }
+  else{
+    this.sculptData[sculptData.mesh] = sculptData;
+  }
+}
+
+
+///////////////////////////////////////////////
+// SurfaceSculptManipulator
+
+/**
+\versionadded 1.12.0
+
+The :kl-ref:`SurfaceSculptManipulator` is based on the :kl-ref:`SurfacePaintManipulator`
+to provide a sculpt based painting example. The SurfaceSculptManipulator modifies the vertex
+positions on a mesh, pushing or pulling them in the direction of the paint brush ray.
+
+\rst
+ Usage
+ =====
+ - Click and drag with the Left mouse button to push the surface vertices
+ - Click and drag with the Right mouse button to pull the surface vertices
+ - Click and drag with the Middle mouse button to smooth surface vertices
+ - The mouse wheel can be used to resize the paint brush, except on platforms that do not support the mouse wheel.
+ - The 'Ctrl' modifier key can be held during a mouse drag to resize the brush on these platforms.
+
+\endrst
+\dfgPresetOmit
+
+*/
+object SurfaceSculptManipulator : SurfacePaintManipulator {
+  Scalar sculptStrength;
+  Boolean recomputePointNormals;
+
+  Integer paintMode;
+  SurfaceSculptCommand command;
+  EvalContext evalContext;
+};
+
+
+function SurfaceSculptManipulator(){
+  this.init();
+  this.sculptStrength = 0.1;
+  this.recomputePointNormals = true;
+}
+
+/// Constructor taking an EvalContext.
+/// \note The EvalContext provides contextual information to the operator setting up the Manipulator. A Sculpt manipulator might need to force the Host DCC application to re-evaluate if the manipulator is modifying a geometry bound to a deformer. See :kl-ref:`SurfaceSculptManipulator.onPaint`.
+function SurfaceSculptManipulator(EvalContext evalContext){
+  this.init();
+  this.sculptStrength = 0.1;
+  this.recomputePointNormals = true;
+}
+
+function SurfaceSculptManipulator.setSculptStrength!(Scalar sculptStrength){
+  this.sculptStrength = sculptStrength;
+}
+
+/// Called when the stroke starts when the user presses down the mouse button
+/// Adds the generated :kl-ref:`SurfaceAttributePaintCommand` command to the Host undo stack.
+function SurfaceSculptManipulator.onStrokeBegin!(io MouseEvent mouseEvent){
+
+  // On MouseMove/Mousedown.
+  if(mouseEvent.button == MouseButton_LeftButton)
+    this.paintMode = 0; // Pull
+  else if(mouseEvent.button == MouseButton_RightButton)
+    this.paintMode = 1; // Push
+  else if(mouseEvent.button == MouseButton_MiddleButton)
+    this.paintMode = 2; // Smooth
+
+  // Create a new command object to store the paint stroke data.
+  this.command = SurfaceSculptCommand();
+  mouseEvent.accept();
+}
+
+/// Called when the stroke ends when the user releases the mouse button
+/// Adds the generated command to the Host undo stack.
+function SurfaceSculptManipulator.onStrokeEnd!(io MouseEvent mouseEvent){
+  mouseEvent.getHost().addUndoRedoCommand(this.command);
+}
+
+/// Smooth Points
+/// \internal
+operator SurfaceSculptManipulator_smoothMesh<<<index>>>(
+  PolygonMesh mesh,
+  SurfacePaintManipulator_PointCollection collectedPoints,
+  io Vec3 results[]
+ ) {
+
+  //Pseudo-gaussian: center weight = 0.5, neighbor weights sum = 0.5
+  Index pointId = collectedPoints.pointIds[index];
+  Scalar weight = collectedPoints.weights[index];
+  Vec3 value = mesh.getPointPosition(pointId);
+
+  LocalL16UInt32Array surroundingPoints;
+  mesh.getPointSurroundingPoints(pointId, false, surroundingPoints);
+  UInt32 nbNei = surroundingPoints.size();
+  
+  if( nbNei ) {
+    Vec3 neiSum;
+    for( UInt32 i = 0; i < nbNei; ++i ) {
+      UInt32 neiPt = surroundingPoints.get(i);
+      neiSum += mesh.getPointPosition(neiPt);
+    }
+    neiSum /= Scalar(nbNei);
+    value = value.linearInterpolate((value + neiSum) * 0.5, weight);
+  }
+  results[index] = value;
+}
+
+/// \internal
+operator SurfaceSculptManipulator_pullMesh<<<index>>>(
+  SurfacePaintManipulator_PointCollection collectedPoints,
+  Vec3 displacementDir,
+  Scalar sculptStrength,
+  io SurfaceSculptManipulator_SculptData sculptData
+ ) {
+  Scalar weight = collectedPoints.weights[index];
+  Integer pointId = collectedPoints.pointIds[index];
+  Vec3 oldPos = collectedPoints.mesh.getPointPosition(pointId);
+  Vec3 newPos = oldPos + displacementDir * weight * sculptStrength;
+
+  sculptData.oldValues[index] = oldPos;
+  sculptData.newValues[index] = newPos;
+}
+
+/// \internal
+operator SurfaceSculptManipulator_pushMesh<<<index>>>(
+  SurfacePaintManipulator_PointCollection collectedPoints,
+  Vec3 displacementDir,
+  Scalar sculptStrength,
+  io SurfaceSculptManipulator_SculptData sculptData
+ ) {
+  Scalar weight = collectedPoints.weights[index];
+  Integer pointId = collectedPoints.pointIds[index];
+  Vec3 oldPos = collectedPoints.mesh.getPointPosition(pointId);
+  Vec3 newPos = oldPos + displacementDir * -weight * sculptStrength;
+
+  sculptData.oldValues[index] = oldPos;
+  sculptData.newValues[index] = newPos;
+}
+
+
+/// TODO: maybe using map-reduce would be faster to compute the
+/// average normal.
+/// \internal
+function Vec3 SurfaceSculptManipulator_averageNormal(
+  PolygonMesh mesh,
+  SurfacePaintManipulator_PointCollection collectedPoints
+){
+  Vec3 value;
+  for( UInt32 i = 0; i < collectedPoints.pointIds.size(); i++ ) {
+    value += mesh.getPointNormal(collectedPoints.pointIds[i]);
+  }
+  return value.unit();
+}
+
+/// Called during the paint stroke for each mouse move event.
+function SurfaceSculptManipulator.onPaint!(io MouseEvent mouseEvent, SurfacePaintManipulator_PointCollection collectedPoints){
+  UInt32 nbPoints = collectedPoints.pointIds.size();
+  PolygonMesh mesh = collectedPoints.mesh;
+  SurfaceSculptManipulator_SculptData sculptData(collectedPoints.mesh);
+  sculptData.pointIds = collectedPoints.pointIds;
+  sculptData.oldValues.resize(collectedPoints.pointIds.size());
+  sculptData.newValues.resize(collectedPoints.pointIds.size());
+  sculptData.recomputePointNormals = this.recomputePointNormals;
+
+  switch(this.paintMode){
+  case 0: // Pull
+    Vec3 displacementDir = SurfaceSculptManipulator_averageNormal(mesh, collectedPoints);
+    SurfaceSculptManipulator_pushMesh<<<nbPoints>>>(
+      collectedPoints,
+      displacementDir,
+      this.sculptStrength,
+      sculptData
+    );
+    break;
+  case 1: // Push
+    Vec3 displacementDir = SurfaceSculptManipulator_averageNormal(mesh, collectedPoints);
+    SurfaceSculptManipulator_pullMesh<<<nbPoints>>>(
+      collectedPoints,
+      displacementDir,
+      this.sculptStrength,
+      sculptData
+    );
+    break;
+  case 2: // Smooth
+    for(Integer i = 0; i < nbPoints; ++i ) {
+      sculptData.oldValues[i] = mesh.getPointPosition(collectedPoints.pointIds[i]);
+    }
+    SurfaceSculptManipulator_smoothMesh<<<nbPoints>>>(
+      collectedPoints.mesh,
+      collectedPoints,
+      sculptData.newValues
+    );
+
+    break;
+  }
+  // do the command immedietly...
+  sculptData.doAction();
+  // Merge this sculptData with the command so that we only generate one undo command 
+  // for the entire paint stroke, even if we cross multiple geometries. 
+  this.command.addSculptData(sculptData);
+}

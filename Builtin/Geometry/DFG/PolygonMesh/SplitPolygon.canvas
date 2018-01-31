@@ -1,0 +1,72 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/PolygonMesh.html",
+    "uiTooltip" : "Splits a polygon in two by adding an edge between polygon point indices `polygonPointIndex1` and `polygonPointIndex2`.\nThe created polygon needs to have at least 3 sides, so `polygonPointIndex1` and `polygonPointIndex2` cannot be consecutive indices.\nThe index of the added polygon is returned.\nAfter the operation, the existing polygon will have points `polygonPointIndex2` to `polygonPointIndex1`, and the created polygon\nwill have points `polygonPointIndex1` to `polygonPointIndex2`. Attribute values will be properly preserved for both polygons.\n\nStart & end: new pointPolys\nJust copy entry, avoids deallocate/reallocate extended data\nRemove points from poly\nJust copy entry, avoids deallocate/reallocate extended data\n\n Supported by PolygonMesh"
+    },
+  "title" : "SplitPolygon",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "PolygonMesh"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "polygon",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Size"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "polygonPointIndex1",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Size"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "polygonPointIndex2",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Size"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "newPolygon",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Size"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "newPolygonEdgeStartPointIndex",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Size"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "D0BE5F1BFB97E7F18237B7DBCC852A97",
+  "code" : "require Geometry;
+
+dfgEntry {
+  this.splitPolygon(polygon, polygonPointIndex1, polygonPointIndex2, newPolygon, newPolygonEdgeStartPointIndex);
+}
+"
+  }

@@ -1,0 +1,69 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Geometry;
+
+/// \internal
+/// type may be
+/// Float32 = 0
+/// Vec3 = 1
+function GeometryAttribute BaseGeometry.turbulenceAttributeFromType!(
+  String name,
+  SInt32 mode,
+  SInt32 type,
+  Float32 time,
+  Vec3 center,
+  Vec3 amplitude,
+  Vec3 timeFrequency,
+  Vec3 spaceFrequency
+) {
+  GeometryAttributes attributes = this.attributes;
+  if(!attributes)
+    return null;
+
+  Vec3Attribute positionsAttr = attributes.getAttribute('positions');
+  if(positionsAttr == null)
+  {
+    report('Error: Turbulence: Geometry does not contain a positions attribute.');
+    return null;
+  }
+
+  GeometryAttribute attr = null;
+  if(type == 0)
+    attr = this.createAttributeFromType(name, 2, 0);
+  else if(type == 1)
+    attr = this.createAttributeFromType(name, 4, 0);
+  else
+  {
+    report('Error: Turbulence: Incorrect type '+type);
+    return null;
+  }
+  if(attr == null)
+    return null;
+
+  switch(attr.type())
+  {
+    case ScalarAttribute:
+    {
+      ScalarAttribute cast = attr;
+      if(!this.fillScalarAttributeWithTurbulence(cast, positionsAttr, mode, time, center, amplitude, timeFrequency, spaceFrequency))
+        return null;
+      break;
+    }
+    case Vec3Attribute:
+    {
+      Vec3Attribute cast = attr;
+      if(!this.fillVec3AttributeWithTurbulence(cast, positionsAttr, mode, time, center, amplitude, timeFrequency, spaceFrequency))
+        return null;
+      break;
+    }
+    default:
+    {
+      report('Error: Turbulence: Unsupported attribute type '+attr.type());
+      return null;
+    }
+  }
+
+  return attr;
+}

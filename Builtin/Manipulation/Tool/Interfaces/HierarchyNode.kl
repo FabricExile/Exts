@@ -1,0 +1,44 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// A HierarchyNode can have children objects, which might be or not be HierarchyNode.
+  /// It can also have a parent. The HierarchyNode names its children; the children don't
+  /// have their own names (only roots have their own name).
+  /// See :ref:`TPG.hierarchy-properties` for more information about tool hierarchy and components.
+  interface HierarchyNode {
+
+    String getName();
+    setName!( String name );
+
+    String getPath();
+
+    Ref<Object> getParent();
+
+    Size childCount();
+
+    Ref<Object> getChild( String subPath );
+
+    /// \note The index is volatile; should be used only when iterating from 0 to childCount()-1, and should not be stored (can change)
+    Ref<Object> getChild( Index i );
+
+    String getChildName( Ref<Object> child );
+
+    /// \note The index is volatile; should be used only when iterating from 0 to childCount()-1, and should not be stored (can change)
+    String getChildName( Index i );
+
+    /// add child, or replace if it already exists. Returns the child for convenience.
+    Ref<Object> addChild!( String name, Ref<Object> child );
+    removeChild!( String name );
+
+    /// \internal Used at initialization time only.
+    /// \note The parent is a Ref<>, not an owning reference, so it must be explicitly set to null if the parent is detached or destroyed.
+    setParent!( Ref<Object> parent );
+
+    /// Virtual method called when the parent hierarchy changed
+    parentHierarchyChanged!( );
+  };
+
+}// namespace Tool

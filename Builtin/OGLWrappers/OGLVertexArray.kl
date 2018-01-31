@@ -1,0 +1,206 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+require FabricOGL;
+
+/// \internal
+struct OGLVertexArray_perContextData {
+  UInt32 bufferID;
+  UInt32 lastStructureVersion;
+  UInt32 lastBufferVersions[];
+};
+
+/// \internal
+struct OGLVertexArray_clientState {
+  OGLBuffer_ buffer;
+  UInt32 stride;//For interleaved arrays
+  Boolean enableChanged;
+  String tracingParamName;
+  UInt32 version;
+};
+
+inline OGLVertexArray_clientState() {
+  this.enableChanged = true;
+}
+
+object OGLVertexArray : OGLBaseObject {
+
+  OGLVertexArray_clientState buffers[];
+  OGLVertexArray_perContextData dummy;//Reduce cache misses
+  UInt32 buffersEnd;
+
+  OGLVertexArray_perContextData perContextData[];
+
+  Boolean emulated;
+  Boolean instancingSupported;
+  Boolean tracingParamValues;
+};
+
+inline OGLVertexArray() {
+  // Since the real bufferID is per-viewport, just allocate a fake global ID for debugging purposes
+  this.bufferID = this.wrapperGlobals.nextGlobalVertexArrayID++;
+  //Just cache this to lower overhead
+  if( this.wrapperGlobals.tracingProgramParameterValues )
+    this.tracingParamValues = true;
+  this.instancingSupported = this.wrapperGlobals.capabilities.instancingSupported();
+  this.emulated = !this.wrapperGlobals.capabilities.vertexArrayObjectsSupported();
+}
+
+inline ~OGLVertexArray() {
+  this.releaseGL();
+}
+
+inline OGLVertexArray.releaseGL!() {
+  for( Size i = 0; i < this.perContextData.size(); ++i ) {
+    UInt32 bufferID = this.perContextData[i].bufferID;
+    if( bufferID ) {
+      Ref<OGLContext> context = this.wrapperGlobals.contexts[i];
+      LightLockBracket lock( context.frameBufferIDsToDeleteLock );
+      context.frameBufferIDsToDelete.push(bufferID);
+    }
+  }
+}
+
+/// Clears all data, but won't release allocated buffers
+function OGLVertexArray.reset!() {
+  for( Size i = 0; i < this.buffersEnd; ++i )
+    this.buffers[i] = OGLVertexArray_clientState();
+  this.buffersEnd = 0;
+  this.parent.incrementStructureVersion();
+}
+
+/// \internal
+inline Boolean OGLVertexArray.tracingParameters() {
+  return Boolean(Fabric_Guarded) && this.tracingParamValues;
+}
+
+function OGLVertexArray.setVertexAttribBuffer!( UInt32 index, Ref<OGLBuffer_> buffer, UInt32 stride ) {
+  if( index >= this.buffersEnd ) {
+    this.buffersEnd = index + 1;
+    if( this.buffersEnd > this.buffers.size() ) {
+      this.buffers.resize( this.buffersEnd );
+
+      if( Boolean(Fabric_Guarded) && this.buffersEnd >= this.wrapperGlobals.capabilities.maxVertexAttribs )
+        setError("OGLVertexArray.activate: max supported vertex attributes count is "+this.wrapperGlobals.capabilities.maxVertexAttribs+", "+this.buffersEnd+" required");
+    }
+  }
+
+  Ref<OGLBuffer_> prevBuffer = this.buffers[index].buffer;
+  if( prevBuffer !== buffer ) {
+    if( Boolean( prevBuffer ) != Boolean( buffer ) ) {
+      this.buffers[index].enableChanged = true;
+    }
+    this.parent.incrementStructureVersion();
+    this.buffers[index].buffer = buffer;
+    ++this.buffers[index].version;
+  }
+  if( updateValue( stride, this.buffers[index].stride ) ) {
+    this.parent.incrementStructureVersion();
+    ++this.buffers[index].version;
+  }
+}
+
+inline OGLVertexArray.setVertexAttribBuffer!( UInt32 index, Ref<OGLBuffer_> buffer ) {
+  this.setVertexAttribBuffer( index, buffer, 0 );
+}
+
+inline OGLVertexArray.setVertexAttribBufferTracingName!(UInt32 index, String name) {
+  if( this.tracingParameters() )
+    this.buffers[index].tracingParamName = name;
+}
+
+inline Size OGLVertexArray.getVertexAttribBufferCount() {
+  return this.buffersEnd;
+}
+
+inline Ref<OGLBuffer_> OGLVertexArray.getVertexAttribBuffer( UInt32 index ) {
+  return this.buffers[index].buffer;
+}
+
+inline Ref<OGLBuffer_> OGLVertexArray.getVertexAttribBuffer( UInt32 index, io UInt32 stride ) {
+  stride = this.buffers[index].stride;
+  return this.buffers[index].buffer;
+}
+
+/// \internal
+function OGLVertexArray._update!( UInt32 index, io OGLVertexArray_clientState clientState, io Ref<OGLContext> context ) {
+  UInt32 bufferID;
+  if( clientState.buffer )
+    bufferID = clientState.buffer.bufferID;
+
+  if( clientState.enableChanged ) {
+    clientState.enableChanged = false;
+    if( bufferID )
+      context.stateCache.enableVertexAttribArray(index);
+    else
+      context.stateCache.disableVertexAttribArray(index);
+  }
+  if( this.tracingParameters() )
+    report( "OGLVertexArray.update: buffer " + clientState.tracingParamName + "#" + index +" = " + bufferID );
+
+  if( bufferID ) {
+    context.stateCache.vertexAttribPointer( 
+        index, 
+        clientState.buffer.componentsPerElement, 
+        clientState.buffer.elementGLType, 
+        clientState.buffer.normalize, 
+        clientState.stride,
+        bufferID );
+
+  } else if( clientState.buffer ) {
+    //Else: change version, since the buffer might be created in the future.
+    //      Should we log a warning?
+    this.parent.incrementStructureVersion();
+    ++clientState.version;
+  }
+}
+
+inline OGLVertexArray.activate_emulated!( io Ref<OGLContext> context, UInt32 attributeCount ) {
+  UInt32 count = attributeCount < this.buffersEnd ? attributeCount : this.buffersEnd;
+  context.stateCache.setVertexAttribArrayCount( count );
+  for( Size i = 0; i < count; ++i )
+    this._update( i, this.buffers[i], context );
+}
+
+function OGLVertexArray.activate!( io Ref<OGLContext> context, io OGLVertexArray_perContextData contextData ) {
+  if(contextData.bufferID == 0) {
+    UInt32 buffers[1];
+    UInt32 buffersExt<> = buffers;
+    glGenVertexArrays(1, buffersExt);
+    contextData.bufferID = buffers[0];
+    if( this.tracingEnabled() )
+      report( "OGLVertexArray.create " + this.getTraceName() );
+  }
+  Boolean needUpdate = synchronizeVersion( this.getStructureVersion_(), contextData.lastStructureVersion );
+  context.stateCache.bindVertexArray( contextData.bufferID );
+  if( this.tracingParameters() )
+    report( "bindVertexArray " + this.getTraceName() );
+
+  if( needUpdate ) {
+    if( this.buffers.size() > contextData.lastBufferVersions.size() )
+      contextData.lastBufferVersions.resize( this.buffers.size() );
+
+    for( Size i = 0; i < this.buffersEnd; ++i ) {
+      if( synchronizeVersion( this.buffers[i].version, contextData.lastBufferVersions[i] ) )
+        this._update( i, this.buffers[i], context );
+    }
+  }
+}
+
+inline OGLVertexArray.activate!(io Ref<OGLContext> context, UInt32 attributeCount ) {
+
+  if( this.emulated )
+    this.activate_emulated( context, attributeCount );
+  else {
+    UInt32 ID = context.ID;
+    if( ID >= this.perContextData.size() )
+      this.perContextData.resize( ID + 1 );
+    this.activate( context, this.perContextData[ID] );
+  }
+}
+
+inline OGLVertexArray.deactivate!(io Ref<OGLContext> context) {
+  if( !this.emulated )
+    context.stateCache.bindVertexArray( 0 );
+}

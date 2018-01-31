@@ -1,0 +1,89 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  const String xyRectangleMeshName = "xyRectangleMesh";
+  const String xyRectangleLinesName = "xyRectangleLines";
+
+  /// Data containing some global tool property defaults and data containers.
+  /// The BaseTool holds a reference to this.
+  object ToolSharedData{
+    BasePropertyContainer defaultProperties;
+    ToolsManager manager;
+
+    Image2D sharedImages[String];
+
+    Geometry sharedGeometries[String];
+  };
+
+  ToolSharedData() {
+    this.manager = GetToolsManager();
+    this.defaultProperties = BasePropertyContainer();
+    this.defaultProperties.setName( "defaultProperties" );
+    Ref<PropertyContainer> defaultProperties = this.defaultProperties;
+    SetActive( defaultProperties, true );
+    SetVisible( defaultProperties, true );
+    SetColor( defaultProperties, Color( 1.0 ) );
+    SetTransparency( defaultProperties, 0.0 );
+    SetMaterial( defaultProperties, FlatMaterial() );
+    SetTransformSpace( defaultProperties, WorldSpace );
+    SetRenderPass( defaultProperties, OnTopWithRelativeDepthRenderPass );
+    SetFontSize( defaultProperties, 14 );
+    SetFont( defaultProperties, "${FABRIC_DIR}/Resources/Fonts/Roboto/Roboto-Regular.ttf" );
+    SetNormalsTransform( defaultProperties, Mat33() );
+    SetPositionsTransform( defaultProperties, Mat44() );
+
+    PolygonMesh xyRectangleMesh();
+    xyRectangleMesh.addPlane( Xfo(), 1, 1, 1, 1, true, true );
+    xyRectangleMesh.setPointPosition( 0, Vec3( -1, -1, 0 ) );
+    xyRectangleMesh.setPointPosition( 1, Vec3( 1, -1, 0 ) );
+    xyRectangleMesh.setPointPosition( 2, Vec3( -1, 1, 0 ) );
+    xyRectangleMesh.setPointPosition( 3, Vec3( 1, 1, 0 ) );
+    this.sharedGeometries[xyRectangleMeshName] = xyRectangleMesh;
+
+    Lines xyRectangleLines();
+
+    xyRectangleLines.addPoints( 4 );
+    xyRectangleLines.setPointPosition( 0, Vec3( -1, -1, 0 ) );
+    xyRectangleLines.setPointPosition( 1, Vec3( 1, -1, 0 ) );
+    xyRectangleLines.setPointPosition( 2, Vec3( 1, 1, 0 ) );
+    xyRectangleLines.setPointPosition( 3, Vec3( -1, 1, 0 ) );
+    xyRectangleLines.addClosedLine( 0, 3 );
+    this.sharedGeometries[xyRectangleLinesName] = xyRectangleLines;
+  }
+
+  Ref<ToolSharedData> GetToolSharedData() {
+    return GetOrCreateSingleton( "ToolSharedData", ToolSharedData );
+  }
+
+  Image2D ReadImageFromFile( String path ) {
+    Ref<ToolSharedData> sharedData = GetToolSharedData();
+    Image2D image = sharedData.sharedImages.get( path, null );
+
+    if( !image ) {
+      Image2DColor imageC();
+      imageC.readFromFile( FilePath( path ).expandEnvVars().string() );
+      sharedData.sharedImages[path] = imageC;
+      image = imageC;
+    }
+
+    return image;
+  }
+
+  Geometry WGetSharedGeometry( String name ) {
+    Ref<ToolSharedData> sharedData = GetToolSharedData();
+    return sharedData.sharedGeometries.get( name, null );
+  }
+
+  PolygonMesh WGetXYRectangleMesh() {
+    Ref<ToolSharedData> sharedData = GetToolSharedData();
+    return sharedData.sharedGeometries.get( xyRectangleMeshName, null );
+  }
+
+  Lines WGetXYRectangleLines() {
+    Ref<ToolSharedData> sharedData = GetToolSharedData();
+    return sharedData.sharedGeometries.get( xyRectangleLinesName, null );
+  }
+}// namespace Tool

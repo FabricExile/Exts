@@ -1,0 +1,71 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+
+/**
+  The BaseCmd class defines the basics functionalities of a command.
+  Any command should specializes this class.
+  
+  The command parameters are stored in a container and have 'key' access.
+  They are accessible via Type getTypeParam() methods that can be extended.
+  
+  \seealso :kl-ref:`LegacyCmdManager`
+
+  \dfgPresetOmit
+*/
+object LegacyBaseCmd : LegacyCmd {
+  /// Command parameters container
+  protected GenericValueContainer params;
+};
+
+/// Initiliazes a base command.
+protected LegacyBaseCmd.init!() {
+  this.params = GenericValueContainer();
+}
+
+/// Implementation of :kl-ref:`Cmd`.
+Boolean LegacyBaseCmd.doCmd!() {
+  return false; 
+}
+
+/// Implementation of :kl-ref:`Cmd`.
+Boolean LegacyBaseCmd.undoCmd!() {
+  return false; 
+}
+ 
+/// Implementation of :kl-ref:`Cmd`.
+String LegacyBaseCmd.getStringParam(String key) {
+  if(this.params.has(key)) {
+    GenericStringValue strValue = this.params.get(key);
+    return strValue.get();
+  } 
+  else return "unknown";
+}
+
+/// Implementation of :kl-ref:`Cmd`.
+Boolean LegacyBaseCmd.getBooleanParam(String key) {
+  if(this.params.has(key)) {
+    GenericBooleanValue boolValue = this.params.get(key);
+    return boolValue.get();
+  } 
+  else return false;
+}
+
+/// Implementation of :kl-ref:`Cmd`.
+UInt32 LegacyBaseCmd.getUInt32Param(String key) {
+  if(this.params.has(key)) {
+    GenericUInt32Value uint32Value = this.params.get(key);
+    return uint32Value.get();
+  } 
+  else return InvalidIndex;
+}
+
+/// Implementation of :kl-ref:`Cmd`.
+Float32 LegacyBaseCmd.getFloat32Param(String key) {
+  if(this.params.has(key)) {
+    GenericFloat32Value float32Value = this.params.get(key);
+    return float32Value.get();
+  } 
+  else return 0.0;
+}

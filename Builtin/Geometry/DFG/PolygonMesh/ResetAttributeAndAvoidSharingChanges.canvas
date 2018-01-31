@@ -1,0 +1,45 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/PolygonMesh.html",
+    "uiTooltip" : "Performance hint for the polygon mesh when, for a given attribute, all values will be set again\nand values' point shared / unshared layout is not expected to change much. By calling this function,\nthe PolygonMesh will not try to re-share attribute values that have previously been split, and\nonly additional splits might occur when required. See :ref:`polygonmeshattributes` for more\ninformation about how attribute values are shared around points.\n\n\n Supported by PolygonMesh"
+    },
+  "title" : "ResetAttributeAndAvoidSharingChanges",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "PolygonMesh"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "attribute",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "GeometryAttribute"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "A33D88EFF9D01DBB40892CF53E5A2005",
+  "code" : "require Geometry;
+
+dfgEntry {
+  Ref<GeometryAttribute> attribute_ref = attribute;
+  this.resetAttributeAndAvoidSharingChanges(attribute_ref);
+}
+"
+  }

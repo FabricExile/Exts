@@ -1,0 +1,186 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Geometry;
+
+/// \internal
+/// type may be
+/// SInt32 = 0
+/// UInt32 = 1
+/// Float32 = 2
+/// Vec2 = 3
+/// Vec3 = 4
+/// Vec4 = 5
+/// Quat = 6
+/// Mat33 = 7
+/// Mat44 = 8
+/// Color = 9
+/// RGB = 10
+/// RGBA = 11
+/// UInt16Array = 12
+/// Float32Array = 13
+/// Skinning = 14
+function GeometryAttribute BaseGeometry.createAttributeFromType!(
+  String name,
+  SInt32 type,
+  UInt32 arraySize
+) {
+  GeometryAttributes attributes = this.attributes;
+  if(!attributes)
+    return null;
+
+  GeometryAttribute attr = attributes.getAttribute(name);
+  switch(type)
+  {
+    case 0: // SInt32
+    {
+      if(attr != null && attr.type() != IntegerAttribute) {
+        report('Error: Attribute '+name+' already exists, but types differ. Existing '+attr.type()+', requested: IntegerAttribute.');
+        return attr;
+      }
+      attr = attributes.getOrCreateIntegerAttribute(name);
+      break;
+    }
+    case 1: // UInt32
+    {
+      if(attr != null && attr.type() != UInt32Attribute) {
+        report('Error: Attribute '+name+' already exists, but types differ. Existing '+attr.type()+', requested: UInt32Attribute.');
+        return attr;
+      }
+      attr = attributes.getOrCreateUInt32Attribute(name);
+      break;
+    }
+    case 2: // Float32
+    {
+      if(attr != null && attr.type() != ScalarAttribute) {
+        report('Error: Attribute '+name+' already exists, but types differ. Existing '+attr.type()+', requested: ScalarAttribute.');
+        return attr;
+      }
+      attr = attributes.getOrCreateScalarAttribute(name);
+      break;
+    }
+    case 3: // Vec2
+    {
+      if(attr != null && attr.type() != Vec2Attribute) {
+        report('Error: Attribute '+name+' already exists, but types differ. Existing '+attr.type()+', requested: Vec2Attribute.');
+        return attr;
+      }
+      attr = attributes.getOrCreateVec2Attribute(name);
+      break;
+    }
+    case 4: // Vec3
+    {
+      if(attr != null && attr.type() != Vec3Attribute) {
+        report('Error: Attribute '+name+' already exists, but types differ. Existing '+attr.type()+', requested: Vec3Attribute.');
+        return attr;
+      }
+      attr = attributes.getOrCreateVec3Attribute(name);
+      break;
+    }
+    case 5: // Vec4
+    {
+      if(attr != null && attr.type() != Vec4Attribute) {
+        report('Error: Attribute '+name+' already exists, but types differ. Existing '+attr.type()+', requested: Vec4Attribute.');
+        return attr;
+      }
+      attr = attributes.getOrCreateVec4Attribute(name);
+      break;
+    }
+    case 6: // Quat
+    {
+      if(attr != null && attr.type() != QuatAttribute) {
+        report('Error: Attribute '+name+' already exists, but types differ. Existing '+attr.type()+', requested: QuatAttribute.');
+        return attr;
+      }
+      attr = attributes.getOrCreateQuatAttribute(name);
+      break;
+    }
+    case 7: // Mat33
+    {
+      if(attr != null && attr.type() != Mat33Attribute) {
+        report('Error: Attribute '+name+' already exists, but types differ. Existing '+attr.type()+', requested: Mat33Attribute.');
+        return attr;
+      }
+      attr = attributes.getOrCreateMat33Attribute(name);
+      break;
+    }
+    case 8: // Mat44
+    {
+      if(attr != null && attr.type() != Mat44Attribute) {
+        report('Error: Attribute '+name+' already exists, but types differ. Existing '+attr.type()+', requested: Mat44Attribute.');
+        return attr;
+      }
+      attr = attributes.getOrCreateMat44Attribute(name);
+      break;
+    }
+    case 9: // Color
+    {
+      if(attr != null && attr.type() != ColorAttribute) {
+        report('Error: Attribute '+name+' already exists, but types differ. Existing '+attr.type()+', requested: ColorAttribute.');
+        return attr;
+      }
+      attr = attributes.getOrCreateColorAttribute(name);
+      break;
+    }
+    case 10: // RGB
+    {
+      if(attr != null && attr.type() != RGBAttribute) {
+        report('Error: Attribute '+name+' already exists, but types differ. Existing '+attr.type()+', requested: RGBAttribute.');
+        return attr;
+      }
+      attr = attributes.getOrCreateRGBAttribute(name);
+      break;
+    }
+    case 11: // RGBA
+    {
+      if(attr != null && attr.type() != RGBAAttribute) {
+        report('Error: Attribute '+name+' already exists, but types differ. Existing '+attr.type()+', requested: RGBAAttribute.');
+        return attr;
+      }
+      attr = attributes.getOrCreateRGBAAttribute(name);
+      break;
+    }
+    case 12: // UInt16Array
+    {
+      if(arraySize == 0)
+        return attr;
+      if(attr != null && attr.type() != UInt16ConstantArrayAttribute) {
+        report('Error: Attribute '+name+' already exists, but types differ. Existing '+attr.type()+', requested: UInt16ConstantArrayAttribute.');
+        return attr;
+      }
+      UInt16ConstantArrayAttribute arrayAttr = attributes.getOrCreateUInt16ConstantArrayAttribute(name);
+      if(arrayAttr) {
+        arrayAttr.setArraySize(arraySize);
+        attr = arrayAttr;
+      }
+      break;
+    }
+    case 13: // Float32Array
+    {
+      if(arraySize == 0)
+        return attr;
+      if(attr != null && attr.type() != ScalarConstantArrayAttribute) {
+        report('Error: Attribute '+name+' already exists, but types differ. Existing '+attr.type()+', requested: ScalarConstantArrayAttribute.');
+        return attr;
+      }
+      ScalarConstantArrayAttribute arrayAttr = attributes.getOrCreateScalarConstantArrayAttribute(name);
+      if(arrayAttr) {
+        arrayAttr.setArraySize(arraySize);
+        attr = arrayAttr;
+      }
+      break;
+    }
+    case 14: // Skinning  
+    {
+      if(attr != null && attr.type() != SkinningAttribute) {
+        report('Error: Attribute '+name+' already exists, but types differ. Existing '+attr.type()+', requested: SkinningAttribute.');
+        return attr;
+      }
+      attr = attributes.getOrCreateSkinningAttribute(name);
+      break;
+    }
+  }
+
+  return attr;
+}

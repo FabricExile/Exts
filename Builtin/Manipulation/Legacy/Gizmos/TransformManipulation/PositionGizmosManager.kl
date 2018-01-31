@@ -1,0 +1,81 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require InlineDrawing;
+
+
+/**
+\versionadded 1.12.0
+
+The :kl-ref:`PositionGizmosManager` combines 3 PositionAxisGizmoManager to support translation in 3d.
+
+\seealso TransformManipulator, PositionAxisGizmoManager
+\dfgPresetOmit
+*/
+object  PositionGizmosManager {
+
+  PositionAxisGizmoManager xAxisGizmosManager;
+  PositionAxisGizmoManager yAxisGizmosManager;
+  PositionAxisGizmoManager zAxisGizmosManager;
+
+};
+
+function PositionGizmosManager(io InlineTransform parent, GizmoManipulationCallback callback){
+  Xfo offset;
+
+  offset.ori.setFromAxisAndAngle(Vec3(0.0, 0.0, 1.0), HALF_PI);
+  this.xAxisGizmosManager = PositionAxisGizmoManager( parent, offset, Color(1.0, 0.0, 0.0), callback);
+
+  offset.ori.setIdentity();
+  this.yAxisGizmosManager = PositionAxisGizmoManager( parent, offset, Color(0.0, 1.0, 0.0), callback);
+
+  offset.ori.setFromAxisAndAngle(Vec3(1.0, 0.0, 0.0), HALF_PI);
+  this.zAxisGizmosManager = PositionAxisGizmoManager( parent, offset, Color(0.0, 0.0, 1.0), callback);
+}
+
+/// Hide gizmos based on the current manipulation mode.
+/// \internal
+function PositionGizmosManager.hide!(){
+  this.xAxisGizmosManager.hide();
+  this.yAxisGizmosManager.hide();
+  this.zAxisGizmosManager.hide();
+}
+
+/// Show gizmos based on the current manipulation mode.
+/// \internal
+function PositionGizmosManager.show!(){
+  this.xAxisGizmosManager.show();
+  this.yAxisGizmosManager.show();
+  this.zAxisGizmosManager.show();
+}
+
+
+/// Sets the current manipulation mode, hiding/showing the appropriate gizmos
+/// \param mode the bit set defining the visible manipulation gizmos 
+function PositionGizmosManager.setManipulationMode!(ManipulationMode mode){
+  if(mode&ManipulationMode_Position_X)
+    this.xAxisGizmosManager.show();
+  else
+    this.xAxisGizmosManager.hide();
+
+  if(mode&ManipulationMode_Position_Y)
+    this.yAxisGizmosManager.show();
+  else
+    this.yAxisGizmosManager.hide();
+
+  if(mode&ManipulationMode_Position_Z)
+    this.zAxisGizmosManager.show();
+  else
+    this.zAxisGizmosManager.hide();
+}
+
+/// Returns the set of InlineInstances used as gizmos.
+/// \internal
+function InlineInstance[] PositionGizmosManager.getGizmos(){
+  InlineInstance gizmos[];
+  gizmos = gizmos + this.xAxisGizmosManager.getGizmos();
+  gizmos = gizmos + this.yAxisGizmosManager.getGizmos();
+  gizmos = gizmos + this.zAxisGizmosManager.getGizmos();
+  return gizmos;
+}

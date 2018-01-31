@@ -1,0 +1,114 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Mat33.html"
+    },
+  "title" : "-> Mat33[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "row0",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 1,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "row1",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 1,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "row2",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 1
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 249,\n  \"g\" : 157,\n  \"b\" : 28\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Mat33[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "0E4B420B7646F61E574F73187E2B7DDC",
+  "code" : "require Math;
+
+operator Math_Mat33_compose_task<<<index>>>(io Mat33[] result, in Vec3[] row0, in Vec3[] row1, in Vec3[] row2) {
+  result[index].row0 = row0[index < row0.size() ? index : row0.size() - 1];
+  result[index].row1 = row1[index < row1.size() ? index : row1.size() - 1];
+  result[index].row2 = row2[index < row2.size() ? index : row2.size() - 1];
+}
+
+dfgEntry {
+  if(row0.size() == 0) return;
+  if(row1.size() == 0) return;
+  if(row2.size() == 0) return;
+  Size task_size = 0;
+  if(task_size < row0.size()) task_size = row0.size();
+  if(task_size < row1.size()) task_size = row1.size();
+  if(task_size < row2.size()) task_size = row2.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size i = 0; i < task_size; i++) {
+      Math_Mat33_compose_task(i, result, row0, row1, row2);
+    }
+  } else {
+    Math_Mat33_compose_task<<<task_size>>>(result, row0, row1, row2);
+  }
+}
+"
+  }

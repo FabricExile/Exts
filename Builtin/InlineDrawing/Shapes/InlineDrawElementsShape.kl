@@ -1,0 +1,53 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+\versionadded 1.12.0
+
+The InlineDrawElementsShape inherits from the InlineGeometryShape object. It provides a shape type for DrawElements objects. The InlineDrawElementsShape keeps a reference to the DrawElements, so if the DrawElements change (being deformed etc) the shape will updates its buffers automatically.
+
+\example
+    DrawElements elements('debug');
+
+    // draw a couple of points
+    elements.drawPoint(Vec3(5, 0, 0));
+    elements.drawPoint(Vec3(0, 5, 0));
+    elements.drawPoint(Vec3(0, 0, 5));
+
+    // draw a couple of lines
+    elements.drawLine(Vec3(0, 0, 0), Vec3(5, 0, 0));
+    elements.drawLine(Vec3(0, 0, 0), Vec3(0, 5, 0));
+    elements.drawLine(Vec3(0, 0, 0), Vec3(0, 0, 5));
+
+    // create a shape
+    InlineShape shape = InlineDrawElementsShape('debug', elements);
+\endexample
+\dfgPresetOmit
+*/
+object InlineDrawElementsShape : InlineGeometryShape {
+  /// \internal
+  Scalar lineWidth;
+};
+
+/// default constructor, taking a name and a DrawElements
+function InlineDrawElementsShape(String name, DrawElements elements ) {
+  this.init(name, elements );
+  this.lineWidth = 1.0;
+}
+
+/// returns the DrawElements used by this shape
+function Ref<DrawElements> InlineDrawElementsShape.getDrawElements() {
+  Ref<DrawElements> elements = this.geo;
+  return elements;
+}
+
+/// sets the DrawElements used by this shape
+function InlineDrawElementsShape.setDrawElements!( DrawElements elements ) {
+  this.geo = elements;
+}
+
+/// returns the point size used for rendering
+function Scalar InlineDrawElementsShape.getLineWidth() {
+  return this.getDrawElements().getLineWidth();
+}

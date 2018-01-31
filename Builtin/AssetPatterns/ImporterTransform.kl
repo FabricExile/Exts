@@ -1,0 +1,67 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/// \dfgPresetOmit
+interface ImporterTransform_Virtuals {
+  Mat44 computeGlobalTransform();
+};
+
+/**
+The ImporterTransform represents an imported transform inside of a hierarchy.
+The ImporterTransform provides access to the local and global Mat44 values.
+\dfgPresetOmit
+*/
+object ImporterTransform : ImporterObject, ImporterTransform_Virtuals permits Importer
+{
+  private Boolean transformSetOnce;
+};
+
+/// \dfgPresetOmit
+function ImporterTransform(String id, String path) {
+  this.initialize(id, path, 'Transform');
+}
+
+/// \dfgPresetOmit
+protected function ImporterTransform.initialize!(String id, String path, String type) {
+  this.parent.initialize(id, path, type);
+  this.initProperty('localTransform', ImporterMat44(Mat44()));
+  this.transformSetOnce = false;
+}
+
+/// \dfgPresetOmit
+function Mat44 ImporterTransform.getLocalTransform(ImporterContext context) {
+  if(this.transformSetOnce)
+    return this.getMat44Property('localTransform');
+
+  Ref<ImporterTransform> mutableThis = this;
+  mutableThis.updateProperty('localTransform', context);
+  return mutableThis.getMat44Property('localTransform');
+}
+
+/// \dfgPresetOmit
+function ImporterTransform.setLocalTransform!(Mat44 mat) {
+  this.setProperty('localTransform', mat);
+  this.transformSetOnce = this.isPropertyConstant('localTransform');
+}
+
+/// \dfgPresetOmit
+function Boolean ImporterTransform.hasLocalTransform!() {
+  if(!this.isPropertyConstant("localTransform"))
+    return true;
+  Mat44 m = this.getLocalTransform(this.defaultContext);
+  return !m.almostEqual(Mat44());
+}
+
+/// \dfgPresetOmit
+function Mat44 ImporterTransform.getGlobalTransform(ImporterContext context) {
+  Ref<ImporterTransform> parentTransform = this.getParent();
+  if(parentTransform)
+    return parentTransform.getGlobalTransform(context) * this.getLocalTransform(context);
+  return this.getLocalTransform(context);
+}
+
+/// \dfgPresetOmit
+function Mat44 ImporterTransform.computeGlobalTransform() {
+  return this.getGlobalTransform(this.defaultContext);
+}

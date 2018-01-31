@@ -1,0 +1,38 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// The PathValueTransformTool defines a tool that can drive an Xfo target
+  /// by being attached by the host application without a Canvas node
+  /// (PathValueTool interface).
+  ///
+  /// See :ref:`TPG.command_tool_type` for more information about default tools.
+  object PathValueTransformTool : TransformTool, PathValueTool {
+  };
+
+  PathValueTransformTool() {
+    this.init( PathValueXfoTarget(), Color( 1.0, 1.0, 0 ) );
+    this.createToolShelf();
+  }
+
+  /// \implementation of PathValueTool.
+  PathValueTransformTool.setTargetPath!( String path ) {
+    Ref<PathValueXfoTarget> target = this.xfoTarget;
+    target.setTargetPath( path );
+  }
+
+  /// \implementation of PathValueTool.
+  String PathValueTransformTool.getTargetPath() {
+    Ref<PathValueXfoTarget> target = this.xfoTarget;
+    return target.getTargetPath();
+  }
+
+  /// \implementation of PathValueTool.
+  PathValueTransformTool.valueChanged!( RTVal val ) {
+    Ref<PathValueXfoTarget> target = this.xfoTarget;
+    target.valueChanged( val );
+  }
+
+}// namespace Tool

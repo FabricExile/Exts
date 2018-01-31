@@ -1,0 +1,84 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Geometry;
+
+/// \internal
+function String BaseGeometry.getAttributeTypeString(
+  String name
+) {
+  GeometryAttributes attributes = this.attributes;
+  if(!attributes)
+    return "";
+
+  GeometryAttribute attr = attributes.getAttribute(name);
+  if(attr == null)
+    return "";
+  
+  switch(attr.type())
+  {
+    case IntegerAttribute:
+    {
+      return "SInt32";
+    }
+    case UInt32Attribute:
+    {
+      return "UInt32";
+    }
+    case ScalarAttribute:
+    {
+      return "Float32";
+    }
+    case Vec2Attribute:
+    {
+      return "Vec2";
+    }
+    case Vec3Attribute:
+    {
+      return "Vec3";
+    }
+    case Vec4Attribute:
+    {
+      return "Vec4";
+    }
+    case QuatAttribute:
+    {
+      return "Quat";
+    }
+    case Mat33Attribute:
+    {
+      return "Mat33";
+    }
+    case Mat44Attribute:
+    {
+      return "Mat44";
+    }
+    case ColorAttribute:
+    {
+      return "Color";
+    }
+    case RGBAttribute:
+    {
+      return "RGB";
+    }
+    case RGBAAttribute:
+    {
+      return "RGBA";
+    }
+    case UInt16ConstantArrayAttribute:
+    {
+      return "UInt16[]";
+    }
+    case ScalarConstantArrayAttribute:
+    {
+      return "Float32[]";
+    }
+    case SkinningAttribute:
+    {
+      return "Skinning";
+    }
+  }
+
+  return "";
+}

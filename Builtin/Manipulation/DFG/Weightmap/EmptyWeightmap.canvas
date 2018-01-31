@@ -1,0 +1,191 @@
+{
+  "objectType" : "Graph",
+  "title" : "Empty Weightmap",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "value",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Weightmap"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "name",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String" : "weightMap"
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String"
+      }
+    ],
+  "extDeps" : {},
+  "presetGUID" : "93B54CEC8C1A22D1DA5BA5448F7BECF9",
+  "nodes" : [
+    {
+      "objectType" : "Inst",
+      "metadata" : {
+        "uiGraphPos" : "{\"x\": 515, \"y\": 152}"
+        },
+      "name" : "Weightmap",
+      "ports" : [
+        {
+          "objectType" : "InstPort",
+          "name" : "exec",
+          "nodePortType" : "IO"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "result",
+          "nodePortType" : "Out"
+          }
+        ],
+      "executable" : "Fabric.Exts.Manipulation.Weightmap.Weightmap",
+      "presetGUID" : "48893AC21B1E40441BC3066F1CB2584C"
+      },
+    {
+      "objectType" : "Inst",
+      "metadata" : {
+        "uiGraphPos" : "{\"x\": 670, \"y\": 159}"
+        },
+      "name" : "SetName",
+      "ports" : [
+        {
+          "objectType" : "InstPort",
+          "name" : "exec",
+          "nodePortType" : "IO"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "this",
+          "nodePortType" : "IO"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "name",
+          "nodePortType" : "In",
+          "defaultValues" : {
+            "String" : "weightMap"
+            }
+          }
+        ],
+      "executable" : "Fabric.Exts.Manipulation.Weightmap.SetName",
+      "presetGUID" : "C6BB8A65502F6C1373EB801FC3DC50E9"
+      },
+    {
+      "objectType" : "Var",
+      "metadata" : {
+        "uiGraphPos" : "{\"x\": 866, \"y\": 169}"
+        },
+      "name" : "weightmap",
+      "ports" : [
+        {
+          "objectType" : "VarPort",
+          "name" : "value",
+          "nodePortType" : "IO"
+          }
+        ],
+      "dataType" : "Weightmap",
+      "extDep" : "Manipulation:*"
+      }
+    ],
+  "connections" : {
+    "name" : [
+      "SetName.name"
+      ],
+    "Weightmap.result" : [
+      "SetName.this"
+      ],
+    "SetName.this" : [
+      "weightmap.value"
+      ],
+    "weightmap.value" : [
+      "value"
+      ]
+    },
+  "requiredPresets" : {
+    "Fabric.Exts.Manipulation.Weightmap.Weightmap" : {
+      "objectType" : "Func",
+      "metadata" : {
+        "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Manipulation/Weightmap.html",
+        "uiTooltip" : "Supported types:\n  result: Weightmap\n"
+        },
+      "title" : "Weightmap",
+      "ports" : [
+        {
+          "objectType" : "ExecPort",
+          "name" : "exec",
+          "nodePortType" : "IO",
+          "execPortType" : "IO",
+          "typeSpec" : "Execute"
+          },
+        {
+          "objectType" : "ExecPort",
+          "name" : "result",
+          "nodePortType" : "In",
+          "execPortType" : "Out",
+          "typeSpec" : "Weightmap"
+          }
+        ],
+      "extDeps" : {
+        "Manipulation" : "*"
+        },
+      "presetGUID" : "48893AC21B1E40441BC3066F1CB2584C",
+      "code" : "require Manipulation;
+
+dfgEntry {
+  result = Weightmap();
+}
+"
+      },
+    "Fabric.Exts.Manipulation.Weightmap.SetName" : {
+      "objectType" : "Func",
+      "metadata" : {
+        "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Manipulation/Weightmap.html",
+        "uiTooltip" : "Sets the name of the weightmap, which is used as the name of the geometry attribute on the polygon mesh.\n\nSupported types:\n  this: Weightmap\n  name: String\n"
+        },
+      "title" : "SetName",
+      "ports" : [
+        {
+          "objectType" : "ExecPort",
+          "name" : "exec",
+          "nodePortType" : "IO",
+          "execPortType" : "IO",
+          "typeSpec" : "Execute"
+          },
+        {
+          "objectType" : "ExecPort",
+          "name" : "this",
+          "nodePortType" : "IO",
+          "execPortType" : "IO",
+          "typeSpec" : "Weightmap"
+          },
+        {
+          "objectType" : "ExecPort",
+          "name" : "name",
+          "nodePortType" : "Out",
+          "execPortType" : "In",
+          "typeSpec" : "String"
+          }
+        ],
+      "extDeps" : {
+        "Manipulation" : "*"
+        },
+      "presetGUID" : "C6BB8A65502F6C1373EB801FC3DC50E9",
+      "code" : "require Manipulation;
+
+dfgEntry {
+  this.setName(name);
+}
+"
+      }
+    }
+  }

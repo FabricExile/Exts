@@ -1,0 +1,616 @@
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+function SInt32 BaseGeometry.getIntegerAttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  io String type
+) {
+  type = "";
+
+  if(!this.getAttributeValue_CheckIndex(mode, index))
+    return SInt32();
+
+  IntegerAttribute cast = attr;
+  if(cast == null)
+    return SInt32();
+
+  type = "SInt32";
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  SInt32 value;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      value = cast.values[index];
+      break;
+    }
+    case 1: // per face
+    {
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++) {
+        Size idx = mesh.getPolygonAttributeIndex(index, i);
+        value += cast.values[idx];
+      }
+      value *= 1.0 / Float32(size);
+      break;
+    }
+    case 2: // per face corner
+    {
+      Size size = mesh.getPolygonSize(index);
+      Size idx = mesh.getPolygonAttributeIndex(index, faceCorner % size);
+      value = cast.values[idx];
+      break;
+    }
+    case 3: // per vertex (average)
+    {
+      Size size = mesh.getPointPolygonCount(index);
+      for(Size i=0;i<size;i++) {
+        Size idx = mesh.getPointAttributeIndex(index, i);
+        value += cast.values[idx];
+      }
+      value *= 1.0 / Float32(size);
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValue mode for IntegerAttribute.");
+      return SInt32();
+    }
+  }
+
+  return value;
+}
+
+/// \internal
+function UInt32 BaseGeometry.getUInt32AttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  io String type
+) {
+  type = "";
+
+  if(!this.getAttributeValue_CheckIndex(mode, index))
+    return UInt32();
+
+  UInt32Attribute cast = attr;
+  if(cast == null)
+    return UInt32();
+
+  type = "UInt32";
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  UInt32 value;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      value = cast.values[index];
+      break;
+    }
+    case 1: // per face
+    {
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++) {
+        Size idx = mesh.getPolygonAttributeIndex(index, i);
+        value += cast.values[idx];
+      }
+      value *= 1.0 / Float32(size);
+      break;
+    }
+    case 2: // per face corner
+    {
+      Size size = mesh.getPolygonSize(index);
+      Size idx = mesh.getPolygonAttributeIndex(index, faceCorner % size);
+      value = cast.values[idx];
+      break;
+    }
+    case 3: // per vertex (average)
+    {
+      Size size = mesh.getPointPolygonCount(index);
+      for(Size i=0;i<size;i++) {
+        Size idx = mesh.getPointAttributeIndex(index, i);
+        value += cast.values[idx];
+      }
+      value *= 1.0 / Float32(size);
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValue mode for UInt32Attribute.");
+      return UInt32();
+    }
+  }
+
+  return value;
+}
+
+/// \internal
+function Float32 BaseGeometry.getScalarAttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  io String type
+) {
+  type = "";
+
+  if(!this.getAttributeValue_CheckIndex(mode, index))
+    return Float32();
+
+  ScalarAttribute cast = attr;
+  if(cast == null)
+    return Float32();
+
+  type = "Float32";
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  Float32 value;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      value = cast.values[index];
+      break;
+    }
+    case 1: // per face
+    {
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++) {
+        Size idx = mesh.getPolygonAttributeIndex(index, i);
+        value += cast.values[idx];
+      }
+      value *= 1.0 / Float32(size);
+      break;
+    }
+    case 2: // per face corner
+    {
+      Size size = mesh.getPolygonSize(index);
+      Size idx = mesh.getPolygonAttributeIndex(index, faceCorner % size);
+      value = cast.values[idx];
+      break;
+    }
+    case 3: // per vertex (average)
+    {
+      Size size = mesh.getPointPolygonCount(index);
+      for(Size i=0;i<size;i++) {
+        Size idx = mesh.getPointAttributeIndex(index, i);
+        value += cast.values[idx];
+      }
+      value *= 1.0 / Float32(size);
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValue mode for ScalarAttribute.");
+      return Float32();
+    }
+  }
+
+  return value;
+}
+
+/// \internal
+function Vec2 BaseGeometry.getVec2AttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  io String type
+) {
+  type = "";
+
+  if(!this.getAttributeValue_CheckIndex(mode, index))
+    return Vec2();
+
+  Vec2Attribute cast = attr;
+  if(cast == null)
+    return Vec2();
+
+  type = "Vec2";
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  Vec2 value;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      value = cast.values[index];
+      break;
+    }
+    case 1: // per face
+    {
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++) {
+        Size idx = mesh.getPolygonAttributeIndex(index, i);
+        value += cast.values[idx];
+      }
+      value *= 1.0 / Float32(size);
+      break;
+    }
+    case 2: // per face corner
+    {
+      Size size = mesh.getPolygonSize(index);
+      Size idx = mesh.getPolygonAttributeIndex(index, faceCorner % size);
+      value = cast.values[idx];
+      break;
+    }
+    case 3: // per vertex (average)
+    {
+      Size size = mesh.getPointPolygonCount(index);
+      for(Size i=0;i<size;i++) {
+        Size idx = mesh.getPointAttributeIndex(index, i);
+        value += cast.values[idx];
+      }
+      value *= 1.0 / Float32(size);
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValue mode for Vec2Attribute.");
+      return Vec2();
+    }
+  }
+
+  return value;
+}
+
+/// \internal
+function Vec3 BaseGeometry.getVec3AttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  io String type
+) {
+  type = "";
+
+  if(!this.getAttributeValue_CheckIndex(mode, index))
+    return Vec3();
+
+  Vec3Attribute cast = attr;
+  if(cast == null)
+    return Vec3();
+
+  type = "Vec3";
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  Vec3 value;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      value = cast.values[index];
+      break;
+    }
+    case 1: // per face
+    {
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++) {
+        Size idx = mesh.getPolygonAttributeIndex(index, i);
+        value += cast.values[idx];
+      }
+      value *= 1.0 / Float32(size);
+      break;
+    }
+    case 2: // per face corner
+    {
+      Size size = mesh.getPolygonSize(index);
+      Size idx = mesh.getPolygonAttributeIndex(index, faceCorner % size);
+      value = cast.values[idx];
+      break;
+    }
+    case 3: // per vertex (average)
+    {
+      Size size = mesh.getPointPolygonCount(index);
+      for(Size i=0;i<size;i++) {
+        Size idx = mesh.getPointAttributeIndex(index, i);
+        value += cast.values[idx];
+      }
+      value *= 1.0 / Float32(size);
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValue mode for Vec3Attribute.");
+      return Vec3();
+    }
+  }
+
+  return value;
+}
+
+/// \internal
+function Vec4 BaseGeometry.getVec4AttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  io String type
+) {
+  type = "";
+
+  if(!this.getAttributeValue_CheckIndex(mode, index))
+    return Vec4();
+
+  Vec4Attribute cast = attr;
+  if(cast == null)
+    return Vec4();
+
+  type = "Vec4";
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  Vec4 value;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      value = cast.values[index];
+      break;
+    }
+    case 1: // per face
+    {
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++) {
+        Size idx = mesh.getPolygonAttributeIndex(index, i);
+        value += cast.values[idx];
+      }
+      value *= 1.0 / Float32(size);
+      break;
+    }
+    case 2: // per face corner
+    {
+      Size size = mesh.getPolygonSize(index);
+      Size idx = mesh.getPolygonAttributeIndex(index, faceCorner % size);
+      value = cast.values[idx];
+      break;
+    }
+    case 3: // per vertex (average)
+    {
+      Size size = mesh.getPointPolygonCount(index);
+      for(Size i=0;i<size;i++) {
+        Size idx = mesh.getPointAttributeIndex(index, i);
+        value += cast.values[idx];
+      }
+      value *= 1.0 / Float32(size);
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValue mode for Vec4Attribute.");
+      return Vec4();
+    }
+  }
+
+  return value;
+}
+
+/// \internal
+function Color BaseGeometry.getColorAttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  io String type
+) {
+  type = "";
+
+  if(!this.getAttributeValue_CheckIndex(mode, index))
+    return Color();
+
+  ColorAttribute cast = attr;
+  if(cast == null)
+    return Color();
+
+  type = "Color";
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  Color value;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      value = cast.values[index];
+      break;
+    }
+    case 1: // per face
+    {
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++) {
+        Size idx = mesh.getPolygonAttributeIndex(index, i);
+        value += cast.values[idx];
+      }
+      value *= 1.0 / Float32(size);
+      break;
+    }
+    case 2: // per face corner
+    {
+      Size size = mesh.getPolygonSize(index);
+      Size idx = mesh.getPolygonAttributeIndex(index, faceCorner % size);
+      value = cast.values[idx];
+      break;
+    }
+    case 3: // per vertex (average)
+    {
+      Size size = mesh.getPointPolygonCount(index);
+      for(Size i=0;i<size;i++) {
+        Size idx = mesh.getPointAttributeIndex(index, i);
+        value += cast.values[idx];
+      }
+      value *= 1.0 / Float32(size);
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValue mode for ColorAttribute.");
+      return Color();
+    }
+  }
+
+  return value;
+}
+
+/// \internal
+function RGB BaseGeometry.getRGBAttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  io String type
+) {
+  type = "";
+
+  if(!this.getAttributeValue_CheckIndex(mode, index))
+    return RGB();
+
+  RGBAttribute cast = attr;
+  if(cast == null)
+    return RGB();
+
+  type = "RGB";
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  RGB value;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      value = cast.values[index];
+      break;
+    }
+    case 1: // per face
+    {
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++) {
+        Size idx = mesh.getPolygonAttributeIndex(index, i);
+        value += cast.values[idx];
+      }
+      value *= 1.0 / Float32(size);
+      break;
+    }
+    case 2: // per face corner
+    {
+      Size size = mesh.getPolygonSize(index);
+      Size idx = mesh.getPolygonAttributeIndex(index, faceCorner % size);
+      value = cast.values[idx];
+      break;
+    }
+    case 3: // per vertex (average)
+    {
+      Size size = mesh.getPointPolygonCount(index);
+      for(Size i=0;i<size;i++) {
+        Size idx = mesh.getPointAttributeIndex(index, i);
+        value += cast.values[idx];
+      }
+      value *= 1.0 / Float32(size);
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValue mode for RGBAttribute.");
+      return RGB();
+    }
+  }
+
+  return value;
+}
+
+/// \internal
+function RGBA BaseGeometry.getRGBAAttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  io String type
+) {
+  type = "";
+
+  if(!this.getAttributeValue_CheckIndex(mode, index))
+    return RGBA();
+
+  RGBAAttribute cast = attr;
+  if(cast == null)
+    return RGBA();
+
+  type = "RGBA";
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  RGBA value;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      value = cast.values[index];
+      break;
+    }
+    case 1: // per face
+    {
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++) {
+        Size idx = mesh.getPolygonAttributeIndex(index, i);
+        value += cast.values[idx];
+      }
+      value *= 1.0 / Float32(size);
+      break;
+    }
+    case 2: // per face corner
+    {
+      Size size = mesh.getPolygonSize(index);
+      Size idx = mesh.getPolygonAttributeIndex(index, faceCorner % size);
+      value = cast.values[idx];
+      break;
+    }
+    case 3: // per vertex (average)
+    {
+      Size size = mesh.getPointPolygonCount(index);
+      for(Size i=0;i<size;i++) {
+        Size idx = mesh.getPointAttributeIndex(index, i);
+        value += cast.values[idx];
+      }
+      value *= 1.0 / Float32(size);
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValue mode for RGBAAttribute.");
+      return RGBA();
+    }
+  }
+
+  return value;
+}

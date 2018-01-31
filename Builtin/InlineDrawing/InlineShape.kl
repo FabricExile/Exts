@@ -1,0 +1,78 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+require Geometry;
+
+/**
+\versionadded 1.13.0
+
+The InlineShape interface is used to describe the required methods for an InlineShapeBase.
+\note This might go away as soon as the virtual keyword is introduced in KL.
+\dfgPresetOmit
+*/
+interface InlineShape {
+
+  /// Returns the geometry associated with this shape. 
+  Geometry getGeometry();
+
+  /// Returns the version of this shape
+  Integer getVersion();
+
+  /// increment the topology version
+  incrementVersion!();
+
+  /// returns the contained geometry attributes structure
+  GeometryAttributes getAttributes();
+
+  /// returns this shapes name
+  String getName();
+
+  /// this should be used from within the InlineInstance's.
+  /// \internal
+  Boolean draw!(io DrawContext context);
+};
+
+/**
+\versionadded 1.12.0
+
+The InlineShapeBase is used to represent any shape within the InlineDrawing. For a code example please see the InlineMeshShape.
+\dfgPresetOmit
+*/
+object InlineShapeBase : InlineEntityBase, InlineShape {
+  
+  /// \internal
+  Geometry geo;
+
+  /// \internal;
+  Integer version;
+};
+
+/// Returns the geometry associated with this shape. 
+function Geometry InlineShapeBase.getGeometry() {
+  return this.geo;
+}
+
+/// Returns the version of this shape
+function Integer InlineShapeBase.getVersion() {
+  return this.version;
+}
+
+/// increment the topology version
+function InlineShapeBase.incrementVersion!() {
+  this.version++;
+}
+
+/// returns the contained geometry attributes structure
+function GeometryAttributes InlineShapeBase.getAttributes() {
+  if(this.geo)
+    return this.geo.getAttributes();
+  return null;
+}
+
+/// this should be used from within the InlineInstance's.
+/// \internal
+function Boolean InlineShapeBase.draw!(io DrawContext context) {
+  return false;
+}

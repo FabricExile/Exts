@@ -1,0 +1,47 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+
+/**
+  \versionadded 2.0.1
+
+  :kl-ref:`LegacyBaseToolTarget` implements :kl-ref:`LegacyToolTarget` and defines the base class for any targets.
+  
+  \seealso :kl-ref:`LegacyToolTarget`, :kl-ref:`LegacyToolDispatcher`.
+
+  \dfgPresetOmit
+*/
+object LegacyBaseToolTarget : LegacyToolTarget{
+  /// Reference to the SRT tool that manipulates its target.
+  /// We only keep a weak reference (Ref<>) to avoid circular reference.
+  protected Ref<LegacyTool> tool;
+  /// Array of commands, one per manipulated objects.
+  protected LegacyCmd cmd[];
+};
+
+/// Initializes the target with a reference to the tool.
+/// It acts as a delayed constructor so we can call tool.updateFromTarget().
+/// \param tool The reference to the tool
+LegacyBaseToolTarget.init!(Ref<LegacyTool> tool) {
+  this.tool = tool;
+}
+
+/// Implementation of :kl-ref:`LegacyToolTarget`.
+Ref<LegacyTool> LegacyBaseToolTarget.getTool() {
+  return this.tool;
+}
+
+/// Implementation of :kl-ref:`LegacyToolTarget`.
+/// To override.
+LegacyBaseToolTarget.registerValue!() {}
+
+/// Implementation of :kl-ref:`LegacyToolTarget`.
+/// To override.
+LegacyBaseToolTarget.bakeValue!() {}
+
+/// Implementation of :kl-ref:`LegacyToolTarget`.
+/// To override.
+Boolean LegacyBaseToolTarget.isValid() {
+  return true;
+}

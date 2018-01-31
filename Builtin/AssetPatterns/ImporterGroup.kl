@@ -1,0 +1,80 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/**
+The ImporterGroup represents a group inside of a hierarchy. The main
+difference between the ImporterTransform is that the ImporterGroup
+also stores members. The members don't have to be in the same hierarchy,
+then can be anywhere in the import structure.
+\dfgPresetOmit
+*/
+object ImporterGroup : ImporterTransform permits Importer
+{
+};
+
+/// \dfgPresetOmit
+function ImporterGroup(String id, String path) {
+  this.initialize(id, path, 'Group');
+}
+
+/// \dfgPresetOmit
+protected function ImporterGroup.initialize!(String id, String path, String type) {
+  this.parent.initialize(id, path, type);
+  this.initProperty('members', ImporterStringArray());
+}
+
+/**
+  Returns all of the nested objects
+  \dfgPresetCreate
+  \dfgPresetTitle children
+  \dfgPresetFolder Object
+  \dfgPresetTooltip
+    Returns all of the children
+  \enddfgPresetTooltip
+*/
+function Ref<ImporterObject>[] ImporterGroup.getNestedObjects(ImporterContext ctxt) {
+  Ref<ImporterObject> result[] = this.getMembers(ctxt);
+  Ref<ImporterObject> nested[] = this.parent.getNestedObjects(ctxt);
+  for(Size i=0;i<nested.size();i++) {
+    if(!nested[i])
+      continue;
+    switch(nested[i].getType()) {
+      case "Behavior": {
+        result.push(nested[i]);
+        break;
+      }
+    }
+  }
+  return result;
+}
+
+/// \dfgPresetOmit
+function UInt32 ImporterGroup.getMemberCount(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('members', context);
+  return mutableThis.getStringArrayProperty('members').size();
+}
+
+/// \dfgPresetOmit
+function Ref<ImporterObject>[] ImporterGroup.getMembers(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('members', context);
+  String memberIDs[] = mutableThis.getStringArrayProperty('members');
+  Ref<ImporterObject> members[](memberIDs.size());
+  for(Size i=0;i<members.size();i++)
+    members[i] = mutableThis.importer.getObjectFromID(memberIDs[i]);
+  return members;
+}
+
+/// \dfgPresetOmit
+function ImporterGroup.addMember!(String member) {
+  String members[] = this.getStringArrayProperty('members');
+  members.push(member);
+  this.setMembers(members);
+} 
+
+/// \dfgPresetOmit
+function ImporterGroup.setMembers!(String members[]) {
+  this.setProperty('members', members);
+} 

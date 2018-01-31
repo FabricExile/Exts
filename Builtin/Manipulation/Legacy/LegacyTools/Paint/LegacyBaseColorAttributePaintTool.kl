@@ -1,0 +1,135 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Geometry;
+
+/**
+  \versionadded 2.0
+  
+  :kl-ref:`LegacyBaseColorAttributePaintTool` is a based class for any :kl-ref:`LegacyColorAttributePaintTool`.
+
+  \note This is a work in progress, needs to be generalized to abstract the type of attribute being painted.
+  
+  \seealso :kl-ref:`LegacyBasePaintTool`.
+ 
+  \dfgPresetOmit
+*/
+interface LegacyColorAttributePaintTool {
+  /// Updates the color of the tool.
+  /// \params color The new color
+  colorChanged!(Color color);
+};
+
+object LegacyBaseColorAttributePaintTool : LegacyBasePaintTool, LegacyColorAttributePaintTool {
+  /// Painting color.
+  protected Color color;
+};
+
+/// Initializes a LegacyBaseColorAttributePaintTool.
+/// \param target Tool target.
+/// \param enableKey Key to enable to tool.
+/// \param resetKey Key to reset the painting.
+/// \param attributeName Name of the color geometry attribute (color).
+/// \param initialRadius Initial paint-tool radius.
+/// \param color Initial paint-tool color.
+protected LegacyBaseColorAttributePaintTool.init!(
+  LegacyBasePaintTarget target,
+  Key enableKey, 
+  Key resetKey,
+  String attributeName,
+  Float32 initialRadius, 
+  Color color) 
+{
+  this.parent.init(
+	  target, 
+	  enableKey, 
+	  resetKey,
+	  attributeName,
+	  initialRadius);
+  this.color = color;
+}
+
+/// Implementation of :kl-ref:`LegacyPaintTool`.
+/// To override.
+LegacyBaseColorAttributePaintTool.colorChanged!(Color color) {
+  this.color = color;
+  if(this.enabled) this.show();
+  else this.hide(); 
+}
+
+/// Gets the current paint color
+Color LegacyBaseColorAttributePaintTool.getColor() {
+  return this.color;
+}
+
+/// Implementation of :kl-ref:`LegacyPaintTool`.
+LegacyBaseColorAttributePaintTool.ensureAttributeExists!(io Ref<Geometry> geometry, Boolean resetValues) {
+  Ref<ColorAttribute> attribute = geometry.getAttributes().getAttribute(this.attributeName);
+  if(!Boolean(attribute) || (Boolean(attribute) && resetValues)) 
+  {
+    attribute = geometry.getAttributes().getOrCreateColorAttribute(this.attributeName);
+    for(Index k=0; k<attribute.values.size(); ++k)
+      attribute.values[k] = Color(0, 0, 0, 0);
+    attribute.incrementVersion();
+  }   
+  this.attributeStack = LegacyPaintToolAttributeStrokeData(geometry, this.attributeName);
+  this.parent.ensureAttributeExists(geometry, resetValues);
+}
+
+/// Implementation of :kl-ref:`LegacyPaintTool`.
+protected LegacyBaseColorAttributePaintTool.setPointAttribute!(
+  Index i, 
+  Float32 weight, 
+  Vec3 displacementDir, 
+  io Ref<PolygonMesh> mesh) 
+{
+  Color color = this.mode == PaintMode_Paint ? this.color : Color(0, 0, 0, 0);
+  Float32 alpha = weight * this.color.a;
+
+  Index index = this.tempPointSet.get(i);
+  Ref<ColorAttribute> attribute = mesh.getAttributes().getAttribute(this.attributeName);
+  Color prevColor = attribute.values[index];
+
+  //use setPointAttribute since the attribute value might be split around the point
+  mesh.setPointAttribute(index, attribute, prevColor*(1-alpha) + color*alpha);
+}
+
+/// Implementation of :kl-ref:`LegacyPaintTool`.
+protected LegacyBaseColorAttributePaintTool.smoothPointAttribute!(
+  Index i, 
+  Float32 weight, 
+  Vec3 displacementDir, 
+  io Ref<PolygonMesh> mesh) 
+{
+
+  Ref<ColorAttribute> attribute = mesh.getAttributes().getAttribute(this.attributeName);
+  Ref<ColorAttribute> tempAttribute = this.tempAttribute;
+  Index index = this.tempPointSet.get(i);
+
+  LocalL16UInt32Array neigbors;
+  mesh.getPointSurroundingPoints(index, false, neigbors);
+  
+  if(neigbors.size()) 
+  {
+    Color colorRes = Color(0, 0, 0, 0);
+    for(Index k=0; k<neigbors.size(); ++k) 
+      colorRes += attribute.values[neigbors.get(k)];
+    colorRes /= neigbors.size();    
+    tempAttribute.values[i] = attribute.values[index].linearInterpolate( (attribute.values[index] + colorRes) * 0.5, weight);
+  }
+  else tempAttribute.values[i] = attribute.values[index];
+}
+
+/// Implementation of :kl-ref:`Tool`.
+protected LegacyBaseColorAttributePaintTool.release!(io MouseEvent mouseEvent) {
+  if(this.performing)
+  {    
+    Ref<Geometry> geometry = this.paint(mouseEvent);
+    if(geometry) {
+      this.target.bakeValue();
+      this.attributeStack = LegacyPaintToolAttributeStrokeData(geometry, this.attributeName);
+    }
+  }
+  this.parent.release(mouseEvent);
+}

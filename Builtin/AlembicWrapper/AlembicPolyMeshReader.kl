@@ -1,0 +1,597 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Alembic;
+require Geometry;
+
+/**
+  The :kl-ref:`AlembicPolyMeshReader` specializes the :kl-ref:`AlembicObjectReader` interface for reading :kl-ref:`AlembicIPolyMesh` data. 
+  It can be created using the :kl-ref:`AlembicArchiveReader.getPolyMesh` method.
+  \example
+
+  require AlembicWrapper;
+  require FileIO;
+
+  operator entry() {
+    
+    FilePath path = FilePath('${FABRIC_SCENE_GRAPH_DIR}/Python/Apps/Resources/Alembic/frog.abc').expandEnvVars();
+
+    AlembicArchiveReader archive(path.string());
+    String polyMeshPaths[] = archive.getPathsOfType('PolyMesh');
+
+    for(Size i=0;i<polyMeshPaths.size();i++) {
+
+      AlembicPolyMeshReader polyMesh = archive.getPolyMesh(polyMeshPaths[i]);
+      report('samples: '+polyMesh.getNumSamples());
+
+      PolygonMesh mesh = PolygonMesh();
+      polyMesh.readSample(2.4, mesh);
+
+      report(mesh.pointCount());
+      report(mesh.polygonCount());
+    }
+
+  }
+
+  \endexample
+  \seealso AlembicPolyMeshWriter
+*/
+object AlembicPolyMeshReader : AlembicBaseObjectReader, AlembicGeometryReader{
+  /// \internal
+  private AlembicIPolyMesh _polyMesh;
+  /// \internal
+  private AlembicIPolyMeshSchema _schema;
+  /// \internal
+  private AlembicIPolyMeshSample _sampleA;
+  /// \internal
+  private AlembicIPolyMeshSample _sampleB;
+  /// \internal
+  private AlembicGeometryAttributesReader _attributesReader;
+  /// \internal
+  private UInt64 _geometryUid;
+};
+
+/// \internal
+private AlembicPolyMeshReader(AlembicArchiveReader archive, AlembicIObject mesh) {
+
+  this._polyMesh = AlembicIPolyMesh(mesh);
+  this._schema = this._polyMesh.getSchema();
+  this.parent.set( archive, mesh, this._schema.getTimeSampling(), this._schema.getNumSamples(), this._schema.getChildBoundsProperty() );
+
+  this._sampleA = AlembicIPolyMeshSample();
+  this._sampleB = AlembicIPolyMeshSample();
+  this._attributesReader = AlembicGeometryAttributesReader(archive, this._schema.getArbGeomParams());
+
+  this._numSamples = this._schema.getNumSamples();
+}
+
+/// Returns the full path of the wrapped AlembicIPolyMesh
+public String AlembicPolyMeshReader.getPath() {
+  return this._polyMesh.asIObject().getFullName();
+}
+
+/// Returns true if this reader wraps a valid AlembicIPolyMesh
+public Boolean AlembicPolyMeshReader.valid() {
+  if(!this._polyMesh.valid())
+    return false;
+  return this.parent.valid();
+}
+
+/// clears all pointers and releases all alembic containers
+public AlembicPolyMeshReader.reset!() {
+  this._polyMesh.reset();
+  this._schema.reset();
+  this._sampleA = null;
+  this._sampleB = null;
+}
+
+/// Returns the AlembicIPolyMesh that owns the alembic data. This is useful if the alembic file contains custom 
+/// data that must be parsed by client code.
+public AlembicIPolyMesh AlembicPolyMeshReader.getAlembicIPolyMesh() {
+  return this._polyMesh;
+}
+
+/// Returns the AlembicGeometryAttributesReader responsible for parsing the Alembic data into the GeometryAttributes container.
+public AlembicGeometryAttributesReader AlembicPolyMeshReader.getAlembicGeometryAttributesReader() {
+  return this._attributesReader;
+}
+
+/// Returns the number of samples of this reader
+public SInt32 AlembicPolyMeshReader.getNumSamples() {
+  return this._numSamples;
+}
+
+/// Returns the schema of this reader
+public AlembicIPolyMeshSchema AlembicPolyMeshReader.getSchema() 
+{ 
+  return this._schema; 
+}
+
+/// Returns the first sample used by this reader
+public AlembicIPolyMeshSample AlembicPolyMeshReader.getSampleA() 
+{ 
+  return this._sampleA; 
+}
+
+/// Returns the second sample used by this reader
+public AlembicIPolyMeshSample AlembicPolyMeshReader.getSampleB() 
+{ 
+  return this._sampleB; 
+} 
+
+/// Returns the timesampling of this reader
+public AlembicTimeSampling AlembicPolyMeshReader.getTimeSampling() 
+{ 
+  return this._timeSampling; 
+}
+
+/// Returns the bounding box
+public Box3 AlembicPolyMeshReader.getSelfBounds!(Float64 time, io Boolean isConstant) {
+
+  if(this._timeSampling)
+    isConstant = this._numSamples <= 1;
+
+  AlembicSampleInfo info(time, this._timeSampling, this._numSamples);
+  this._schema.get(this._sampleA, this.archive.getISampleSelector( info.indexA ));
+  if(info.requiresInterpolation())
+    this._schema.get(this._sampleB, this.archive.getISampleSelector( info.indexB ));
+
+  Box3 box = this._sampleA.getSelfBounds();
+  if(info.requiresInterpolation())
+  {
+    Box3 box2 = this._sampleB.getSelfBounds();
+    box.min = box.min.linearInterpolate(box2.min, Float32(info.fraction));
+    box.max = box.max.linearInterpolate(box2.max, Float32(info.fraction));
+  }
+  return box;
+}
+
+/// Returns true if the bounds of this object, excluding the children, are constant
+public Boolean AlembicPolyMeshReader.areSelfBoundsConstant() {
+  // To be overriden
+  return this._numSamples <= 1;
+}
+
+/// reads a sample at a given time. this will properly interpolate between samples.
+/// the result is stored in the provided PolygonMesh.
+/// freezeAttributeIndices: maintain Mesh's attribute sharing layout of the 1st read sample through playback.
+/// For example, if new normal or UV splits are introduced during playback, one of the values will be used (arbitrary).
+/// The advantage is to gain more speed and to ensure attribute matching (for effects such as motion blur).
+/// This options will be ignored if the topology changes.
+/// \dfgPresetCreate
+public AlembicPolyMeshReader.readSample!(Float64 time, Boolean freezeAttributeIndices, io PolygonMesh mesh) {
+
+  if(this == null)
+    return;
+
+  if(!mesh)
+    mesh = PolygonMesh();
+
+  Boolean theSameGeo = mesh.uid() == this._geometryUid;
+  this._geometryUid = mesh.uid();
+    
+  if( !this.updateTimeInfo( time ) && theSameGeo )
+    return;
+
+  Boolean keepSameAttributeIndices = freezeAttributeIndices;
+
+  this._schema.get(this._sampleA, this._infoIndexASelector);
+  if(this._info.requiresInterpolation())
+    this._schema.get(this._sampleB, this._infoIndexBSelector);
+
+  Vec3 positionsValuesA<> = this._sampleA.getPositions();
+  Vec3 positionsValuesB<>;
+  if(this._info.requiresInterpolation())
+  {
+    positionsValuesB = this._sampleB.getPositions();
+    if(positionsValuesA.size() != positionsValuesB.size())
+      this._info.roundToClosestFrame();
+  }
+
+  // topology
+  if(mesh.pointCount() == 0 || 
+    this._schema.getTopologyVariance() == Alembic_kHeterogenousTopology || 
+    mesh.pointCount() != positionsValuesA.size()
+    ) {
+
+    Boolean meshWasEmpty = mesh.pointCount() == 0;
+
+    mesh.clear();
+    mesh.createPoints(positionsValuesA.size());
+    mesh.beginStructureChanges();
+    keepSameAttributeIndices = false;
+
+    SInt32 faceCounts<> = this._sampleA.getFaceCounts();
+    SInt32 faceIndices<> = this._sampleA.getFaceIndices();
+
+    LocalIndexArray indexArray;
+    UInt32 ptIndexIter = 0;
+
+    for( Size i = 0; i < faceCounts.size(); ++i ) {
+      UInt32 polSize = faceCounts[i];
+      indexArray.resize(0);
+      for( Size j = 0; j < polSize; ++j )
+        indexArray.push( faceIndices[ptIndexIter+polSize-1-j] );
+      ptIndexIter += polSize;
+      if (indexArray.size() > 2) {
+        mesh.addPolygon( indexArray );
+      }
+    }
+
+    mesh.endStructureChanges();
+
+    // create a material ID attribute
+    if(meshWasEmpty) {
+
+      String faceSets[] = this._schema.getFaceSetNames();
+      if(faceSets.size() > 1) {
+        Ref<IntegerAttribute> materialIDAttr = mesh.getOrCreateIntegerAttribute('materialID');
+        for(Size i=0;i<materialIDAttr.values.size();i++)
+          materialIDAttr.values[i] = 0;
+
+        for(Size i=0;i<faceSets.size();i++) {
+          AlembicIFaceSetSample faceSetSample();
+          this._schema.getFaceSet(faceSets[i]).getSchema().get(faceSetSample);
+          SInt32 faces<> = faceSetSample.getFaces();
+          for(Size j=0;j<faces.size();j++) {
+            Size size = mesh.getPolygonSize(faces[j]);
+            for(Size k=0;k<size;k++) {
+              mesh.setPolygonAttribute(faces[j], k, materialIDAttr, i+1);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  Size nbPoints = mesh.pointCount();
+
+  // perform positions
+  Ref<Vec3Attribute> positionsAttr = mesh.getOrCreateVec3Attribute('positions');
+  if(this._info.requiresInterpolation()) {
+    for(Size i=0;i<nbPoints;i++)
+      mesh.setPointPosition(i, positionsValuesA[i].linearInterpolate(positionsValuesB[i], Float32(this._info.fraction)));
+  } else {
+    for(Size i=0;i<nbPoints;i++)
+      mesh.setPointPosition(i, positionsValuesA[i]);
+  }
+  positionsAttr.incrementVersion();
+
+  // perform velocities
+  Vec3 velocitiesValuesA<> = this._sampleA.getVelocities();
+  if(velocitiesValuesA.size() > 0) {
+    Ref<Vec3Attribute> velocitiesAttr = mesh.getOrCreateVec3Attribute('velocities');
+    if(this._info.requiresInterpolation()) {
+      Vec3 velocitiesValuesB<> = this._sampleB.getVelocities();
+      for(Size i=0;i<nbPoints;i++)
+        mesh.setPointAttribute( i, velocitiesAttr, velocitiesValuesA[i].linearInterpolate(velocitiesValuesB[i], Float32(this._info.fraction)) );
+    } else {
+      for(Size i=0;i<nbPoints;i++)
+        mesh.setPointAttribute( i, velocitiesAttr, velocitiesValuesA[i] );
+    }
+    velocitiesAttr.incrementVersion();
+  }  
+
+  // normals
+  Boolean hasZeroNormal = false;
+  AlembicIVec3NfGeomParam normalsParam = this._schema.getNormalsParam();
+  if(normalsParam.valid()) {
+    AlembicSampleInfo info(time, this._timeSampling, normalsParam.getNumSamples());
+    if(normalsParam.isIndexed()) {
+      AlembicIVec3NfGeomParamSample sampleA = normalsParam.getIndexed(this._infoIndexASelector);
+      AlembicIVec3NfGeomParamSample sampleB = null;//Ensure its scope covers the values' lifetime
+      Vec3 normalsValuesA<> = sampleA.getValsVolatileData();
+      Vec3 normalsValuesB<>;
+      if(info.requiresInterpolation()) {
+        sampleB = normalsParam.getIndexed(this._infoIndexBSelector);
+        normalsValuesB = sampleB.getValsVolatileData();
+        if(normalsValuesA.size() != normalsValuesB.size())
+          info.roundToClosestFrame();
+      }
+
+      UInt32 indicesA<> = sampleA.getIndices();
+      if(normalsValuesA.size() > 0) {
+        Ref<Vec3Attribute> attr = mesh.getOrCreateVec3Attribute('normals');
+        if(sampleA.getScope() == Alembic_kVertexScope || indicesA.size() == mesh.pointCount()) {
+          if(info.requiresInterpolation()) {
+            UInt32 indicesB<> = sampleA.getIndices();
+            for(UInt32 i=0;i<mesh.pointCount();i++) {
+              Vec3 value = normalsValuesA[indicesA[i]].linearInterpolate(normalsValuesB[indicesB[i]], Float32(info.fraction));
+              Scalar valueSqLength = value.lengthSquared();
+              if(valueSqLength > 0.0) {
+                value /= sqrt(valueSqLength);
+                mesh.setPointAttribute( i, attr, value );
+              } else 
+                hasZeroNormal = true;
+            }
+          } else {
+            for(UInt32 i=0;i<mesh.pointCount();i++) {
+              Vec3 value = normalsValuesA[indicesA[i]];
+              Scalar valueSqLength = value.lengthSquared();
+              if(valueSqLength > 0.0) {
+                value /= sqrt(valueSqLength);
+                mesh.setPointAttribute( i, attr, value );
+              } else 
+                hasZeroNormal = true;
+            }
+          }
+        } else {
+          if( !keepSameAttributeIndices ) // Avoid re-sharing to improve speed (only unshare)
+            mesh.resetAttributeAndAvoidSharingChanges(attr);
+
+          if(info.requiresInterpolation()) {
+            UInt32 indicesB<> = sampleA.getIndices();
+            Size offset = 0;
+            for(Size i=0;i<mesh.polygonCount();i++) {
+              Size count = mesh.getPolygonSize(i);
+              for(UInt32 j=0;j<count;j++) {
+                Vec3 value = normalsValuesA[indicesA[offset]].linearInterpolate(normalsValuesB[indicesB[offset]], Float32(info.fraction));
+                Scalar valueSqLength = value.lengthSquared();
+                if(valueSqLength > 0.0) {
+                  value /= sqrt(valueSqLength);
+                  if( keepSameAttributeIndices ) {
+                    UInt32 index = mesh.getPolygonAttributeIndex( i, count - 1 - j );
+                    attr.values[index] = value;
+                  }
+                  else
+                    mesh.setPolygonAttribute( i, count - 1 - j, attr, value );
+                } else 
+                  hasZeroNormal = true;
+                offset++;
+              }
+            }
+          } else {
+            Size offset = 0;
+            for(Size i=0;i<mesh.polygonCount();i++) {
+              Size count = mesh.getPolygonSize(i);
+              for(UInt32 j=0;j<count;j++) {
+                Vec3 value = normalsValuesA[indicesA[offset]];
+                if( keepSameAttributeIndices ) {
+                  UInt32 index = mesh.getPolygonAttributeIndex( i, count - 1 - j );
+                  attr.values[index] = value;
+                } else
+                  mesh.setPolygonAttribute( i, count - 1 - j, attr, value );
+                offset++;
+              }
+            }
+          }
+        }     
+        attr.incrementVersion();
+      } else 
+        hasZeroNormal = true;
+    } else {
+      AlembicIVec3NfGeomParamSample sampleA = normalsParam.getExpanded(this._infoIndexASelector);
+      Vec3 normalsValuesA<> = sampleA.getValsVolatileData();
+      AlembicIVec3NfGeomParamSample sampleB = null;//Ensure its scope covers the values' lifetime
+      Vec3 normalsValuesB<>;
+      if(info.requiresInterpolation()) {
+        sampleB = normalsParam.getExpanded(this._infoIndexBSelector);
+        normalsValuesB = sampleB.getValsVolatileData();
+        if(normalsValuesA.size() != normalsValuesB.size())
+          info.roundToClosestFrame();
+      }
+      if(normalsValuesA.size() > 0) {
+        Ref<Vec3Attribute> attr = mesh.getOrCreateVec3Attribute('normals');
+        if(sampleA.getScope() == Alembic_kVertexScope || normalsValuesA.size() == mesh.pointCount()) {
+          if(info.requiresInterpolation()) {
+            for(UInt32 i=0;i<mesh.pointCount();i++) {
+              Vec3 value = normalsValuesA[i].linearInterpolate(normalsValuesB[i], Float32(info.fraction));
+              Scalar valueSqLength = value.lengthSquared();
+              if(valueSqLength > 0.0) {
+                value /= sqrt(valueSqLength);
+                mesh.setPointAttribute( i, attr, value );
+              } else 
+                hasZeroNormal = true;
+            }
+          } else {
+            for(UInt32 i=0;i<mesh.pointCount();i++) {
+              Vec3 value = normalsValuesA[i];
+              Scalar valueSqLength = value.lengthSquared();
+              if(valueSqLength > 0.0) {
+                value /= sqrt(valueSqLength);
+                mesh.setPointAttribute( i, attr, value );
+              } else 
+                hasZeroNormal = true;
+            }
+          }
+        } else {
+          if( !keepSameAttributeIndices ) // Avoid re-sharing to improve speed (only unshare)
+            mesh.resetAttributeAndAvoidSharingChanges(attr);
+
+          if(info.requiresInterpolation()) {
+            Size offset = 0;
+            for(Size i=0;i<mesh.polygonCount();i++) {
+              Size count = mesh.getPolygonSize(i);
+              for(UInt32 j=0;j<count;j++) {
+                Vec3 value = normalsValuesA[offset].linearInterpolate(normalsValuesB[offset], Float32(info.fraction));
+                Scalar valueSqLength = value.lengthSquared();
+                if(valueSqLength > 0.0) {
+                  value /= sqrt(valueSqLength);
+                  if( keepSameAttributeIndices ) {
+                    UInt32 index = mesh.getPolygonAttributeIndex( i, count - 1 - j );
+                    attr.values[index] = value;
+                  } else
+                    mesh.setPolygonAttribute( i, count - 1 - j, attr, value );
+                } else 
+                  hasZeroNormal = true;
+                offset++;
+              }
+            }
+          } else {
+            Size offset = 0;
+            for(Size i=0;i<mesh.polygonCount();i++) {
+              Size count = mesh.getPolygonSize(i);
+              for(UInt32 j=0;j<count;j++) {
+                Vec3 value = normalsValuesA[offset];
+                if( keepSameAttributeIndices ) {
+                  UInt32 index = mesh.getPolygonAttributeIndex( i, count - 1 - j );
+                  attr.values[index] = value;
+                } else
+                  mesh.setPolygonAttribute( i, count - 1 - j, attr, value );
+                offset++;
+              }
+            }
+          }
+        }     
+        attr.incrementVersion();
+      } else 
+        hasZeroNormal = true;
+    }
+  } else
+    hasZeroNormal = true;
+
+  if(hasZeroNormal)
+    mesh.recomputePointNormals();
+
+  // uvs
+  AlembicIVec2VfGeomParam uvsParam = this._schema.getUVsParam();
+  if(uvsParam.valid()) {
+    if(!mesh.has('uvs0') || uvsParam.getNumSamples() > 1) {
+      if(uvsParam.isIndexed()) {
+        AlembicSampleInfo info(time, this._timeSampling, uvsParam.getNumSamples());
+        AlembicIVec2VfGeomParamSample sampleA = uvsParam.getIndexed(this.archive.getISampleSelector( info.indexA ));
+        Vec2 uvsValuesA<> = sampleA.getValsVolatileData();
+        AlembicIVec2VfGeomParamSample sampleB = null;//Ensure its scope covers the values' lifetime
+        Vec2 uvsValuesB<>;
+        if(info.requiresInterpolation()) {
+          sampleB = uvsParam.getIndexed(this.archive.getISampleSelector( info.indexB ));
+          uvsValuesB = sampleB.getValsVolatileData();
+          if(uvsValuesA.size() != uvsValuesB.size())
+            info.roundToClosestFrame();
+        }
+        UInt32 indicesA<> = sampleA.getIndices();
+        if(uvsValuesA.size() > 0) {
+          Ref<Vec2Attribute> attr = mesh.getOrCreateVec2Attribute('uvs0');
+          if(sampleA.getScope() == Alembic_kVertexScope || indicesA.size() == mesh.pointCount()) {
+            if(info.requiresInterpolation()) {
+              UInt32 indicesB<> = sampleB.getIndices();
+              for(UInt32 i=0;i<mesh.pointCount();i++) {
+                Vec2 value = uvsValuesA[indicesA[i]].linearInterpolate(uvsValuesB[indicesB[i]], Float32(info.fraction));
+                mesh.setPointAttribute( i, attr, value );
+              }
+            } else {
+              for(UInt32 i=0;i<mesh.pointCount();i++) {
+                Vec2 value = uvsValuesA[indicesA[i]];
+                mesh.setPointAttribute( i, attr, value );
+              }
+            }
+          } else {
+            if(info.requiresInterpolation()) {
+              UInt32 indicesB<> = sampleB.getIndices();
+              Size offset = 0;
+              for(Size i=0;i<mesh.polygonCount();i++) {
+                Size count = mesh.getPolygonSize(i);
+                for(UInt32 j=0;j<count;j++) {
+                  Vec2 value = uvsValuesA[indicesA[offset]].linearInterpolate(uvsValuesB[indicesB[offset]], Float32(info.fraction));
+                  if( keepSameAttributeIndices ) {
+                    UInt32 index = mesh.getPolygonAttributeIndex( i, count - 1 - j );
+                    attr.values[index] = value;
+                  } else
+                    mesh.setPolygonAttribute( i, count - 1 - j, attr, value );
+                  offset++;
+                }
+              }
+            } else {
+              Size offset = 0;
+              for(Size i=0;i<mesh.polygonCount();i++) {
+                Size count = mesh.getPolygonSize(i);
+                for(UInt32 j=0;j<count;j++) {
+                  Vec2 value = uvsValuesA[indicesA[offset]];
+                  if( keepSameAttributeIndices ) {
+                    UInt32 index = mesh.getPolygonAttributeIndex( i, count - 1 - j );
+                    attr.values[index] = value;
+                  } else
+                    mesh.setPolygonAttribute( i, count - 1 - j, attr, value );
+                  offset++;
+                }
+              }
+            }
+          }     
+          attr.incrementVersion();
+        }
+      } else {
+        AlembicSampleInfo info(time, this._timeSampling, uvsParam.getNumSamples());
+        AlembicIVec2VfGeomParamSample sampleA = uvsParam.getExpanded(this.archive.getISampleSelector( info.indexA ));
+        Vec2 uvsValuesA<> = sampleA.getValsVolatileData();
+        AlembicIVec2VfGeomParamSample sampleB = null;//Ensure its scope covers the values' lifetime
+        Vec2 uvsValuesB<>;
+        if(info.requiresInterpolation()) {
+          sampleB = uvsParam.getExpanded(this.archive.getISampleSelector( info.indexB ));
+          uvsValuesB = sampleB.getValsVolatileData();
+          if(uvsValuesA.size() != uvsValuesB.size())
+            info.roundToClosestFrame();
+        }
+        if(uvsValuesA.size() > 0) {
+          Ref<Vec2Attribute> attr = mesh.getOrCreateVec2Attribute('uvs0');
+          if(sampleA.getScope() == Alembic_kVertexScope || uvsValuesA.size() == mesh.pointCount()) {
+            if(info.requiresInterpolation()) {
+              for(UInt32 i=0;i<mesh.pointCount();i++) {
+                Vec2 value = uvsValuesA[i].linearInterpolate(uvsValuesB[i], Float32(info.fraction));
+                mesh.setPointAttribute( i, attr, value );
+              }
+            } else {
+              for(UInt32 i=0;i<mesh.pointCount();i++) {
+                Vec2 value = uvsValuesA[i];
+                mesh.setPointAttribute( i, attr, value );
+              }
+            }
+          } else {
+            if( !keepSameAttributeIndices ) // Avoid re-sharing to improve speed (only unshare)
+              mesh.resetAttributeAndAvoidSharingChanges(attr);
+
+            if(info.requiresInterpolation()) {
+              Size offset = 0;
+              for(Size i=0;i<mesh.polygonCount();i++) {
+                Size count = mesh.getPolygonSize(i);
+                for(UInt32 j=0;j<count;j++) {
+                  Vec2 value = uvsValuesA[offset].linearInterpolate(uvsValuesB[offset], Float32(info.fraction));
+                  if( keepSameAttributeIndices ) {
+                    UInt32 index = mesh.getPolygonAttributeIndex( i, count - 1 - j );
+                    attr.values[index] = value;
+                  } else
+                    mesh.setPolygonAttribute( i, count - 1 - j, attr, value );
+                  offset++;
+                }
+              }
+            } else {
+              Size offset = 0;
+              for(Size i=0;i<mesh.polygonCount();i++) {
+                Size count = mesh.getPolygonSize(i);
+                for(UInt32 j=0;j<count;j++) {
+                  Vec2 value = uvsValuesA[offset];
+                  if( keepSameAttributeIndices ) {
+                    UInt32 index = mesh.getPolygonAttributeIndex( i, count - 1 - j );
+                    attr.values[index] = value;
+                  } else
+                    mesh.setPolygonAttribute( i, count - 1 - j, attr, value );
+                  offset++;
+                }
+              }
+            }
+          }     
+          attr.incrementVersion();
+        }
+      }
+    }
+  }
+
+  this._attributesReader.readSample(time, mesh, keepSameAttributeIndices);
+}
+
+/// reads a sample at a given time. this will properly interpolate between samples.
+/// the result is stored in the provided PolygonMesh.
+/// \dfgPresetOmit
+public AlembicPolyMeshReader.readSample!(Float64 time, io PolygonMesh mesh) {
+  this.readSample(time, false, mesh);
+}
+
+/// Reads a geometry sample at a given time
+public AlembicPolyMeshReader.readSample!(Float64 time, io Geometry geom) {
+  PolygonMesh mesh = geom;
+  if( !mesh ) {
+    geom = PolygonMesh();
+    mesh = geom;
+  }
+  this.readSample( time, mesh );
+}

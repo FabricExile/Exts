@@ -1,0 +1,118 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Alembic;
+
+/**
+  The :kl-ref:`AlembicFaceSetReader` specializes the :kl-ref:`AlembicObjectReader` interface for reading :kl-ref:`AlembicIFaceSet` data. 
+  It can be created using the :kl-ref:`AlembicArchiveReader.getFaceSet` method.
+  \seealso AlembicFaceSetWriter
+*/
+object AlembicFaceSetReader : AlembicBaseObjectReader {
+  /// \internal
+  private AlembicIFaceSet _faceset;
+  /// \internal
+  private AlembicIFaceSetSchema _schema;
+  /// \internal
+  private AlembicIFaceSetSample _sample;
+  /// \internal
+  private SInt32 _faces[];
+  /// \internal
+  private Box3 _bounds;
+};
+
+/// \internal
+private AlembicFaceSetReader(AlembicArchiveReader archive, AlembicIObject faceset) {
+
+  this._faceset = AlembicIFaceSet(faceset);
+  this._schema = this._faceset.getSchema();
+  this._sample = AlembicIFaceSetSample();
+}
+
+/// returns the full path of the wrapped AlembicIFaceSet
+public String AlembicFaceSetReader.getPath() {
+  return this._faceset.asIObject().getFullName();
+}
+
+/// returns true if this reader wraps a valid AlembicIFaceSet
+public Boolean AlembicFaceSetReader.valid() {
+  if(!this._faceset.valid())
+    return false;
+  return this.parent.valid();
+}
+
+/// clears all pointers and releases all alembic containers
+public AlembicFaceSetReader.reset!() {
+  this._faceset.reset();
+  this._schema.reset();
+  this._sample = null;
+  this._faces.resize(0);
+  this._bounds = Box3();
+}
+
+/// returns the number of samples of this reader
+public SInt32 AlembicFaceSetReader.getNumSamples() {
+  return 1;
+}
+
+/// returns the schema of this reader
+public AlembicIFaceSetSchema AlembicFaceSetReader.getSchema() 
+{ 
+  return this._schema; 
+}
+
+/// returns the first (and only) sample used by this reader
+public AlembicIFaceSetSample AlembicFaceSetReader.getSample() 
+{ 
+  return this._sample; 
+}
+
+/// returns the bounds of this object, including all children and this FaceSet, if any
+public Box3 AlembicFaceSetReader.getBounds!(Float64 time, io Boolean isConstant) {
+  isConstant = true;
+  this.readSample(time);
+  return this._bounds;
+}
+
+Box3 AlembicFaceSetReader.getChildBounds!(Float64 time, io Boolean isConstant)
+{
+  return this.getBounds(time, isConstant);
+}
+
+Boolean AlembicFaceSetReader.areChildBoundsConstant()
+{
+  return this.areSelfBoundsConstant();
+}
+
+Box3 AlembicFaceSetReader.getSelfBounds!(Float64 time, io Boolean isConstant)
+{
+  return this.getBounds(time, isConstant);
+}
+
+/// returns true if the bounds are constant
+public Boolean AlembicFaceSetReader.areSelfBoundsConstant() {
+  return true;
+}
+
+/// reads a sample at a given time. this will properly interpolate between samples.
+public SInt32<> AlembicFaceSetReader.readSample!(Float64 time) {
+
+  if(this == null)
+  {
+    Data data;
+    SInt32 result<>(data, 0);
+    return result;
+  }
+
+  if(this._faces.size() > 0)
+    return this._faces;  
+
+  this._schema.get(this._sample, AlembicISampleSelector(time));
+  SInt32 faces<> = this._sample.getFaces();
+  this._faces.resize(faces.size());
+  for(Size i=0;i<faces.size();i++)
+    this._faces[i] = faces[i];
+  this._bounds = this._sample.getSelfBounds();
+  return this._faces;
+}

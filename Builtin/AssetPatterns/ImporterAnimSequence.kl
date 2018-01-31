@@ -1,0 +1,82 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+object ImporterAnimSequence
+{
+  String name;
+  ImporterAnimChannel channels[];
+};
+
+function ImporterAnimSequence(String name, Ref<ImporterObject> subjects[], Boolean splitTransforms, Boolean addGlobalTransforms, ImporterContext ctxt)
+{
+  this.name = name;
+  this.addChannels(subjects, splitTransforms, addGlobalTransforms, ctxt);
+}
+
+function ImporterAnimSequence.addChannels!(Ref<ImporterObject> subjects[], Boolean splitTransforms, Boolean addGlobalTransforms, ImporterContext ctxt)
+{
+  for(Size i=0;i<subjects.size();i++)
+  {
+    Ref<ImporterObject> subject = subjects[i];
+    String props[] = subject.getPropertyNames();
+    for(Size j=0;j<props.size();j++)
+    {
+      if(subject.isPropertyConstant(props[j]))
+        continue;
+      String propType = subject.getPropertyType(props[j]);
+      if(propType != 'Scalar' &&
+        propType != 'Float32' &&
+        propType != 'Integer' &&
+        propType != 'SInt32' &&
+        propType != 'Vec2' &&
+        propType != 'Vec3' &&
+        propType != 'Quat' &&
+        propType != 'Xfo' &&
+        propType != 'Mat44' &&
+        propType != 'Color')
+        continue;
+
+      if((propType == 'Mat44' || propType == 'Xfo') && splitTransforms)
+      {
+        this.channels.push(ImporterAnimChannel(subject, props[j], 'tr', ctxt));
+        this.channels.push(ImporterAnimChannel(subject, props[j], 'ori', ctxt));
+        this.channels.push(ImporterAnimChannel(subject, props[j], 'sc', ctxt));
+        this.channels.push(ImporterAnimChannel(subject, props[j], 'sh', ctxt));
+      }
+      else
+      {
+        this.channels.push(ImporterAnimChannel(subject, props[j], '', ctxt));
+      }
+    }
+
+    if(addGlobalTransforms)
+    {
+      if(subject.hasProperty('localTransform'))
+      {
+        Ref<ImporterObject> subjectParent = subject;
+        Boolean isConstant = true;
+        while(subjectParent != null && isConstant)
+        {
+          isConstant = subjectParent.isPropertyConstant('localTransform');
+          subjectParent = subjectParent.getParent();
+        }
+
+        if(!isConstant)
+        {
+          if(splitTransforms)
+          {
+            this.channels.push(ImporterAnimChannel(subject, 'globalTransform', 'tr', ctxt));
+            this.channels.push(ImporterAnimChannel(subject, 'globalTransform', 'ori', ctxt));
+            this.channels.push(ImporterAnimChannel(subject, 'globalTransform', 'sc', ctxt));
+            this.channels.push(ImporterAnimChannel(subject, 'globalTransform', 'sh', ctxt));
+          }
+          else
+          {
+            this.channels.push(ImporterAnimChannel(subject, 'globalTransform', '', ctxt));
+          }
+        }
+      }
+    }
+  }
+}

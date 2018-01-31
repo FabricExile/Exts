@@ -1,0 +1,235 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+    "uiNodeColor" : "{\n  \"r\" : 132,\n  \"g\" : 106,\n  \"b\" : 97\n  }",
+    "uiTooltip" : "Merges all shapes using the same key. You can use the block inside of the function to define the key to use per object. The key might be a material name, or a layer name..."
+    },
+  "title" : "MergeShapes",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Execute" : {}
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "importer",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Importer" : null
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Importer"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "objects",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "ImporterObject[]" : []
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Ref<ImporterObject>[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "defaultValues" : {
+        "ImporterObject[]" : []
+        },
+      "execPortType" : "Out",
+      "typeSpec" : "Ref<ImporterObject>[]"
+      }
+    ],
+  "blocks" : [
+    {
+      "objectType" : "ExecBlock",
+      "metadata" : {
+        "uiGraphPos" : "{\"x\":0.0,\"y\":0.0}"
+        },
+      "name" : "merge",
+      "ports" : [
+        {
+          "objectType" : "ExecBlockPort",
+          "name" : "mergeGroup",
+          "nodePortType" : "Out",
+          "outsidePortType" : "Out",
+          "typeSpec" : "String"
+          },
+        {
+          "objectType" : "ExecBlockPort",
+          "name" : "index",
+          "nodePortType" : "In",
+          "outsidePortType" : "In",
+          "typeSpec" : "Index"
+          },
+        {
+          "objectType" : "ExecBlockPort",
+          "name" : "count",
+          "nodePortType" : "In",
+          "outsidePortType" : "In",
+          "typeSpec" : "Size"
+          },
+        {
+          "objectType" : "ExecBlockPort",
+          "name" : "importer",
+          "nodePortType" : "IO",
+          "outsidePortType" : "IO",
+          "typeSpec" : "Importer"
+          },
+        {
+          "objectType" : "ExecBlockPort",
+          "name" : "inObject",
+          "nodePortType" : "In",
+          "outsidePortType" : "In",
+          "typeSpec" : "Ref<ImporterObject>"
+          }
+        ],
+      "defaultExec" : {
+        "objectType" : "Graph",
+        "title" : "",
+        "ports" : [],
+        "fixedPorts" : [
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "mergeGroup",
+            "nodePortType" : "In",
+            "outsidePortType" : "Out"
+            },
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "index",
+            "nodePortType" : "Out",
+            "outsidePortType" : "In"
+            },
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "count",
+            "nodePortType" : "Out",
+            "outsidePortType" : "In"
+            },
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "importer",
+            "nodePortType" : "IO",
+            "outsidePortType" : "IO"
+            },
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "inObject",
+            "nodePortType" : "Out",
+            "outsidePortType" : "In"
+            }
+          ],
+        "extDeps" : {},
+        "nodes" : [
+          {
+            "objectType" : "Inst",
+            "metadata" : {
+              "uiGraphPos" : "{\"x\":832.0,\"y\":384.0}"
+              },
+            "name" : "path_1",
+            "ports" : [
+              {
+                "objectType" : "InstPort",
+                "name" : "exec",
+                "nodePortType" : "IO"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "this",
+                "nodePortType" : "In"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "result",
+                "nodePortType" : "Out"
+                }
+              ],
+            "executable" : "Fabric.Compounds.IO.Importer.Object.instancePath",
+            "presetGUID" : "3DE8FDC8F5EED35A200E0EA4860C0478"
+            }
+          ],
+        "connections" : {
+          "inObject" : [
+            "path_1.this"
+            ],
+          "path_1.result" : [
+            "mergeGroup"
+            ]
+          }
+        }
+      }
+    ],
+  "extDeps" : {
+    "AssetPatterns" : "*"
+    },
+  "presetGUID" : "634E0C10CECB238AF3146D598B04801E",
+  "code" : "dfgEntry {
+
+  if(objects.size() == 0)
+    return;
+
+  Ref<ImporterObject> groups[String][];
+  
+  for(Size i=0;i<objects.size();i++) {
+    if(objects[i] == null)
+      continue;
+    if(objects[i].getType() != 'Shape')
+      continue;
+    
+    String mergeGroup = dfgPullBlockPort('merge.mergeGroup', i, objects.size(), importer, objects[i]);
+    Ref<ImporterObject> group[];
+    group = groups.get(mergeGroup, group);
+    group.push(objects[i]);
+    groups[mergeGroup] = group;
+  }
+  
+  for(key in groups) {
+    Ref<ImporterObject> group[] = groups[key];
+    if(group.size() == 1) {
+      result.push(group[0]);
+      continue;
+    }
+    
+    Ref<ImporterTransform> first = group[0];
+    String id;
+    for(Size i=0;i<group.size();i++) {
+      if(i > 0)
+        id += '-';
+      id += group[i].getID();
+    }
+    
+    SInt32 suffix = 1;
+    Ref<ImporterShape> shape = importer.getOrCreateObject('Shape', id, first.getPath()+'Merged');
+    while(shape.getID() != id) {
+      suffix++;
+      shape = importer.getOrCreateObject('Shape', id, first.getPath()+'Merged'+suffix);
+    }
+
+    Ref<ImporterLayer> layer = first.getLayer(first.defaultContext);
+    if(layer) {
+      shape.setLayer(layer);
+    }
+    
+    shape.setAsMerged(group);
+    result.push(shape);
+  }
+
+  // add the non-shapes at the end
+  for(Size i=0;i<objects.size();i++) {
+    if(objects[i] == null)
+      continue;
+    if(objects[i].getType() != 'Shape')
+      result.push(objects[i]);
+  }
+}
+"
+  }

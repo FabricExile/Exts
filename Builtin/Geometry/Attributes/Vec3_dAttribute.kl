@@ -1,0 +1,124 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  Specialized GeometryAttribute containing one Vec3_d per element.
+  Values can be accessed with the Vec3_dAttribute.values array member, but its usage might be restricted by the owner Geometry.
+*/
+object Vec3_dAttribute : BaseAttribute {
+  /// Values array container
+  Vec3_d values[];
+
+  /// If true, IntegerAttribute.linearCombine and IntegerAttribute.getLinearCombination
+  /// will normalize the resulting value.
+  Boolean normalize;
+};
+
+function StatisticRecord[] Vec3_dAttribute.getStatistics() {
+  StatisticRecord stats[] = this.parent.getStatistics();
+  stats.push( StatisticRecord( Statistic_MemoryUsage, this.values.size()*3*8 ) );
+  return stats;
+}
+
+/// \dfgPresetOmit
+Vec3_dAttribute.cloneMembersTo( io Vec3_dAttribute that ) {
+  //The difference with default clone() is that new.parent.autoStat will point to 'new' (from constructor)
+  this.parent.cloneMembersTo(that);//Copies all but the values
+  that.copyFrom(this);
+  that.normalize = this.normalize;
+}
+
+inline Vec3_dAttribute.resize!(Size count) {
+  this.parent.resize(count);
+  this.values.resize(count);
+}
+
+inline Boolean Vec3_dAttribute.checkConsistency() {
+  if( this.size() != this.values.size() )
+    return false;
+  return this.parent.checkConsistency();
+}
+
+inline Data Vec3_dAttribute.data() {
+  return this.values.data();
+}
+
+inline UInt32 Vec3_dAttribute.getElementsMemType( ) {
+  return this.values.getElementsMemType();
+}
+
+inline Vec3_dAttribute.convertToGPU!( ) {
+  this.values.convertToGPU();
+  this.incrementVersion();
+}
+
+inline Vec3_dAttribute.convertToCPU!( ) {
+  this.values.convertToCPU();
+  this.incrementVersion();
+}
+
+inline Vec3_dAttribute.copyValue!( Size sourceIndex, Size targetIndex ) {
+  this.values[targetIndex] = this.values[sourceIndex];
+}
+
+inline Vec3_dAttribute.copyValue!( Ref<Object> sourceAttr, Size sourceIndex, Size targetIndex ) {
+  Ref<Vec3_dAttribute> source = sourceAttr;
+  this.values[targetIndex] = source.values[sourceIndex];
+}
+
+inline Vec3_dAttribute.copyFrom!( Ref<Object> otherAttr ) {
+  this.parent.copyFrom( otherAttr );
+  Ref<Vec3_dAttribute> other = otherAttr;
+  other.values.copyTo(this.values);
+}
+
+/** Returns a linear combination of source values. If QuatAttribute.normalize, the resulting value will be normalized.
+    \param sourceIndices The array of source indices
+    \param sourceWeights The array of source weights, which need to correspond to each sourceIndices. Normally the sum of the weights should be 1.0
+*/
+inline Vec3_d Vec3_dAttribute.getLinearCombination( LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights ) {
+  Vec3_d result;
+  for( Size i = 0; i < sourceIndices.size(); ++i )
+    result += this.values[sourceIndices.get(i)]*sourceWeights.get(i);
+  if(this.normalize)
+    result = result.unit_safe();
+  return result;
+}
+
+inline Vec3_dAttribute.linearCombine!( Ref<Object> sourceAttr, LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights, Size targetIndex ) {
+  Ref<Vec3_dAttribute> source = sourceAttr;
+  this.values[targetIndex] = source.getLinearCombination( sourceIndices, sourceWeights );
+}
+
+inline Vec3_dAttribute.setFromScalar!( Size index, LocalL16ScalarArray value ) {
+  this.values[index].x = value.get(0);
+  this.values[index].y = value.get(1);
+  this.values[index].z = value.get(2);
+}
+
+inline Size Vec3_dAttribute.getScalarValueSize() {
+  return 3;
+}
+
+inline Boolean Vec3_dAttribute.equalValues( Size index1, Size index2 ) {
+  return this.values[index1].equal( this.values[index2] );
+}
+
+function String Vec3_dAttribute.valueDesc( Size index ) {
+  return String(this.values[index]);
+}
+
+require Util;
+function String Vec3_dAttribute.unitTestPrint( Size index ) {
+  return unitTestPrint(this.values[index]);
+}
+
+function String Vec3_dAttribute.truncateDecimalsPrint( Size index, UInt32 n ) {
+  return truncateDecimalsPrint(this.values[index], n);
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+function Ref<Vec3_dAttribute> GeometryAttributes.getOrCreateVec3_dAttribute!( String name ) {
+  return this.getOrCreateAttribute( name, Vec3_dAttribute );
+}

@@ -1,0 +1,198 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 2.0.1
+
+  :kl-ref:`LegacyBaseTool` is a special :kl-ref:`LegacyBaseHandler` that implements :kl-ref:`Tool
+  Custom tools should specialize this class. 
+ 
+  \seealso :kl-ref:`LegacyBaseHandler`, :kl-ref:`Tool`, :kl-ref:`LegacyToolTarget`, :kl-ref:`LegacyToolDispatcher`.
+
+  \dfgPresetOmit
+*/ 
+object LegacyBaseTool : LegacyBaseHandler, LegacyTool{
+  /// Tool target.
+  protected LegacyToolTarget target;
+  /// True if the tool is performing an action.
+  protected Boolean performing;
+};
+
+/// Initializes a LegacyBaseTool.
+/// \param target Tool target.
+/// \param enableKey The key that enables/disables the tool.
+/// \param exclusivity Handler exclusivity.
+/// \param isIndependent If true, independent tool.
+/// \param takeAllEvents If true, force this tool to get all the events.
+/// \param isOwnedByDispatcher If true, owned by the dispatcher when registered.
+protected LegacyBaseTool.init!(
+  LegacyToolTarget target,
+  Key enableKey,
+  LegacyHandlerExclusivity exclusivity,
+  Boolean isIndependent, 
+  Boolean takeAllEvents, 
+  Boolean isOwnedByDispatche) 
+{
+  this.setTarget(target);
+  Ref<LegacyBaseToolTarget> baseTarget = this.target;
+  baseTarget.init(this);
+  this.parent.init(
+    enableKey, 
+    exclusivity, 
+    isIndependent,
+    takeAllEvents,
+    isOwnedByDispatche);
+}
+
+/// Initializes a LegacyBaseTool, no-independent and doesn't take all the events.
+/// \param target Tool target.
+/// \param enableKey The key that enables/disables the tool.
+/// \param exclusivity Handler exclusivity.
+/// \param isOwnedByDispatcher If true, owned by the dispatcher when registered.
+protected LegacyBaseTool.init!(
+  LegacyToolTarget target,
+  Key enableKey,
+  LegacyHandlerExclusivity exclusivity,
+  Boolean isOwnedByDispatche) 
+{
+  this.init(
+    target,
+    enableKey, 
+    exclusivity, 
+    false,
+    false,
+    isOwnedByDispatche);
+}
+
+/// Implementation of :kl-ref:`Tool`.
+LegacyBaseTool.setTarget!( LegacyToolTarget target) {
+  this.target = target;
+}
+
+/// Implementation of :kl-ref:`Tool`.
+Ref<LegacyToolTarget> LegacyBaseTool.getTarget() {
+  return this.target;
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyBaseTool.enable!() {
+  this.parent.enable();
+  this.updateFromTarget();
+  this.show();
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyHandlerDescription LegacyBaseTool.getDescription() {
+  LegacyBaseHandlerDescription descIn = this.parent.getDescription();
+  ToolDescription desc(descIn);
+  return desc;
+}
+
+/// If enabled with a valid target, will show and return true. Otherwise, will hide and return false.
+/// This is a service that can be called at the beginning of updateFromTarget() if the tool is shown only
+/// with valid targets. In that case, the updateFromTarget() body might be executed only if true is returned.
+protected Boolean LegacyBaseTool.showIfTarget!() {
+  if( this.enabled ) 
+  {
+    Ref<LegacyToolTarget> target = this.getTarget();
+    if(target.isValid()) 
+    {
+      this.show();
+      return true;
+    } 
+    else 
+    {
+      this.hide();
+      return false;
+    }
+  } 
+  else return false;
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyBaseTool.disable!() {
+  this.parent.disable();
+  this.hide();
+}
+
+/// Implementation of :kl-ref:`Tool`.
+/// To override.
+LegacyBaseTool.show!() {}
+
+/// Implementation of :kl-ref:`Tool`.
+/// To override.
+LegacyBaseTool.hide!() {}
+
+/// Implementation of :kl-ref:`Tool`.
+/// To overwrite.
+LegacyBaseTool.activate!() {}
+
+/// Implementation of :kl-ref:`Tool`.
+/// To override.
+LegacyBaseTool.deActivate!() {}
+ 
+/// Implementation of :kl-ref:`Tool`.
+/// To override.
+protected LegacyBaseTool.updateFromTarget!() {}
+
+/// Implementation of :kl-ref:`Tool`.
+/// To override.
+protected LegacyBaseTool.press!(io MouseEvent mouseEvent) {
+  this.performing = true;
+  this.activate();
+  this.target.registerValue();
+  mouseEvent.accept();
+}
+
+/// Implementation of :kl-ref:`Tool`.
+/// To override.
+protected LegacyBaseTool.move!(io MouseEvent mouseEvent) {
+  mouseEvent.accept();
+}
+
+/// Implementation of :kl-ref:`Tool`.
+/// To override.
+protected LegacyBaseTool.release!(io MouseEvent mouseEvent) {
+  this.performing = false;
+  this.target.bakeValue();
+  this.deActivate();
+  mouseEvent.accept();
+}
+
+/// Returns true if this tool is currently the focus of an action (eg: mouse drag).
+Boolean LegacyBaseTool.isPerforming() {
+  return this.performing;
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+/// To override.
+LegacyBaseTool.onEvent!(io Event event) {
+
+  // Mouse event propagation.
+  if(this.isEnabled() && event.eventType() != Event_KeyPress)
+  {
+    MouseEvent mouseEvent = event;
+    if(mouseEvent)
+    {
+      if(mouseEvent.eventType() == Event_MouseButtonPress) 
+        this.press(mouseEvent);
+      else if(event.eventType() == Event_MouseMove) 
+        this.move(mouseEvent);
+      else if(event.eventType() == Event_MouseButtonRelease) 
+        this.release(mouseEvent);
+    }
+  }
+
+  // Enable/Disable the tool
+  else if(event.eventType() == Event_KeyPress)
+  {
+    KeyEvent keyEvent = event;
+    if(!keyEvent.isAutoRepeat && keyEvent.key == this.enableKey) 
+    {
+      if(this.isEnabled()) this.disable();
+      else this.enable();
+      event.setAccepted(true);
+    }
+  } 
+}

@@ -1,0 +1,1830 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Containers;
+
+////////////////////////////////////////////////
+/// Internal helpers & data iterators
+
+/// \internal
+const UInt32 PolygonMesh_borderDataBit = 1;
+/// \internal
+const UInt32 PolygonMesh_unsharedAttributesBit = 2;
+/// \internal
+const UInt32 PolygonMesh_numExtendedBits = 2;
+/// \internal
+const UInt32 PolygonMesh_extendedBitsMask = 3;
+
+/// \internal
+const UInt32 PolygonMesh_minUnorderedPointCountPerThreadBatch = 100;
+
+/// \internal
+inline UInt32 PolygonMesh_GetUnsharedAttributeIndex( UInt32 entry ) {
+  return entry >> PolygonMesh_numExtendedBits;
+}
+
+/// \internal
+inline PolygonMesh_SetUnsharedAttributeIndex( io UInt32 entry, UInt32 index ) {
+  entry = (index << PolygonMesh_numExtendedBits) | (entry & PolygonMesh_extendedBitsMask);
+}
+
+/// \internal
+inline PolygonMeshTopology.validatePolygonOffset?( UInt32 polygon, UInt32 polygonOffset, String label ) {
+  UInt32 size = this.getPolygonSize(polygon);
+  if( polygonOffset >= size )
+    throw("PolygonMesh."+label+": offset "+polygonOffset+" out of range for polygon "+polygon+" (size="+size+")");
+}
+
+/// \internal
+inline PolygonMeshTopology.validatePointOffset?( UInt32 point, UInt32 neighborPolygonIndex, UInt32 pointPolygonCount, String label ) {
+  if( neighborPolygonIndex >= pointPolygonCount )
+    throw("PolygonMesh."+label+": offset "+neighborPolygonIndex+" out of range for point "+point+" (pointPolygonCount="+pointPolygonCount+")");
+}
+
+/// \internal
+inline PolygonMeshTopology.validatePointOffset?( UInt32 point, UInt32 neighborPolygonIndex, String label ) {
+  UInt32 size = this.getPointPolygonCount(point);
+  this.validatePointOffset( point, neighborPolygonIndex, size, label );
+}
+
+//PointIter
+
+/// \internal
+inline DataIter PolygonMesh.getPointIter?( UInt32 point ) {
+  return this.topology.getPointIter( point );
+}
+
+/// \internal
+inline DataIter PolygonMeshTopology.getPointIter?( UInt32 point ) {
+  return this.pointData.getItemIter( point );
+}
+
+/// \internal
+inline UInt32 PolygonMeshTopology.getPointIterIndex?( DataIter pointDataIter ) {
+  return this.pointData.getIndexFromDataIter( pointDataIter );
+}
+
+/// \internal
+inline UInt32 PolygonMeshTopology.getPointIterPolygonCount?( DataIter pointDataIter ) {
+  return this.pointData.getOffset( pointDataIter );
+}
+
+/// \internal
+inline IterOff PolygonMeshTopology.getPointIterPolyIterOff?( DataIter pointDataIter, UInt32 offset ) {
+  return this.pointData.getArrayItemIdxOff( pointDataIter, offset );
+}
+
+/// \internal
+inline DataIter PolygonMeshTopology.getPointIterPolyIter?( DataIter pointDataIter, UInt32 offset ) {
+  return this.pointData.getArrayItemIndex( pointDataIter, offset );
+}
+
+/// \internal
+inline UInt32 PolygonMeshTopology.getPointIterPolygon?( DataIter pointDataIter, UInt32 offset ) {
+  return this.getPolyIterIndex( this.getPointIterPolyIter( pointDataIter, offset ) );
+}
+
+//PolyIter
+
+/// \internal
+inline UInt32 PolygonMeshTopology.getPolyIterPoint?( DataIter polyDataIter, UInt32 offset ) {
+  UInt32 ptIter = this.polyData.getArrayItemIndex( polyDataIter, offset );
+  return this.getPointIterIndex( ptIter );
+}
+
+/// \internal
+inline DataIter PolygonMeshTopology.getPolygonIter?( UInt32 poly ) {
+  return this.polyData.getItemIter( poly );
+}
+
+/// \internal
+inline UInt32 PolygonMeshTopology.getPolyIterSize?( DataIter polyDataIter ) {
+  return this.polyData.getOffset( polyDataIter );
+}
+
+/// \internal
+inline UInt32 PolygonMeshTopology.getPolyIterIndex?( DataIter polyDataIter ) {
+  return this.polyData.getIndexFromDataIter( polyDataIter );
+}
+
+/// \internal
+function IterOff PolygonMeshTopology.getPolyIterPointIterOff?( DataIter polyDataIter, UInt32 offset ) {
+  return this.polyData.getArrayItemIdxOff( polyDataIter, offset );
+}
+
+/// \internal
+inline DataIter PolygonMeshTopology.getPolyIterPointIter?( DataIter polyDataIter, UInt32 offset ) {
+  return this.polyData.getArrayItemIndex( polyDataIter, offset );
+}
+
+/// \internal
+inline DataIter PolygonMeshTopology.getPolyIterPrevPointIter?( DataIter polyDataIter, UInt32 offset ) {
+  UInt32 size = this.getPolyIterSize(polyDataIter);
+  UInt32 nextOff = PrevOff(offset, size);
+  return this.polyData.getArrayItemIndex( polyDataIter, nextOff );
+}
+
+/// \internal
+inline DataIter PolygonMeshTopology.getPolyIterNextPointIter?( DataIter polyDataIter, UInt32 offset ) {
+  UInt32 size = this.getPolyIterSize(polyDataIter);
+  UInt32 nextOff = NextOff(offset, size);
+  return this.polyData.getArrayItemIndex( polyDataIter, nextOff );
+}
+
+
+/// Returns the index of a point within a polygon, or InvalidIndex if not found.
+/// \internal
+inline Size PolygonMeshTopology.getPolyIterPointIndex?( DataIter polyIter, Size point ) {
+  DataIter pointIter = this.getPointIter( point );
+  Size size = this.getPolyIterSize( polyIter );
+  for( Size i = 0; i < size; ++i ) {
+    if( pointIter == this.polyData.getArrayItemIndex( polyIter, i ) )
+      return i;
+  }
+  return InvalidIndex;
+}
+
+
+/// \internal
+function PolygonMesh.insertPointAttributes!( Size prevNb, Size nbToAdd ) {
+  Size prevAttributesSize = this.attributes.size();
+  this.resizeAttributesInternal( prevAttributesSize + nbToAdd );
+
+  //If there is some unshared attributes, move them up
+  if( prevAttributesSize != prevNb ) {
+    Size prevNbUnshared = this.topology.unsharedAttrToPointSlidingArray.size() - this.topology.unsharedAttrToPointSlidingArrayBegin;
+    this.topology.unsharedAttrToPointSlidingArray.resize( this.topology.unsharedAttrToPointSlidingArray.size() + nbToAdd );
+
+    Size nbToShuffle = nbToAdd;
+    if( nbToShuffle > prevNbUnshared )
+      nbToShuffle = prevNbUnshared;
+
+    Size targetStart = (prevAttributesSize+nbToAdd)-nbToShuffle;
+    for( Size i = nbToShuffle; i--; )//Loop down to support potential data overlap
+      this.moveAttributeAndIndex(prevNb+i, targetStart+i, prevNb);
+    this.topology.unsharedAttrToPointSlidingArrayBegin += nbToAdd;
+    this.recompactSlidingArrayIfRequired();
+  }
+}
+
+/// \internal
+inline PolygonMesh.resizeAttributesInternal!( Size newSize ) {
+  if( newSize != this.attributes.size() ) {
+    this._currentlyResizing = true;
+    ++this.attributeSharingVersion;
+    this.attributes.resize( newSize );
+    for( Size i = 0; i < this.attrInitializedBits.size(); ++i )
+      this.attrInitializedBits[i].vertexAttrInitialized.resize( newSize );
+    this._currentlyResizing = false;
+  }
+}
+
+/**
+  Returns true if values are the same (shared, unsplit) for all point polygon neighbors, for all attributes.
+  \seealso :ref:`polygonmeshattributes`, PolygonMesh.isPointAttributeUniform
+  \category attributes
+*/
+inline Boolean PolygonMesh.arePointIterAttributesUniform?( DataIter pointIter ) {
+  Boolean extendedBit;
+  UInt32 count = this.topology.pointData.getOffsetAndBit( pointIter, extendedBit );
+  DataIter unsharedAttributeDataIter = this.topology.getUnsharedAttributeDataIter(pointIter, extendedBit, count);
+  return unsharedAttributeDataIter == 0;
+}
+
+/// \internal
+inline PolygonMeshTopology.updateOtherItemIndex!( ArrayOffsetAllocator source, DataIter itemIter, UInt32 itemOffset, io ArrayOffsetAllocator other ) {
+  IdxOff otherIdxOff = source.getArrayItemIdxOff(itemIter, itemOffset);
+  DataIter otherIter = other.getArrayItemIter(otherIdxOff);
+  other.updateIndexOfIdxOff( otherIter, itemIter );
+}
+
+
+/// \internal
+inline PolygonMeshTopology.updateOtherItemIdxOff!( ArrayOffsetAllocator source, DataIter itemIter, UInt32 itemOffset, io ArrayOffsetAllocator other ) {
+  IdxOff otherIdxOff = source.getArrayItemIdxOff(itemIter, itemOffset);
+  DataIter otherIter = other.getArrayItemIter(otherIdxOff);
+  other.updateIdxOff( otherIter, itemIter, itemOffset );
+}
+
+/// \internal
+function DataIter PolygonMeshTopology.resizePointArrayAndRemapPolygons!( UInt32 ptIndex, UInt32 pointDataIter, UInt32 remapCount, UInt32 prevExtraUInt32, UInt32 newCount, UInt32 newExtraUInt32, UInt32 reserveCount ) {
+  UInt32 newPointDataIter = this.pointData.resizeArray( ptIndex, prevExtraUInt32, newCount, newExtraUInt32, reserveCount );
+  if( pointDataIter != newPointDataIter ) {
+    for( Size j = 0; j < remapCount; ++j )
+      this.updateOtherItemIndex( this.pointData, newPointDataIter, j, this.polyData );
+  }
+  return newPointDataIter;
+}
+
+
+/// \internal
+function PolygonMesh.recompactItemIndices!( io ArrayOffsetAllocator toRecompact, io ArrayOffsetAllocator other, Boolean isPoints  ) {
+ArrayOffsetAllocatorRecompactData replaceDeletedComp[];
+  UInt32 prevSize = toRecompact.itemCount();
+  replaceDeletedComp = toRecompact.recompactItemIndices();
+  UInt32 newSize = toRecompact.itemCount();
+
+  if( newSize != prevSize ) {
+    for( Size i = 0; i < replaceDeletedComp.size(); ++i ) {
+      UInt32 to = replaceDeletedComp[i].newItemIndex;
+
+      DataIter arrayDataIter = toRecompact.getItemIter(to);
+      UInt32 size = toRecompact.arrayDataIterSize( arrayDataIter );
+
+      for( Size j = 0; j < size; ++j )
+        this.topology.updateOtherItemIndex( toRecompact, arrayDataIter, j, other );
+      if( isPoints )
+        this.updateAttributeIndex(to, replaceDeletedComp[i].prevItemIndex, to, prevSize, true);
+    }
+    this._incrementStructureVersion();
+
+    if( isPoints ) {
+      this.unorderedPoints.resize(newSize);
+
+      UInt32 prevAttrSize = this.attributes.size();
+      UInt32 numDeleted = prevSize - newSize;
+      UInt32 numUnsharedAttributes = prevAttrSize - prevSize;
+      if( numUnsharedAttributes ) {
+        //There are some unshared attributes: these will need to be recompated to fill the gap
+        //left by deleted point items.
+        Size prevNumUnsharedEntries = this.topology.unsharedAttrToPointSlidingArray.size() - this.topology.unsharedAttrToPointSlidingArrayBegin;
+
+        //First, insert some space at the front of the sliding array.
+        //This logically converts the old point attribute indices to free unshared attribute indices.
+        if( this.topology.unsharedAttrToPointSlidingArrayBegin < numDeleted ) {
+          //Make this exponential based on free portion: else we might recopy too often (not scalable).
+          UInt32 nbToPushFront = numDeleted - this.topology.unsharedAttrToPointSlidingArrayBegin;
+          UInt32 prevUnsharedAttrSlidingArraySize = this.topology.unsharedAttrToPointSlidingArray.size();
+          UInt32 nbFromPortion = prevUnsharedAttrSlidingArraySize / this.minFreeDataPortionDiviserToRecompact;
+          if( nbToPushFront < nbFromPortion )
+            nbToPushFront = nbFromPortion;
+          this.topology.unsharedAttrToPointSlidingArray.resize( prevUnsharedAttrSlidingArraySize + nbToPushFront );
+          for( Size i = prevUnsharedAttrSlidingArraySize; i--; )//Loop down to support potential data overlap
+            this.topology.unsharedAttrToPointSlidingArray[i + nbToPushFront] = this.topology.unsharedAttrToPointSlidingArray[i];
+          this.topology.unsharedAttrToPointSlidingArrayBegin += nbToPushFront;
+        }
+        this.topology.unsharedAttrToPointSlidingArrayBegin -= numDeleted;
+
+        //Now move last unshared entries to fill the gap left by old points
+        Size numToShuffle = numDeleted;
+        if( numToShuffle > prevNumUnsharedEntries )
+          numToShuffle = prevNumUnsharedEntries;
+
+        for( Size i = 0; i < numToShuffle; ++i )
+          this.moveAttributeAndIndex(prevAttrSize-numToShuffle+i, prevSize-numDeleted+i);
+
+        this.topology.unsharedAttrToPointSlidingArray.resize( this.topology.unsharedAttrToPointSlidingArrayBegin + numUnsharedAttributes );
+      }
+      this.resizeAttributesInternal(prevAttrSize-numDeleted);
+    }
+  }
+}
+
+
+/// \internal
+function PolygonMesh.recompactDataIfRequired!( io ArrayOffsetAllocator toRecompact, io ArrayOffsetAllocator other, Boolean isPoints ) {
+  if( toRecompact.data.unusedSize()*4 > this.minFreeDataSizeToRecompact && toRecompact.data.unusedSize() * this.minFreeDataPortionDiviserToRecompact > toRecompact.data.size() ) {
+    UInt32 oldIndexToNewDataIndex[];
+    toRecompact.recompactData( oldIndexToNewDataIndex );
+    if( oldIndexToNewDataIndex.size() ) {//should be...
+      Size count = toRecompact.itemCount();
+      for(Size i = 0; i < count; ++i) {
+
+        DataIter arrayDataIter = toRecompact.getItemIter(i);
+
+        UInt32 size = toRecompact.arrayDataIterSize( arrayDataIter );
+
+        for( Size j = 0; j < size; ++j ) {
+          DataIter elementDataIter = toRecompact.getArrayItemIter( arrayDataIter, j );
+          toRecompact.remapIdxOff( elementDataIter, oldIndexToNewDataIndex );
+
+          IdxOff ptIdxOff = toRecompact.getIdxOff( elementDataIter );
+
+          DataIter otherElementDataIter = other.getArrayItemIter(ptIdxOff);
+          UInt32 oldDataIter = other.getIndex(otherElementDataIter);
+          UInt32 newDataIter = oldIndexToNewDataIndex[oldDataIter];
+
+          if( oldDataIter != newDataIter )
+            other.updateIndexOfIdxOff(otherElementDataIter, newDataIter);
+        }
+      }
+    }
+  }
+}
+
+
+/// \internal
+function PolygonMeshTopology.remapAppendedIterData!( io ArrayOffsetAllocator toRemap, Size firstItem, Size firstData, ArrayOffsetAllocator other, Size otherFirstItem, Size otherFirstData ) {
+  Size lastItem = toRemap.itemCount();
+  for( Size i = firstItem; i < lastItem; ++i ) {
+
+    DataIter arrayDataIter = toRemap.getItemIter(i);
+    UInt32 size = toRemap.arrayDataIterSize( arrayDataIter );
+
+    for( Size j = 0; j < size; ++j ) {
+      DataIter elementDataIter = toRemap.getArrayItemIter( arrayDataIter, j );
+      toRemap.remapIdxOff2( elementDataIter, firstData );
+
+      UInt32 index = toRemap.getIndex( elementDataIter );
+      toRemap.updateIndexOfIdxOff( elementDataIter, index+otherFirstData );
+    }
+  }
+}
+
+/// \internal
+inline PolygonMesh.markUnorderedPoint!( UInt32 index ) {
+  if( !this.unorderedPoints.getThenSet(index) )
+    ++this.unorderedPointsCount;
+}
+
+
+/// \internal
+inline PolygonMesh.assertPointPolygonsAreOrdered?( UInt32 point ) {
+  if( this.maintainOrderedPointPolygons && this.unorderedPointsCount != 0 && this.unorderedPoints.get(point) )
+    throw("point order is out of date for point "+point+": need to call endStructureChanges() or updatePointPolygonOrder(point) or updatePointPolygonsOrder()");
+}
+
+
+/// \internal
+inline DataIter PolygonMeshTopology.getBorderDataIter(DataIter ptIter, Boolean extendedBit, UInt32 count) {
+  if(extendedBit) {
+    DataIter iter = this.pointData.getArrayExtraUInt32Iter(ptIter, count, 0);
+    UInt32 extendedValue = this.pointData.data.data[iter];
+    if( extendedValue & PolygonMesh_borderDataBit ) {
+      if( extendedValue & PolygonMesh_unsharedAttributesBit )
+        return iter+count;
+      else
+        return iter;
+    }
+  }
+  return 0;
+}
+
+/// \internal
+inline DataIter PolygonMeshTopology.getUnsharedAttributeDataIter(DataIter ptIter, Boolean extendedBit, UInt32 count) {
+  if(extendedBit) {
+    DataIter iter = this.pointData.getArrayExtraUInt32Iter(ptIter, count, 0);
+    UInt32 extendedValue = this.pointData.data.data[iter];
+    if( extendedValue & PolygonMesh_unsharedAttributesBit )
+      return iter;
+  }
+  return 0;
+}
+
+/// \internal
+inline PolygonMeshTopology.getBorderInfo?(DataIter borderDataIter, UInt32 offset, io Boolean precededByBorder, io Boolean atClosedWingStart) {
+  if(borderDataIter==0) {
+    precededByBorder = false;
+    atClosedWingStart = offset == 0;
+  } else {
+    UInt32 bit = offset*2+PolygonMesh_numExtendedBits;
+    precededByBorder = SubBitVectorArray_getBit( this.pointData.data.data, borderDataIter, bit );
+    atClosedWingStart = SubBitVectorArray_getBit( this.pointData.data.data, borderDataIter, bit+1 );
+  }
+}
+
+
+/// \internal
+inline Boolean PolygonMeshTopology.getPrecededByBorder?(DataIter borderDataIter, UInt32 offset) {
+  if(borderDataIter==0)
+    return false;
+  else {
+    UInt32 bit = offset*2+PolygonMesh_numExtendedBits;
+    return SubBitVectorArray_getBit( this.pointData.data.data, borderDataIter, bit );
+  }
+}
+
+
+/// \internal
+inline PolygonMeshTopology.getPointIterBorderInfo?( DataIter pointIter, UInt32 offset, io Boolean precededByBorder, io Boolean atClosedWingStart ) {
+  Boolean extendedBit;
+  UInt32 count = this.pointData.getOffsetAndBit( pointIter, extendedBit );
+  DataIter borderDataIter = this.getBorderDataIter(pointIter, extendedBit, count);
+  this.getBorderInfo(borderDataIter, offset, precededByBorder, atClosedWingStart);
+}
+
+
+/// \internal
+inline Boolean PolygonMeshTopology.isPointIterPolygonAfterBorder?( DataIter pointIter, UInt32 offset ) {
+  Boolean extendedBit;
+  UInt32 count = this.pointData.getOffsetAndBit( pointIter, extendedBit );
+  DataIter borderDataIter = this.getBorderDataIter(pointIter, extendedBit, count);
+  return extendedBit && SubBitVectorArray_getBit( this.pointData.data.data, borderDataIter, offset*2+PolygonMesh_numExtendedBits );
+}
+
+
+/// \internal
+function PolygonMeshTopology.getPointIterPolygonFullBorderInfo?( DataIter pointIter, UInt32 offset, io UInt32 wingOffsetBegin, io UInt32 wingOffsetEnd, io Boolean isClosedWing ) {
+  Boolean extendedBit;
+  UInt32 count = this.pointData.getOffsetAndBit( pointIter, extendedBit );
+  DataIter borderDataIter = this.getBorderDataIter(pointIter, extendedBit, count);
+  if( borderDataIter == 0 ) {
+    wingOffsetBegin = 0;
+    wingOffsetEnd = count;
+    isClosedWing = true;
+  } else {
+    wingOffsetEnd = offset+1;
+    UInt32 bit = wingOffsetEnd*2+PolygonMesh_numExtendedBits;
+    while( wingOffsetEnd < count ) {
+      Boolean border = SubBitVectorArray_getBit( this.pointData.data.data, borderDataIter, bit );
+      Boolean closed = SubBitVectorArray_getBit( this.pointData.data.data, borderDataIter, bit+1 );
+      if( border || closed )
+        break;
+      ++wingOffsetEnd;
+      bit += 2;
+    }
+
+    bit = offset*2+PolygonMesh_numExtendedBits;
+    wingOffsetBegin = offset;
+    while(true) {
+      Boolean border = SubBitVectorArray_getBit( this.pointData.data.data, borderDataIter, bit );
+      Boolean closed = SubBitVectorArray_getBit( this.pointData.data.data, borderDataIter, bit+1 );
+
+      if( border ) {
+        isClosedWing = false;
+        break;
+      } else if(closed) {
+        isClosedWing = true;
+        break;
+      }
+      --wingOffsetBegin;
+      bit -= 2;
+    }
+  }
+}
+
+
+/// \internal
+function PolygonMeshTopology.getPointIterPolygonsBorderInfo?( DataIter pointIter, io LocalIndexArray info ) {
+  Boolean extendedBit;
+  UInt32 count = this.pointData.getOffsetAndBit( pointIter, extendedBit );
+  DataIter borderDataIter = this.getBorderDataIter(pointIter, extendedBit, count);
+  info.resize(count);
+  if( borderDataIter == 0 ) {
+    for(Size i = 0; i < count; ++i )
+      info.set(i,0);
+    if( count )
+      info.set(0,PolygonMesh_atClosedWingStart);
+  } else {
+    UInt32 bit = PolygonMesh_numExtendedBits;
+    for(Size i = 0; i < count; ++i ) {
+      UInt32 value;
+      if( SubBitVectorArray_getBit( this.pointData.data.data, borderDataIter, bit ) )
+        value = PolygonMesh_precededByBorder;
+      else if( SubBitVectorArray_getBit( this.pointData.data.data, borderDataIter, bit+1 ) )
+        value = PolygonMesh_atClosedWingStart;
+      bit += 2;
+    }
+  }
+}
+
+/// \internal
+/// Will return InvalidIndex if crossing a border
+function UInt32 PolygonMeshTopology.getPointIterPrevOffInWingInternal?( DataIter pointIter, UInt32 offset, Size count, DataIter borderDataIter ) {
+  if( borderDataIter ) {
+    Boolean precededByBorder, atClosedWingStart;
+    this.getBorderInfo(borderDataIter, offset, precededByBorder, atClosedWingStart);
+    if( precededByBorder )
+      return InvalidIndex;
+    else if( atClosedWingStart ) {
+      //Need to find the last polygon in wing.
+      UInt32 currOffset = offset+1;
+      while( currOffset < count ) {
+        this.getBorderInfo(borderDataIter, currOffset, precededByBorder, atClosedWingStart);
+        if( precededByBorder || atClosedWingStart )
+          break;
+        ++currOffset;
+      }
+      return currOffset-1;
+    }
+  }
+  return PrevOff( offset, count );
+}
+
+
+/// \internal
+inline UInt32 PolygonMeshTopology.getPointIterPrevOffInWing?( DataIter pointIter, UInt32 offset, Size count, DataIter borderDataIter ) {
+  if( borderDataIter )
+    return this.getPointIterPrevOffInWingInternal( pointIter, offset, count, borderDataIter );
+  else
+    return PrevOff( offset, count );
+}
+
+
+/// \internal
+inline IdxOff PolygonMeshTopology.getPointIterPrevPolyIterOffInWing?( DataIter pointIter, UInt32 offset, Size count, DataIter borderDataIter ) {
+  UInt32 prevOffset = this.getPointIterPrevOffInWing( pointIter, offset, count, borderDataIter );
+  if( prevOffset != InvalidIndex )
+    return this.getPointIterPolyIterOff( pointIter, prevOffset );
+  else
+    return IdxOff();
+}
+
+
+/// \internal
+function UInt32 PolygonMeshTopology.getPointIterNextOffInWingInternal?( DataIter pointIter, UInt32 offset, UInt32 nextOffset, Size count, DataIter borderDataIter ) {
+  Boolean precededByBorder, atClosedWingStart;
+  this.getBorderInfo(borderDataIter, nextOffset, precededByBorder, atClosedWingStart);
+  if( precededByBorder || atClosedWingStart ) {
+    //Need to find the 1st polygon in wing.
+    UInt32 currOffset = offset;
+    while( true ) {
+      this.getBorderInfo(borderDataIter, currOffset, precededByBorder, atClosedWingStart);
+      if( precededByBorder )
+        return InvalidIndex;
+      else if( atClosedWingStart || currOffset == 0 )
+        break;
+      --currOffset;
+    }
+    return currOffset;
+  }
+  return nextOffset;
+}
+function UInt32 PolygonMesh.getPointIterNextOffInWingInternal?( DataIter pointIter, UInt32 offset, UInt32 nextOffset, Size count, DataIter borderDataIter ) {
+  return this.topology.getPointIterNextOffInWingInternal( pointIter, offset, nextOffset, count, borderDataIter );
+}
+
+
+/// \internal
+/// Will return InvalidIndex if crossing a border
+inline UInt32 PolygonMeshTopology.getPointIterNextOffInWing?( DataIter pointIter, UInt32 offset, Size count, DataIter borderDataIter ) {
+  UInt32 nextOffset = NextOff( offset, count );
+  if( borderDataIter )
+    return this.getPointIterNextOffInWingInternal( pointIter, offset, nextOffset, count, borderDataIter );
+  else
+    return nextOffset;
+}
+/// \internal
+inline UInt32 PolygonMesh.getPointIterNextOffInWing?( DataIter pointIter, UInt32 offset, Size count, DataIter borderDataIter ) {
+  return this.topology.getPointIterNextOffInWing( pointIter, offset, count, borderDataIter );
+}
+
+
+/// \internal
+inline IdxOff PolygonMeshTopology.getPointIterNextPolyIterOffInWing?( DataIter pointIter, UInt32 offset, Size count, DataIter borderDataIter ) {
+  UInt32 nextOffset = this.getPointIterNextOffInWing( pointIter, offset, count, borderDataIter );
+  if( nextOffset != InvalidIndex )
+    return this.getPointIterPolyIterOff( pointIter, nextOffset );
+  else
+    return IdxOff();
+}
+/// \internal
+inline IdxOff PolygonMesh.getPointIterNextPolyIterOffInWing?( DataIter pointIter, UInt32 offset, Size count, DataIter borderDataIter ) {
+  return this.topology.getPointIterNextPolyIterOffInWing( pointIter, offset, count, borderDataIter );
+}
+
+
+/// \internal
+inline IdxOff PolygonMeshTopology.getPolyIterAdjacentPolyIterOff?( DataIter polyIter, UInt32 offset ) {
+  IdxOff idxOff = this.getPolyIterPointIterOff(polyIter, offset);
+
+  Boolean extendedBit;
+  UInt32 polCount = this.pointData.getOffsetAndBit( idxOff.index, extendedBit );
+  DataIter borderDataIter = this.getBorderDataIter(idxOff.index, extendedBit, polCount);
+  IdxOff prevPolIdxOff = this.getPointIterPrevPolyIterOffInWing( idxOff.index, idxOff.offset, polCount, borderDataIter );
+  Size prevPolSize = this.getPolyIterSize(prevPolIdxOff.index);
+  DecOff(prevPolIdxOff.offset, prevPolSize);
+  return prevPolIdxOff;
+}
+/// \internal
+inline IdxOff PolygonMesh.getPolyIterAdjacentPolyIterOff?( DataIter polyIter, UInt32 offset ) {
+  IdxOff idxOff = this.topology.getPolyIterPointIterOff(polyIter, offset);
+
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.assertPointPolygonsAreOrdered( this.topology.getPointIterIndex(idxOff.index) );
+  return this.topology.getPolyIterAdjacentPolyIterOff( polyIter, offset );
+}
+
+
+/// \internal
+inline Size PolygonMeshTopology.getPolyIterAdjacentPolyIter?( DataIter polyIter, UInt32 offset ) {
+  IdxOff idxOff = this.getPolyIterPointIterOff(polyIter, offset);
+
+  Boolean extendedBit;
+  UInt32 polCount = this.pointData.getOffsetAndBit( idxOff.index, extendedBit );
+  DataIter borderDataIter = this.getBorderDataIter(idxOff.index, extendedBit, polCount);
+  IdxOff prevPolIdxOff = this.getPointIterPrevPolyIterOffInWing( idxOff.index, idxOff.offset, polCount, borderDataIter );
+  return prevPolIdxOff.index;
+}
+/// \internal
+inline Size PolygonMesh.getPolyIterAdjacentPolyIter?( DataIter polyIter, UInt32 offset ) {
+  IdxOff idxOff = this.topology.getPolyIterPointIterOff(polyIter, offset);
+
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.assertPointPolygonsAreOrdered( this.topology.getPointIterIndex(idxOff.index) );
+  return this.topology.getPolyIterAdjacentPolyIter( polyIter, offset );
+}
+
+
+/// \internal
+inline Boolean PolygonMeshTopology.isPolyIterBorder?( DataIter polyIter, UInt32 offset ) {
+  IdxOff idxOff = this.getPolyIterPointIterOff(polyIter, offset);
+  return this.isPointIterPolygonAfterBorder( idxOff.index, idxOff.offset );
+}
+/// \internal
+inline Boolean PolygonMesh.isPolyIterBorder?( DataIter polyIter, UInt32 offset ) {
+  IdxOff idxOff = this.topology.getPolyIterPointIterOff(polyIter, offset);
+
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.assertPointPolygonsAreOrdered( this.topology.getPointIterIndex(idxOff.index) );
+  return this.topology.isPolyIterBorder( polyIter, offset );
+}
+
+
+/// \internal
+function PolygonMeshTopology.getPointIterSurroundingPointIters?( DataIter ptIter, Boolean includeNonConnectedPts, io LocalL16UInt32Array surroundingPointIters ) {
+  UInt32 i, j;
+  surroundingPointIters.resizeNoClear( 0 );
+
+  Boolean extendedBit;
+  UInt32 count = this.pointData.getOffsetAndBit( ptIter, extendedBit );
+  DataIter borderDataIter = this.getBorderDataIter(ptIter, extendedBit, count);
+
+  for( i = 0; i < count; ++i ) {
+
+    IdxOff polIterOff = this.getPointIterPolyIterOff( ptIter, i );
+    UInt32 size = this.getPolyIterSize( polIterOff.index );
+
+    if( this.getPrecededByBorder(borderDataIter, i) )
+      surroundingPointIters.push( this.getPolyIterPointIter( polIterOff.index, NextOff( polIterOff.offset, size ) ) );
+
+    if( includeNonConnectedPts ) {
+      UInt32 offset = NextOff( polIterOff.offset, size );
+      for( j = 3; j < size; ++j ) {
+        IncOff( offset, size );
+        surroundingPointIters.push( this.getPolyIterPointIter( polIterOff.index, offset ) );
+      }
+    }
+    surroundingPointIters.push( this.getPolyIterPointIter( polIterOff.index, PrevOff( polIterOff.offset, size ) ) );
+  }
+}
+
+
+/// \internal
+inline UInt32 PolygonMesh_getNumBorderDataUInt32( UInt32 pointPolyCount ) {
+  return SubBitVectorArray_getNbRequiredUInt32( pointPolyCount*2 + PolygonMesh_numExtendedBits );
+}
+
+/// updatePointOrdering: updates point ordering, in a threadsafe manner.
+/// Border info bits cannot be added or removed in a thread safe way, so these operations are outputted
+/// so they can be delayed after.
+/// \internal
+function PolygonMeshTopology.updatePointOrdering!( UInt32 ptIndex, io LocalIndexArray newBorderWingDataBits, io Boolean removeBorderWingDataBits, Boolean needsToBeThreadsafe, io Boolean cantBeThreadsafe ) {
+  removeBorderWingDataBits = false;
+  cantBeThreadsafe = false;
+
+  DataIter ptIter = this.getPointIter( ptIndex );
+  Boolean extendedBit;
+  UInt32 count = this.pointData.getOffsetAndBit( ptIter, extendedBit );
+
+  if( count == 0 )
+    return;
+
+  if( count >= 7 && needsToBeThreadsafe ) {
+    cantBeThreadsafe = true;
+    return;
+  }
+
+  LocalIndexArray origPolyIter;
+  LocalIndexArray origPolyOffset;
+  LocalIndexArray origPolyNextPtIter;
+  LocalIndexArray origPolyPrevPtIter;
+  LocalIndexArray polsToProcess;
+  origPolyIter.resize(count);
+  origPolyOffset.resize(count);
+  origPolyNextPtIter.resize(count);
+  origPolyPrevPtIter.resize(count);
+  polsToProcess.resize(count);
+
+  for( Size i = 0; i < count; ++i ) {
+    IterOff polyIterOff = this.getPointIterPolyIterOff( ptIter, i );
+    origPolyIter.set( i, polyIterOff.index );
+    origPolyOffset.set( i, polyIterOff.offset );
+    origPolyPrevPtIter.set( i, this.getPolyIterPrevPointIter( polyIterOff.index, polyIterOff.offset ) );
+    origPolyNextPtIter.set( i, this.getPolyIterNextPointIter( polyIterOff.index, polyIterOff.offset ) );
+    polsToProcess.set( i, i );
+  }
+  LocalIndexArray polyOrder;
+  LocalIndexArray nextPolsToProcess;
+  Boolean prevIterDidnInsert = true;
+  UInt32 wingStart;
+  while( polsToProcess.size() ) {
+    UInt32 start = 0;
+    if( prevIterDidnInsert ) {
+      prevIterDidnInsert = false;
+      start = 1;
+      wingStart = polyOrder.size();
+      polyOrder.push( polsToProcess.get(0) );
+    } else
+      prevIterDidnInsert = true;
+
+    UInt32 nb = polsToProcess.size();
+    UInt32 nbInserted = 0;
+    for( Size i = start; i < nb; ++i ) {
+      UInt32 polIndex = polsToProcess.get(i);
+      UInt32 insertAt = InvalidIndex;
+      for( Size j = 0; j < polyOrder.size(); ++j ) {
+        if( origPolyNextPtIter.get( polIndex ) == origPolyPrevPtIter.get( polyOrder.get( j ) ) )
+          insertAt = j+1;
+        else if( origPolyPrevPtIter.get( polIndex ) == origPolyNextPtIter.get( polyOrder.get( j ) ) )
+          insertAt = j;
+
+        if( insertAt != InvalidIndex ) {
+          prevIterDidnInsert = false;
+          UInt32 polyOrderPrevSize = polyOrder.size();
+          polyOrder.resize( polyOrder.size() + 1 );
+          for( Size k = polyOrderPrevSize; k-- > insertAt; )
+            polyOrder.set( k+1, polyOrder.get( k ) );
+          polyOrder.set( insertAt, polIndex);
+          break;
+        }
+      }
+      if( insertAt == InvalidIndex )
+        nextPolsToProcess.push( polIndex );
+    }
+
+    if( prevIterDidnInsert || nextPolsToProcess.size()==0 ) {
+      UInt32 wingEnd = polyOrder.size()-1;
+      Boolean closedWing;
+      if( origPolyNextPtIter.get( polyOrder.get(wingStart) ) == origPolyPrevPtIter.get( polyOrder.get(wingEnd) ) )
+        closedWing = true;
+      Boolean singleClosedWing = closedWing && wingStart == 0 && wingEnd == count-1;
+      if( !singleClosedWing ) {
+        if( newBorderWingDataBits.size() == 0 ) {
+          newBorderWingDataBits.resize(PolygonMesh_getNumBorderDataUInt32(count));
+          newBorderWingDataBits.set(0, PolygonMesh_borderDataBit);
+        }
+
+        //Pack this info in bits: [openWing0,closedWing0,openWing1,closedWing1,..]
+        UInt32 bitIndex = (wingStart*2) + PolygonMesh_numExtendedBits;
+        UInt32 bitUInt32Index = bitIndex>>5;
+        UInt32 bit = bitIndex&31;
+        UInt32 bits = newBorderWingDataBits.get(bitUInt32Index);
+        if(closedWing)
+          setBit( bits, bit+1 );
+        else
+          setBit( bits, bit );
+        newBorderWingDataBits.set(bitUInt32Index, bits);
+      }
+    }
+    polsToProcess = nextPolsToProcess;
+    nextPolsToProcess.resize(0);
+  }
+
+  //Update iterOffsets. For offsets >=7 (extended data), reuse already existing extended data.
+  //This makes things complex, but the goal is to avoid data allocation, as it would not be thread-safe.
+
+  //First: backup extended poly iters. We reuse origPolyPrevPtIter.
+  for(Size i = 7; i < count; ++i) {
+    DataIter dataIter = this.polyData.getArrayItemIter( origPolyIter.get(i), origPolyOffset.get(i) );
+    origPolyPrevPtIter.set(i, this.polyData.data.data[dataIter]); //Extended data (offset >= 7)
+  }
+  //Second: backup extended point iters. We reuse origPolyNextPtIter.
+  origPolyNextPtIter.resize(0);
+  for(Size i = 0; i < count; ++i) {
+    if( origPolyOffset.get(i) >= 7 ) {
+      DataIter dataIter = this.pointData.getArrayItemIter( ptIter, i );
+      origPolyNextPtIter.push(this.pointData.data.data[dataIter]); //Extended data (offset >= 7)
+    }
+  }
+
+  UInt32 nextPtPolyExtendedEntry = 0;
+
+  for(Size i = 0; i < count; ++i) {
+    UInt32 polIndex = polyOrder.get(i);
+    UInt32 polIter = origPolyIter.get(polIndex);
+    UInt32 polOffset = origPolyOffset.get(polIndex);
+
+    DataIter polyPointIter = this.polyData.getArrayItemIter( polIter, polOffset );
+    if( i < 7 ) {
+      this.polyData.data.data[polyPointIter] = ( ptIter << 3 ) | i;
+    } else {
+      //Reuse existing extended entry
+      UInt32 extendedData = origPolyPrevPtIter.get(i);
+      DataIter extendedDataIter = IdxOff_GetIndex(extendedData);
+      this.polyData.data.data[polyPointIter] = extendedData;
+      this.polyData.data.data[extendedDataIter] = ptIter;
+      this.polyData.data.data[extendedDataIter+1] = i;
+    }
+
+    DataIter pointPolyIter = this.pointData.getArrayItemIter( ptIter, i );
+    if( polOffset < 7 ) {
+      this.pointData.data.data[pointPolyIter] = ( polIter << 3 ) | polOffset;
+    } else {
+      //Reuse existing extended entry
+      UInt32 extendedData = origPolyNextPtIter.get(nextPtPolyExtendedEntry++);
+      DataIter extendedDataIter = IdxOff_GetIndex(extendedData);
+      this.pointData.data.data[pointPolyIter] = extendedData;
+      this.pointData.data.data[extendedDataIter] = polIter;
+      this.pointData.data.data[extendedDataIter+1] = polOffset;
+    }
+  }
+  //Update border info. If border info bits need to be added or removed,
+  //this cannot be done immediately since it would not be thread safe.
+  UInt32 borderDataIter = this.getBorderDataIter(ptIter, extendedBit, count);
+  if( newBorderWingDataBits.size() ) {
+    if( borderDataIter ) {
+      //Bits already allocated: just set right away
+      for( Size i = 0; i < newBorderWingDataBits.size(); ++i )
+        this.pointData.data.data[borderDataIter++] = newBorderWingDataBits.get(i);
+      newBorderWingDataBits.resize(0);
+    }
+  } else if( borderDataIter )
+    removeBorderWingDataBits = true;
+
+  //Update unshared attribute indices if any
+  UInt32 unsharedAttributeDataIter = this.getUnsharedAttributeDataIter(ptIter, extendedBit, count);
+  if( unsharedAttributeDataIter ) {
+    //First: backup unshared attributes data. We reuse origPolyPrevPtIter.
+    for(Size i = 0; i < count; ++i)
+      origPolyPrevPtIter.set(i, PolygonMesh_GetUnsharedAttributeIndex( this.pointData.data.data[ unsharedAttributeDataIter+i ] ) );
+    
+    for(Size i = 0; i < count; ++i) {
+      UInt32 polIndex = polyOrder.get(i);
+      UInt32 attrIndex = origPolyPrevPtIter.get(polIndex);
+      PolygonMesh_SetUnsharedAttributeIndex( this.pointData.data.data[ unsharedAttributeDataIter+i ], attrIndex );
+    }
+  }
+}
+
+/// \internal
+operator ParallelOrderMeshPoints<<<index>>>(io PolygonMeshTopology meshTopology, UInt32 batchSize, UInt32 pointsToProcess[], io UInt32 remainingWork[][]) {
+  UInt32 start = index*batchSize;
+  UInt32 end = (index+1)*batchSize;
+  if( end > pointsToProcess.size() )
+    end = pointsToProcess.size();
+
+  for( Size i = start; i < end; ++i ) {
+    LocalIndexArray newBorderWingDataBits;
+    Boolean removeBorderWingDataBits, noThreadSafe;
+    meshTopology.updatePointOrdering( UInt32(i), newBorderWingDataBits, removeBorderWingDataBits, true, noThreadSafe );
+
+    //Protocol: PointIndex, followed by:
+    //             - InvalidIndex if point was not ordered (not threadsafe)
+    //             - 0 if border info needs to be removed
+    //             - N followed by N entries, content of removeBorderWingDataBits
+    if(noThreadSafe) {
+      remainingWork[index].push(i);
+      remainingWork[index].push(InvalidIndex);
+    } else if(removeBorderWingDataBits) {
+      remainingWork[index].push(i);
+      remainingWork[index].push(0);
+    } else if(newBorderWingDataBits.size()) {
+      remainingWork[index].push(i);
+      remainingWork[index].push(newBorderWingDataBits.size());
+      for( Size j = 0; j < newBorderWingDataBits.size(); ++j )
+        remainingWork[index].push( newBorderWingDataBits.get(j) );
+    }
+  }
+}
+
+/// \internal
+inline UInt32 PolygonMeshTopology.getNumExtraUInt32(UInt32 ptIter, UInt32 count, Boolean extendedBit) {
+  if(!extendedBit)
+    return 0;
+  DataIter extendedDataIter = this.pointData.getArrayExtraUInt32Iter(ptIter, count, 0);
+  UInt32 extendedData = this.pointData.data.data[extendedDataIter];
+  UInt32 numExtraUInt32 = ( extendedData & PolygonMesh_unsharedAttributesBit ) ? count : 0;
+  if( extendedData & PolygonMesh_borderDataBit )
+    numExtraUInt32 += PolygonMesh_getNumBorderDataUInt32(count);
+  return numExtraUInt32;
+}
+
+
+/// \internal
+/// prepareBorderDataRemoval: returns true if a resize is required
+inline Boolean PolygonMeshTopology.prepareBorderDataRemoval!(UInt32 ptIter, UInt32 count, io Boolean extendedBit, io UInt32 prevNumExtraUInt32, io UInt32 numExtraUInt32) {
+  numExtraUInt32 = 0;
+  if(extendedBit) {
+    DataIter extendedDataIter = this.pointData.getArrayExtraUInt32Iter(ptIter, count, 0);
+    UInt32 extendedData = this.pointData.data.data[extendedDataIter];
+    Boolean hasBorderData = (extendedData & PolygonMesh_borderDataBit) != 0;
+    prevNumExtraUInt32 = hasBorderData ? PolygonMesh_getNumBorderDataUInt32(count) : 0;
+    Boolean hasUnsharedAttr = ( extendedData & PolygonMesh_unsharedAttributesBit ) != 0;
+    if( hasUnsharedAttr ) {//clear border info bit
+      if( hasBorderData )
+        this.pointData.data.data[extendedDataIter] = extendedData & ~PolygonMesh_borderDataBit;
+      numExtraUInt32 = count;
+      prevNumExtraUInt32 += count;
+    } else if( hasBorderData ) {//no extended data
+      this.pointData.updateHeaderBit( ptIter, false );
+      extendedBit = false;
+    }
+    return hasBorderData;
+  } else {
+    prevNumExtraUInt32 = 0;
+    return false;
+  }
+}
+
+/// \internal
+function PolygonMeshTopology.updatePointBorderData!( UInt32 point, LocalIndexArray newBorderWingDataBits, Boolean removeBorderWingDataBits ) {
+  if( removeBorderWingDataBits ) {
+    DataIter ptIter = this.getPointIter( point );
+    UInt32 count = this.getPointIterPolygonCount( ptIter );
+    UInt32 prevNumExtraUInt32, numExtraUInt32;
+    Boolean headerBit = true;
+    if( this.prepareBorderDataRemoval(ptIter, count, headerBit, prevNumExtraUInt32, numExtraUInt32) )
+      this.pointData.resizeArray( point, prevNumExtraUInt32, count, numExtraUInt32, 0 );
+
+  } else if( newBorderWingDataBits.size() ) {
+    DataIter ptIter = this.getPointIter( point );
+    Boolean hasUnsharedAttr;
+    UInt32 count = this.pointData.getOffsetAndBit( ptIter, hasUnsharedAttr );
+    ptIter = this.resizePointArrayAndRemapPolygons( point, ptIter, count, (hasUnsharedAttr ? count : 0), count, newBorderWingDataBits.size()+(hasUnsharedAttr ? count : 0), 0 );
+    DataIter extendedDataIter = this.pointData.getArrayExtraUInt32Iter(ptIter, count, 0);
+    if( hasUnsharedAttr ) {//add border info bit
+      this.pointData.data.data[extendedDataIter] |= PolygonMesh_borderDataBit;
+      extendedDataIter += count;
+    }
+    else
+      this.pointData.updateHeaderBit( ptIter, true );
+
+    for( Size i = 0; i < newBorderWingDataBits.size(); ++i )
+      this.pointData.data.data[extendedDataIter++] = newBorderWingDataBits.get(i);
+  }
+}
+
+/// \internal
+inline PolygonMeshTopology.reorderPoint!( UInt32 point ) {
+  LocalIndexArray newBorderWingDataBits;
+  Boolean removeBorderWingDataBits, noThreadSafe;
+  this.updatePointOrdering( point, newBorderWingDataBits, removeBorderWingDataBits, false, noThreadSafe );
+  this.updatePointBorderData( point, newBorderWingDataBits, removeBorderWingDataBits );
+}
+
+/// \internal
+inline UInt32 PolygonMeshTopology.getPointIterAttributeIndex?( DataIter pointIter, UInt32 offset ) {
+  IdxOffBit idxOffBit = this.pointData.getIdxOffBit( pointIter );
+  DataIter unsharedAttributeDataIter = this.getUnsharedAttributeDataIter(pointIter, idxOffBit.bit, idxOffBit.offset);
+  if( unsharedAttributeDataIter )
+    return PolygonMesh_GetUnsharedAttributeIndex( this.pointData.data.data[unsharedAttributeDataIter+offset] );
+  else
+    return idxOffBit.index;
+}
+
+
+/// \internal
+inline Size PolygonMeshTopology.getPointFromAttributeIndex ? ( Size attributeIndex ) {
+  Size pointCount = this.pointCount();
+  if( attributeIndex < pointCount )
+    return attributeIndex;
+  return this.unsharedAttrToPointSlidingArray[this.unsharedAttrToPointSlidingArrayBegin + attributeIndex - pointCount];
+}
+
+/// \internal
+inline UInt32 PolygonMeshTopology.getPolyIterAttributeIndex?( DataIter polyIter, UInt32 offset ) {
+  IterOff iterOff = this.getPolyIterPointIterOff( polyIter, offset );
+  return this.getPointIterAttributeIndex( iterOff.index, iterOff.offset );
+}
+
+/// \internal
+inline PolygonMesh.setPolyIterAttribute!( DataIter polyIter, UInt32 offset, io Ref<IntegerAttribute> attribute, Integer value ) {
+  IterOff iterOff = this.topology.getPolyIterPointIterOff( polyIter, offset );
+  this.setPointIterAttribute( iterOff.index, iterOff.offset, attribute, value );
+}
+
+/// \internal
+inline PolygonMesh.setPolyIterAttribute!( DataIter polyIter, UInt32 offset, io Ref<UInt32Attribute> attribute, UInt32 value ) {
+  IterOff iterOff = this.topology.getPolyIterPointIterOff( polyIter, offset );
+  this.setPointIterAttribute( iterOff.index, iterOff.offset, attribute, value );
+}
+
+/// \internal
+inline PolygonMesh.setPolyIterAttribute!( DataIter polyIter, UInt32 offset, io Ref<ScalarAttribute> attribute, Scalar value ) {
+  IterOff iterOff = this.topology.getPolyIterPointIterOff( polyIter, offset );
+  this.setPointIterAttribute( iterOff.index, iterOff.offset, attribute, value );
+}
+
+/// \internal
+inline PolygonMesh.setPolyIterAttribute!( DataIter polyIter, UInt32 offset, io Ref<Vec2Attribute> attribute, Vec2 value ) {
+  IterOff iterOff = this.topology.getPolyIterPointIterOff( polyIter, offset );
+  this.setPointIterAttribute( iterOff.index, iterOff.offset, attribute, value );
+}
+
+/// \internal
+inline PolygonMesh.setPolyIterAttribute!( DataIter polyIter, UInt32 offset, io Ref<Vec3Attribute> attribute, Vec3 value ) {
+  IterOff iterOff = this.topology.getPolyIterPointIterOff( polyIter, offset );
+  this.setPointIterAttribute( iterOff.index, iterOff.offset, attribute, value );
+}
+
+/// \internal
+inline PolygonMesh.setPolyIterAttribute!( DataIter polyIter, UInt32 offset, io Ref<Vec3_dAttribute> attribute, Vec3_d value ) {
+  IterOff iterOff = this.topology.getPolyIterPointIterOff( polyIter, offset );
+  this.setPointIterAttribute( iterOff.index, iterOff.offset, attribute, value );
+}
+
+/// \internal
+inline PolygonMesh.setPolyIterAttribute!( DataIter polyIter, UInt32 offset, io Ref<Vec4Attribute> attribute, Vec4 value ) {
+  IterOff iterOff = this.topology.getPolyIterPointIterOff( polyIter, offset );
+  this.setPointIterAttribute( iterOff.index, iterOff.offset, attribute, value );
+}
+
+/// \internal
+inline PolygonMesh.setPolyIterAttribute!( DataIter polyIter, UInt32 offset, io Ref<QuatAttribute> attribute, Quat value ) {
+  IterOff iterOff = this.topology.getPolyIterPointIterOff( polyIter, offset );
+  this.setPointIterAttribute( iterOff.index, iterOff.offset, attribute, value );
+}
+
+/// \internal
+inline PolygonMesh.setPolyIterAttribute!( DataIter polyIter, UInt32 offset, io Ref<ColorAttribute> attribute, Color value ) {
+  IterOff iterOff = this.topology.getPolyIterPointIterOff( polyIter, offset );
+  this.setPointIterAttribute( iterOff.index, iterOff.offset, attribute, value );
+}
+
+/// \internal
+inline PolygonMesh.setPolyIterAttribute!( DataIter polyIter, UInt32 offset, io Ref<Mat33Attribute> attribute, Mat33 value ) {
+  IterOff iterOff = this.topology.getPolyIterPointIterOff( polyIter, offset );
+  this.setPointIterAttribute( iterOff.index, iterOff.offset, attribute, value );
+}
+
+/// \internal
+inline PolygonMesh.setPolyIterAttribute!( DataIter polyIter, UInt32 offset, io Ref<Mat44Attribute> attribute, Mat44 value ) {
+  IterOff iterOff = this.topology.getPolyIterPointIterOff( polyIter, offset );
+  this.setPointIterAttribute( iterOff.index, iterOff.offset, attribute, value );
+}
+
+/// \internal
+inline PolygonMesh.setPolyIterAttribute!( DataIter polyIter, UInt32 offset, io Ref<RGBAttribute> attribute, RGB value ) {
+  IterOff iterOff = this.topology.getPolyIterPointIterOff( polyIter, offset );
+  this.setPointIterAttribute( iterOff.index, iterOff.offset, attribute, value );
+}
+
+/// \internal
+inline PolygonMesh.setPolyIterAttribute!( DataIter polyIter, UInt32 offset, io Ref<RGBAAttribute> attribute, RGBA value ) {
+  IterOff iterOff = this.topology.getPolyIterPointIterOff( polyIter, offset );
+  this.setPointIterAttribute( iterOff.index, iterOff.offset, attribute, value );
+}
+
+/// \internal
+inline PolygonMesh.setPolyIterAttribute!( DataIter polyIter, UInt32 offset, io Ref<ScalarConstantArrayAttribute> attribute, LocalL16ScalarArray value ) {
+  IterOff iterOff = this.topology.getPolyIterPointIterOff( polyIter, offset );
+  this.setPointIterAttribute( iterOff.index, iterOff.offset, attribute, value );
+}
+
+/// \internal
+inline PolygonMesh.setPolyIterAttribute!( DataIter polyIter, UInt32 offset, io Ref<UInt16ConstantArrayAttribute> attribute, LocalL16UInt16Array value ) {
+  IterOff iterOff = this.topology.getPolyIterPointIterOff( polyIter, offset );
+  this.setPointIterAttribute( iterOff.index, iterOff.offset, attribute, value );
+}
+
+/// \internal
+inline PolygonMesh.setPolyIterAttribute!( DataIter polyIter, UInt32 offset, io Ref<UInt32ArrayAttribute> attribute, , LocalL16UInt32Array values ) {
+  IterOff iterOff = this.topology.getPolyIterPointIterOff( polyIter, offset );
+  this.setPointIterAttribute( iterOff.index, iterOff.offset, attribute, values );
+}
+
+/// \internal
+inline PolygonMesh.setPolyIterAttribute!( DataIter polyIter, UInt32 offset, io Ref<IntegerArrayAttribute> attribute, , LocalL16SInt32Array values ) {
+  IterOff iterOff = this.topology.getPolyIterPointIterOff( polyIter, offset );
+  this.setPointIterAttribute( iterOff.index, iterOff.offset, attribute, values );
+}
+
+/// \internal
+inline PolygonMesh.setPolyIterAttribute!( DataIter polyIter, UInt32 offset, io Ref<ScalarArrayAttribute> attribute, , LocalL16ScalarArray values ) {
+  IterOff iterOff = this.topology.getPolyIterPointIterOff( polyIter, offset );
+  this.setPointIterAttribute( iterOff.index, iterOff.offset, attribute, values );
+}
+
+/// \internal
+inline PolygonMesh.setPolyIterAttribute!( DataIter polyIter, UInt32 offset, io Ref<SkinningAttribute> attribute, , LocalL16UInt32Array indices, LocalL16ScalarArray weights ) {
+  IterOff iterOff = this.topology.getPolyIterPointIterOff( polyIter, offset );
+  this.setPointIterAttribute( iterOff.index, iterOff.offset, attribute, indices, weights );
+}
+
+/// \internal
+inline Boolean PolygonMesh.isPointIterAttributeUniform?( DataIter pointIter, Ref<GeometryAttribute> attribute ) {
+  Boolean extendedBit;
+  UInt32 count = this.topology.pointData.getOffsetAndBit( pointIter, extendedBit );
+  DataIter unsharedAttributeDataIter = this.topology.getUnsharedAttributeDataIter(pointIter, extendedBit, count);
+  if( unsharedAttributeDataIter ) {
+    UInt32 refAttrIndex = PolygonMesh_GetUnsharedAttributeIndex( this.topology.pointData.data.data[ unsharedAttributeDataIter ] );
+    for( Size i = 1; i < count; ++i ) {
+      if( !attribute.equalValues( refAttrIndex,  PolygonMesh_GetUnsharedAttributeIndex( this.topology.pointData.data.data[ unsharedAttributeDataIter+i ] ) ) )
+        return false;
+    }
+  }
+  return true;
+}
+
+/// \internal
+struct PolygonMesh_UnsharedAttributeIndexIter {
+  DataIter unsharedPtPolysExtendedDataIter;
+  Size unsharedCount;
+  Size i;
+  UInt32 lastAttrIndex;
+};
+
+/// \internal
+inline PolygonMesh_UnsharedAttributeIndexIter PolygonMeshTopology.getPointIterUnsharedAttributeIndexIter( DataIter pointIter ) {
+  IdxOffBit idxOffBit = this.pointData.getIdxOffBit( pointIter );
+
+  PolygonMesh_UnsharedAttributeIndexIter iter;
+  iter.unsharedCount = idxOffBit.offset;
+  iter.unsharedPtPolysExtendedDataIter = this.getUnsharedAttributeDataIter(pointIter, idxOffBit.bit, idxOffBit.offset);
+  if( iter.unsharedPtPolysExtendedDataIter == 0 )
+    iter.lastAttrIndex = idxOffBit.index;
+  else
+    iter.lastAttrIndex = InvalidIndex;
+
+  return iter;
+}
+
+
+/// \internal
+inline Boolean PolygonMeshTopology.PolygonMesh_UnsharedAttributeIndexIterGetNext?( io PolygonMesh_UnsharedAttributeIndexIter iter, io UInt32 attributeIndex ) {
+  if( iter.unsharedPtPolysExtendedDataIter ) {
+    while( true ) {
+      if( iter.i == iter.unsharedCount )
+        return false;
+      attributeIndex = PolygonMesh_GetUnsharedAttributeIndex(this.pointData.data.data[ iter.unsharedPtPolysExtendedDataIter + iter.i ]);
+      ++iter.i;
+      if( attributeIndex != iter.lastAttrIndex )
+        break;
+    }
+    iter.lastAttrIndex = attributeIndex;
+    return true;
+  } else {
+    if( iter.lastAttrIndex == InvalidIndex )
+      return false;
+    else {
+      attributeIndex = iter.lastAttrIndex;
+      iter.lastAttrIndex = InvalidIndex;
+      return true;
+    }
+  }
+}
+
+/// \internal
+inline PolygonMesh.setPointIterAttribute!( DataIter pointIter, UInt32 offset, io Ref<ScalarAttribute> attribute, Scalar value ) {
+  attribute.values.push(value);
+  if( this.setPointIterAttributeFromPushed( pointIter, offset, attribute ) )
+    attribute.values.resize( attribute.values.size()-1 );
+}
+
+/// \internal
+inline PolygonMesh.setPointIterAttribute!( DataIter pointIter, UInt32 offset, io Ref<ScalarConstantArrayAttribute> attribute, LocalL16ScalarArray value ) {
+  attribute.resize( attribute.size() + 1 );
+  attribute.setValue( attribute.size() - 1, value );
+  if( this.setPointIterAttributeFromPushed( pointIter, offset, attribute ) )
+    attribute.resize( attribute.size()-1 );
+}
+
+/// \internal
+inline PolygonMesh.setPointIterAttribute!( DataIter pointIter, UInt32 offset, io Ref<IntegerAttribute> attribute, Integer value ) {
+  attribute.values.push(value);
+  if( this.setPointIterAttributeFromPushed( pointIter, offset, attribute ) )
+    attribute.values.resize( attribute.values.size()-1 );
+}
+
+/// \internal
+inline PolygonMesh.setPointIterAttribute!( DataIter pointIter, UInt32 offset, io Ref<UInt32Attribute> attribute, UInt32 value ) {
+  attribute.values.push(value);
+  if( this.setPointIterAttributeFromPushed( pointIter, offset, attribute ) )
+    attribute.values.resize( attribute.values.size()-1 );
+}
+
+/// \internal
+inline PolygonMesh.setPointIterAttribute!( DataIter pointIter, UInt32 offset, io Ref<UInt16ConstantArrayAttribute> attribute, LocalL16UInt16Array value ) {
+  attribute.resize( attribute.size() + 1 );
+  attribute.setValue( attribute.size() - 1, value );
+  if( this.setPointIterAttributeFromPushed( pointIter, offset, attribute ) )
+    attribute.resize( attribute.size()-1 );
+}
+
+/// \internal
+inline PolygonMesh.setPointIterAttribute!( DataIter pointIter, UInt32 offset, io Ref<RGBAttribute> attribute, RGB value ) {
+  attribute.values.push(value);
+  if( this.setPointIterAttributeFromPushed( pointIter, offset, attribute ) )
+    attribute.values.resize( attribute.values.size()-1 );
+}
+
+/// \internal
+inline PolygonMesh.setPointIterAttribute!( DataIter pointIter, UInt32 offset, io Ref<RGBAAttribute> attribute, RGBA value ) {
+  attribute.values.push(value);
+  if( this.setPointIterAttributeFromPushed( pointIter, offset, attribute ) )
+    attribute.values.resize( attribute.values.size()-1 );
+}
+
+/// \internal
+inline PolygonMesh.setPointIterAttribute!( DataIter pointIter, UInt32 offset, io Ref<Vec2Attribute> attribute, Vec2 value ) {
+  attribute.values.push(value);
+  if( this.setPointIterAttributeFromPushed( pointIter, offset, attribute ) )
+    attribute.values.resize( attribute.values.size()-1 );
+}
+
+/// \internal
+inline PolygonMesh.setPointIterAttribute!( DataIter pointIter, UInt32 offset, io Ref<Vec3Attribute> attribute, Vec3 value ) {
+  attribute.values.push(value);
+  if( this.setPointIterAttributeFromPushed( pointIter, offset, attribute ) )
+    attribute.values.resize( attribute.values.size()-1 );
+}
+
+/// \internal
+inline PolygonMesh.setPointIterAttribute!( DataIter pointIter, UInt32 offset, io Ref<Vec3_dAttribute> attribute, Vec3_d value ) {
+  attribute.values.push(value);
+  if( this.setPointIterAttributeFromPushed( pointIter, offset, attribute ) )
+    attribute.values.resize( attribute.values.size()-1 );
+}
+
+/// \internal
+inline PolygonMesh.setPointIterAttribute!( DataIter pointIter, UInt32 offset, io Ref<Vec4Attribute> attribute, Vec4 value ) {
+  attribute.values.push(value);
+  if( this.setPointIterAttributeFromPushed( pointIter, offset, attribute ) )
+    attribute.values.resize( attribute.values.size()-1 );
+}
+
+/// \internal
+inline PolygonMesh.setPointIterAttribute!( DataIter pointIter, UInt32 offset, io Ref<QuatAttribute> attribute, Quat value ) {
+  attribute.values.push(value);
+  if( this.setPointIterAttributeFromPushed( pointIter, offset, attribute ) )
+    attribute.values.resize( attribute.values.size()-1 );
+}
+
+/// \internal
+inline PolygonMesh.setPointIterAttribute!( DataIter pointIter, UInt32 offset, io Ref<ColorAttribute> attribute, Color value ) {
+  attribute.values.push(value);
+  if( this.setPointIterAttributeFromPushed( pointIter, offset, attribute ) )
+    attribute.values.resize( attribute.values.size()-1 );
+}
+
+/// \internal
+inline PolygonMesh.setPointIterAttribute!( DataIter pointIter, UInt32 offset, io Ref<Mat33Attribute> attribute, Mat33 value ) {
+  attribute.values.push(value);
+  if( this.setPointIterAttributeFromPushed( pointIter, offset, attribute ) )
+    attribute.values.resize( attribute.values.size()-1 );
+}
+
+/// \internal
+inline PolygonMesh.setPointIterAttribute!( DataIter pointIter, UInt32 offset, io Ref<Mat44Attribute> attribute, Mat44 value ) {
+  attribute.values.push(value);
+  if( this.setPointIterAttributeFromPushed( pointIter, offset, attribute ) )
+    attribute.values.resize( attribute.values.size()-1 );
+}
+
+/// \internal
+inline PolygonMesh.setPointIterAttribute!( DataIter pointIter, UInt32 offset, io Ref<UInt32ArrayAttribute> attribute, LocalL16UInt32Array values ) {
+  attribute.resize( attribute.size() + 1 );
+  attribute.set( attribute.size() - 1, values );
+  if( this.setPointIterAttributeFromPushed( pointIter, offset, attribute ) )
+    attribute.resize( attribute.size() - 1 );
+}
+
+/// \internal
+inline PolygonMesh.setPointIterAttribute!( DataIter pointIter, UInt32 offset, io Ref<IntegerArrayAttribute> attribute, LocalL16SInt32Array values ) {
+  attribute.resize( attribute.size() + 1 );
+  attribute.set( attribute.size() - 1, values );
+  if( this.setPointIterAttributeFromPushed( pointIter, offset, attribute ) )
+    attribute.resize( attribute.size() - 1 );
+}
+
+/// \internal
+inline PolygonMesh.setPointIterAttribute!( DataIter pointIter, UInt32 offset, io Ref<ScalarArrayAttribute> attribute, LocalL16ScalarArray values ) {
+  attribute.resize( attribute.size() + 1 );
+  attribute.set( attribute.size() - 1, values );
+  if( this.setPointIterAttributeFromPushed( pointIter, offset, attribute ) )
+    attribute.resize( attribute.size() - 1 );
+}
+
+/// \internal
+inline PolygonMesh.setPointIterAttribute!( DataIter pointIter, UInt32 offset, io Ref<SkinningAttribute> attribute, LocalL16UInt32Array indices, LocalL16ScalarArray weights ) {
+  attribute.resize( attribute.size() + 1 );
+  attribute.setPairs( attribute.size() - 1, indices, weights );
+  if( this.setPointIterAttributeFromPushed( pointIter, offset, attribute ) )
+    attribute.resize( attribute.size()-1 );
+}
+
+/// \internal
+inline PolygonMesh.recompactSlidingArrayIfRequired!() {
+  Size total = this.topology.unsharedAttrToPointSlidingArray.size();
+  Size unusedCount = this.topology.unsharedAttrToPointSlidingArrayBegin;
+  if( unusedCount * this.minFreeDataPortionDiviserToRecompact > total ) {
+    Size usedCount = total - unusedCount;
+    for( Size i = 0; i < usedCount; ++i )
+      this.topology.unsharedAttrToPointSlidingArray[i] = this.topology.unsharedAttrToPointSlidingArray[this.topology.unsharedAttrToPointSlidingArrayBegin + i];
+
+    this.topology.unsharedAttrToPointSlidingArray.resize( usedCount );
+    this.topology.unsharedAttrToPointSlidingArrayBegin = 0;
+  }
+}
+
+/// \internal
+function PolygonMesh.updateAttributeIndex!(UInt32 pointIndex, UInt32 prevAttrIndex, UInt32 newAttrIndex, UInt32 firstUnsharedIndex, Boolean copyValue) {
+  //Remap point attribute indices, if any
+  DataIter pointIter = this.topology.getPointIter(pointIndex);
+  Boolean extendedData;
+  UInt32 count = this.topology.pointData.arrayDataIterSizeAndBit(pointIter, extendedData);
+  DataIter unsharedAttributeDataIter = this.topology.getUnsharedAttributeDataIter(pointIter, extendedData, count);
+
+  if( unsharedAttributeDataIter ) {
+    for( Size i = 0; i < count; ++i ) {
+      UInt32 pointAttrIndex = PolygonMesh_GetUnsharedAttributeIndex(this.topology.pointData.data.data[unsharedAttributeDataIter+i]);
+      if( pointAttrIndex == prevAttrIndex ) {
+        PolygonMesh_SetUnsharedAttributeIndex(this.topology.pointData.data.data[unsharedAttributeDataIter+i], newAttrIndex);
+        pointAttrIndex = newAttrIndex;
+      }
+      if( pointAttrIndex >= firstUnsharedIndex )
+        this.topology.unsharedAttrToPointSlidingArray[pointAttrIndex - firstUnsharedIndex + this.topology.unsharedAttrToPointSlidingArrayBegin] = pointIndex;
+    }
+  }
+  if( copyValue ) {
+    this.attributes.copyValue( prevAttrIndex, newAttrIndex );
+
+    //Copy uninitialized bits
+    for( Size i = 0; i < this.attrInitializedBits.size(); ++i )
+      this.attrInitializedBits[i].vertexAttrInitialized.set( newAttrIndex, this.attrInitializedBits[i].vertexAttrInitialized.get(prevAttrIndex) );
+  }
+}
+
+
+/// \internal
+inline PolygonMesh.moveAttributeAndIndex!(UInt32 sourceIndex, UInt32 targetIndex, UInt32 firstUnsharedIndex) {
+  if( sourceIndex != targetIndex ) {
+    UInt32 movingPointIndex;
+
+    if( sourceIndex >= firstUnsharedIndex ) //Unshared attribute
+      movingPointIndex = this.topology.unsharedAttrToPointSlidingArray[sourceIndex - firstUnsharedIndex + this.topology.unsharedAttrToPointSlidingArrayBegin];
+    else
+      movingPointIndex = sourceIndex;
+    this.updateAttributeIndex(movingPointIndex, sourceIndex, targetIndex, firstUnsharedIndex, true);
+  }
+}
+
+/// \internal
+inline PolygonMesh.moveAttributeAndIndex!(UInt32 sourceIndex, UInt32 targetIndex) {
+  this.moveAttributeAndIndex( sourceIndex, targetIndex, this.topology.pointData.itemCount() );
+}
+
+
+/// \internal
+inline PolygonMesh.freeUnsharedAttributeIndexAndRecompact!(UInt32 attrIndex) {
+  UInt32 movingAttrIndex = ( this.topology.unsharedAttrToPointSlidingArray.size() - 1 - this.topology.unsharedAttrToPointSlidingArrayBegin ) + this.topology.pointData.itemCount();
+  this.moveAttributeAndIndex( movingAttrIndex, attrIndex );
+  this.topology.unsharedAttrToPointSlidingArray.resize( this.topology.unsharedAttrToPointSlidingArray.size() - 1 );
+  this.resizeAttributesInternal(this.attributes.size()-1);
+}
+
+/// \internal
+function DataIter PolygonMeshTopology.removeUnsharedAttributeDataIfApplicable!( UInt32 point, DataIter pointIter, UInt32 count, DataIter unsharedAttributeDataIter ) {
+  if( unsharedAttributeDataIter ) {
+    Boolean onlyPointAttribute = true;
+    for( Size i = 0; i < count; ++i ) {
+      UInt32 otherAttrIndex = PolygonMesh_GetUnsharedAttributeIndex( this.pointData.data.data[ unsharedAttributeDataIter+i ] );
+      if( otherAttrIndex != point ) {
+        onlyPointAttribute = false;
+        break;
+      }
+    }
+    if(onlyPointAttribute) {
+      // Remove extended data.
+      UInt32 nbBorderUInt32 = (this.pointData.data.data[ unsharedAttributeDataIter ] & PolygonMesh_borderDataBit) ? PolygonMesh_getNumBorderDataUInt32(count) : 0;
+      for( Size i = 0; i < nbBorderUInt32; ++i )//Recopy border UInt32
+        this.pointData.data.data[unsharedAttributeDataIter+i] = this.pointData.data.data[unsharedAttributeDataIter+count+i];
+
+      if( nbBorderUInt32 )
+        this.pointData.data.data[unsharedAttributeDataIter] = (this.pointData.data.data[unsharedAttributeDataIter] & ~PolygonMesh_extendedBitsMask) | PolygonMesh_borderDataBit;
+      else
+        this.pointData.updateHeaderBit( pointIter, false );
+
+      return this.resizePointArrayAndRemapPolygons( point, pointIter, count, nbBorderUInt32+count, count, nbBorderUInt32, 0 );
+    }
+  }
+  return pointIter;
+}
+
+/// \internal
+function PolygonMeshTopology.addUnsharedAttributeArray!( UInt32 pointIndex, io DataIter pointIter, Size pointPolyCount, Boolean headerBit, Boolean hasBorderData, io DataIter outUnsharedAttributeDataIter ) {
+  //Allocate and initialize expanded attribute index structure
+  UInt32 nbBorderUInt32 = hasBorderData ? PolygonMesh_getNumBorderDataUInt32(pointPolyCount) : 0;
+  pointIter = this.resizePointArrayAndRemapPolygons( pointIndex, pointIter, pointPolyCount, nbBorderUInt32, pointPolyCount, nbBorderUInt32+pointPolyCount, 0 );
+
+  outUnsharedAttributeDataIter = this.pointData.getArrayExtraUInt32Iter( pointIter, pointPolyCount, 0 );
+
+  for( Size i = nbBorderUInt32; i--;  )//Recopy border UInt32. Loop down to support potential data overlap.
+    this.pointData.data.data[outUnsharedAttributeDataIter+pointPolyCount+i] = this.pointData.data.data[outUnsharedAttributeDataIter+i];
+
+  this.pointData.data.data[outUnsharedAttributeDataIter] = (hasBorderData ? PolygonMesh_borderDataBit : 0) | PolygonMesh_unsharedAttributesBit;
+  if( !headerBit )
+    this.pointData.updateHeaderBit( pointIter, true );
+
+  for( Size i = 0; i < pointPolyCount; ++i )
+    PolygonMesh_SetUnsharedAttributeIndex(this.pointData.data.data[outUnsharedAttributeDataIter+i], pointIndex);
+}
+
+/// \internal
+/// setPointIterAttributeFromPushed: returns True if needs to 'pop'
+function Boolean PolygonMesh.setPointIterAttributeFromPushed!( DataIter pointIter_, UInt32 offset, Ref<GeometryAttribute> inAttribute ) {
+  Ref<GeometryAttribute> attribute = inAttribute; // Resolve 'const' KL ambiguity; the pointer is const, but not the data..
+  DataIter pointIter = pointIter_;
+  UInt32 valueAttrIndex = this.attributes.size();
+  UInt32 point = this.topology.getPointIterIndex( pointIter );
+
+  Boolean extendedBit;
+  UInt32 count = this.topology.pointData.arrayDataIterSizeAndBit(pointIter, extendedBit);
+  Boolean hasUnsharedAttr, hasBorderData;
+  DataIter extendedDataIter;
+  if( extendedBit ) {
+    extendedDataIter = this.topology.pointData.getArrayExtraUInt32Iter( pointIter, count, 0 );
+    UInt32 extendedData = this.topology.pointData.data.data[extendedDataIter];
+    hasBorderData = (extendedData & PolygonMesh_borderDataBit) != 0;
+    hasUnsharedAttr = ( extendedData & PolygonMesh_unsharedAttributesBit ) != 0;
+  }
+
+  UInt32 attrIndex;
+  UInt32 currentAttrIndex = InvalidIndex;
+  Boolean setValue;
+  Boolean initializingValue;
+
+  if( !hasUnsharedAttr ) {
+    //Check if the initial shared value is fine
+    attrIndex = point;
+    initializingValue = !this.attrInitializedBits[inAttribute.getContainerIndex( this.attributes )].vertexAttrInitialized.get( attrIndex );
+    Boolean equalValues = attribute.equalValues( valueAttrIndex, attrIndex );
+    if( initializingValue || count <= 1 ) {
+      setValue = !equalValues;
+    } else if( !equalValues ) {
+      currentAttrIndex = attrIndex;
+      this.topology.addUnsharedAttributeArray( attrIndex, pointIter, count, extendedBit, hasBorderData, extendedDataIter );
+      attrIndex = InvalidIndex;//Entry not found
+    }
+  } else {
+    //We can reuse existing entry if values are equal OR entry has not been used yet for this attribute
+    attrIndex = PolygonMesh_GetUnsharedAttributeIndex( this.topology.pointData.data.data[ extendedDataIter+offset ] );
+    initializingValue = !this.attrInitializedBits[inAttribute.getContainerIndex( this.attributes )].vertexAttrInitialized.get( attrIndex );
+    Boolean equalValues = attribute.equalValues( valueAttrIndex, attrIndex );
+    if( initializingValue ) {
+      setValue = !equalValues;
+    } else if(!equalValues) {
+      currentAttrIndex = attrIndex;
+      attrIndex = InvalidIndex;//Entry not found
+    }
+  }
+  UInt32 entryToFree = InvalidIndex;
+  if( attrIndex == InvalidIndex ) {
+    //Search for another existing equal entry (to share it)
+    //Note: for all other attributes, values have to be equal to the existing entry
+    UInt32 prevAttrIndex = InvalidIndex;
+    Boolean attributeIndexShared = false;
+    UInt32 nbAttrToCheck = this.attrInitializedBits.size();
+    for( Size i = 0; i < count; ++i ) {
+      if( i != offset ) {
+        UInt32 otherAttrIndex = PolygonMesh_GetUnsharedAttributeIndex( this.topology.pointData.data.data[ extendedDataIter+i ] );
+        if(otherAttrIndex == currentAttrIndex)
+          attributeIndexShared = true;
+
+        if( attrIndex == InvalidIndex && otherAttrIndex != prevAttrIndex && otherAttrIndex != currentAttrIndex ) {//These were already checked
+          Boolean equalValues = attribute.equalValues( valueAttrIndex, otherAttrIndex );
+          if(  equalValues || initializingValue ) {
+            Size j;
+            for( ; j < nbAttrToCheck; ++j ) {
+              Ref<GeometryAttribute> otherAttr = this.attrInitializedBits[j].attrRefKey;
+              if( Boolean(otherAttr) && otherAttr != inAttribute ) {
+                Boolean otherInitialized = this.attrInitializedBits[j].vertexAttrInitialized.get(otherAttrIndex);
+                if( otherInitialized && !otherAttr.equalValues( currentAttrIndex, otherAttrIndex ) )
+                  break;//Other attributes don't agree to share...
+              }
+            }
+            if( j == nbAttrToCheck ) {
+              PolygonMesh_SetUnsharedAttributeIndex( this.topology.pointData.data.data[ extendedDataIter+offset ], otherAttrIndex );
+              ++this.attributeSharingVersion;
+              setValue = !equalValues;
+              attrIndex = otherAttrIndex;
+            }
+          }
+        }
+        prevAttrIndex = otherAttrIndex;
+      }
+    }
+    if(!attributeIndexShared) {
+      setValue = true;
+      if(attrIndex == InvalidIndex) {
+        //We can reuse the attribute index directly since it is not shared
+        attrIndex = currentAttrIndex;
+      } else {
+        //If our index was the point index, swap: we need to keep the point index and free the other one
+        if( currentAttrIndex == point ) {
+          this.updateAttributeIndex(point, attrIndex, point, this.topology.pointData.itemCount(), true);
+          currentAttrIndex = attrIndex;
+          attrIndex = point;
+        }
+        entryToFree = currentAttrIndex;
+      }
+    }
+  }
+
+  Boolean createdEntry;
+  if( attrIndex == InvalidIndex ) {
+    //We need to create a new entry.
+    //Copy current attribute values (there are other attributes!)
+    createdEntry = true;
+    this.topology.unsharedAttrToPointSlidingArray.push( point );
+    attrIndex = valueAttrIndex;
+    this.resizeAttributesInternal( attrIndex + 1 );//Resize other attributes (current one is already resize+1: push)
+    PolygonMesh_SetUnsharedAttributeIndex( this.topology.pointData.data.data[ extendedDataIter+offset ], attrIndex );
+    for( Size i = 0; i < this.attributes.attributes.size(); ++i ) {
+      Ref<GeometryAttribute> otherAttribute = this.attributes.attributes[i];
+      if( Boolean(otherAttribute) && otherAttribute != attribute ) {
+        this.attrInitializedBits[i].vertexAttrInitialized.set( valueAttrIndex, this.attrInitializedBits[i].vertexAttrInitialized.get(currentAttrIndex) );
+        otherAttribute.copyValue( currentAttrIndex, valueAttrIndex );
+      }
+    }
+  } else if(setValue)
+    attribute.copyValue( valueAttrIndex, attrIndex );
+
+  this.attrInitializedBits[inAttribute.getContainerIndex( this.attributes )].vertexAttrInitialized.set( attrIndex );
+
+  if( entryToFree != InvalidIndex ) {
+    //We no longer use currentAttrIndex: set it as "free" & shuffle.
+    //Do this at the end, since it can move the current attribute, and resize.
+    this.freeUnsharedAttributeIndexAndRecompact(currentAttrIndex);
+    pointIter = this.topology.removeUnsharedAttributeDataIfApplicable( point, pointIter, count, extendedDataIter );
+    return false;//Attributes were already resized
+  }
+  return !createdEntry;//pop
+}
+
+// Attributes internal methods
+
+/// \internal
+inline PolygonMesh.synchronizeGeometryAttributes!() {
+  if( synchronizeVersion( this.attributes.keysVersion, this.attributesKeyVersion ) ) {
+    Size attrCount = this.attributes.attributes.size();
+    Size attrVectorCount = this.attributes.size();
+
+    this.attrInitializedBits.resize(attrCount);
+    for( Size i = 0; i < attrCount; ++i ) {
+      Ref<GeometryAttribute> attrRefKey = this.attributes.attributes[i];
+      if( this.attrInitializedBits[i].attrRefKey != attrRefKey ) {
+        this.attrInitializedBits[i].attrRefKey = attrRefKey;
+        this.attrInitializedBits[i].vertexAttrInitialized.resize(attrVectorCount);
+        this.attrInitializedBits[i].vertexAttrInitialized.clearAll();
+      }
+    }
+    // reset caches
+    this.normalsAttribute = this.attributes.normalsAttribute;
+    this.positionsAttribute = this.attributes.positionsAttribute;
+    this.positionsAttribute_d = this.attributes.positionsAttribute;
+    this.uvs0Attribute = this.attributes.getAttribute( "uvs0" );
+  }
+}
+
+/// \internal
+/// Attach an existing attribute container. This must be done in very specific conditions because the mesh maintains related sharing information.
+function PolygonMesh.attachAttributes!( io GeometryAttributes attributes ) {
+  if( this.attributes != null && this.attributes.size() != attributes.size() )
+    setError("Unsupported: attaching attributes with different sharing");
+
+  //Q: what about float64 VS float32 positions?
+  this.parent.attachAttributes( attributes );
+  attributes.registerOwner(this);
+
+  this.positionsAttribute = this.attributes.getPositions();
+  this.positionsAttribute_d = this.attributes.getPositions_d();
+  this.normalsAttribute = this.attributes.getNormals();
+  this.uvs0Attribute = this.attributes.getAttribute( "uvs0" );
+
+  this.attributesKeyVersion = 0;
+  this.synchronizeGeometryAttributes();
+}
+
+/// \internal
+/// Internal implementation of GeometryAttributesOwnerCallbacks interface
+function PolygonMesh.attributeAdded!( UInt32 containerIndex ) {
+  this.synchronizeGeometryAttributes();
+}
+
+/// \internal
+/// Internal implementation of GeometryAttributesOwnerCallbacks interface
+function PolygonMesh.attributeRemoved!( UInt32 containerIndex ) {
+  this.synchronizeGeometryAttributes();
+}
+
+/// \internal
+function PolygonMesh.resizing!() {
+  if( !this._currentlyResizing )
+    setError("Error: PolygonMesh attribute container should not be resized externally");
+}
+
+// /// \internal
+// inline PolygonMesh.setPointAttributeInternal!( Size point, io Ref<Vec3Attribute> attribute, Vec3 value ) {
+//   DataIter pointIter = this.getPointIter( point );
+//   if( pointIter )
+//     this.setPointIterAttribute( pointIter, attribute, value );
+//   else
+//     attribute.values[point] = value;
+// }
+
+// /// \internal
+// inline PolygonMesh.setPointAttributeInternal!( Size point, io Ref<Vec3_dAttribute> attribute, Vec3_d value ) {
+//   DataIter pointIter = this.getPointIter( point );
+//   if( pointIter )
+//     this.setPointIterAttribute( pointIter, attribute, value );
+//   else
+//     attribute.values[point] = value;
+// }
+
+//Normal computation helpers
+
+/// \internal
+inline Vec3 PolygonMeshTopology.generatePointNormal?( UInt32 point, Vec3 polyNormals[], io Boolean otherWingsToCompute ) {
+  //TODO: take boundaries/wings into account (in which case more than 1 Vec3 could be outputted), in a similar fashion to generatePointNormalOrSplits()
+  UInt32 pointIter = this.getPointIter( point );
+  Boolean extendedBit;
+  UInt32 count = this.pointData.getOffsetAndBit( pointIter, extendedBit );
+  otherWingsToCompute = false;
+
+  if( count ) {
+    DataIter borderDataIter = this.getBorderDataIter(pointIter, extendedBit, count);
+
+    Vec3 sum(0, 0, 0);
+
+    for( Size i = 0; i < count; ++i ) {
+
+      if( i ) {
+        Boolean precededByBorder, atClosedWingStart;
+        this.getBorderInfo( borderDataIter, i, precededByBorder, atClosedWingStart );
+        if( precededByBorder || atClosedWingStart ) {
+          otherWingsToCompute = true;//multiwing: just compute 1st one
+          break;
+        }
+      }
+      UInt32 poly = this.getPointIterPolygon( pointIter, i );
+      sum += polyNormals[ poly ];
+    }
+    return sum.unit_safe();
+  }
+  else
+    return Vec3( 0, 1, 0 );
+}
+
+/// \internal
+operator generatePointNormals<<<index>>>(PolygonMeshTopology meshTopology, Vec3 polyNormals[], io UInt8 multiWingPolys[], io Boolean hasMultiWingPolys, io Vec3 pointNormals[]) {
+  Boolean otherWingsToCompute;
+  Vec3 pointNormal = meshTopology.generatePointNormal( index, polyNormals, otherWingsToCompute );
+  meshTopology.setPointAttribute( index, pointNormals, pointNormal );
+
+  if( otherWingsToCompute ) {
+    hasMultiWingPolys = true;
+    multiWingPolys[index] = 1;
+  }
+}
+
+/// \internal
+operator generateMeshPointNormalOrSplits( Size point, io Ref<PolygonMesh> mesh, Vec3 polyNormals[], Scalar cosHardAngle, Boolean setAllNormals_noThreadSafe, io UInt16 splitBitsOrMaxIfNonTrivial[] ) {
+
+  //In case there is a split, it is not threadsafe to set the value (unsharing), other than a uniform value.
+  //In such case, we at least output the split configuration, so the single-threaded operation can be faster.
+  //However the split configuration is not trivial if there is > 15 neighbor polygons (more than 15 bits)
+  //or if a closed wing it split, but not at its start index.
+
+  //Code is quite complex here: sharing code for multiple cases (split or not, output split bits or not, wrapping wings or not, etc),
+  //doing it in 1 pass, and trying to process as much as possible while threadsafe, when applicable.
+
+  UInt32 pointIter = mesh.topology.getPointIter( point );
+  Boolean extendedBit;
+  UInt32 count = mesh.topology.pointData.getOffsetAndBit( pointIter, extendedBit );
+  Ref<Vec3Attribute> normals = mesh.attributes.getNormals();
+  splitBitsOrMaxIfNonTrivial[point] = 0;
+  if( count ) {
+    DataIter borderDataIter = mesh.topology.getBorderDataIter(pointIter, extendedBit, count);
+
+    Boolean setInitialNormal;
+    Size wingStart;
+    Size wingFirstPolygon;
+    Size wrapWingFirstSplit;
+
+    Vec3 sum, wingFirstSum, prevPolyNormal;
+    Size wingPreviousSplit;
+    Size wingSplitCount;
+    Boolean closedWing;
+
+    Size polygon;
+    Vec3 polyNormal;
+    Size i = 0;
+    Boolean precededByBorder, atClosedWingStart;
+    mesh.topology.getBorderInfo( borderDataIter, i, precededByBorder, atClosedWingStart );
+
+    while( true ) {
+      Boolean angleSplit, atWingEnd;
+      Boolean nextPrecededByBorder, nextAtClosedWingStart;
+
+      if( i == count )
+        atWingEnd = true;
+      else {
+        Size nextI = i+1;
+        mesh.topology.getBorderInfo( borderDataIter, nextI, nextPrecededByBorder, nextAtClosedWingStart );
+        atWingEnd = i != 0 && (nextPrecededByBorder || nextAtClosedWingStart);
+        polygon = mesh.topology.getPointIterPolygon( pointIter, i );
+        polyNormal = polyNormals[polygon];
+        if( !atWingEnd && i != wingStart && prevPolyNormal.dot(polyNormal) <= cosHardAngle ) {
+          ++wingSplitCount;
+          angleSplit = true;
+        }
+      }
+
+      //Check if there is an additional angle split at the start of a closed wing
+      if( atWingEnd ) {
+        if( !closedWing )
+          ++wingSplitCount;
+        else if( prevPolyNormal.dot(polyNormals[wingFirstPolygon]) <= cosHardAngle ) {
+          ++wingSplitCount;
+          closedWing = false;
+          if( wingSplitCount > 1 ) {
+            //Finally closed wing is split but not wrapping: set the first portion's normals
+            setInitialNormal = true;
+            wingFirstSum = wingFirstSum.unit_safe();
+            if(setAllNormals_noThreadSafe) {
+              for( Size j = wingStart; j < wrapWingFirstSplit; ++j )
+                mesh.setPointIterAttribute( mesh.topology.getPointIter( point ), j, normals, wingFirstSum );
+            } else if(wingStart == 0)
+              mesh.topology.setPointAttribute( point, normals.values, wingFirstSum );
+          }
+        }
+      }
+
+      if( i == 0 ) {
+        wingFirstPolygon = polygon;
+        closedWing = atClosedWingStart;
+        sum = polyNormal;
+      } else if( atWingEnd || angleSplit ) {
+        //At split or wing end: finalize computations for previous polygons
+        if( wingSplitCount > 1 && closedWing && wingStart != 0 && !setAllNormals_noThreadSafe ) {
+          //This is a non-trivial case we can't cache: split config is not aligned with wing,
+          //and there is more than 1 wing.
+          splitBitsOrMaxIfNonTrivial[point] = 65535;
+          return;
+        }
+        Boolean firstClosedWingSplit = angleSplit && closedWing && wingSplitCount == 1;
+        if( firstClosedWingSplit ) {
+          wingFirstSum = sum;
+          wrapWingFirstSplit = i;
+        } else {
+          Size end = i;
+          if( atWingEnd && closedWing ) {
+            end = wrapWingFirstSplit;
+            sum += wingFirstSum;
+          }
+
+          if( !setInitialNormal ) {
+            //Most frequent case for smooth meshes... set initial normal value.
+            //NOTE: this won't re-share unshared attributes if due to previous normals; design decision for performance.
+            setInitialNormal = true;
+            mesh.topology.setPointAttribute( point, normals.values, sum.unit_safe() );
+          } else if(setAllNormals_noThreadSafe) {
+            sum = sum.unit_safe();
+            Size polyPtIndex = wingPreviousSplit;
+            while( polyPtIndex != end ) {
+              if( polyPtIndex == i )//wrap if closed wing
+                polyPtIndex = wingStart;
+              mesh.setPointIterAttribute( mesh.topology.getPointIter( point ), polyPtIndex, normals, sum );
+              ++polyPtIndex;
+            }
+          }
+        }
+
+        if( count > 15 && wingSplitCount > 1 ) {
+          //Point with > 15 polygons + unsplit normal: we don't have enough bits
+          //to store splits here: set as 'exceptional' and recompute later
+          splitBitsOrMaxIfNonTrivial[point] = 65535;
+          return;
+        } else if( !(atWingEnd && closedWing) )
+          splitBitsOrMaxIfNonTrivial[point] |= UInt16(1<<i);
+
+        if( i == count ) {
+          if( wingSplitCount < 2 )
+            splitBitsOrMaxIfNonTrivial[point] = 0;
+          return;
+        }
+
+        //Prepare for next split sum
+        if(atWingEnd) {
+          wingStart = i;
+          wingSplitCount = 0;
+          wingFirstPolygon = polygon;
+          closedWing = atClosedWingStart;
+        }
+        
+        wingPreviousSplit = i;
+        sum = polyNormal;
+      } else
+        sum += polyNormal;
+
+      prevPolyNormal = polyNormal;
+      ++i;
+      precededByBorder = nextPrecededByBorder;
+      atClosedWingStart = nextAtClosedWingStart;
+    }
+  }
+}
+
+
+/// \internal
+/// Returns the normals attribute, and creates it if it didn't exist.
+inline Ref<Vec3Attribute> PolygonMesh.getOrCreateNormalsInternal!() {
+  if( this.normalsAttribute )
+    return this.normalsAttribute;
+  this.normalsAttribute = this.attributes.getOrCreateNormals();
+  this.synchronizeGeometryAttributes();
+  return this.normalsAttribute;
+}

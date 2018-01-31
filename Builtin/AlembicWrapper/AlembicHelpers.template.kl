@@ -1,0 +1,244 @@
+{# /* This template file uses Jinja2 to generate code for each type */ #}
+{##}
+{# /* Code for getting an array of values from a sample */ #}
+{% if alType == "Quatf" %}
+  {% macro arrayType() -%}[]{%- endmacro %}
+  {% macro getVals() -%}getVals{%- endmacro %}
+{% else %}
+  {% macro arrayType() -%}<>{%- endmacro %}
+  {% macro getVals() -%}getValsVolatileData{%- endmacro %}
+{% endif %}
+{##}
+{# /* Code for interpolating two values of type "alType" */ #}
+{% if alType in [ "Quatf" ] %}
+  {% macro linearInterpolate() -%}sphericalLinearInterpolate{%- endmacro %}
+{% elif alType in [ "Mat44f" ] %}
+  {% macro linearInterpolate() -%}interpolate{%- endmacro %}
+{% else %}
+  {% macro linearInterpolate() -%}linearInterpolate{%- endmacro %}
+{% endif %}
+
+
+/// \internal
+Boolean AlembicGeometryParamReader.readSample{{ alType }}!(Float64 time, {{ klType }} valuesA{{ arrayType() }}, UInt32 optionalPointToIndex<>, io GeometryAttributes attributes) {
+
+  {{ atrType }}Attribute attr = attributes.getOrCreate{{ atrType }}Attribute(this._name);
+
+  AlembicI{{ alType }}GeomParamSample sampleB = null;
+  {{ klType }} valuesB{{ arrayType() }};
+
+  // If interpolation is required, but the topology changes, round to the nearest frame
+  if( this._info.requiresInterpolation() ) {
+    sampleB = this._{{ alType }}Param.getExpanded( this.archive.getISampleSelector( this._info.indexB ) );
+    valuesB = sampleB.{{ getVals() }}();
+    if( valuesA.size() != valuesB.size() )
+      this._info.roundToClosestFrame();
+  }
+
+  Size sampleSize = valuesA.size();
+  if( !optionalPointToIndex ) {
+    Size count = Math_min( sampleSize, attr.size() );
+    if( this._info.requiresInterpolation() ) {
+      for(Size i=0;i<count;i++)
+        attr.values[i] = valuesA[i].{{ linearInterpolate() }}(valuesB[i], Float32(this._info.fraction));
+    } else {
+      for(Size i=0;i<count;i++)
+        attr.values[i] = valuesA[i];
+    }
+  } else {
+    Size count = Math_min( optionalPointToIndex.size(), attr.size() );
+    if(this._info.requiresInterpolation()) {
+      for(Size i=0;i<count;i++) {
+        UInt32 index = optionalPointToIndex[i];
+        if( index < sampleSize )
+          attr.values[i] = valuesA[index].{{ linearInterpolate() }}( valuesB[index], Float32( this._info.fraction ) );
+      }
+    } else {
+      for(Size i=0;i<count;i++) {
+        UInt32 index = optionalPointToIndex[i];
+        if( index < sampleSize )
+          attr.values[i] = valuesA[index];
+      }
+    }
+  }
+
+  // if( !optionalPointToIndex && sampleSize != attr.size() ) {
+  //   String name = this.getName();
+  //   String originalName = this._{{ alType }}Param.getName();
+  //   if( name != originalName ) { name = "\"" + name + "\" (originally \"" + originalName +"\")"; }
+  //   else { name = "\"" + name + "\""; }
+  //   report( "AlembicGeometryParamReader.readSample{{ alType }} : Warning : reading the attribute " + name + " of size " + sampleSize
+  //     + " in a GeometryAttribute of size " + attr.size() + " (" + ( sampleSize > attr.size() ? "truncating" : "padding") + " it). Archive : " + this.archive.getPath() );
+  // }
+  attr.incrementVersion();
+  return true;
+}
+
+/// \internal
+Boolean AlembicGeometryParamReader.readSample{{ alType }}!( Float64 time, io GeometryAttributes attributes ) {
+  if( this._info.time == time || this._numSamples == 0 )
+    return false;
+
+  AlembicSampleInfo info( time, this._timeSampling, this._numSamples );
+  if( info == this._info )
+    return false;
+  this._info = info;
+
+  AlembicI{{ alType }}GeomParamSample sample = this._{{ alType }}Param.getExpanded( this.archive.getISampleSelector( this._info.indexA ) );
+  {{ klType }} valuesA{{ arrayType() }} = sample.{{ getVals() }}();
+
+  UInt32 mapping<>;
+  return this.readSample{{ alType }}( time, valuesA, mapping, attributes );
+}
+
+/// \internal
+Boolean AlembicGeometryParamReader.readCurveSample{{ alType }}!( Float64 time, UInt32 curveCount, UInt32 pointToCurve<>, UInt32 optionalPointToIndex<>, io GeometryAttributes attributes ) {
+
+  if( this._info.time == time || this._numSamples == 0 )
+    return false;
+
+  AlembicSampleInfo info( time, this._timeSampling, this._numSamples );
+  if( info == this._info )
+    return false;
+  this._info = info;
+
+  AlembicI{{ alType }}GeomParamSample sample = this._{{ alType }}Param.getExpanded( this.archive.getISampleSelector( this._info.indexA ) );
+  {{ klType }} valuesA{{ arrayType() }} = sample.{{ getVals() }}();
+
+  UInt32 mapping<>;
+  if( valuesA.size() >= attributes.size() )
+    mapping = optionalPointToIndex;
+  else if( valuesA.size() >= curveCount )
+    mapping = pointToCurve;
+
+  return this.readSample{{ alType }}( time, valuesA, mapping, attributes );
+}
+
+/// \internal
+Boolean AlembicGeometryParamReader.readSample{{ alType }}!(Float64 time, io PolygonMesh mesh, Boolean keepSameAttributeIndices) {
+
+  if(this._info.time == time || this._numSamples == 0)
+    return false;
+
+  AlembicSampleInfo info(time, this._timeSampling, this._numSamples);
+  if(info == this._info)
+    return false;
+  this._info = info;
+
+  {{ klType }} valuesA{{ arrayType() }};
+  {{ klType }} valuesB{{ arrayType() }};
+  Ref<{{ atrType }}Attribute> attr = mesh.getOrCreate{{ atrType }}Attribute(this._name);
+  AlembicI{{ alType }}GeomParamSample sample = this._{{ alType }}Param.getExpanded( this.archive.getISampleSelector( this._info.indexA ) );
+  valuesA = sample.{{ getVals() }}();
+  AlembicI{{ alType }}GeomParamSample sampleB = null;//Ensure its scope covers the values' lifetime
+
+  if(this._info.requiresInterpolation()) {
+    sampleB = this._{{ alType }}Param.getExpanded( this.archive.getISampleSelector( this._info.indexB ) );
+    valuesB = sampleB.{{ getVals() }}();
+  }
+
+  if(this._scope == Alembic_kVertexScope || this._scope == Alembic_kVaryingScope) {
+
+    if(this._info.requiresInterpolation()) {
+      for(Size i=0;i<mesh.pointCount();i++)
+        mesh.setPointAttribute(i, attr, valuesA[i].{{ linearInterpolate() }}(valuesB[i], Float32(this._info.fraction)));
+    } else {
+      for(Size i=0;i<mesh.pointCount();i++)
+        mesh.setPointAttribute(i, attr, valuesA[i]);
+    }
+
+  } else if(this._scope == Alembic_kFacevaryingScope || this._scope == Alembic_kUniformScope) {
+
+    Size offset = 0;
+    for(Size i=0;i<mesh.polygonCount();i++) {
+      Size count = mesh.getPolygonSize(i);
+      for(UInt32 j=0;j<count;j++) {
+        {{ klType }} value = this._info.requiresInterpolation() ? valuesA[offset].{{ linearInterpolate() }}(valuesB[offset], Float32(this._info.fraction)) : valuesA[offset];
+        if( keepSameAttributeIndices ) {
+          UInt32 index = mesh.getPolygonAttributeIndex( i, count - 1 - j );
+          attr.values[index] = value;
+        } else
+          mesh.setPolygonAttribute( i, count - 1 - j, attr, value );
+        if( this._scope == Alembic_kFacevaryingScope ) { offset++; } // One value per corner of the polygon
+      }
+      if( this._scope == Alembic_kUniformScope ) { offset++; } // One value per polygon
+    }
+  }
+
+  attr.incrementVersion();
+  return true;
+}
+
+private AlembicGeometryParamReader.set!( AlembicI{{ alType }}GeomParam param ) {
+  this._name = param.getName();
+  if(this._name.startsWith('.'))
+    this._name = this._name.leftStrip(1);
+  this._paramType = "{{ alType }}";
+  this._{{ alType }}Param = param;
+  this._timeSampling = this._{{ alType }}Param.getTimeSampling();
+  this._numSamples = this._{{ alType }}Param.getNumSamples();
+  this._scope = this._{{ alType }}Param.getScope();
+}
+
+/// Constructor for AlembicI{{ alType }}GeomParam
+public AlembicGeometryParamReader( AlembicArchiveReader archive, AlembicI{{ alType }}GeomParam param ) {
+  this.archive = archive;
+  this.set( param );
+}
+
+/// \internal
+private AlembicGeometryParamWriter.init{{ alType }}!(
+  AlembicOCompoundProperty parent,
+  String name,
+  AlembicGeometryScope scope,
+  SInt32 timeSampling,
+  Ref<{{ atrType }}Attribute> attribute
+)
+{
+  this._name = name;
+  this._paramType = "{{ alType }}";
+  this._scope = scope;
+  this._{{ alType }}Param = AlembicO{{ alType }}GeomParam(parent, name, false, scope, 1);
+  this._{{ alType }}Param.setTimeSampling(timeSampling);
+  this._valueProperty = this._{{ alType }}Param.getValueProperty();
+}
+
+/// \internal
+private Boolean AlembicGeometryParamWriter.writeSample{{ alType }}!(
+  Ref<Geometry> geometry,
+  Ref<GeometryAttribute> attribute,
+  UInt32 optionalPointToIndex<>
+)
+{
+  {{ atrType }}Attribute castAttribute = attribute;
+  if( castAttribute == null )
+    throw 'AlembicGeometryParamWriter: Attribute "'+this._name+'",  type and paramType "'+this._paramType+'" not matching.';
+
+  {{ klType }} values[] = castAttribute.values;
+  if(this._scope == Alembic_kVertexScope)
+  {
+    if(geometry != null)
+    {
+      PolygonMesh mesh(geometry);
+      if(mesh)
+      {
+        values = values.clone();
+        values.resize(mesh.pointCount());
+      }
+    }
+  }
+  
+  if( !optionalPointToIndex )
+    this._{{ alType }}Param.set( AlembicO{{ alType }}GeomParamSample( values, this._scope ) );
+  else
+  {
+    {{ klType }} mappedValues[]; mappedValues.resize( optionalPointToIndex.size() );
+    
+    for( Index i=0; i<mappedValues.size(); i++ )
+      mappedValues[i] = values[ optionalPointToIndex[i] ];
+
+    this._{{ alType }}Param.set( AlembicO{{ alType }}GeomParamSample( mappedValues, this._scope ) );
+  }
+
+  return true;
+}

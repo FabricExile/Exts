@@ -1,0 +1,71 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Box3.html",
+    "uiTooltip" : "Merges the given vector into this box\n\n Supported by Box3"
+    },
+  "title" : "Merge[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Box3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "v",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "5210EA463343EE812DC614B27A43FD9E",
+  "code" : "require Math;
+
+operator Math_Box3_merge_task<<<index>>>(
+  io Box3[] this
+, in Vec3[] v
+) {
+  this[index < this.size() ? index : this.size() - 1].merge(v[index < v.size() ? index : v.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( v.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < v.size()) task_size = v.size();
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Box3_merge_task(index, this, v);
+    }
+  } else {
+    Math_Box3_merge_task<<<task_size>>>(this, v);
+  }
+}
+"
+  }

@@ -1,0 +1,128 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/SpatialQueryable.html",
+    "uiTooltip" : "A shortcut to :kl-ref:`SpatialQuery.raycast`, without the need to call\n:kl-ref:`SpatialQueryable.beginSpatialQuery` and :kl-ref:`SpatialQueryable.endSpatialQuery`.\nSee :kl-ref:`SpatialQuery.raycast` for more details.\n\n Supported by SpatialQueryable,Points,Lines,PolygonMesh"
+    },
+  "title" : "Raycast[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "$TYPE$[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "ray",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Ray[]" : [
+          {
+            "start" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              },
+            "direction" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Ray[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "doubleSided",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Boolean[]" : [
+          false
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Boolean[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "coneThreshold",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "maxDistance",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "GeometryLocation[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "662669FD80EE4DC6DBE753B591C2318C",
+  "code" : "require Geometry;
+
+operator Geometry_SpatialQueryable_raycast_task<<<index>>>(
+  io GeometryLocation[] result
+, in $TYPE$[] this
+, in Ray[] ray
+, in Boolean[] doubleSided
+, in Scalar[] coneThreshold
+, in Scalar[] maxDistance
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].raycast(ray[index < ray.size() ? index : ray.size() - 1], doubleSided[index < doubleSided.size() ? index : doubleSided.size() - 1], coneThreshold[index < coneThreshold.size() ? index : coneThreshold.size() - 1], maxDistance[index < maxDistance.size() ? index : maxDistance.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( ray.size() == 0) return;
+  if( doubleSided.size() == 0) return;
+  if( coneThreshold.size() == 0) return;
+  if( maxDistance.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < ray.size()) task_size = ray.size();
+  if(task_size < doubleSided.size()) task_size = doubleSided.size();
+  if(task_size < coneThreshold.size()) task_size = coneThreshold.size();
+  if(task_size < maxDistance.size()) task_size = maxDistance.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Geometry_SpatialQueryable_raycast_task(index, result, this, ray, doubleSided, coneThreshold, maxDistance);
+    }
+  } else {
+    Geometry_SpatialQueryable_raycast_task<<<task_size>>>(result, this, ray, doubleSided, coneThreshold, maxDistance);
+  }
+}
+"
+  }

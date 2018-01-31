@@ -1,0 +1,87 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 2.6.0
+
+  Command defines the methods of a command.
+  Commands must implement this interface.
+
+  For commands to be merged during an interaction loop (eg: mouse drag), the following should be done:
+
+  - A new mergeID should be set to the command; such an ID can be queried from :kl-ref:`CommandManager.getNewCanMergeID`.\
+  Commands for all the same interaction loop should use that mergeID, either by setting it directly to the command\
+  with :kl-ref:`BaseCommand.setCanMergeID`, or by passing it as an arg to :kl-ref:`CommandManager.scheduleCommand` or\
+  :kl-ref:`CommandManager.createCommand`.
+
+  - The command must implement the "canMerge" method, which should merge the result of the accumulated commands,\
+  and transfer the "undo" information from the previous merged command, if applicable. Parent class's merge()\
+  should be first called by the implementation.
+
+  - For all commands scheduled before the end of the interaction loop, its logging should be disabled (canLog() should\
+  return false), which can also be done by calling :kl-ref:`BaseCommand.blockLog` ; only the last command, the one\
+  that should be logged, should have canLog() == true.
+
+  See BaseScriptableCommand for more details about commands with scripting support, and :ref:`TPG.scriptable_command`
+  for more context and examples.
+*/
+interface Command {
+
+  /// Gets the name of the command.
+  String getName();
+
+  /// Sets the name of the command.
+  /// Called by the CommandManager.
+  setName!(String name);
+
+  /// Checks if the command is undoable.
+  Boolean canUndo();
+ 
+	/// Checks if the command can be logged.
+  Boolean canLog();
+
+  /// Defines the command logic.
+  /// Returns true if succeded, false otherwise.
+  /// When applicable, parent class's doIt() should be called 
+  /// at the beginning of specialized implementations.
+  Boolean doIt!( io String error );
+
+  /// Defines the undo logic.
+  /// Returns true if succeded, false otherwise.
+  /// When applicable, parent class's undoIt() should be called 
+  /// at the end of specialized implementations.
+  Boolean undoIt!();
+
+  /// Defines the undo logic.
+  /// Returns true if succeded, false otherwise.
+  /// When applicable, parent class's redoIt() should be called 
+  /// at the beginning of specialized implementations.
+  Boolean redoIt!();
+  
+  /// Gets a description of the command.
+  String getHelp();
+
+  /// Gets a description of the command
+  /// to display in the history stack (if one).
+  String getHistoryDesc();
+
+  /**
+    Checks if the command `cmd` can be merged with `this` command.
+    When applicable, parent class's merge() should be called
+    at the beginning of specialized implementations.
+
+    If undoPrevAndMergeFirst is false (default), then `this.doIt()` will first be called,
+    then `this.merge(previousCmd)` will be called.
+
+    If undoPrevAndMergeFirst is true, then `this.merge()` will first be called,
+    then `previousCmd.undo()` will be called, then `this.doIt()` will be called.
+    This allows to simplify the management of commands that have a cumulative effect.
+  */
+  Boolean canMerge(Command previousCmd, io Boolean undoPrevAndMergeFirst );
+
+  /// Merges a command `cmd` with `this` command.
+  /// When applicable, parent class's merge() should be called 
+  /// at the beginning of specialized implementations.
+  merge!( Command previousCmd );
+};

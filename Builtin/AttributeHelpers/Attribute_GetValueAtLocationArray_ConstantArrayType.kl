@@ -1,0 +1,70 @@
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+function UInt16[][] BaseGeometry.getUInt16ConstantArrayAttributeAtLocationArray(
+  UInt16ConstantArrayAttribute attr,
+  GeometryLocation locations[],
+  io String type
+) {
+  type = "";
+
+  UInt16 values[][];
+
+  if(attr == null)
+    return values;
+
+  Geometry geometry = this;
+  if(geometry == null)
+    return values;
+
+  type = "UInt16[]";
+  values.resize(locations.size());
+
+  for(Size i=0;i<locations.size();i++)
+  {
+    if(!locations[i].isValid())
+      continue;
+    LocalL16UInt16Array value = GetAttributeAtLocation(geometry, locations[i], attr);
+    values[i].resize(value.size());
+    for(Size j=0;j<value.size();j++)
+      values[i][j] = value.get(j);
+  }
+
+  return values;
+}
+
+/// \internal
+function Float32[][] BaseGeometry.getScalarConstantArrayAttributeAtLocationArray(
+  ScalarConstantArrayAttribute attr,
+  GeometryLocation locations[],
+  io String type
+) {
+  type = "";
+
+  Float32 values[][];
+
+  if(attr == null)
+    return values;
+
+  Geometry geometry = this;
+  if(geometry == null)
+    return values;
+
+  type = "Float32[]";
+  values.resize(locations.size());
+
+  for(Size i=0;i<locations.size();i++)
+  {
+    if(!locations[i].isValid())
+      continue;
+    LocalL16ScalarArray value = GetAttributeAtLocation(geometry, locations[i], attr);
+    values[i].resize(value.size());
+    for(Size j=0;j<value.size();j++)
+      values[i][j] = value.get(j);
+  }
+
+  return values;
+}

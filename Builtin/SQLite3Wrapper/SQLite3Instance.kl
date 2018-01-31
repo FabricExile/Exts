@@ -1,0 +1,132 @@
+//
+// Copyright 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/// The SQLite3Instance represents an instance of the SQLite3Model, 
+/// basically the SQLite3Model is a table and the SQLite3Instance is
+/// a row in an ORM.
+struct SQLite3Instance permits SQLite3Model
+{
+  protected Ref<SQLite3Model> model;
+  protected SInt64 rowid;
+  protected String fields[String];
+  protected Boolean pulled;
+  protected Boolean changed;
+};
+
+/// Default constructor
+SQLite3Instance()
+{
+  this.rowid = -1;
+  this.pulled = false;
+  this.changed = false;
+}
+
+/// Constructor
+SQLite3Instance(Ref<SQLite3Model> model, SInt64 rowid)
+{
+  this.model = model;
+  this.rowid = rowid;
+  this.pulled = false;
+  this.changed = false;
+}
+
+/// Constructor
+SQLite3Instance(Ref<SQLite3Model> model, SInt64 rowid, String fields[String])
+{
+  this.model = model;
+  this.rowid = rowid;
+  this.fields = fields;
+  this.pulled = true;
+  this.changed = false;
+}
+
+/// Returns the id of this instance
+SInt64 SQLite3Instance.getRowId()
+{
+  return this.rowid;
+}
+
+/// Casts the instance into a rowid
+SInt64(SQLite3Instance inst)
+{
+  this = inst.getRowId();
+}
+
+/// Returns true if this instance is valid
+Boolean SQLite3Instance.isValid()
+{
+  return this.getRowId() > 0;
+}
+
+/// Returns the model this instance belongs to.
+Ref<SQLite3Model> SQLite3Instance.getModel()
+{
+  return this.model;
+}
+
+/// Loads the instance's content from the database
+SQLite3Instance.load!()
+{
+  this.pulled = false;
+  this.pullIfRequired();
+}
+
+/// Stores the content of the instance in the database
+SQLite3Instance.save!()
+{
+  if(!this.changed)
+    return;
+  if(!this.pulled)
+    return;
+  this.model.updateFromFields(this.rowid, this.fields);
+  this.changed = false;
+  this.pulled = true;
+}
+
+/// Deletes the instance from the database
+Boolean SQLite3Instance.delete!()
+{
+  this.checkRowId();
+  Boolean result = this.model.delete(this.rowid);
+  this.rowid = -1;
+  return result;
+}
+
+protected SQLite3Instance.copyInto(io SQLite3Instance other)
+{
+  other.model = this.model;
+  other.rowid = this.rowid;
+  other.fields = this.fields;
+  other.pulled = this.pulled;
+  other.changed = this.changed;
+}
+
+protected SQLite3Instance.checkRowId()
+{
+  if(this.rowid == -1)
+    throw("Called on invalid instance.");
+}
+
+protected SQLite3Instance.pullIfRequired!()
+{
+  this.checkRowId();
+  if(this.pulled)
+    return;
+  this.fields = this.model.selectFromRowId(this.rowid);
+  this.pulled = true;
+}
+
+protected String SQLite3Instance.getField!(String key)
+{
+  this.pullIfRequired();
+  return this.fields[key];
+}
+
+protected SQLite3Instance.setField!(String key, String value)
+{
+  if(!this.fields.has(key))
+    throw("Field "+key+" is not known.");
+  this.fields[key] = value;
+  this.changed = true;
+}

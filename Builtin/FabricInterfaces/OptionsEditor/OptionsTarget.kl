@@ -1,0 +1,59 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 2.6.0
+  
+  OptionsTarget defines methods to access and set editable options of a KL object.
+  Each target is identified by a unique-id, so they are editable from a UI widget
+  OptionsTarget supports a 'global' options mechanism, cf. BaseGlobalOptionsTarget.
+
+  \example
+
+    object MyTarget : OptionsTarget {
+    }
+    
+    MyTarget() {
+      // Register the target.
+      Ref<OptionsTarget> target = this;
+      GetOptionsTargetRegistry().registerTarget(target);
+    }
+
+    ~MyTarget() {
+      // Unregister the target.
+      Ref<OptionsTarget> target = this;
+      GetOptionsTargetRegistry().unregisterTarget(target);
+    }
+    
+    RTVal MyTarget.getOptions() {
+      RTVal options[String];
+      options['foo'] = 'foo';
+      return options;
+    }
+
+    MyTarget.setOptions!( RTVal options ) {
+      RTVal optionsDict[String] = options;
+      String foo = optionsDict['foo'];
+      ...
+    }
+
+    Ref<OptionsTarget> MyTarget.getGlobalOptions( ) {
+      // No global options
+      return null;
+    }
+
+  \endexample
+*/
+interface OptionsTarget {
+  /// Sets the options.
+  /// \param options List of options, can also contain a RTVal[String] or RTVal[] of options.
+  setOptions!( RTVal options );
+
+  /// Gets the options.
+  /// Returns a list of options, can also contain a RTVal[String] or RTVal[] of options.
+  RTVal getOptions();
+
+  /// Gets the global options.
+  Ref<OptionsTarget> getGlobalOptions();
+};

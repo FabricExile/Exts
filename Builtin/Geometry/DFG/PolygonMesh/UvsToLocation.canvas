@@ -1,0 +1,70 @@
+// Created by kl2dfg (processFunction)
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/PolygonMesh.html",
+    "uiTooltip" : "Computes an array of mesh GeometryLocation such that their values for uvAttribute equals corresponding uvs.\nIf none exist, an invalid GeometryLocation is set (see :kl-ref:`GeometryLocation.isValid`).\nNote that there could be many such GeometryLocation per UVs. To get them all, use method :kl-ref:`PolygonMeshSpatialQuery.uvToLocations`.\n\nSupported types:\n  this: PolygonMesh\n  uvAttribute: Ref<Vec2Attribute>\n  uvs: Vec2[]\n  wrapUVs: Boolean\n  locations: GeometryLocation[]\n"
+    },
+  "title" : "UvsToLocation",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "PolygonMesh"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "uvAttribute",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Vec2Attribute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "uvs",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Vec2[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "wrapUVs",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Boolean"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "locations",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "GeometryLocation[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "C1AD1CB274C4CBBDB433194AD45730AD",
+  "code" : "require Geometry;
+
+dfgEntry {
+  Ref<Vec2Attribute> uvAttribute_ref = uvAttribute;
+  this.uvsToLocation(uvAttribute_ref, uvs, wrapUVs, locations);
+}
+"
+  }

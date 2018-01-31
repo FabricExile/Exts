@@ -1,0 +1,90 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/PolygonMesh.html",
+    "uiTooltip" : "Returns true if the polygon has a border (no adjacent polygon)\nat the polygon edge formed by polygon point indices `polygonPointIndex` and :kl-ref:`PolygonMesh.nextPolygonPointIndex` `(polygonPointIndex)`.\n\n Supported by PolygonMesh"
+    },
+  "title" : "IsPolygonBorder[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "PolygonMesh[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "polygon",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Size[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Size[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "polygonPointIndex",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Size[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Size[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "59304E4784EC2263C1F836342E489327",
+  "code" : "require Geometry;
+
+operator Geometry_PolygonMesh_isPolygonBorder_task<<<index>>>(
+  io Boolean[] result
+, in PolygonMesh[] this
+, in Size[] polygon
+, in Size[] polygonPointIndex
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].isPolygonBorder(polygon[index < polygon.size() ? index : polygon.size() - 1], polygonPointIndex[index < polygonPointIndex.size() ? index : polygonPointIndex.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( polygon.size() == 0) return;
+  if( polygonPointIndex.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < polygon.size()) task_size = polygon.size();
+  if(task_size < polygonPointIndex.size()) task_size = polygonPointIndex.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Geometry_PolygonMesh_isPolygonBorder_task(index, result, this, polygon, polygonPointIndex);
+    }
+  } else {
+    Geometry_PolygonMesh_isPolygonBorder_task<<<task_size>>>(result, this, polygon, polygonPointIndex);
+  }
+}
+"
+  }

@@ -1,0 +1,103 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/PolygonMesh.html",
+    "uiTooltip" : "Sets the normal for a point, at a specific neighbor index.\n\n Supported by PolygonMesh"
+    },
+  "title" : "SetPointNormal[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "PolygonMesh[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "point",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Size[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Size[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "neighborPolygonIndex",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Size[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Size[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "normal",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "2DE9518BCF0C3F74DC1EBF8D5226E5A1",
+  "code" : "require Geometry;
+
+operator Geometry_PolygonMesh_setPointNormal_task<<<index>>>(
+  io PolygonMesh[] this
+, in Size[] point
+, in Size[] neighborPolygonIndex
+, in Vec3[] normal
+) {
+  this[index < this.size() ? index : this.size() - 1].setPointNormal(point[index < point.size() ? index : point.size() - 1], neighborPolygonIndex[index < neighborPolygonIndex.size() ? index : neighborPolygonIndex.size() - 1], normal[index < normal.size() ? index : normal.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( point.size() == 0) return;
+  if( neighborPolygonIndex.size() == 0) return;
+  if( normal.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < point.size()) task_size = point.size();
+  if(task_size < neighborPolygonIndex.size()) task_size = neighborPolygonIndex.size();
+  if(task_size < normal.size()) task_size = normal.size();
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Geometry_PolygonMesh_setPointNormal_task(index, this, point, neighborPolygonIndex, normal);
+    }
+  } else {
+    Geometry_PolygonMesh_setPointNormal_task<<<task_size>>>(this, point, neighborPolygonIndex, normal);
+  }
+}
+"
+  }

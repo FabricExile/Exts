@@ -1,0 +1,170 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// \internal
+  object BaseEventListener_data{
+    UInt32 refCount;
+    WeakPointer eventSourceWP;
+    EventSource ownedEventSource;
+  };
+
+  inline Ref<EventSource> BaseEventListener_data.getEventSource() {
+    // Silently ignore destroyed sources; destruction order can vary
+    if( this.eventSourceWP.isValid() )
+      return this.eventSourceWP.getOwner();
+    else
+      return null;
+  }
+
+  /// Provides base functionality for holding the connection from this EventListener to some EventSource.
+  /// See :ref:`TPG.events` for more information and examples.
+  object BaseEventListener : BaseWeakPointerable, EventListener{
+    Ref<EventListener> container;
+    FewObjectsStableList eventSources;
+  };
+
+  BaseEventListener() {
+    this.eventSources = FewObjectsStableList();
+    this.container = this;
+  }
+
+  ~BaseEventListener() {
+    this.disconnectAll();
+  }
+
+  BaseEventListener.setContainer!( Ref<EventListener> container ) {
+    this.container = container;
+  }
+
+  /// \internal
+  BaseEventListener.connect!( Ref<EventSource> eventSource, Boolean ownedByEventSource, Boolean ownEventSource, String sourceEvent, String mappedListenerEvent ) {
+    if( !eventSource )
+      return;
+
+    Ref<WeakPointerable> eventSourceWPAble = eventSource;
+    if( !eventSourceWPAble ) {
+      setError( "BaseEventListener.connect: eventSource must support the WeakPointerable interface" );
+      return;
+    }
+
+    if( ownedByEventSource && ownEventSource )
+      setError( "BaseEventListener.connect: ownedByEventSource && ownEventSource: will cause a ref cycle leak" );
+
+    FewObjectsStableListIterator it( this.eventSources );
+    Ref<BaseEventListener_data> foundData = null;
+    Ref<BaseEventListener_data> sourceData = null;
+    while( sourceData = it.next() ) {
+      if( sourceData.getEventSource() === eventSource ) {
+        foundData = sourceData;
+        break;
+      }
+    }
+    if( !foundData ) {
+      BaseEventListener_data newData();
+      newData.eventSourceWP = eventSourceWPAble.getWeakPointer();
+      if( !newData.eventSourceWP )
+        setError( "BaseEventListener.connect: eventSource returned a null WeakPointer" );
+      foundData = newData;
+      this.eventSources.pushBack( newData, true );
+    }
+    if( ownEventSource )
+      foundData.ownedEventSource = eventSource;
+
+    Ref<EventSource> mutableSource = eventSource;
+    mutableSource.addListener( this.container, ownedByEventSource, sourceEvent, mappedListenerEvent );
+    ++foundData.refCount;
+  }
+
+  BaseEventListener.connect!( Ref<EventSource> eventSource, Boolean ownedByEventSource, String sourceEvent, String mappedListenerEvent ) {
+    this.connect( eventSource, ownedByEventSource, false, sourceEvent, mappedListenerEvent );
+  }
+
+  BaseEventListener.connect!( Ref<EventSource> eventSource, Boolean ownedByEventSource, String sourceEvent ) {
+    this.connect( eventSource, ownedByEventSource, false, sourceEvent, String() );
+  }
+
+  BaseEventListener.connect!( Ref<EventSource> eventSource, Boolean ownedByEventSource ) {
+    this.connect( eventSource, ownedByEventSource, false, String(), String() );
+  }
+
+  BaseEventListener.connectAndAttach!( Ref<EventSource> eventSource, String sourceEvent, String mappedListenerEvent ) {
+    Ref<Component> eventSourceComponent = eventSource;
+    if( Boolean( eventSourceComponent ) && !eventSourceComponent.getParent() )
+      eventSourceComponent.setParent( this.container );
+
+    this.connect( eventSource, false, true, sourceEvent, mappedListenerEvent );
+  }
+
+  BaseEventListener.connectAndAttach!( Ref<EventSource> eventSource, String sourceEvent ) {
+    this.connectAndAttach( eventSource, sourceEvent, String() );
+  }
+
+  BaseEventListener.connectAndAttach!( Ref<EventSource> eventSource ) {
+    this.connectAndAttach( eventSource, String(), String() );
+  }
+
+  /// \internal
+  BaseEventListener.disconnect!( Ref<EventSource> eventSource, Boolean disconnectAll, String sourceEvent ) {
+    if( eventSource ) {
+
+      Object keepAlive = this;// We could be destroyed if owned by eventSource
+      FewObjectsStableListIterator it( this.eventSources );
+      Ref<BaseEventListener_data> sourceData = null;
+      while( sourceData = it.next() ) {
+        Ref<EventSource> dataEventSource = sourceData.getEventSource();
+        if( Boolean( dataEventSource ) && dataEventSource === eventSource ) {
+          if( sourceEvent )//TODO: source event filters not really compatible with ref counting...
+            dataEventSource.removeListener( this.container, ToolEventUserID(), sourceEvent );
+
+          if( --sourceData.refCount == 0 || disconnectAll ) {
+            dataEventSource.removeListener( this.container );
+            if( sourceData.ownedEventSource ) {
+              Ref<Component> ownedEventSourceComp = sourceData.ownedEventSource;
+              if( Boolean( ownedEventSourceComp ) && ownedEventSourceComp.getParent() === this.container )
+                ownedEventSourceComp.setParent( null );
+            }
+            this.eventSources.remove( sourceData );
+          }
+          return;
+        }
+      }
+      //setError( "BaseEventListener.disconnect: more disconnect than connect on the source" );
+    }
+  }
+
+  inline BaseEventListener.disconnect!( Ref<EventSource> eventSource ) {
+    this.disconnect( eventSource, false, String() );
+  }
+
+  inline BaseEventListener.disconnect!( Ref<EventSource> eventSource, String sourceEvent ) {
+    this.disconnect( eventSource, false, sourceEvent );
+  }
+
+  BaseEventListener.disconnectAll!( ) {
+    EventSource eventSources[];
+
+    FewObjectsStableListIterator it( this.eventSources );
+    Ref<BaseEventListener_data> sourceData = null;
+    while( sourceData = it.next() )
+      eventSources.push( sourceData.getEventSource() );
+
+    for( Size i = 0; i < eventSources.size(); ++i )
+      this.disconnect( eventSources[i], true, String() );
+  }
+
+  /// \internal
+  BaseEventListener.eventSourceDestroying!( Ref<EventSource> eventSource, ToolEventUserID userID ) {
+    this.disconnect( eventSource, true, String() );
+  }
+
+  BaseEventListener.invalidate!( ) {
+    this.parent.invalidate();//First make sure our week pointer container is null to avoid any circular refs
+    this.disconnectAll();
+  }
+
+  /// Implementation of EventSource; to be overriden.
+  BaseEventListener.onEvent!( ToolEvent event, ToolEventUserID userID ) {}
+}// namespace Tool

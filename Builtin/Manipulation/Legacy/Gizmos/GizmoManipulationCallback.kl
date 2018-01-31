@@ -1,0 +1,31 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+\versionadded 1.12.0
+
+Object supporting the :kl-ref:`GizmoManipulationCallback` interface is used by 
+the GizmoHandlers to apply the manipulation data to the scene. 
+
+\seealso GizmoHandler, GizmoManipulator
+\dfgPresetOmit
+*/
+interface GizmoManipulationCallback {
+
+  /// Invoked by the GizmoHandler when the mouse drag is starting
+  /// \param mouseEvent The event passed in is the mouse down event.  
+  onDragBegin!(io MouseEvent mouseEvent);
+  
+  /// Invoked by the GizmoHandler when the mouse drag is ending
+  /// \param mouseEvent The event passed in is the mouse up event.  
+  onDragEnd!(io MouseEvent mouseEvent);
+
+  /// Invoked during a drag on a gizmo.
+  /// \param mouseEvent The mouse move events received between onDragBegin and onDragEnd
+  /// \param space The coordinate space defined by the gizmo that was used to compute the delta.
+  /// \param delta The delta in the coordinate space provided
+  /// \param flags flags used to filter the element of the transform being modified. 
+  onDrag!(io MouseEvent mouseEvent, Xfo space, Xfo delta, UInt32 flags);
+};
+

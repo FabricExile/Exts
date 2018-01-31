@@ -1,0 +1,46 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+using namespace Tool;
+
+object BasicXfoManipulatorExample : BaseTool{
+  PathValueXfoTarget xfoTarget;//Driven Xfo target (Canvas port)
+};
+
+// targetPath: the path of the driven external data / canvas port (to be used by the command system)
+// This has to be passed by the Canvas node, and have the following form: dfgBindingID + "." + dfgPortPath("portname")
+BasicXfoManipulatorExample( String targetPath ) {
+  // Create an Xfo target wrapper which drives a canvas Xfo port from the manipulated Xfo
+  this.xfoTarget = PathValueXfoTarget( targetPath );
+
+  // Create a sphere gizmo shape
+  SphereShape gizmo( 0.1 );
+
+  // Initiate an interaction when the gizmo is clicked
+  MouseClickDragRaycastInteraction clickAndDragInteraction();
+  clickAndDragInteraction.addRaycastShape( gizmo, false );// Note: doing gizmo.attachComponent(clickAndDragInteraction) would also work
+
+  // When dragging, translate the Xfo in a viewport-aligned plane
+  TranslateDragInteraction translateDragInteraction( clickAndDragInteraction, this.xfoTarget );
+
+  // Create a XfoTargetAlignedGizmo, which will constraint the gizmo transform to the manipulated Xfo, 
+  // and will attach the translateDragInteraction to it. It also attaches a 'highlight under cursor' behavior.
+  XfoTargetAlignedGizmo gizmoAndXfo( this.xfoTarget, // driven target
+                                     Color(1.0,1.0,0.0), // highlight under cursor color (yellow)
+                                     gizmo, // gizmo shape
+                                     translateDragInteraction ); // gizmo drag interaction
+
+  // Add the XfoTargetAlignedGizmo to our tool hierarchy.
+  // For this example, we could also have specialized XfoTargetAlignedGizmo
+  // but we prefer to show composition patterns, which are usually more flexible.
+  this.addChild( "gizmoAndXfo", gizmoAndXfo );
+
+  // Start in 'waiting' state (not dragging)
+  this.setMainState( StatesAndActions_waitingState );
+}
+
+// Update tool's value from last Canvas port value
+BasicXfoManipulatorExample.update!(Xfo xfo) {
+  this.xfoTarget.updateValue( xfo );
+}

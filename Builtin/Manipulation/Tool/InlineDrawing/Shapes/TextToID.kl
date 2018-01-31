@@ -1,0 +1,82 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+  namespace InlineDrawingRender {
+
+    /// \internal
+    object TextToID : BaseShapeToID{
+      String lastText;
+      String lastFont;
+      Size lastFontSize;
+      Color lastColor;
+      Float32 lastTransparency;
+      Vec3 lastPosition;
+      InlineAtlasTexture atlasTexture;
+    };
+
+    TextToID.updateShape!( io Ref<InlineDrawing> inlineDrawing, DrawContext context ) {
+
+      // Update the shape if the text changes
+      String text, font;
+      Size fontSize;
+      Color color;
+      Float32 transparency;
+      Vec3 position;
+
+      Ref<Text> shapeTool = this.shapeTool;
+      if( shapeTool ) {
+        text = shapeTool.getText();
+        font = shapeTool.getFont( context );
+        fontSize = shapeTool.getFontSize( context );
+        color = shapeTool.getColor( context );
+        transparency = shapeTool.getTransparency( context );
+        position = shapeTool.getRenderTransform( context ) * Vec3();
+      }
+
+      if( text != this.lastText
+          || font != this.lastFont
+          || fontSize != this.lastFontSize
+          || color != this.lastColor
+          || transparency != this.lastTransparency
+          || position != this.lastPosition ) {
+
+        this.lastText = text;
+        this.lastFont = font;
+        this.lastFontSize = fontSize;
+        this.lastColor = color;
+        this.lastTransparency = transparency;
+        this.lastPosition = position;
+
+        this.atlasTexture = inlineDrawing.getOrCreateAtlasTexture( font, fontSize );
+        Ref<AtlasGL> atlas = this.atlasTexture.getAtlas();
+
+        Ref<InlineTextShape> shape = this.shape;
+        if( !shape ) {
+          this.shape = InlineTextShape( String(), atlas );
+          shape = this.shape;
+        }
+        shape.set2DText( atlas, text, Vec2( position.x, position.y ), Color( color.r, color.g, color.b, color.a * ( 1.0 - transparency ) ) );
+      }
+    }
+
+    InlineMaterial TextToID.getMaterial!( io Ref<InlineDrawing> inlineDrawing, Ref<IDRenderEngineMaterial> IDMaterial, DrawContext context ) {
+      // Setup once
+      InlineMaterial material = this.lastMaterial;
+      if( !material ) {
+        OGL2DTextShader shader = inlineDrawing.registerShader( OGL2DTextShader );
+        material = shader.getOrCreateMaterial( "default" );
+      }
+      return material;
+    }
+
+    Ref<InlineInstance> TextToID.update!( io Ref<InlineDrawing> inlineDrawing, Boolean visible, Ref<Object> sourceInstance, DrawContext context, Ref<IDRenderEngineMaterial> IDMaterial ) {
+      Ref<InlineInstance> inst = this.parent.update( inlineDrawing, visible, sourceInstance, context, IDMaterial );
+      if( this.instance )
+        this.instance.setInstanceUniform( InlineUniform( 'u_texture', this.atlasTexture ) );
+      return inst;
+    }
+
+  }// namespace InlineDrawingRender
+}// namespace Tool

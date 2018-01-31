@@ -1,0 +1,507 @@
+//
+// Copyright 2010-2015 Fabric Software Inc. All rights reserved.
+//
+
+Boolean MultithreadingEnabled() = "MultithreadingEnabled";
+
+// Returns a volatile-refreshed Float32 (similar to built-in UInt32.atomicGet())
+inline Float32 Float32.atomicGet!( ) {
+  Data d = this.data();
+  d->{UInt32}.atomicGet();
+  return this;
+}
+
+UInt32 _GetLoggingLevel() = "GetLoggingLevel";
+EnableMultithreading( Boolean enable ) = "EnableMultithreading";
+_SetLoggingLevel( UInt32 level ) = "SetLoggingLevel";
+MicroSleep( UInt32 ms ) = "MicroSleep";
+
+inline UInt32 GetLoggingLevel() {
+  if( Boolean(Fabric_Guarded) )
+    return _GetLoggingLevel();
+  else
+    return 0;
+}
+
+inline SetLoggingLevel( UInt32 level ) {
+  if( Boolean(Fabric_Guarded) || level == 0 )
+    _SetLoggingLevel(level);
+  else
+    setError("SetLoggingLevel: logging only enabled under guarded mode");
+}
+
+/// \internal
+struct ComputeContext_perThreadData {
+  UInt32 multithreadingDepth;
+  UInt32 loggingDepth;
+  Float64 activeWaitTimeSum;
+};
+
+object AsyncTaskQueue;
+
+object ComputeContext {
+  ComputeContext_perThreadData perThreadData[];
+
+  Float32 calibrationDummyResult;//Ensure the optimizer won't remove our code!
+  Float32 parallelExecuteOverhead;
+  SInt32 executingKLDFGBindings;
+
+  String loggingIndentPerDepth[40];
+
+  /// Define it here so it's in a singleton
+  AsyncTaskQueue asyncTaskQueue;
+};
+
+ComputeContext() {
+  Size threadCount = getThreadCount();
+  this.perThreadData.resize( threadCount );
+  this.parallelExecuteOverhead = 0.00025;//An average result on a specific machine
+  this.asyncTaskQueue = AsyncTaskQueue();
+
+  for( Size i = 1; i < this.loggingIndentPerDepth.size(); ++i )
+    this.loggingIndentPerDepth[i] = this.loggingIndentPerDepth[i - 1] + '  ';
+}
+
+/// \internal
+String ComputeContext.getTracingIndent() {
+  UInt32 threadId = getThreadIndex();
+  UInt32 depth = this.perThreadData[threadId].loggingDepth;
+  if( depth < this.loggingIndentPerDepth.size() )
+    return this.loggingIndentPerDepth[depth];
+  else
+    return this.loggingIndentPerDepth[this.loggingIndentPerDepth.size()-1];
+}
+
+/// \internal
+String ComputeContext.getTracingSubIndent() {
+  UInt32 threadId = getThreadIndex();
+  UInt32 depth = this.perThreadData[threadId].loggingDepth+1;
+  if( depth < this.loggingIndentPerDepth.size() )
+    return this.loggingIndentPerDepth[depth];
+  else
+    return this.loggingIndentPerDepth[this.loggingIndentPerDepth.size()-1];
+}
+
+/// Patch to detect onDirty norifs coming from runtime KL->DFGBinding changes
+inline Boolean ComputeContext.hasExecutingKLDFGBinding() {
+  return this.executingKLDFGBindings > 0;
+}
+
+/// NOTE: a Ref<> function will leak: see EDK issue #3327...
+Ref<ComputeContext> GetComputeContext() = "GetComputeContext";
+
+LogTrace( String trace ) {
+  if( !GetLoggingLevel() )
+    setError("LogTrace: must only be called if GetLoggingLevel() > 0 and in guarded mode. Logging level should be checked on the client side to avoid building String when not logging.");
+  else
+    report( GetComputeContext().getTracingIndent() + trace );
+}
+
+/// ForceLogTrace: will log no matter GetLoggingLevel()
+ForceLogTrace( String trace ) {
+  report( GetComputeContext().getTracingIndent() + trace );
+}
+
+/// ForceLogSubTrace: will log no matter GetLoggingLevel()
+ForceLogSubTrace( String trace ) {
+  report( GetComputeContext().getTracingSubIndent() + trace );
+}
+
+LogSubTrace( String trace ) {
+  if( !GetLoggingLevel() )
+    setError("LogSubTrace: must only be called if GetLoggingLevel() > 0 and in guarded mode. Logging level should be checked on the client side to avoid building String when not logging.");
+  else
+    report( GetComputeContext().getTracingSubIndent() + trace );
+}
+
+inline ForceIncreaseLogTraceIndent() {
+  Ref<ComputeContext> computeContext = GetComputeContext();
+  ++computeContext.perThreadData[getThreadIndex()].loggingDepth;
+}
+
+inline ForceDecreaseLogTraceIndent() {
+  Ref<ComputeContext> computeContext = GetComputeContext();
+  UInt32 loggingDepth = computeContext.perThreadData[getThreadIndex()].loggingDepth;
+  if( loggingDepth != 0 )
+    computeContext.perThreadData[getThreadIndex()].loggingDepth = loggingDepth-1;
+}
+
+/// A simple helper for bracketing RTRScheduler debug trace indentation.
+struct LogTraceIndentBracket {
+  Ref<ComputeContext> computeContext;
+  UInt32 threadIndex;
+  UInt32 depthBackup;
+};
+
+inline LogTraceIndentBracket() {
+  if( Boolean(Fabric_Guarded) ) {
+    UInt32 logLevel = GetLoggingLevel();
+    if( logLevel ) {
+      this.computeContext = GetComputeContext();
+      this.threadIndex = getThreadIndex();
+      this.depthBackup = this.computeContext.perThreadData[this.threadIndex].loggingDepth++;
+    }
+  }
+}
+
+/// \internal
+inline ~LogTraceIndentBracket() {
+  if( Boolean(Fabric_Guarded) ) {
+    if( this.computeContext )
+      this.computeContext.perThreadData[this.threadIndex].loggingDepth = this.depthBackup;
+  }
+}
+
+inline BeginKLDFGBindingExecution() {
+  Ref<ComputeContext> computeContext = GetComputeContext();
+  computeContext.executingKLDFGBindings.atomicInc();
+}
+
+inline EndKLDFGBindingExecution() {
+  Ref<ComputeContext> computeContext = GetComputeContext();
+  computeContext.executingKLDFGBindings.atomicDec();
+}
+
+/// Returns true if multithreading is currently active for this thread.
+/// \note This is only relevant if parallel execution is bracketed with a MultithreadAdvisorBracket
+inline Boolean IsMultithreading() {
+  Ref<ComputeContext> computeContext = GetComputeContext();
+  return computeContext.perThreadData[getThreadIndex()].multithreadingDepth > 0;
+}
+
+/// Returns the current multithreading depth for this thread (0 == no multithreading).
+/// \note This is only relevant if parallel execution is bracketed with a MultithreadAdvisorBracket
+inline UInt32 GetMultithreadingDepth() {
+  Ref<ComputeContext> computeContext = GetComputeContext();
+  return computeContext.perThreadData[getThreadIndex()].multithreadingDepth;
+}
+
+LogActiveWaitTime( Float32 time ) {
+  UInt32 threadId = getThreadIndex();
+  Ref<ComputeContext> context = GetComputeContext();
+  context.perThreadData[threadId].activeWaitTimeSum += time;
+}
+
+/// \internal
+operator CalibrateMTOverhead<<<index>>>( UInt32 iterations, io Float32 perThreadTimes[], io Float32 dummyResult ) {
+  UInt64 startTick = getCurrentTicks();
+
+  UInt32 threadId = getThreadIndex();
+
+  Float32 result = dummyResult;
+  for( Size i = 0; i < iterations * 1000; ++i ) {
+    // Something costly...
+    result = (sin(result)+result) % 1.1f * (1.0+result);
+  }
+  dummyResult += result;
+
+  perThreadTimes[threadId] += Float32( getSecondsBetweenTicks( startTick, getCurrentTicks() ) );
+}
+/// Empiritically measures the cost of multithreaded eval and prints the number in seconds.
+/// However, we found that this is extremely varying from run to run, probably as the OS is the boss
+/// when it comes to waking up threads.
+Float32 ComputeContext.measureParallelEvalOverhead!( Boolean printResult ) {
+  // Run calibration tests to measure multithreading overhead
+  // on the current machine.
+  Size threadCount = getThreadCount();
+  Size coreCount = getCoreCount();
+
+  Float32 perThreadTimes[];
+  perThreadTimes.resize( threadCount );
+
+  Size iterations = 1;
+  Float32 overheadSum;
+  UInt32 sampleSum;
+
+  for( Size sample = 0; sample < 8; ++sample ) {
+
+    UInt32 runningThreadCount;
+    Float32 globalTime;
+
+    // Double the computation amount at each loop;
+    // multithreading might not kick in if not enough work is required.
+    for( Size tries = 0; tries < 8; ++tries ) {
+      for( Size j = 0; j < threadCount; ++j )
+        perThreadTimes[j] = 0;
+
+      UInt64 startTick = getCurrentTicks();
+      CalibrateMTOverhead<<<coreCount>>>( iterations, perThreadTimes, this.calibrationDummyResult );
+      globalTime = Float32( getSecondsBetweenTicks( startTick, getCurrentTicks() ) );
+
+      runningThreadCount = 0;
+      for( Size j = 0; j < threadCount; ++j ) {
+        if( perThreadTimes[j].atomicGet() )
+          ++runningThreadCount;
+      }
+
+      if( runningThreadCount == coreCount )
+        break; //All threads kicked in; we have our data
+
+      iterations *= 2;
+    }
+
+    if( runningThreadCount == coreCount ) {
+      Float32 maxPerThreadTime;
+      for( Size i = 0; i < threadCount; ++i ) {
+        if( perThreadTimes[i] > maxPerThreadTime )
+          maxPerThreadTime = perThreadTimes[i];
+      }
+      Float32 overhead = globalTime - maxPerThreadTime;
+      overheadSum += overhead;
+      ++sampleSum;
+    }
+  }
+
+  if( sampleSum ) {
+    this.parallelExecuteOverhead = overheadSum / sampleSum;
+    if( printResult ) {
+      report( "Parallel eval overhead: " + this.parallelExecuteOverhead + "s. Maximum number of parallel evals per second: " + 1.0 / this.parallelExecuteOverhead );
+      report( "NOTE: run this multiple times; the variance is extremely high from run to run (the OS is the boss; no control over that)" );
+    }
+  } else if( printResult )
+    report( "Warning: ComputeContext: failed to measure multithread overhead" );
+  
+  return this.parallelExecuteOverhead;
+}
+
+/// \internal
+struct MultithreadAdvisor_perThreadData{
+  Float32 lastTime;
+  Float32 lastActiveWaitTime;
+  UInt32 runID;
+};
+
+object MultithreadAdvisor {
+
+  Ref<ComputeContext> computeContext;
+  UInt32 threadCount;
+  UInt32 coreCount;
+  Boolean enableMT;
+  UInt32 logLevel;
+  String name;
+  Boolean executing;
+
+  Float32 lastTime;
+  Float32 lastComputeTime;
+  UInt32 lastBatchCount;
+
+  UInt32 lastActiveThreadCount;
+
+  Float32 lastMultithreadingBenefit;
+  Float32 learnedMultithreadingBenefit;
+  Float32 previousLastTime;
+  UInt32 previousLastBatchCount;
+
+  UInt32 maxParallelDepth;
+
+  UInt32 multithreadingDepth;//For transmitting to sub-threads
+  UInt32 loggingDepth;//For transmitting to sub-threads
+
+  MultithreadAdvisor_perThreadData perThreadData[];
+
+  UInt32 elementRange;
+  UInt32 batchSize;
+};
+
+MultithreadAdvisor() {
+  setError("MultithreadAdvisor: must construct with a name");
+}
+
+MultithreadAdvisor( String name ) {
+  this.enableMT = MultithreadingEnabled();
+  this.logLevel = GetLoggingLevel();
+  this.computeContext = GetComputeContext();
+  this.name = name;
+
+  this.threadCount = getThreadCount();
+  this.coreCount = getCoreCount();
+  this.perThreadData.resize( this.threadCount );
+  this.maxParallelDepth = 1;
+}
+
+inline MultithreadAdvisor.setMaxParallelExecuteDepth!( UInt32 depth ) {
+  this.maxParallelDepth = depth;
+}
+
+struct MultithreadAdvisorBracket {
+  Ref<MultithreadAdvisor> mtAdvisor;
+  UInt64 startTick;
+  UInt32 threadId;
+};
+
+inline MultithreadAdvisorBracket( io MultithreadAdvisor mtAdvisor, UInt32 range, io UInt32 batchCount ) {
+  this.init( mtAdvisor, range, batchCount );
+}
+
+/// \internal
+MultithreadAdvisorBracket.init!( io MultithreadAdvisor mtAdvisor, UInt32 range, io UInt32 batchCount ) {
+  this.mtAdvisor = mtAdvisor;
+  this.threadId = getThreadIndex();
+  batchCount = 1;
+
+  if( mtAdvisor.executing ) {
+    setError("MultithreadAdvisorBracket: re-entrant execution or executing from 2 threads");
+  } else if( mtAdvisor.lastTime ) {
+    // For now, only allow multithreading depth <= 1.
+    if( mtAdvisor.enableMT && mtAdvisor.computeContext.perThreadData[this.threadId].multithreadingDepth < mtAdvisor.maxParallelDepth ) {
+      // Decide if we should be multithreading based on last experience,
+      // while trying to avoid oscillation (MT, noMT, MT, noMT...)
+      Boolean wasMultithreading = mtAdvisor.lastBatchCount > 1;
+
+      if( mtAdvisor.previousLastTime ) {
+        // Update our "hidden MT benefit stats" to avoid oscillations.
+        //
+        // We observed that we often had oscillations, which are hard to explain.
+        // Basically, when MT, lastComputeTime < lastTime*2.
+        // Which triggered single threading. But then, ST lastTime > previous MT lastTime*1.5
+        // Conclusion: somehow, MT is more efficient but it cannot be measured by comparing per-thread times with total time.
+        //
+        // It is important to know that it can happen that MT is no longer faster than ST, and ST should be used.
+        // This is why, when the metric indicates that ST *might* be more efficient, we should still test sometimes to validate it.
+        Boolean previousWasMultithreading = mtAdvisor.previousLastBatchCount > 1;
+
+        if( wasMultithreading != previousWasMultithreading ) {
+          if( previousWasMultithreading )
+            mtAdvisor.lastMultithreadingBenefit = mtAdvisor.lastTime - mtAdvisor.previousLastTime;
+          else
+            mtAdvisor.lastMultithreadingBenefit = mtAdvisor.previousLastTime - mtAdvisor.lastTime;
+
+          // reset
+          mtAdvisor.learnedMultithreadingBenefit = mtAdvisor.lastMultithreadingBenefit;
+        }
+        // Slowly forget about previous benefit... so we test again in the future (conditions might have changed)
+        mtAdvisor.learnedMultithreadingBenefit *= 0.8f;
+      }
+      mtAdvisor.previousLastTime = mtAdvisor.lastTime;
+      mtAdvisor.previousLastBatchCount = mtAdvisor.lastBatchCount;
+
+      Boolean multithread;
+      if( !wasMultithreading ) {
+        //We were not multithreading; should we have?
+        if( mtAdvisor.lastTime + mtAdvisor.learnedMultithreadingBenefit > mtAdvisor.computeContext.parallelExecuteOverhead )
+            multithread = true;
+      } else {
+        //We were multithreading. First, analyse the result.
+        if( (mtAdvisor.lastTime - mtAdvisor.learnedMultithreadingBenefit) > mtAdvisor.lastComputeTime ) {
+          // MT failed (no gain)
+        } else
+          multithread = true;//Continue!
+      }
+      if( multithread ) {
+        // TODO: use last number of active thread?
+        batchCount = mtAdvisor.coreCount*2;
+        if( batchCount > range )
+          batchCount = range;
+        if( mtAdvisor.logLevel )
+          LogSubTrace("ParallelEval for " + mtAdvisor.name );
+      } else if( wasMultithreading ) {
+        if( mtAdvisor.logLevel )
+          LogSubTrace("No longer ParallelEval for " + mtAdvisor.name );
+      }
+    }
+  }
+  mtAdvisor.executing = true;
+
+  if( batchCount > 1 ) {
+    for( Size i = 0; i < mtAdvisor.threadCount; ++i )
+      mtAdvisor.perThreadData[i].lastTime = 0;
+
+    mtAdvisor.multithreadingDepth = mtAdvisor.computeContext.perThreadData[this.threadId].multithreadingDepth;//For transmitting to sub-threads
+    mtAdvisor.loggingDepth = mtAdvisor.computeContext.perThreadData[this.threadId].loggingDepth;//For transmitting to sub-threads
+  } else
+    batchCount = 1;
+
+  mtAdvisor.elementRange = range;
+  mtAdvisor.batchSize = (range + (batchCount-1)) / batchCount;
+  mtAdvisor.lastBatchCount = batchCount;
+
+  this.startTick = getCurrentTicks();
+}
+
+~MultithreadAdvisorBracket() {
+  this.mtAdvisor.lastTime = Float32( getSecondsBetweenTicks( this.startTick, getCurrentTicks() ) );
+
+  if( this.mtAdvisor.batchSize < this.mtAdvisor.elementRange ) {
+    // was multithreaded: sum all compute times
+    this.mtAdvisor.lastComputeTime = 0;
+    this.mtAdvisor.lastActiveThreadCount = 0;
+
+    for( Size i = 0; i < this.mtAdvisor.threadCount; ++i ) {
+      Float32 time = this.mtAdvisor.perThreadData[i].lastTime.atomicGet();
+      if( time ) {
+        ++this.mtAdvisor.lastActiveThreadCount;
+        this.mtAdvisor.lastComputeTime += this.mtAdvisor.perThreadData[i].lastTime;
+      }
+    }
+  } else {
+    this.mtAdvisor.lastActiveThreadCount = 1;
+    this.mtAdvisor.lastComputeTime = this.mtAdvisor.lastTime;
+  }
+  this.mtAdvisor.executing = false;
+}
+
+struct MultithreadAdvisorBatchBracket {
+  UInt32 threadId;
+  UInt64 startTick;
+  Float64 startActiveWaitTime;
+  Boolean multithreading;
+  MultithreadAdvisor_perThreadData perThreadData<>;
+  ComputeContext_perThreadData contextPerThreadData<>;
+  UInt32 multithreadingDepthBackup;
+  UInt32 loggingDepthBackup;
+};
+
+inline MultithreadAdvisorBatchBracket( io MultithreadAdvisor mtAdvisor, UInt32 batchIndex, io UInt32 batchStart, io UInt32 batchEnd ) {
+  this.init( mtAdvisor, batchIndex, batchStart, batchEnd );
+}
+
+MultithreadAdvisorBatchBracket.init!( io MultithreadAdvisor mtAdvisor, UInt32 batchIndex, io UInt32 batchStart, io UInt32 batchEnd ) {
+  this.threadId = getThreadIndex();
+  this.perThreadData = mtAdvisor.perThreadData;
+  this.startTick = getCurrentTicks();
+  this.multithreading = mtAdvisor.lastBatchCount > 1;
+  this.contextPerThreadData = mtAdvisor.computeContext.perThreadData;
+
+  this.startActiveWaitTime = this.contextPerThreadData[this.threadId].activeWaitTimeSum;
+
+  batchStart = batchIndex * mtAdvisor.batchSize;
+  batchEnd = batchStart + mtAdvisor.batchSize;
+  if( batchEnd > mtAdvisor.elementRange )
+    batchEnd = mtAdvisor.elementRange;
+
+  if( this.multithreading ) {
+
+    // backup thread's logging/threading depth
+    this.multithreadingDepthBackup = this.contextPerThreadData[this.threadId].multithreadingDepth;
+    this.loggingDepthBackup = this.contextPerThreadData[this.threadId].loggingDepth;
+
+    // transmit source's depths + 1
+    this.contextPerThreadData[this.threadId].multithreadingDepth = mtAdvisor.multithreadingDepth + 1;
+    this.contextPerThreadData[this.threadId].loggingDepth = mtAdvisor.loggingDepth + 1;
+  }
+}
+
+inline ~MultithreadAdvisorBatchBracket() {
+  this.perThreadData[this.threadId].lastTime = Float32( getSecondsBetweenTicks( this.startTick, getCurrentTicks() ) );
+  ++this.perThreadData[this.threadId].runID;//stats
+  // Substract active wait time, as it is not real compute time
+  Float32 activeWaitTime = Float32( this.contextPerThreadData[this.threadId].activeWaitTimeSum - this.startActiveWaitTime );
+  this.perThreadData[this.threadId].lastActiveWaitTime = activeWaitTime;//stats
+  this.perThreadData[this.threadId].lastTime -= activeWaitTime;
+
+  if( this.multithreading ) {
+    // put back backup thread's logging/threading depth
+    this.contextPerThreadData[this.threadId].multithreadingDepth = this.multithreadingDepthBackup;
+    this.contextPerThreadData[this.threadId].loggingDepth = this.loggingDepthBackup;
+  }
+}
+
+
+/// \internal
+/// Accessor for giving access to global ComputeContext object from C++ RTVal
+object ComputeContextRTValWrapper{};
+
+/// Patch to detect onDirty norifs coming from runtime KL->DFGBinding changes
+Boolean ComputeContextRTValWrapper.hasExecutingKLDFGBinding() {
+  return GetComputeContext().hasExecutingKLDFGBinding();
+}

@@ -1,0 +1,167 @@
+/*
+*  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+*/
+
+namespace Tool {
+  const String TransformTool_translateState = "tr_transState";
+  const String TransformTool_rotateState = "tr_rotState";
+  const String TransformTool_scaleState = "tr_scaleState";
+
+  const Size TransformTool_translateMode = 0;
+  const Size TransformTool_rotateMode = 1;
+  const Size TransformTool_scaleMode = 2;
+  const Size TransformTool_modeCount = 3;
+
+  /**
+    The TransformTool allows to edit an XfoTarget with a TranslateTool,
+    RotateTool or ScaleTool.
+  */
+  object TransformTool : BaseTool{
+    protected TransformTarget xfoTarget;
+    protected Color highlightColor;
+    IconShelfLayout shelf;
+    Boolean handleKeyPressed;
+  };
+
+  TransformTool( TransformTarget xfoTarget, Color highlightColor ) {
+    this.init( xfoTarget, highlightColor );
+  }
+
+  TransformTool() {
+    this.init( BasicXfoTarget(), Color( 1.0, 1.0, 0 ) );
+  }
+
+  /// internal
+  protected TransformTool.init!( TransformTarget xfoTarget, Color highlightColor ) {
+    this.setMainState( "(reset)" );// remove active tool if there was one, since the xfoTarget might differ
+    this.xfoTarget = xfoTarget;
+    this.highlightColor = highlightColor;
+    this.enableKeyHandling( true );
+    this.setMainState( TransformTool_translateState );
+  }
+
+  TransformTool.enableKeyHandling!( Boolean enable ) {
+    this.registerToRawEvents( true );
+    this.handleKeyPressed = enable;
+  }
+
+  TransformTool.onEnterState!( String newState, Boolean mainState ) {
+    switch( newState ) {
+      case TransformTool_translateState:
+      {
+        AddChildAction addChild( "translateTool", TranslateTool( this.xfoTarget, this.highlightColor, true, true ), true );
+        this.attachAndDoStateSpecificAction( newState, addChild );
+        if( this.shelf )
+          this.shelf.radioButtonBehavior.setSelectedItem( 0 );
+
+        return;
+      }
+      case TransformTool_rotateState:
+      {
+        AddChildAction addChild( "rotateTool", RotateTool( this.xfoTarget, this.highlightColor, true ), true );
+        this.attachAndDoStateSpecificAction( newState, addChild );
+        if( this.shelf )
+          this.shelf.radioButtonBehavior.setSelectedItem( 1 );
+
+        return;
+      }
+      case TransformTool_scaleState:
+      {
+        AddChildAction addChild( "scaleTool", ScaleTool( this.xfoTarget, this.highlightColor, true, true ), true );
+        this.attachAndDoStateSpecificAction( newState, addChild );
+        if( this.shelf )
+          this.shelf.radioButtonBehavior.setSelectedItem( 2 );
+
+        return;
+      }
+    }
+  }
+
+  /// Returns active mode: TransformTool_translateMode, TransformTool_rotateMode or TransformTool_scaleMode.
+  Size TransformTool.getActiveMode() {
+    String state = this.getMainState();
+    if( state == TransformTool_rotateState )
+      return TransformTool_rotateMode;
+    else if( state == TransformTool_scaleState )
+      return TransformTool_scaleMode;
+    else
+      return TransformTool_translateMode;
+  }
+
+  /// Activates a mode among TransformTool_translateMode, TransformTool_rotateMode and TransformTool_scaleMode.
+  TransformTool.activateMode!( Size mode ) {
+    if( mode == TransformTool_translateMode ) {
+      this.activate();
+      this.setMainState( TransformTool_translateState );
+    } else if( mode == TransformTool_rotateMode ) {
+      this.activate();
+      this.setMainState( TransformTool_rotateState );
+    } else if( mode == TransformTool_scaleMode ) {
+      this.activate();
+      this.setMainState( TransformTool_scaleState );
+    }
+  }
+
+  /// A parent tool can forward raw events here, and if the
+  /// key corresponds to a mode (select, translate...) then
+  /// it will activate and select the right mode.
+  TransformTool.onKeyPressed!( io Ref<KeyEvent> key ) {
+    if( Boolean( key ) && key.eventType == Event_KeyPress ) {
+      if( key.key == Key_W ) {
+        // TODO: use a keymap / hotkey singleton
+        key.accept();
+        this.activateMode( TransformTool_translateMode );
+      } else if( key.key == Key_E ) {
+        // TODO: use a keymap / hotkey singleton
+        key.accept();
+        this.activateMode( TransformTool_rotateMode );
+      } else if( key.key == Key_R ) {
+        // TODO: use a keymap / hotkey singleton
+        key.accept();
+        this.activateMode( TransformTool_scaleMode );
+      }
+    }
+  }
+
+  TransformTool.onRawEvent!( io Event event ) {
+    if( this.handleKeyPressed ) {
+      if( !this.isActive() )
+        return;
+
+      // TODO: use keymap global settings for QWER
+      Ref<KeyEvent> key = event;
+      if( Boolean( key ) && key.eventType == Event_KeyPress )
+        this.onKeyPressed( key );
+    }
+    this.parent.onRawEvent( event );
+  }
+  
+  TransformTool.createToolShelf!( ) {
+    if( !this.shelf ) {
+      this.shelf = IconShelfLayout();
+      this.shelf.addCollapseAllIcon( true );
+      this.shelf.setAlignment( Alignment_upperLeft );
+      this.shelf.setSpacing( 15, Vec2( 30 ), 5 );
+
+      this.shelf.addIcon( CreateDefaultTranslateCheckBox(), "trIcon" );
+      this.shelf.addIcon( CreateDefaultRotateCheckBox(), "rotIcon" );
+      this.shelf.addIcon( CreateDefaultScaleCheckBox(), "scIcon" );
+
+      this.shelf.addRadioButtonBehaviorToAllCheckBoxes( 0 );
+      this.shelf.radioButtonBehavior.addListener( this, false, RadioButtonBehavior_onItemChanged, "TransformTool_modeChanged" );
+      this.addChild( "shelf", this.shelf );
+    }
+  }
+
+  /// \internal
+  TransformTool.onEvent!( ToolEvent event, ToolEventUserID userID ) {
+    if( event.name == "TransformTool_modeChanged" ) {
+      Size mode = this.shelf.radioButtonBehavior.getSelectedItem();
+      if( mode != InvalidIndex )
+        this.activateMode( mode );
+      return;
+    }
+    this.parent.onEvent( event, userID );
+  }
+
+}// namespace Tool

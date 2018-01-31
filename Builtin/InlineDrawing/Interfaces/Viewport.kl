@@ -1,0 +1,43 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 1.15.0
+  
+  The interface Viewport is implemented in case we require different kinds of viewport objects to support the same interface. 
+  This interface is currently used by InlineDrawing/InlineViewport and RTR2/Manipulation/RTRViewport.
+  It's called Viewport because InlineDrawing/InlineViewport already defines a class named Viewport.
+  This is temporary until InlineDrawing is depreciated, and this interface WILL BE RENAMED Viewport.
+
+  \seealso :kl-ref:`InlineViewport`, :kl-ref:`RTRViewport`
+
+  \dfgPresetOmit
+*/
+interface Viewport_Virtual {
+  /// Get the name of the viewport
+  String getName();
+
+  /// Get the dimensions of the viewport in pixels.
+  Vec2 getDimensions();
+
+  /// Get the camera of this viewport
+  Camera getCamera();
+
+  /// Gets a sub-viewport at this position if any, else returns "this".
+  /// \param viewportPosX The mouse position X coordinate.
+  /// \param viewportPosY The mouse position Y coordinate.
+  /// \param upperLeftX The subViewport top left X coordinate.
+  /// \param upperLeftY The subViewport top left Y coordinate.
+  /// \param bottomRightX The subViewport bottom right X coordinate.
+  /// \param bottomRightY The subViewport bottom right Y coordinate.
+  Viewport_Virtual getSubViewport( 
+    SInt32 viewportPosX, 
+    SInt32 viewportPosY, 
+    io SInt32 upperLeftX, 
+    io SInt32 upperLeftY, 
+    io SInt32 bottomRightX, 
+    io SInt32 bottomRightY);
+};
+
+

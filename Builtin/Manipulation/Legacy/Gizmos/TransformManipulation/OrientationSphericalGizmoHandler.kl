@@ -1,0 +1,93 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require InlineDrawing;
+
+
+/**
+\versionadded 1.12.0
+
+The :kl-ref:`OrientationSphericalGizmoHandler` converts mouse events into rotation around an axis defined by the direction of the mouse stroke.
+
+\seealso GizmoHandler, BaseGizmoHandler, OrientationSphericalGizmoManager
+\dfgPresetOmit
+*/
+object OrientationSphericalGizmoHandler : BaseGizmoHandler {
+
+  /// The center point for the rotation.
+  /// \internal
+  Vec3 point;
+
+  /// the flag indicating that a drag is in progress.
+  /// \internal
+  Boolean dragging;
+  /// The global rotation axis. Computed using manipulationVector and the global Xfo of the Gizmo.
+  /// \internal
+  Ray ray1;
+
+  /// The screen space pos where the mouse was pressed
+  /// \internal
+  Vec2 mouseDownPos;
+
+  /// The speed that the orbit is applied relative to screen space delta of the mouse drag.
+  /// \internal
+  Scalar orbitSpeed;
+};
+
+function OrientationSphericalGizmoHandler(InlineInstance owner, Scalar orbitSpeed, GizmoManipulationCallback callback){
+  this.init(owner, callback);
+  this.orbitSpeed = 0.02;
+}
+
+function OrientationSphericalGizmoHandler(InlineInstance owner, Scalar orbitSpeed, GizmoManipulationCallback callback, EvalContext evalContext){
+  this.init(owner, callback, evalContext);
+  this.orbitSpeed = 0.02;
+}
+
+function OrientationSphericalGizmoHandler.onEvent!(io MouseEvent mouseEvent){
+  if(mouseEvent.eventType() == Event_MouseButtonPress){
+    // On MouseMove/Mousedown.
+    if(mouseEvent.button == MouseButton_LeftButton){
+      Ref<InlineViewport> viewport = mouseEvent.getViewport();
+      this.ray1 = viewport.calcRayFromScreenPos(mouseEvent.pos);
+      this.mouseDownPos = mouseEvent.pos;
+      this.point = this.owner.getTransform().getGlobalXfo(0).tr;
+      this.dragging = true;
+      this.callback.onDragBegin(mouseEvent);
+      mouseEvent.accept();
+    }
+  }
+  else if(mouseEvent.eventType() == Event_MouseMove){
+    // On drag
+    if(this.dragging){
+      // We cast to InlineViewport to access the method calcRayFromScreenPos
+      Ref<InlineViewport> viewport = mouseEvent.getViewport();
+      Ray ray2 = viewport.calcRayFromScreenPos(mouseEvent.pos);
+  
+      Vec3 axis;
+      if(!mouseEvent.getViewport().getCamera().isOrthographic())
+        axis = ray2.direction.cross(this.ray1.direction).unit();
+      else
+        axis = ray2.direction.cross(ray2.start - this.ray1.start).unit();
+      Scalar angle = (mouseEvent.pos - this.mouseDownPos).length() * this.orbitSpeed;
+
+      Xfo space();
+      space.tr = this.point;
+      Xfo delta();
+      delta.ori.setFromAxisAndAngle(axis, angle);
+      this.callback.onDrag(mouseEvent, space, delta, ManipulationMode_Orientation);
+      mouseEvent.accept();
+    }
+  }
+  else if(mouseEvent.eventType() == Event_MouseButtonRelease){
+    // On release
+    if(this.dragging){
+      this.dragging = false;
+      this.callback.onDragEnd(mouseEvent);
+      mouseEvent.accept();
+    }
+  }
+}
+
+

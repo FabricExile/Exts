@@ -1,0 +1,84 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 2.0.1
+
+  :kl-ref:`LegacyEventHandler` interface declares the methods the propagate and process 
+  user events (mouse, keyboard...) from/to a host application.
+
+  In the current design, each LegacyEventHandler is associated to a specific key-stroke that enable/disable it.
+  It's to the user discretion to associate the right enable key to the handlers. 
+
+  \seealso :kl-ref:`LegacyBaseHandlerDispatcher`, :kl-ref:`Tool`.
+
+  \dfgPresetOmit
+*/
+interface LegacyHandlerDispatcher;
+
+interface LegacyEventHandler {
+  /// Enables the handler so it receives the events.
+  enable!();
+
+  /// Disables the handler.
+  disable!();
+
+  /// Checks if the handler is enabled.
+  Boolean isEnabled();
+
+  /// If true, the handler is always enabled.
+  setAlwaysEnabled!(Boolean alwaysEnabled);
+
+  /// Checks if the handler is alwaysEnabled.
+  Boolean isAlwaysEnabled();
+
+  /// Gets the key that enable the handler.
+  Key getEnableKey();
+
+  /// Sets the key that enable the handler.
+  setEnableKey!(Key key);
+
+  /// Checks if the handler has the key.
+  /// \param key Key to check.
+  Boolean hasKey(Key key);
+  
+  /// Sets the exclusivity of the handler, see :kl-ref:`HandlerConstants`.
+  /// \param handlerExclusivity Tool's new exclusivity.
+  setExclusivity!( LegacyHandlerExclusivity handlerExclusivity);
+
+  /// Gets the exclusivity of the handler, see :kl-ref:`HandlerConstants`.
+  LegacyHandlerExclusivity getExclusivity();
+
+  /// Sets if the handler is affected by other handlers LegacyHandlerExclusivity, see :kl-ref:`HandlerConstants`.
+  /// It's a local override to LegacyHandlerExclusivity.
+  /// \param independent If true the handler is not changed (enabled/disabled) when switching to another handler.
+  setIndependent!(Boolean independent);
+
+  /// Checks if the handler is independent, see :kl-ref:`HandlerConstants`.
+  Boolean isIndependent();
+
+  /// Forces this handlers to receive all the events.
+  /// \param takeAllEvents If true, accept all the events.
+  setTakeAllEvents!(Boolean takeAllEvents);
+
+  /// Checks if the handler takes all the events, see :kl-ref:`HandlerConstants`.
+  Boolean takeAllEvents();
+
+  /// Checks if the handler is owned by the dispatcher.
+  Boolean isOwnedByDispatcher();
+
+  /// Gets the handler description, see :kl-ref:`LegacyHandlerDescription`.
+  LegacyHandlerDescription getDescription();
+
+  /// Sets a reference to the dispatcher.
+  /// \param dispatcher A reference to an LegacyHandlerDispatcher.
+  setDispatcher!(Ref<LegacyHandlerDispatcher> dispatcher);
+
+  /// Gets a reference to the dispatcher.
+  Ref<LegacyHandlerDispatcher> getDispatcher();
+
+  /// Process the event.
+  /// \param event The user event
+  onEvent!(io Event event);
+};

@@ -1,0 +1,32 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/// A package inside of a BinPack2DContainer.
+/// Each package describes the index of the original data,
+/// its region (coordinate and size) as well as the rotation.
+struct BinPack2DPackage {
+  UInt32 index;
+  Boolean rotated;
+  BinPack2DRegion region;
+};
+
+// default constructor
+function BinPack2DPackage(UInt32 index, BinPack2DRegion region, Boolean rotated) {
+  this.index = index;
+  this.region = region;
+  this.rotated = rotated;
+}
+
+// default constructor
+function BinPack2DPackage(UInt32 index, SInt32 width, SInt32 height) {
+  this.index = index;
+  this.region = BinPack2DRegion(BinPack2DCoord(0, 0), BinPack2DSize(width, height));
+  this.rotated = false;
+}
+
+/// toggles the package's rotation by 90 degrees
+function BinPack2DPackage.Rotate!() {
+  this.rotated = !this.rotated;
+  this.region.size = this.region.size.Rotated();
+}

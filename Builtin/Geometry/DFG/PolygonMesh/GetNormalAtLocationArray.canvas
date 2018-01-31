@@ -1,0 +1,86 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/PolygonMesh.html",
+    "uiTooltip" : "Evaluates the normal attribute at a specific location.\n\n Supported by PolygonMesh"
+    },
+  "title" : "GetNormalAtLocation[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "PolygonMesh[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "location",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "GeometryLocation[]" : [
+          {
+            "index" : -1,
+            "subIndex" : 0,
+            "barycentric" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "GeometryLocation[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Vec3[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "D371F88EAB4BC3EA01411A392B457469",
+  "code" : "require Geometry;
+
+operator Geometry_PolygonMesh_getNormalAtLocation_task<<<index>>>(
+  io Vec3[] result
+, in PolygonMesh[] this
+, in GeometryLocation[] location
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].getNormalAtLocation(location[index < location.size() ? index : location.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( location.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < location.size()) task_size = location.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Geometry_PolygonMesh_getNormalAtLocation_task(index, result, this, location);
+    }
+  } else {
+    Geometry_PolygonMesh_getNormalAtLocation_task<<<task_size>>>(result, this, location);
+  }
+}
+"
+  }

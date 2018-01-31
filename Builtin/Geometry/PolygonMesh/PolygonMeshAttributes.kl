@@ -1,0 +1,1949 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// Returns the GeometryAttributes container for this PolygonMesh.
+/// \category attributes
+inline Ref<GeometryAttributes> PolygonMesh.getAttributes() {
+  return this.attributes;
+}
+
+/// Returns the normals attribute, and creates it if it didn't exist.
+/// \category normals
+inline Ref<Vec3Attribute> PolygonMesh.getOrCreateNormals!() {
+  return this.getOrCreateNormalsInternal();
+}
+
+/// Returns the normals attribute, if it exists.
+/// \category normals
+inline Ref<Vec3Attribute> PolygonMesh.getNormals() {
+  return this.attributes.getNormals();
+}
+
+/// Returns the uvs0 attribute, and creates it if it didn't exist.
+/// Note: if it is created, it will contain all Vec2(0,0).
+/// \category attributes
+inline Ref<Vec2Attribute> PolygonMesh.getOrCreateDefaultUVsAttribute!( ) {
+  if( !this.uvs0Attribute )
+    this.getOrCreateVec2Attribute( "uvs0" );
+  return this.uvs0Attribute;
+}
+
+/// Returns the uvs0 attribute if they were already created.
+/// \category attributes
+inline Ref<Vec2Attribute> PolygonMesh.getDefaultUVsAttribute!( ) {
+  return this.uvs0Attribute;
+}
+
+/**
+  Creates an attribute of the given type and name.
+  \category attributes
+*/
+inline Ref<GeometryAttribute> PolygonMesh.getOrCreateAttribute!(String name, Type attributeType) {
+  Ref<GeometryAttribute> attribute = this.attributes.getOrCreateAttribute(name, attributeType);
+  return attribute;
+}
+
+/// \internal
+function PolygonMesh.attachNewAttribute!(Ref<GeometryAttribute> attribute) {
+  this.attributes.attachNewAttribute(attribute);
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+/// \category attributes
+inline Ref<ScalarAttribute> PolygonMesh.getOrCreateScalarAttribute!(String name) {
+  Ref<ScalarAttribute> attribute = this.attributes.getOrCreateScalarAttribute(name);
+  return attribute;
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+/// \category attributes
+inline Ref<ScalarConstantArrayAttribute> PolygonMesh.getOrCreateScalarConstantArrayAttribute!(String name) {
+  Ref<ScalarConstantArrayAttribute> attribute = this.attributes.getOrCreateScalarConstantArrayAttribute(name);
+  return attribute;
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+/// \category attributes
+inline Ref<IntegerAttribute> PolygonMesh.getOrCreateIntegerAttribute!(String name) {
+  Ref<IntegerAttribute> attribute = this.attributes.getOrCreateIntegerAttribute(name);
+  return attribute;
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+/// \category attributes
+inline Ref<UInt32Attribute> PolygonMesh.getOrCreateUInt32Attribute!(String name) {
+  Ref<UInt32Attribute> attribute = this.attributes.getOrCreateUInt32Attribute(name);
+  return attribute;
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+/// \category attributes
+inline Ref<UInt16ConstantArrayAttribute> PolygonMesh.getOrCreateUInt16ConstantArrayAttribute!(String name) {
+  Ref<UInt16ConstantArrayAttribute> attribute = this.attributes.getOrCreateUInt16ConstantArrayAttribute(name);
+  return attribute;
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+/// \category attributes
+inline Ref<Vec2Attribute> PolygonMesh.getOrCreateVec2Attribute!(String name) {
+  Ref<Vec2Attribute> attribute = this.attributes.getOrCreateVec2Attribute(name);
+  return attribute;
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+/// \category attributes
+inline Ref<Vec3Attribute> PolygonMesh.getOrCreateVec3Attribute!(String name) {
+  Ref<Vec3Attribute> attribute = this.attributes.getOrCreateVec3Attribute(name);
+  return attribute;
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+/// \category attributes
+inline Ref<Vec3_dAttribute> PolygonMesh.getOrCreateVec3_dAttribute!(String name) {
+  Ref<Vec3_dAttribute> attribute = this.attributes.getOrCreateVec3_dAttribute(name);
+  return attribute;
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+/// \category attributes
+inline Ref<Vec4Attribute> PolygonMesh.getOrCreateVec4Attribute!(String name) {
+  Ref<Vec4Attribute> attribute = this.attributes.getOrCreateVec4Attribute(name);
+  return attribute;
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+/// \category attributes
+inline Ref<QuatAttribute> PolygonMesh.getOrCreateQuatAttribute!(String name) {
+  Ref<QuatAttribute> attribute = this.attributes.getOrCreateQuatAttribute(name);
+  return attribute;
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+/// \category attributes
+inline Ref<ColorAttribute> PolygonMesh.getOrCreateColorAttribute!(String name) {
+  Ref<ColorAttribute> attribute = this.attributes.getOrCreateColorAttribute(name);
+  return attribute;
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+/// \category attributes
+inline Ref<RGBAttribute> PolygonMesh.getOrCreateRGBAttribute!(String name) {
+  Ref<RGBAttribute> attribute = this.attributes.getOrCreateRGBAttribute(name);
+  return attribute;
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+/// \category attributes
+inline Ref<RGBAAttribute> PolygonMesh.getOrCreateRGBAAttribute!(String name) {
+  Ref<RGBAAttribute> attribute = this.attributes.getOrCreateRGBAAttribute(name);
+  return attribute;
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+/// \category attributes
+inline Ref<Mat33Attribute> PolygonMesh.getOrCreateMat33Attribute!(String name) {
+  Ref<Mat33Attribute> attribute = this.attributes.getOrCreateMat33Attribute(name);
+  return attribute;
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+/// \category attributes
+inline Ref<Mat44Attribute> PolygonMesh.getOrCreateMat44Attribute!(String name) {
+  Ref<Mat44Attribute> attribute = this.attributes.getOrCreateMat44Attribute(name);
+  return attribute;
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+/// \category attributes
+inline Ref<UInt32ArrayAttribute> PolygonMesh.getOrCreateUInt32ArrayAttribute!( String name ) {
+  Ref<UInt32ArrayAttribute> attribute = this.attributes.getOrCreateUInt32ArrayAttribute( name );
+  return attribute;
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+/// \category attributes
+inline Ref<IntegerArrayAttribute> PolygonMesh.getOrCreateIntegerArrayAttribute!( String name ) {
+  Ref<IntegerArrayAttribute> attribute = this.attributes.getOrCreateIntegerArrayAttribute( name );
+  return attribute;
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+/// \category attributes
+inline Ref<ScalarArrayAttribute> PolygonMesh.getOrCreateScalarArrayAttribute!( String name ) {
+  Ref<ScalarArrayAttribute> attribute = this.attributes.getOrCreateScalarArrayAttribute( name );
+  return attribute;
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+/// \category attributes
+inline Ref<SkinningAttribute> PolygonMesh.getOrCreateSkinningAttribute!(String name) {
+  Ref<SkinningAttribute> attribute = this.attributes.getOrCreateSkinningAttribute(name);
+  this.synchronizeGeometryAttributes();
+  return attribute;
+}
+
+/// Returns true if an attribute with this name exists.
+/// \category attributes
+inline Boolean PolygonMesh.has?(String name) {
+  return this.attributes.has(name);
+}
+
+/// Returns true if an attribute with this name exists.
+/// Overload of the .has method.
+/// \category attributes
+inline Boolean PolygonMesh.hasAttribute?(String name) {
+  return this.has(name);
+}
+
+/// Removes an existing attribute from the attributes container.
+/// \category attributes
+function PolygonMesh.removeAttribute!(String name) {
+  this.attributes.removeAttribute(name);
+}
+
+/// Returns an existing attribute from its name, or null if not found.
+/// \category attributes
+inline Ref<GeometryAttribute> PolygonMesh.getAttribute(String name) {
+  return this.attributes.getAttribute(name);
+}
+
+/// Returns an existing attribute from its name and type, or null if not found.
+/// \category attributes
+inline Ref<GeometryAttribute> PolygonMesh.getAttribute(String name, Type attributeType) {
+  return this.attributes.getAttribute(name, attributeType);
+}
+
+/**
+  Performance hint for the polygon mesh when, for a given attribute, all values will be set again
+  and values' point shared / unshared layout is not expected to change much. By calling this function,
+  the PolygonMesh will not try to re-share attribute values that have previously been split, and
+  only additional splits might occur when required. See :ref:`polygonmeshattributes` for more
+  information about how attribute values are shared around points.
+  \category attributes
+*/
+function PolygonMesh.resetAttributeAndAvoidSharingChanges!(Ref<GeometryAttribute> attribute) {
+  this.attrInitializedBits[attribute.getContainerIndex( this.attributes )].vertexAttrInitialized.clearAll();
+}
+
+/// \internal
+inline Size PolygonMeshTopology.getPointAttributeIndex?( Size point ) {
+  return point;
+}
+
+/**
+  Returns the attribute index corresponding to the point, if values are shared.
+  If values are unshared (split values), returns one of the attribute indices corresponding to the point.
+  See :ref:`polygonmeshattributes` for more information about attribute indices.
+  \seealso PolygonMesh.arePointAttributesUniform, PolygonMesh.isPointAttributeUniform
+  \category attributes
+*/
+inline Size PolygonMesh.getPointAttributeIndex?( Size point ) {
+  return this.topology.getPointAttributeIndex( point );
+}
+
+/**
+Returns the point index corresponding to the attribute.
+Note that if attribute values are unshared. the point might correspond to multiple attribute indices.
+\seealso PolygonMesh.getPointAttributeIndex
+\category attributes
+*/
+inline Size PolygonMesh.getPointFromAttributeIndex ? ( Size attributeIndex ) {
+  return this.topology.getPointFromAttributeIndex( attributeIndex );
+}
+
+/// \internal
+inline Boolean PolygonMeshTopology.arePointAttributesUniform?( Size point ) {
+  DataIter pointIter = this.getPointIter( point );
+  Boolean extendedBit;
+  UInt32 count = this.pointData.getOffsetAndBit( pointIter, extendedBit );
+  DataIter unsharedAttributeDataIter = this.getUnsharedAttributeDataIter(pointIter, extendedBit, count);
+  return unsharedAttributeDataIter == 0;
+}
+
+/**
+  Returns true if values are the same (shared, unsplit) for all point polygon neighbors, for all attributes.
+  \seealso :ref:`polygonmeshattributes`, PolygonMesh.isPointAttributeUniform
+  \category attributes
+*/
+inline Boolean PolygonMesh.arePointAttributesUniform?( Size point ) {
+  DataIter pointIter = this.topology.getPointIter( point );
+  return this.arePointIterAttributesUniform(pointIter);
+}
+
+/**
+  Returns true if values are the same (shared, unsplit) for all point polygon neighbors, for this attributes.
+  See :kl-ref:`PolygonMesh.getPointAttributeIndex` for an example of usage.
+  \seealso :ref:`polygonmeshattributes`, PolygonMesh.arePointAttributesUniform
+  \category attributes
+*/
+inline Boolean PolygonMesh.isPointAttributeUniform?( Size point, Ref<GeometryAttribute> attribute ) {
+  return this.isPointIterAttributeUniform( this.topology.getPointIter( point ), attribute );
+}
+
+/**
+  Returns true if values are the same (shared, unsplit) for all points in a polygon, for all attributes.
+  \seealso :ref:`polygonmeshattributes`, PolygonMesh.isPolygonAttributeUniformForAllCorners
+  \category attributes
+*/
+inline Boolean PolygonMesh.arePolygonAttributeUniformForAllCorners?( Size polygon ) {
+  LocalL8UInt32Array points;
+  this.getPolygonPoints( polygon, points );
+  for( Size i=0;i<points.size();i++ ) {
+    if(!this.arePointAttributesUniform ( points.get(i) ))
+      return false;
+  }
+  return true;
+}
+
+/**
+  Returns true if values are the same (shared, unsplit) for all points in a polygon, for this attributes.
+  \seealso :ref:`polygonmeshattributes`, PolygonMesh.arePolygonAttributeUniformForAllCorners
+  \category attributes
+*/
+inline Boolean PolygonMesh.isPolygonAttributeUniformForAllCorners?( Size polygon, Ref<GeometryAttribute> attribute ) {
+  LocalL8UInt32Array points;
+  this.getPolygonPoints( polygon, points );
+  for( Size i=0;i<points.size();i++ ) {
+    if(!this.isPointAttributeUniform ( points.get(i), attribute ))
+      return false;
+  }
+  return true;
+}
+
+/**
+  Returns the attribute index for the point, at a specific neighbor polygon index.
+  This index can then be used to get the related GeometryAttribute values in the attributes container (:kl-ref:`PolygonMesh.getAttributes`).
+
+  \param point Point index
+  \param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+
+  \example
+  PolygonMesh mesh();
+  mesh.createPoints(6);
+  mesh.beginStructureChanges();
+  mesh.addPolygon(0,1,4,3);
+  mesh.addPolygon(1,2,5,4);
+  mesh.endStructureChanges();
+
+  //Set a different weight attribute value for each polygon
+  Ref<ScalarAttribute> weights = mesh.getOrCreateScalarAttribute('weights');
+
+  for( UInt32 polygon = 0; polygon < 2; ++polygon ) {
+    for( UInt32 polygonPointIndex = 0; polygonPointIndex < 4; ++polygonPointIndex )
+      mesh.setPolygonAttribute( polygon, polygonPointIndex, weights, polygon == 0 ? 0.0 : 1.0 );
+  }
+
+  //Print value characteristics for point 0 and 1
+  for( Size point = 0; point < 2; ++point ) {
+    report("Point " + point + ":");
+    report("  Uniform (shared) weights: " + mesh.isPointAttributeUniform( point, weights ) );
+
+    Size pointPolygonCount = mesh.getPointPolygonCount( point );
+    for( Size neighborPolygonIndex = 0; neighborPolygonIndex < pointPolygonCount; ++neighborPolygonIndex ) {
+      Size neighborPolygon = mesh.getPointPolygon( point, neighborPolygonIndex );
+      Size attributeIndex = mesh.getPointAttributeIndex( point, neighborPolygonIndex );
+      report("  Neighbor " + neighborPolygonIndex + ": polygon=" + neighborPolygon
+             + ", attributeIndex=" + attributeIndex
+             + ", weightValue=" + weights.values[attributeIndex] );
+    }
+  }
+  \endexample
+  \category attributes
+*/
+inline Size PolygonMesh.getPointAttributeIndex?( Size point, Size neighborPolygonIndex ) {
+  return this.topology.getPointIterAttributeIndex( this.topology.getPointIter( point ), neighborPolygonIndex );
+}
+
+/**
+  Sets an attribute's value for all neighbors around the point (uniform / shared value). The attribute must be one of this mesh's attributes.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \note This function won't change the attribute sharing layout. This function is threadsafe if the mesh structure and attribute sharing layout is not modified by another thread.
+  \seealso :ref:`polygonmeshattributes`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, io Ref<ScalarAttribute> attribute, Scalar value ) {
+  this.topology.setPointAttribute( point, attribute.values, value );
+}
+
+/**
+  Sets an attribute's value for all neighbors around the point (uniform / shared value). The attribute must be one of this mesh's attributes.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \note This function won't change the attribute sharing layout. This function is threadsafe if the mesh structure and attribute sharing layout is not modified by another thread.
+  \seealso :ref:`polygonmeshattributes`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, io Ref<ScalarConstantArrayAttribute> attribute, LocalL16ScalarArray value ) {
+  this.topology.setPointAttribute( point, attribute.values, value );
+}
+
+/**
+  Sets an attribute's value for all neighbors around the point (uniform / shared value). The attribute must be one of this mesh's attributes.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \note This function won't change the attribute sharing layout. This function is threadsafe if the mesh structure and attribute sharing layout is not modified by another thread.
+  \seealso :ref:`polygonmeshattributes`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, io Ref<IntegerAttribute> attribute, Integer value ) {
+  this.topology.setPointAttribute( point, attribute.values, value );
+}
+
+/**
+  Sets an attribute's value for all neighbors around the point (uniform / shared value). The attribute must be one of this mesh's attributes.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \note This function won't change the attribute sharing layout. This function is threadsafe if the mesh structure and attribute sharing layout is not modified by another thread.
+  \seealso :ref:`polygonmeshattributes`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, io Ref<UInt32Attribute> attribute, UInt32 value ) {
+  this.topology.setPointAttribute( point, attribute.values, value );
+}
+
+/**
+  Sets an attribute's value for all neighbors around the point (uniform / shared value). The attribute must be one of this mesh's attributes.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \note This function won't change the attribute sharing layout. This function is threadsafe if the mesh structure and attribute sharing layout is not modified by another thread.
+  \seealso :ref:`polygonmeshattributes`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, io Ref<UInt16ConstantArrayAttribute> attribute, LocalL16UInt16Array value ) {
+  this.topology.setPointAttribute( point, attribute.values, value );
+}
+
+/**
+  Sets an attribute's value for all neighbors around the point (uniform / shared value). The attribute must be one of this mesh's attributes.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \note This function won't change the attribute sharing layout. This function is threadsafe if the mesh structure and attribute sharing layout is not modified by another thread.
+  \seealso :ref:`polygonmeshattributes`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, io Ref<RGBAttribute> attribute, RGB value ) {
+  this.topology.setPointAttribute( point, attribute.values, value );
+}
+
+/**
+  Sets an attribute's value for all neighbors around the point (uniform / shared value). The attribute must be one of this mesh's attributes.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \note This function won't change the attribute sharing layout. This function is threadsafe if the mesh structure and attribute sharing layout is not modified by another thread.
+  \seealso :ref:`polygonmeshattributes`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, io Ref<RGBAAttribute> attribute, RGBA value ) {
+  this.topology.setPointAttribute( point, attribute.values, value );
+}
+
+/**
+  Sets an attribute's value for all neighbors around the point (uniform / shared value). The attribute must be one of this mesh's attributes.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \note This function won't change the attribute sharing layout. This function is threadsafe if the mesh structure and attribute sharing layout is not modified by another thread.
+  \seealso :ref:`polygonmeshattributes`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, io Ref<Vec2Attribute> attribute, Vec2 value ) {
+  this.topology.setPointAttribute( point, attribute.values, value );
+}
+
+/**
+  Sets an attribute's value for all neighbors around the point (uniform / shared value). The attribute must be one of this mesh's attributes.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \note This function won't change the attribute sharing layout. This function is threadsafe if the mesh structure and attribute sharing layout is not modified by another thread.
+  \seealso :ref:`polygonmeshattributes`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, io Ref<Vec3Attribute> attribute, Vec3 value ) {
+  this.topology.setPointAttribute( point, attribute.values, value );
+}
+
+/**
+  Sets an attribute's value for all neighbors around the point (uniform / shared value). The attribute must be one of this mesh's attributes.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \note This function won't change the attribute sharing layout. This function is threadsafe if the mesh structure and attribute sharing layout is not modified by another thread.
+  \seealso :ref:`polygonmeshattributes`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, io Ref<Vec3_dAttribute> attribute, Vec3_d value ) {
+  this.topology.setPointAttribute( point, attribute.values, value );
+}
+
+/**
+  Sets an attribute's value for all neighbors around the point (uniform / shared value). The attribute must be one of this mesh's attributes.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \note This function won't change the attribute sharing layout. This function is threadsafe if the mesh structure and attribute sharing layout is not modified by another thread.
+  \seealso :ref:`polygonmeshattributes`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, io Ref<Vec4Attribute> attribute, Vec4 value ) {
+  this.topology.setPointAttribute( point, attribute.values, value );
+}
+
+/**
+  Sets an attribute's value for all neighbors around the point (uniform / shared value). The attribute must be one of this mesh's attributes.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \note This function won't change the attribute sharing layout. This function is threadsafe if the mesh structure and attribute sharing layout is not modified by another thread.
+  \seealso :ref:`polygonmeshattributes`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, io Ref<QuatAttribute> attribute, Quat value ) {
+  this.topology.setPointAttribute( point, attribute.values, value );
+}
+
+/**
+  Sets an attribute's value for all neighbors around the point (uniform / shared value). The attribute must be one of this mesh's attributes.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \note This function won't change the attribute sharing layout. This function is threadsafe if the mesh structure and attribute sharing layout is not modified by another thread.
+  \seealso :ref:`polygonmeshattributes`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, io Ref<ColorAttribute> attribute, Color value ) {
+  this.topology.setPointAttribute( point, attribute.values, value );
+}
+
+/**
+  Sets an attribute's value for all neighbors around the point (uniform / shared value). The attribute must be one of this mesh's attributes.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \note This function won't change the attribute sharing layout. This function is threadsafe if the mesh structure and attribute sharing layout is not modified by another thread.
+  \seealso :ref:`polygonmeshattributes`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, io Ref<Mat33Attribute> attribute, Mat33 value ) {
+  this.topology.setPointAttribute( point, attribute.values, value );
+}
+
+/**
+  Sets an attribute's value for all neighbors around the point (uniform / shared value). The attribute must be one of this mesh's attributes.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \note This function won't change the attribute sharing layout. This function is threadsafe if the mesh structure and attribute sharing layout is not modified by another thread.
+  \seealso :ref:`polygonmeshattributes`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, io Ref<Mat44Attribute> attribute, Mat44 value ) {
+  this.topology.setPointAttribute( point, attribute.values, value );
+}
+
+
+/**
+Sets an attribute's value for all neighbors around the point (uniform / shared value). The attribute must be one of this mesh's attributes.
+\note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+\note This function won't change the attribute sharing layout. This function is threadsafe if the mesh structure and attribute sharing layout is not modified by another thread.
+\seealso :ref:`polygonmeshattributes`
+\category attributes
+\dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, io Ref<UInt32ArrayAttribute> attribute, LocalL16UInt32Array values ) {
+  this.topology.setPointAttribute( point, attribute.internalData, values );
+}
+
+
+/**
+Sets an attribute's value for all neighbors around the point (uniform / shared value). The attribute must be one of this mesh's attributes.
+\note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+\note This function won't change the attribute sharing layout. This function is threadsafe if the mesh structure and attribute sharing layout is not modified by another thread.
+\seealso :ref:`polygonmeshattributes`
+\category attributes
+\dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, io Ref<IntegerArrayAttribute> attribute, LocalL16SInt32Array values ) {
+  this.topology.setPointAttribute( point, attribute.internalData, values );
+}
+
+/**
+Sets an attribute's value for all neighbors around the point (uniform / shared value). The attribute must be one of this mesh's attributes.
+\note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+\note This function won't change the attribute sharing layout. This function is threadsafe if the mesh structure and attribute sharing layout is not modified by another thread.
+\seealso :ref:`polygonmeshattributes`
+\category attributes
+\dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, io Ref<ScalarArrayAttribute> attribute, LocalL16ScalarArray values ) {
+  this.topology.setPointAttribute( point, attribute.internalData, values );
+}
+
+/**
+  Sets an attribute's value for all neighbors around the point (uniform / shared value). The attribute must be one of this mesh's attributes.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \note This function won't change the attribute sharing layout. This function is threadsafe if the mesh structure and attribute sharing layout is not modified by another thread.
+  \seealso :ref:`polygonmeshattributes`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, io Ref<SkinningAttribute> attribute, LocalL16UInt32Array indices, LocalL16ScalarArray weights ) {
+  this.topology.setPointAttribute( point, attribute.internalData, indices, weights );
+}
+
+/**
+Sets an attribute's value for a specific neighbor around the point. If the value differs from a previously set value at other
+neighbors of that point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+\note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+\param point Point index
+\param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+\prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+\param value The attribute value to be set.
+\note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+\seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+\category attributes
+\dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, Size neighborPolygonIndex, io Ref<ScalarAttribute> attribute, Scalar value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePointOffset( point, neighborPolygonIndex, "setPointAttribute" );
+  this.setPointIterAttribute( this.topology.getPointIter( point ), neighborPolygonIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific neighbor around the point. If the value differs from a previously set value at other 
+  neighbors of that point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param point Point index
+  \param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, Size neighborPolygonIndex, io Ref<ScalarConstantArrayAttribute> attribute, LocalL16ScalarArray value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePointOffset( point, neighborPolygonIndex, "setPointAttribute" );
+  this.setPointIterAttribute( this.topology.getPointIter( point ), neighborPolygonIndex, attribute, value );
+}
+
+/**
+Sets an attribute's value for a specific neighbor around the point. If the value differs from a previously set value at other
+neighbors of that point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+\note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+\param point Point index
+\param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+\prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+\param value The attribute value to be set.
+\note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+\seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+\category attributes
+\dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, Size neighborPolygonIndex, io Ref<IntegerAttribute> attribute, Integer value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePointOffset( point, neighborPolygonIndex, "setPointAttribute" );
+  this.setPointIterAttribute( this.topology.getPointIter( point ), neighborPolygonIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific neighbor around the point. If the value differs from a previously set value at other 
+  neighbors of that point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param point Point index
+  \param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, Size neighborPolygonIndex, io Ref<UInt32Attribute> attribute, UInt32 value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePointOffset( point, neighborPolygonIndex, "setPointAttribute" );
+  this.setPointIterAttribute( this.topology.getPointIter( point ), neighborPolygonIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific neighbor around the point. If the value differs from a previously set value at other 
+  neighbors of that point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param point Point index
+  \param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, Size neighborPolygonIndex, io Ref<UInt16ConstantArrayAttribute> attribute, LocalL16UInt16Array value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePointOffset( point, neighborPolygonIndex, "setPointAttribute" );
+  this.setPointIterAttribute( this.topology.getPointIter( point ), neighborPolygonIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific neighbor around the point. If the value differs from a previously set value at other 
+  neighbors of that point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param point Point index
+  \param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, Size neighborPolygonIndex, io Ref<RGBAttribute> attribute, RGB value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePointOffset( point, neighborPolygonIndex, "setPointAttribute" );
+  this.setPointIterAttribute( this.topology.getPointIter( point ), neighborPolygonIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific neighbor around the point. If the value differs from a previously set value at other 
+  neighbors of that point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param point Point index
+  \param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, Size neighborPolygonIndex, io Ref<RGBAAttribute> attribute, RGBA value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePointOffset( point, neighborPolygonIndex, "setPointAttribute" );
+  this.setPointIterAttribute( this.topology.getPointIter( point ), neighborPolygonIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific neighbor around the point. If the value differs from a previously set value at other 
+  neighbors of that point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param point Point index
+  \param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, Size neighborPolygonIndex, io Ref<Vec2Attribute> attribute, Vec2 value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePointOffset( point, neighborPolygonIndex, "setPointAttribute" );
+  this.setPointIterAttribute( this.topology.getPointIter( point ), neighborPolygonIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific neighbor around the point. If the value differs from a previously set value at other 
+  neighbors of that point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param point Point index
+  \param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, Size neighborPolygonIndex, io Ref<Vec3Attribute> attribute, Vec3 value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePointOffset( point, neighborPolygonIndex, "setPointAttribute" );
+  this.setPointIterAttribute( this.topology.getPointIter( point ), neighborPolygonIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific neighbor around the point. If the value differs from a previously set value at other 
+  neighbors of that point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param point Point index
+  \param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, Size neighborPolygonIndex, io Ref<Vec3_dAttribute> attribute, Vec3_d value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePointOffset( point, neighborPolygonIndex, "setPointAttribute" );
+  this.setPointIterAttribute( this.topology.getPointIter( point ), neighborPolygonIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific neighbor around the point. If the value differs from a previously set value at other 
+  neighbors of that point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param point Point index
+  \param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, Size neighborPolygonIndex, io Ref<Vec4Attribute> attribute, Vec4 value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePointOffset( point, neighborPolygonIndex, "setPointAttribute" );
+  this.setPointIterAttribute( this.topology.getPointIter( point ), neighborPolygonIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific neighbor around the point. If the value differs from a previously set value at other 
+  neighbors of that point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param point Point index
+  \param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, Size neighborPolygonIndex, io Ref<QuatAttribute> attribute, Quat value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePointOffset( point, neighborPolygonIndex, "setPointAttribute" );
+  this.setPointIterAttribute( this.topology.getPointIter( point ), neighborPolygonIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific neighbor around the point. If the value differs from a previously set value at other 
+  neighbors of that point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param point Point index
+  \param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, Size neighborPolygonIndex, io Ref<ColorAttribute> attribute, Color value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePointOffset( point, neighborPolygonIndex, "setPointAttribute" );
+  this.setPointIterAttribute( this.topology.getPointIter( point ), neighborPolygonIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific neighbor around the point. If the value differs from a previously set value at other 
+  neighbors of that point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param point Point index
+  \param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, Size neighborPolygonIndex, io Ref<Mat33Attribute> attribute, Mat33 value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePointOffset( point, neighborPolygonIndex, "setPointAttribute" );
+  this.setPointIterAttribute( this.topology.getPointIter( point ), neighborPolygonIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific neighbor around the point. If the value differs from a previously set value at other 
+  neighbors of that point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param point Point index
+  \param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, Size neighborPolygonIndex, io Ref<Mat44Attribute> attribute, Mat44 value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePointOffset( point, neighborPolygonIndex, "setPointAttribute" );
+  this.setPointIterAttribute( this.topology.getPointIter( point ), neighborPolygonIndex, attribute, value );
+}
+
+
+/**
+Sets an attribute's value for a specific neighbor around the point. If the value differs from a previously set value at other
+neighbors of that point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+\note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+\param point Point index
+\param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+\prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+\param value The attribute value to be set.
+\note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+\seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+\category attributes
+\dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, Size neighborPolygonIndex, io Ref<UInt32ArrayAttribute> attribute, LocalL16UInt32Array value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePointOffset( point, neighborPolygonIndex, "setPointAttribute" );
+  this.setPointIterAttribute( this.topology.getPointIter( point ), neighborPolygonIndex, attribute, value );
+}
+
+/**
+Sets an attribute's value for a specific neighbor around the point. If the value differs from a previously set value at other
+neighbors of that point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+\note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+\param point Point index
+\param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+\prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+\param value The attribute value to be set.
+\note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+\seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+\category attributes
+\dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, Size neighborPolygonIndex, io Ref<IntegerArrayAttribute> attribute, LocalL16SInt32Array value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePointOffset( point, neighborPolygonIndex, "setPointAttribute" );
+  this.setPointIterAttribute( this.topology.getPointIter( point ), neighborPolygonIndex, attribute, value );
+}
+
+/**
+Sets an attribute's value for a specific neighbor around the point. If the value differs from a previously set value at other
+neighbors of that point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+\note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+\param point Point index
+\param neighborPolygonIndex Neighbor polygon index, in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range
+\prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+\param value The attribute value to be set.
+\note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+\seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+\category attributes
+\dfgPresetCreate
+*/
+inline PolygonMesh.setPointAttribute!( Size point, Size neighborPolygonIndex, io Ref<ScalarArrayAttribute> attribute, LocalL16ScalarArray value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePointOffset( point, neighborPolygonIndex, "setPointAttribute" );
+  this.setPointIterAttribute( this.topology.getPointIter( point ), neighborPolygonIndex, attribute, value );
+}
+
+/**
+  Returns the attribute index for a specific polygon point.
+  This index can then be used to get the related GeometryAttribute values in the attributes container (:kl-ref:`PolygonMesh.getAttributes`).
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+*/
+inline Size PolygonMesh.getPolygonAttributeIndex?( Size polygon, Size polygonPointIndex ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePolygonOffset( polygon, polygonPointIndex, "getPolygonAttributeIndex" );
+  return this.topology.getPolyIterAttributeIndex( this.topology.getPolygonIter( polygon ), polygonPointIndex );
+}
+
+/// \internal
+inline PolygonMeshTopology.getPolygonAttributeIndices ? ( Size polygon, out LocalL8UInt32Array attributeIndices ) {
+  DataIter polIter = this.getPolygonIter( polygon );
+  UInt32 size = this.getPolyIterSize( polIter );
+  attributeIndices.resize( size );
+  for( Size i = 0; i < size; ++i )
+    attributeIndices.set( i, this.getPolyIterAttributeIndex( polIter, i ) );
+}
+
+/**
+Returns all polygon's adjacent points. Returned array's size will be :kl-ref:`PolygonMesh.getPolygonSize` .
+\note Calling this function is faster than getting points one by one
+\seealso :ref:`polygonmeshcomponents`, PolygonMesh.getPolygonPointsAndNeighborIndices, PolygonMesh.getPolygonPoint
+\category polygon
+*/
+inline PolygonMesh.getPolygonAttributeIndices ? ( Size polygon, out LocalL8UInt32Array attributeIndices ) {
+  this.topology.getPolygonAttributeIndices( polygon, attributeIndices );
+}
+
+/**
+  Sets an attribute's value for a specific polygon point. If the value differs from a previously set value at other 
+  neighbors of around the connected point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  See :kl-ref:`PolygonMesh.getPointAttributeIndex` for an example of usage.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+function PolygonMesh.setPolygonAttribute!( Size polygon, Size polygonPointIndex, io Ref<ScalarAttribute> attribute, Scalar value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePolygonOffset( polygon, polygonPointIndex, "setPolygonAttribute" );
+  this.setPolyIterAttribute( this.topology.getPolygonIter( polygon ), polygonPointIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific polygon point. If the value differs from a previously set value at other 
+  neighbors of around the connected point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  See :kl-ref:`PolygonMesh.getPointAttributeIndex` for an example of usage.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+function PolygonMesh.setPolygonAttribute!( Size polygon, Size polygonPointIndex, io Ref<ScalarConstantArrayAttribute> attribute, LocalL16ScalarArray value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePolygonOffset( polygon, polygonPointIndex, "setPolygonAttribute" );
+  this.setPolyIterAttribute( this.topology.getPolygonIter( polygon ), polygonPointIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific polygon point. If the value differs from a previously set value at other 
+  neighbors of around the connected point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  See :kl-ref:`PolygonMesh.getPointAttributeIndex` for an example of usage.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+function PolygonMesh.setPolygonAttribute!( Size polygon, Size polygonPointIndex, io Ref<IntegerAttribute> attribute, Integer value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePolygonOffset( polygon, polygonPointIndex, "setPolygonAttribute" );
+  this.setPolyIterAttribute( this.topology.getPolygonIter( polygon ), polygonPointIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific polygon point. If the value differs from a previously set value at other 
+  neighbors of around the connected point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  See :kl-ref:`PolygonMesh.getPointAttributeIndex` for an example of usage.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+function PolygonMesh.setPolygonAttribute!( Size polygon, Size polygonPointIndex, io Ref<UInt32Attribute> attribute, UInt32 value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePolygonOffset( polygon, polygonPointIndex, "setPolygonAttribute" );
+  this.setPolyIterAttribute( this.topology.getPolygonIter( polygon ), polygonPointIndex, attribute, value );
+}
+/**
+  Sets an attribute's value for a specific polygon point. If the value differs from a previously set value at other 
+  neighbors of around the connected point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  See :kl-ref:`PolygonMesh.getPointAttributeIndex` for an example of usage.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+function PolygonMesh.setPolygonAttribute!( Size polygon, Size polygonPointIndex, io Ref<UInt16ConstantArrayAttribute> attribute, LocalL16UInt16Array value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePolygonOffset( polygon, polygonPointIndex, "setPolygonAttribute" );
+  this.setPolyIterAttribute( this.topology.getPolygonIter( polygon ), polygonPointIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific polygon point. If the value differs from a previously set value at other 
+  neighbors of around the connected point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  See :kl-ref:`PolygonMesh.getPointAttributeIndex` for an example of usage.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+function PolygonMesh.setPolygonAttribute!( Size polygon, Size polygonPointIndex, io Ref<RGBAttribute> attribute, RGB value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePolygonOffset( polygon, polygonPointIndex, "setPolygonAttribute" );
+  this.setPolyIterAttribute( this.topology.getPolygonIter( polygon ), polygonPointIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific polygon point. If the value differs from a previously set value at other 
+  neighbors of around the connected point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  See :kl-ref:`PolygonMesh.getPointAttributeIndex` for an example of usage.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+function PolygonMesh.setPolygonAttribute!( Size polygon, Size polygonPointIndex, io Ref<RGBAAttribute> attribute, RGBA value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePolygonOffset( polygon, polygonPointIndex, "setPolygonAttribute" );
+  this.setPolyIterAttribute( this.topology.getPolygonIter( polygon ), polygonPointIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific polygon point. If the value differs from a previously set value at other 
+  neighbors of around the connected point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  See :kl-ref:`PolygonMesh.getPointAttributeIndex` for an example of usage.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+function PolygonMesh.setPolygonAttribute!( Size polygon, Size polygonPointIndex, io Ref<Vec2Attribute> attribute, Vec2 value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePolygonOffset( polygon, polygonPointIndex, "setPolygonAttribute" );
+  this.setPolyIterAttribute( this.topology.getPolygonIter( polygon ), polygonPointIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific polygon point. If the value differs from a previously set value at other 
+  neighbors of around the connected point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  See :kl-ref:`PolygonMesh.getPointAttributeIndex` for an example of usage.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+function PolygonMesh.setPolygonAttribute!( Size polygon, Size polygonPointIndex, io Ref<Vec3Attribute> attribute, Vec3 value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePolygonOffset( polygon, polygonPointIndex, "setPolygonAttribute" );
+  this.setPolyIterAttribute( this.topology.getPolygonIter( polygon ), polygonPointIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific polygon point. If the value differs from a previously set value at other 
+  neighbors of around the connected point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  See :kl-ref:`PolygonMesh.getPointAttributeIndex` for an example of usage.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+function PolygonMesh.setPolygonAttribute!( Size polygon, Size polygonPointIndex, io Ref<Vec3_dAttribute> attribute, Vec3_d value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePolygonOffset( polygon, polygonPointIndex, "setPolygonAttribute" );
+  this.setPolyIterAttribute( this.topology.getPolygonIter( polygon ), polygonPointIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific polygon point. If the value differs from a previously set value at other 
+  neighbors of around the connected point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  See :kl-ref:`PolygonMesh.getPointAttributeIndex` for an example of usage.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+function PolygonMesh.setPolygonAttribute!( Size polygon, Size polygonPointIndex, io Ref<Vec4Attribute> attribute, Vec4 value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePolygonOffset( polygon, polygonPointIndex, "setPolygonAttribute" );
+  this.setPolyIterAttribute( this.topology.getPolygonIter( polygon ), polygonPointIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific polygon point. If the value differs from a previously set value at other 
+  neighbors of around the connected point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  See :kl-ref:`PolygonMesh.getPointAttributeIndex` for an example of usage.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+function PolygonMesh.setPolygonAttribute!( Size polygon, Size polygonPointIndex, io Ref<QuatAttribute> attribute, Quat value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePolygonOffset( polygon, polygonPointIndex, "setPolygonAttribute" );
+  this.setPolyIterAttribute( this.topology.getPolygonIter( polygon ), polygonPointIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific polygon point. If the value differs from a previously set value at other 
+  neighbors of around the connected point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  See :kl-ref:`PolygonMesh.getPointAttributeIndex` for an example of usage.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+function PolygonMesh.setPolygonAttribute!( Size polygon, Size polygonPointIndex, io Ref<ColorAttribute> attribute, Color value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePolygonOffset( polygon, polygonPointIndex, "setPolygonAttribute" );
+  this.setPolyIterAttribute( this.topology.getPolygonIter( polygon ), polygonPointIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific polygon point. If the value differs from a previously set value at other 
+  neighbors of around the connected point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  See :kl-ref:`PolygonMesh.getPointAttributeIndex` for an example of usage.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+function PolygonMesh.setPolygonAttribute!( Size polygon, Size polygonPointIndex, io Ref<Mat33Attribute> attribute, Mat33 value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePolygonOffset( polygon, polygonPointIndex, "setPolygonAttribute" );
+  this.setPolyIterAttribute( this.topology.getPolygonIter( polygon ), polygonPointIndex, attribute, value );
+}
+
+/**
+  Sets an attribute's value for a specific polygon point. If the value differs from a previously set value at other 
+  neighbors of around the connected point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  See :kl-ref:`PolygonMesh.getPointAttributeIndex` for an example of usage.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+function PolygonMesh.setPolygonAttribute!( Size polygon, Size polygonPointIndex, io Ref<Mat44Attribute> attribute, Mat44 value ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePolygonOffset( polygon, polygonPointIndex, "setPolygonAttribute" );
+  this.setPolyIterAttribute( this.topology.getPolygonIter( polygon ), polygonPointIndex, attribute, value );
+}
+
+/**
+Sets an attribute's value for a specific polygon point. If the value differs from a previously set value at other
+neighbors of around the connected point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+See :kl-ref:`PolygonMesh.getPointAttributeIndex` for an example of usage.
+\note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+\param polygon Polygon index
+\param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+\prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+\param value The attribute value to be set.
+\note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+\seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+\category attributes
+\dfgPresetCreate
+*/
+function PolygonMesh.setPolygonAttribute!( Size polygon, Size polygonPointIndex, io Ref<UInt32ArrayAttribute> attribute, LocalL16UInt32Array values ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePolygonOffset( polygon, polygonPointIndex, "setPolygonAttribute" );
+  this.setPolyIterAttribute( this.topology.getPolygonIter( polygon ), polygonPointIndex, attribute, values );
+}
+
+
+/**
+Sets an attribute's value for a specific polygon point. If the value differs from a previously set value at other
+neighbors of around the connected point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+See :kl-ref:`PolygonMesh.getPointAttributeIndex` for an example of usage.
+\note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+\param polygon Polygon index
+\param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+\prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+\param value The attribute value to be set.
+\note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+\seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+\category attributes
+\dfgPresetCreate
+*/
+function PolygonMesh.setPolygonAttribute!( Size polygon, Size polygonPointIndex, io Ref<IntegerArrayAttribute> attribute, LocalL16SInt32Array values ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePolygonOffset( polygon, polygonPointIndex, "setPolygonAttribute" );
+  this.setPolyIterAttribute( this.topology.getPolygonIter( polygon ), polygonPointIndex, attribute, values );
+}
+
+
+/**
+Sets an attribute's value for a specific polygon point. If the value differs from a previously set value at other
+neighbors of around the connected point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+See :kl-ref:`PolygonMesh.getPointAttributeIndex` for an example of usage.
+\note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+\param polygon Polygon index
+\param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+\prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+\param value The attribute value to be set.
+\note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+\seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+\category attributes
+\dfgPresetCreate
+*/
+function PolygonMesh.setPolygonAttribute!( Size polygon, Size polygonPointIndex, io Ref<ScalarArrayAttribute> attribute, LocalL16ScalarArray values ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePolygonOffset( polygon, polygonPointIndex, "setPolygonAttribute" );
+  this.setPolyIterAttribute( this.topology.getPolygonIter( polygon ), polygonPointIndex, attribute, values );
+}
+
+/**
+  Sets an attribute's value for a specific polygon point. If the value differs from a previously set value at other 
+  neighbors of around the connected point, another `attributeIndex` will be used (attribute split), potentially modifying the global attribute sharing layout.
+  See :kl-ref:`PolygonMesh.getPointAttributeIndex` for an example of usage.
+  \note Once values have been set for that attribute, call :kl-ref:`GeometryAttribute.incrementVersion` (see :ref:`attributeversioning`)
+  \param polygon Polygon index
+  \param polygonPointIndex Polygon point index, in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \prarm attribute The attribute that will be modified. That attribute must be one of this mesh's attributes.
+  \param value The attribute value to be set.
+  \note This function is not threadsafe as it can modify the attribute sharing layout, which is common to all attributes of the mesh.
+  \seealso :ref:`polygonmeshattributes`, :ref:`polygonmeshcomponents`
+  \category attributes
+  \dfgPresetCreate
+*/
+function PolygonMesh.setPolygonAttribute!( Size polygon, Size polygonPointIndex, io Ref<SkinningAttribute> attribute, LocalL16UInt32Array indices, LocalL16ScalarArray weights ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePolygonOffset( polygon, polygonPointIndex, "setPolygonAttribute" );
+  this.setPolyIterAttribute( this.topology.getPolygonIter( polygon ), polygonPointIndex, attribute, indices, weights );
+}
+
+/// \internal
+struct PolygonPackedSharedAttributeValues_srcAndDstAttrIndex {
+  Size src;
+  Size dst;
+};
+
+/**
+  Extract values of an attribute into a target attribute `outValues` and index table.
+  The outputted attribute values will have optimal sharing around vertices, so 
+  `outValues.size() <= meshAttribute.size()`.
+
+  The input and output attributes (`meshAttribute` and `outValues`) must be have the same type.
+  Only the input `meshAttribute` should be an existing mesh attributes. The output `outValues`
+  is only an output data container.
+
+  The `polygonPackedIndices` index table contains polygon packed data. It will contain an index relative
+  to the `outValues` attribute, for each polygon point, in polygons order:
+
+\rst
+::
+
+  polygonPackedIndices =
+    [outValues index for polygon0.polygonPointIndex0, 
+     outValues index for polygon0.polygonPointIndex1,
+     outValues index for polygon0.polygonPointIndex2, 
+     ..., 
+     outValues index for polygon1.polygonPointIndex0, 
+     outValues index for polygon1.polygonPointIndex1
+     ... ]
+
+\endrst
+
+  \category attributes
+*/
+function PolygonMesh.getPolygonPackedSharedAttributeValues( Ref<GeometryAttribute> meshAttribute, io GeometryAttribute outValues, io UInt32 polygonPackedIndices[] ) {
+  if( meshAttribute.type() != outValues.type() )
+    throw( "PolygonMesh.getPolygonPackedSharedAttributeValues: input and output attributes must have the same type");
+
+  if( meshAttribute.size() != this.attributes.size() )
+    throw( "PolygonMesh.getPolygonPackedSharedAttributeValues: input attributes must be an attribute of this mesh");
+
+  UInt32 polyCount = this.polygonCount();
+  UInt32 polygonStarts[];
+  polygonStarts.resize( polyCount + 1 );
+
+  Size polygonCountSum;
+  for( Size i = 0; i < polyCount; ++i ) {
+    polygonStarts[i] = polygonCountSum;
+    polygonCountSum += this.getPolygonSize(i);
+  }
+  polygonStarts[polyCount] = polygonCountSum;
+  polygonPackedIndices.resize(polygonCountSum);
+
+  PolygonPackedSharedAttributeValues_srcAndDstAttrIndex pointSrcDstAttrIndices[];
+  UInt32 pointCount = this.pointCount();
+  outValues.resize(pointCount);
+  Size outValuesSize = pointCount;
+  Size nextOutValueIndex;
+
+  Ref<Object> meshAttributeObj = meshAttribute;//Avoid casts until the attribute interface is fixed
+
+  for( Size i = 0; i < pointCount; ++i ) {
+    DataIter pointIter = this.topology.getPointIter( i );
+
+    IdxOffBit idxOffBit = this.topology.pointData.getIdxOffBit( pointIter );
+    DataIter unsharedAttributeDataIter = this.topology.getUnsharedAttributeDataIter(pointIter, idxOffBit.bit, idxOffBit.offset);
+    Size pointPolyCount = idxOffBit.offset;
+
+    Boolean uniformAttributes = this.arePointIterAttributesUniform( pointIter );
+    Size nextSrcDstIndex = 0;
+    if( pointSrcDstAttrIndices.size() < pointPolyCount )
+      pointSrcDstAttrIndices.resize( pointPolyCount );
+
+    Size targetAttrIndex;
+    Size sourceAttrIndex;
+
+    for( Size j = 0; j < pointPolyCount; ++j ) {
+      IterOff polIterOff = this.topology.getPointIterPolyIterOff( pointIter, j );
+      Size poly = this.topology.getPolyIterIndex( polIterOff.index );
+
+      if( unsharedAttributeDataIter ) {
+        sourceAttrIndex = PolygonMesh_GetUnsharedAttributeIndex( this.topology.pointData.data.data[unsharedAttributeDataIter + j] );
+        targetAttrIndex = InvalidIndex;
+
+        //Look for a same index, else compare values since sharing might not be optimal
+        for( Size k = 0; k < nextSrcDstIndex; ++k ) {
+          if( sourceAttrIndex == pointSrcDstAttrIndices[k].src ) {
+            targetAttrIndex = pointSrcDstAttrIndices[k].dst;
+            break;
+          }
+        }
+        if( targetAttrIndex == InvalidIndex ) {
+          // Compare values
+          for( Size k = 0; k < nextSrcDstIndex; ++k ) {
+            if( meshAttribute.equalValues( sourceAttrIndex, pointSrcDstAttrIndices[k].src ) ) {
+              targetAttrIndex = pointSrcDstAttrIndices[k].dst;
+
+              PolygonPackedSharedAttributeValues_srcAndDstAttrIndex srcDst;
+              srcDst.src = sourceAttrIndex;
+              srcDst.dst = targetAttrIndex;
+              pointSrcDstAttrIndices[nextSrcDstIndex++] = srcDst;
+              break;
+            }
+          }
+        }
+      } else if( j == 0 ) {
+        sourceAttrIndex = i;
+        targetAttrIndex = InvalidIndex;
+      }
+
+      if( targetAttrIndex == InvalidIndex ) {
+        // Allocate output attribute index
+        targetAttrIndex = nextOutValueIndex;
+        if( nextOutValueIndex == outValuesSize ) {
+          outValuesSize += outValuesSize/4 + 1;
+          outValues.resize(outValuesSize);
+        }
+        ++nextOutValueIndex;
+
+        // Copy value
+        outValues.copyValue( meshAttributeObj, sourceAttrIndex, targetAttrIndex );
+
+        if( unsharedAttributeDataIter ) {
+          PolygonPackedSharedAttributeValues_srcAndDstAttrIndex srcDst;
+          srcDst.src = sourceAttrIndex;
+          srcDst.dst = targetAttrIndex;
+          pointSrcDstAttrIndices[nextSrcDstIndex++] = srcDst;
+        }
+      }
+      polygonPackedIndices[ polygonStarts[poly] + polIterOff.offset ] = targetAttrIndex;
+    }
+  }
+  outValues.resize(nextOutValueIndex);
+}
+
+/**
+  Sets all attribute values from an array containing polygon packed data with an index table.
+
+  `optionalValuesIndices` is expected to have an index relative
+  to the `values` array, for polygon point, in polygons order:
+
+\rst
+::
+
+  optionalValuesIndices =
+    [value index for polygon0.polygonPointIndex0, 
+     value index for polygon0.polygonPointIndex1,
+     value index for polygon0.polygonPointIndex2, 
+     ..., 
+     value index for polygon1.polygonPointIndex0, 
+     value index for polygon1.polygonPointIndex1
+     ... ]
+
+  values = [...]
+\endrst
+
+  \category attributes
+*/
+function PolygonMesh.setAttributeFromPolygonPackedData!( String name, Scalar values<>, Size optionalValuesIndices[] ) {
+  if( Fabric_Guarded && !Fabric_OnGPU && values.size() != this.totalPolygonPoints && optionalValuesIndices.size() != this.totalPolygonPoints )
+    throw("PolygonMesh.setAttributeFromPolygonPackedData: values size != polygon points sum");
+  Ref<ScalarAttribute> attr = this.getOrCreateScalarAttribute( name );
+  Size polygonCount = this.polygonCount();
+  Size pointCount = this.pointCount();
+  Size current;
+  for( Size i = 0; i < polygonCount; ++i ) {
+    DataIter polyIter = this.topology.getPolygonIter( i );
+    Size polySize = this.topology.getPolyIterSize(polyIter);
+    for( Size j = 0; j < polySize; ++j ) {
+      Size sourceIndex = optionalValuesIndices ? optionalValuesIndices[current] : current;
+      IterOff ptIterOff = this.topology.getPolyIterPointIterOff( polyIter, j );
+      this.setPointIterAttribute( ptIterOff.index, ptIterOff.offset, attr, values[sourceIndex] );
+      ++current;
+    }
+  }
+  attr.incrementVersion();
+}
+
+/**
+  Sets all attribute values from an array containing polygon packed data.
+  `values` is expected to have one value for each polygon point, in polygons order:
+
+\rst
+::
+
+  values =
+    [value for polygon0.polygonPointIndex0, 
+     value for polygon0.polygonPointIndex1,
+     value for polygon0.polygonPointIndex2, 
+     ..., 
+     value for polygon1.polygonPointIndex0, 
+     value for polygon1.polygonPointIndex1
+     ... ]
+\endrst
+
+  \category attributes
+*/
+function PolygonMesh.setAttributeFromPolygonPackedData!( String name, Scalar values<> ) {
+  Size optionalValuesIndices[];
+  this.setAttributeFromPolygonPackedData( name, values, optionalValuesIndices );
+}
+
+/**
+  Sets all attribute values from an array containing polygon packed data with an index table.
+
+  `optionalValuesIndices` is expected to have an index relative
+  to the `values` array, for polygon point, in polygons order:
+
+\rst
+::
+
+  optionalValuesIndices =
+    [value index for polygon0.polygonPointIndex0, 
+     value index for polygon0.polygonPointIndex1,
+     value index for polygon0.polygonPointIndex2, 
+     ..., 
+     value index for polygon1.polygonPointIndex0, 
+     value index for polygon1.polygonPointIndex1
+     ... ]
+
+  values = [...]
+\endrst
+
+  \category attributes
+*/
+function PolygonMesh.setAttributeFromPolygonPackedData!( String name, RGB values<>, Size optionalValuesIndices[] ) {
+  if( Fabric_Guarded && !Fabric_OnGPU && values.size() != this.totalPolygonPoints && optionalValuesIndices.size() != this.totalPolygonPoints )
+    throw("PolygonMesh.setAttributeFromPolygonPackedData: values size != polygon points sum");
+  Ref<RGBAttribute> attr = this.getOrCreateRGBAttribute( name );
+  Size polygonCount = this.polygonCount();
+  Size pointCount = this.pointCount();
+  Size current;
+  for( Size i = 0; i < polygonCount; ++i ) {
+    DataIter polyIter = this.topology.getPolygonIter( i );
+    Size polySize = this.topology.getPolyIterSize(polyIter);
+    for( Size j = 0; j < polySize; ++j ) {
+      Size sourceIndex = optionalValuesIndices ? optionalValuesIndices[current] : current;
+      IterOff ptIterOff = this.topology.getPolyIterPointIterOff( polyIter, j );
+      this.setPointIterAttribute( ptIterOff.index, ptIterOff.offset, attr, values[sourceIndex] );
+      ++current;
+    }
+  }
+  attr.incrementVersion();
+}
+
+/**
+  Sets all attribute values from an array containing polygon packed data.
+  `values` is expected to have one value for each polygon point, in polygons order:
+
+\rst
+::
+
+  values =
+    [value for polygon0.polygonPointIndex0, 
+     value for polygon0.polygonPointIndex1,
+     value for polygon0.polygonPointIndex2, 
+     ..., 
+     value for polygon1.polygonPointIndex0, 
+     value for polygon1.polygonPointIndex1
+     ... ]
+\endrst
+
+  \category attributes
+*/
+function PolygonMesh.setAttributeFromPolygonPackedData!( String name, RGB values<> ) {
+  Size optionalValuesIndices[];
+  this.setAttributeFromPolygonPackedData( name, values, optionalValuesIndices );
+}
+
+/**
+  Sets all attribute values from an array containing polygon packed data with an index table.
+
+  `optionalValuesIndices` is expected to have an index relative
+  to the `values` array, for polygon point, in polygons order:
+
+\rst
+::
+
+  optionalValuesIndices =
+    [value index for polygon0.polygonPointIndex0, 
+     value index for polygon0.polygonPointIndex1,
+     value index for polygon0.polygonPointIndex2, 
+     ..., 
+     value index for polygon1.polygonPointIndex0, 
+     value index for polygon1.polygonPointIndex1
+     ... ]
+
+  values = [...]
+\endrst
+
+  \category attributes
+*/
+function PolygonMesh.setAttributeFromPolygonPackedData!( String name, RGBA values<>, Size optionalValuesIndices[] ) {
+  if( Fabric_Guarded && !Fabric_OnGPU && values.size() != this.totalPolygonPoints && optionalValuesIndices.size() != this.totalPolygonPoints )
+    throw("PolygonMesh.setAttributeFromPolygonPackedData: values size != polygon points sum");
+  Ref<RGBAAttribute> attr = this.getOrCreateRGBAAttribute( name );
+  Size polygonCount = this.polygonCount();
+  Size pointCount = this.pointCount();
+  Size current;
+  for( Size i = 0; i < polygonCount; ++i ) {
+    DataIter polyIter = this.topology.getPolygonIter( i );
+    Size polySize = this.topology.getPolyIterSize(polyIter);
+    for( Size j = 0; j < polySize; ++j ) {
+      Size sourceIndex = optionalValuesIndices ? optionalValuesIndices[current] : current;
+      IterOff ptIterOff = this.topology.getPolyIterPointIterOff( polyIter, j );
+      this.setPointIterAttribute( ptIterOff.index, ptIterOff.offset, attr, values[sourceIndex] );
+      ++current;
+    }
+  }
+  attr.incrementVersion();
+}
+
+/**
+  Sets all attribute values from an array containing polygon packed data.
+  `values` is expected to have one value for each polygon point, in polygons order:
+
+\rst
+::
+
+  values =
+    [value for polygon0.polygonPointIndex0, 
+     value for polygon0.polygonPointIndex1,
+     value for polygon0.polygonPointIndex2, 
+     ..., 
+     value for polygon1.polygonPointIndex0, 
+     value for polygon1.polygonPointIndex1
+     ... ]
+\endrst
+
+  \category attributes
+*/
+function PolygonMesh.setAttributeFromPolygonPackedData!( String name, RGBA values<> ) {
+  Size optionalValuesIndices[];
+  this.setAttributeFromPolygonPackedData( name, values, optionalValuesIndices );
+}
+
+/**
+  Sets all attribute values from an array containing polygon packed data with an index table.
+
+  `optionalValuesIndices` is expected to have an index relative
+  to the `values` array, for polygon point, in polygons order:
+
+\rst
+::
+
+  optionalValuesIndices =
+    [value index for polygon0.polygonPointIndex0, 
+     value index for polygon0.polygonPointIndex1,
+     value index for polygon0.polygonPointIndex2, 
+     ..., 
+     value index for polygon1.polygonPointIndex0, 
+     value index for polygon1.polygonPointIndex1
+     ... ]
+
+  values = [...]
+\endrst
+
+  \category attributes
+*/
+function PolygonMesh.setAttributeFromPolygonPackedData!( String name, Color values<>, Size optionalValuesIndices[] ) {
+  if( Fabric_Guarded && !Fabric_OnGPU && values.size() != this.totalPolygonPoints && optionalValuesIndices.size() != this.totalPolygonPoints )
+    throw("PolygonMesh.setAttributeFromPolygonPackedData: values size != polygon points sum");
+  Ref<ColorAttribute> attr = this.getOrCreateColorAttribute( name );
+  Size polygonCount = this.polygonCount();
+  Size pointCount = this.pointCount();
+  Size current;
+  for( Size i = 0; i < polygonCount; ++i ) {
+    DataIter polyIter = this.topology.getPolygonIter( i );
+    Size polySize = this.topology.getPolyIterSize(polyIter);
+    for( Size j = 0; j < polySize; ++j ) {
+      Size sourceIndex = optionalValuesIndices ? optionalValuesIndices[current] : current;
+      IterOff ptIterOff = this.topology.getPolyIterPointIterOff( polyIter, j );
+      this.setPointIterAttribute( ptIterOff.index, ptIterOff.offset, attr, values[sourceIndex] );
+      ++current;
+    }
+  }
+  attr.incrementVersion();
+}
+
+/**
+  Sets all attribute values from an array containing polygon packed data.
+  `values` is expected to have one value for each polygon point, in polygons order:
+
+\rst
+::
+
+  values =
+    [value for polygon0.polygonPointIndex0, 
+     value for polygon0.polygonPointIndex1,
+     value for polygon0.polygonPointIndex2, 
+     ..., 
+     value for polygon1.polygonPointIndex0, 
+     value for polygon1.polygonPointIndex1
+     ... ]
+\endrst
+
+  \category attributes
+*/
+function PolygonMesh.setAttributeFromPolygonPackedData!( String name, Color values<> ) {
+  Size optionalValuesIndices[];
+  this.setAttributeFromPolygonPackedData( name, values, optionalValuesIndices );
+}
+
+/**
+  Sets all attribute values from an array containing polygon packed data with an index table.
+
+  `optionalValuesIndices` is expected to have an index relative
+  to the `values` array, for polygon point, in polygons order:
+
+\rst
+::
+
+  optionalValuesIndices =
+    [value index for polygon0.polygonPointIndex0, 
+     value index for polygon0.polygonPointIndex1,
+     value index for polygon0.polygonPointIndex2, 
+     ..., 
+     value index for polygon1.polygonPointIndex0, 
+     value index for polygon1.polygonPointIndex1
+     ... ]
+
+  values = [...]
+\endrst
+
+  \category attributes
+*/
+function PolygonMesh.setAttributeFromPolygonPackedData!( String name, Vec2 values<>, Size optionalValuesIndices[] ) {
+  if( Fabric_Guarded && !Fabric_OnGPU && values.size() != this.totalPolygonPoints && optionalValuesIndices.size() != this.totalPolygonPoints )
+    throw("PolygonMesh.setAttributeFromPolygonPackedData: values size != polygon points sum");
+  Ref<Vec2Attribute> attr = this.getOrCreateVec2Attribute( name );
+  Size polygonCount = this.polygonCount();
+  Size pointCount = this.pointCount();
+  Size current;
+  for( Size i = 0; i < polygonCount; ++i ) {
+    DataIter polyIter = this.topology.getPolygonIter( i );
+    Size polySize = this.topology.getPolyIterSize(polyIter);
+    for( Size j = 0; j < polySize; ++j ) {
+      Size sourceIndex = optionalValuesIndices ? optionalValuesIndices[current] : current;
+      IterOff ptIterOff = this.topology.getPolyIterPointIterOff( polyIter, j );
+      this.setPointIterAttribute( ptIterOff.index, ptIterOff.offset, attr, values[sourceIndex] );
+      ++current;
+    }
+  }
+  attr.incrementVersion();
+}
+
+/**
+  Sets all attribute values from an array containing polygon packed data.
+  `values` is expected to have one value for each polygon point, in polygons order:
+
+\rst
+::
+
+  values =
+    [value for polygon0.polygonPointIndex0, 
+     value for polygon0.polygonPointIndex1,
+     value for polygon0.polygonPointIndex2, 
+     ..., 
+     value for polygon1.polygonPointIndex0, 
+     value for polygon1.polygonPointIndex1
+     ... ]
+\endrst
+
+  \category attributes
+*/
+function PolygonMesh.setAttributeFromPolygonPackedData!( String name, Vec2 values<> ) {
+  Size optionalValuesIndices[];
+  this.setAttributeFromPolygonPackedData( name, values, optionalValuesIndices );
+}
+
+/**
+  Sets all attribute values from an array containing polygon packed data with an index table.
+
+  `optionalValuesIndices` is expected to have an index relative
+  to the `values` array, for polygon point, in polygons order:
+
+\rst
+::
+
+  optionalValuesIndices =
+    [value index for polygon0.polygonPointIndex0, 
+     value index for polygon0.polygonPointIndex1,
+     value index for polygon0.polygonPointIndex2, 
+     ..., 
+     value index for polygon1.polygonPointIndex0, 
+     value index for polygon1.polygonPointIndex1
+     ... ]
+
+  values = [...]
+\endrst
+
+  \category attributes
+*/
+function PolygonMesh.setAttributeFromPolygonPackedData!( String name, Vec3 values<>, Size optionalValuesIndices[] ) {
+  if( Fabric_Guarded && !Fabric_OnGPU && values.size() != this.totalPolygonPoints && optionalValuesIndices.size() != this.totalPolygonPoints )
+    throw("PolygonMesh.setAttributeFromPolygonPackedData: values size != polygon points sum");
+  Ref<Vec3Attribute> attr = this.getOrCreateVec3Attribute( name );
+  Size polygonCount = this.polygonCount();
+  Size pointCount = this.pointCount();
+  Size current;
+  for( Size i = 0; i < polygonCount; ++i ) {
+    DataIter polyIter = this.topology.getPolygonIter( i );
+    Size polySize = this.topology.getPolyIterSize(polyIter);
+    for( Size j = 0; j < polySize; ++j ) {
+      Size sourceIndex = optionalValuesIndices ? optionalValuesIndices[current] : current;
+      IterOff ptIterOff = this.topology.getPolyIterPointIterOff( polyIter, j );
+      this.setPointIterAttribute( ptIterOff.index, ptIterOff.offset, attr, values[sourceIndex] );
+      ++current;
+    }
+  }
+  attr.incrementVersion();
+}
+
+/**
+  Sets all attribute values from an array containing polygon packed data.
+  `values` is expected to have one value for each polygon point, in polygons order:
+
+\rst
+::
+
+  values =
+    [value for polygon0.polygonPointIndex0, 
+     value for polygon0.polygonPointIndex1,
+     value for polygon0.polygonPointIndex2, 
+     ..., 
+     value for polygon1.polygonPointIndex0, 
+     value for polygon1.polygonPointIndex1
+     ... ]
+\endrst
+
+  \category attributes
+*/
+function PolygonMesh.setAttributeFromPolygonPackedData!( String name, Vec3 values<> ) {
+  Size optionalValuesIndices[];
+  this.setAttributeFromPolygonPackedData( name, values, optionalValuesIndices );
+}
+
+/**
+  Sets all attribute values from an array containing polygon packed data with an index table.
+
+  `optionalValuesIndices` is expected to have an index relative
+  to the `values` array, for polygon point, in polygons order:
+
+\rst
+::
+
+  optionalValuesIndices =
+    [value index for polygon0.polygonPointIndex0, 
+     value index for polygon0.polygonPointIndex1,
+     value index for polygon0.polygonPointIndex2, 
+     ..., 
+     value index for polygon1.polygonPointIndex0, 
+     value index for polygon1.polygonPointIndex1
+     ... ]
+
+  values = [...]
+\endrst
+
+  \category attributes
+*/
+function PolygonMesh.setAttributeFromPolygonPackedData!( String name, Vec4 values<>, Size optionalValuesIndices[] ) {
+  if( Fabric_Guarded && !Fabric_OnGPU && values.size() != this.totalPolygonPoints && optionalValuesIndices.size() != this.totalPolygonPoints )
+    throw("PolygonMesh.setAttributeFromPolygonPackedData: values size != polygon points sum");
+  Ref<Vec4Attribute> attr = this.getOrCreateVec4Attribute( name );
+  Size polygonCount = this.polygonCount();
+  Size pointCount = this.pointCount();
+  Size current;
+  for( Size i = 0; i < polygonCount; ++i ) {
+    DataIter polyIter = this.topology.getPolygonIter( i );
+    Size polySize = this.topology.getPolyIterSize(polyIter);
+    for( Size j = 0; j < polySize; ++j ) {
+      Size sourceIndex = optionalValuesIndices ? optionalValuesIndices[current] : current;
+      IterOff ptIterOff = this.topology.getPolyIterPointIterOff( polyIter, j );
+      this.setPointIterAttribute( ptIterOff.index, ptIterOff.offset, attr, values[sourceIndex] );
+      ++current;
+    }
+  }
+  attr.incrementVersion();
+}
+
+/**
+  Sets all attribute values from an array containing polygon packed data.
+  `values` is expected to have one value for each polygon point, in polygons order:
+
+\rst
+::
+
+  values =
+    [value for polygon0.polygonPointIndex0, 
+     value for polygon0.polygonPointIndex1,
+     value for polygon0.polygonPointIndex2, 
+     ..., 
+     value for polygon1.polygonPointIndex0, 
+     value for polygon1.polygonPointIndex1
+     ... ]
+\endrst
+
+  \category attributes
+*/
+function PolygonMesh.setAttributeFromPolygonPackedData!( String name, Vec4 values<> ) {
+  Size optionalValuesIndices[];
+  this.setAttributeFromPolygonPackedData( name, values, optionalValuesIndices );
+}

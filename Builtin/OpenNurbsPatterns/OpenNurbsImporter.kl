@@ -1,0 +1,655 @@
+//
+// Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+//
+
+require AssetPatterns;
+require OpenNurbs;
+require FileIO;
+require Util;
+
+function Vec3 ON_transformPosition(Vec3 p) {
+  return Vec3(p.x, p.z, -p.y);
+}
+
+function Vec3 ON_transformNormal(Vec3 n) {
+  return Vec3(n.x, n.z, -n.y);
+}
+
+function Mat44 ON_transformMat44(Mat44 m) {
+  Xfo xfo(m);
+  Vec3 angles = xfo.ori.toEulerAngles();
+  angles = Vec3(angles.x, angles.z, -angles.y);
+  xfo.ori.setFromEulerAngles(angles, RotationOrder('yzx'));
+  xfo.tr = ON_transformPosition(xfo.tr);
+  xfo.sc = Vec3(xfo.sc.x, xfo.sc.z, xfo.sc.y);
+  return xfo.toMat44();
+}
+
+function Mat44 ON_transformMat44(Mat44_d m_d) {
+  Mat44 m;
+  m.row0.x = Float32(m_d.row0.x);
+  m.row0.y = Float32(m_d.row0.y);
+  m.row0.z = Float32(m_d.row0.z);
+  m.row0.t = Float32(m_d.row0.t);
+  m.row1.x = Float32(m_d.row1.x);
+  m.row1.y = Float32(m_d.row1.y);
+  m.row1.z = Float32(m_d.row1.z);
+  m.row1.t = Float32(m_d.row1.t);
+  m.row2.x = Float32(m_d.row2.x);
+  m.row2.y = Float32(m_d.row2.y);
+  m.row2.z = Float32(m_d.row2.z);
+  m.row2.t = Float32(m_d.row2.t);
+  m.row3.x = Float32(m_d.row3.x);
+  m.row3.y = Float32(m_d.row3.y);
+  m.row3.z = Float32(m_d.row3.z);
+  m.row3.t = Float32(m_d.row3.t);
+  return ON_transformMat44(m);
+}
+
+// \dfgPresetOmit
+object OpenNurbsImporter : BaseImporter, ImporterCallback {
+  private ONX_Model onModel;
+  private ON_Object onObjects[];
+  private ON_3dmObjectAttributes onAttributes[];
+  private Integer onObjectUuidToIndex[String];
+  private ON_InstanceDefinition onBlocks[];
+  private Integer onBlockUuidToIndex[String];
+  private ON_Layer onLayers[];
+  private Integer onLayerUuidToIndex[String];
+  private ON_Material onMaterials[];
+  private Integer onMaterialUuidToIndex[String];
+  private String filePath;
+  private Float32 scale;
+};
+
+/// \dfgPresetOmit
+function OpenNurbsImporter.cloneMembersTo(io OpenNurbsImporter other) {
+  this.parent.cloneMembersTo(other);
+  other.onObjects = this.onObjects;
+  other.onObjectUuidToIndex = this.onObjectUuidToIndex;
+  other.onBlocks = this.onBlocks;
+  other.onBlockUuidToIndex = this.onBlockUuidToIndex;
+  other.onLayers = this.onLayers;
+  other.onLayerUuidToIndex = this.onLayerUuidToIndex;
+  other.onMaterials = this.onMaterials;
+  other.onMaterialUuidToIndex = this.onMaterialUuidToIndex;
+  other.scale = this.scale;
+}
+
+// \dfgPresetOmit
+function OpenNurbsImporter(String filePath) {
+
+  FilePath fpath = filePath;
+  fpath = fpath.makePreferred().expandEnvVars();
+  if(!fpath.exists()) {
+    if(filePath)
+      report("OpenNurbsImporter: filePath '"+filePath+"' does not exist.");
+    return;
+  }
+
+  this.onModel = ONX_Model();
+  this.onModel.Read(fpath.string());
+  this.filePath = fpath.string();
+
+  // determine the scale to meters
+  ON_3dmSettings onSettings = this.onModel.cxx_get_m_settings();
+  ON_3dmUnitsAndTolerances onUnits = onSettings.cxx_get_m_ModelUnitsAndTolerances();
+  this.scale = Float32(onUnits.Scale(ON_meters));
+
+  // store all blocks
+  ON_InstanceDefinitionObjectArray onBlocks = this.onModel.cxx_get_m_idef_table();
+  for(Integer i=0;i<onBlocks.Count();i++)
+  {
+    ON_InstanceDefinition onBlock = onBlocks.At(i);
+
+    String path = '/blocks/'+onBlock.cxx_get_m_name().toString();
+    String uuid = onBlock.cxx_get_m_uuid().toString();
+    Ref<ImporterGroup> instanceDef = this.getOrCreateObject('Group', uuid, path);
+    instanceDef.initProperty('ON_IsInstanceDefinitionObject', ImporterBoolean(true));
+
+    this.onBlockUuidToIndex[uuid] = this.onBlocks.size();
+    this.onBlocks.push(onBlock);
+
+    ON_UUIDArray childUuids = onBlock.cxx_get_m_object_uuid();
+    for(SInt32 j=0;j<childUuids.Count();j++)
+      instanceDef.addMember(childUuids.cxx_getAtIndex(j).toString());
+  }
+
+  // store all materials
+  ON_MaterialObjectArray onMaterials = this.onModel.cxx_get_m_material_table();
+  for(Integer i=0;i<onMaterials.Count();i++)
+  {
+    ON_Material onMaterial = onMaterials.At(i);
+    String uuid = onMaterial.cxx_get_m_material_id().toString();
+    this.onMaterialUuidToIndex[uuid] = this.onMaterials.size();
+    this.onMaterials.push(onMaterial);
+  }
+
+  // store all layers
+  ON_LayerObjectArray onLayers = this.onModel.cxx_get_m_layer_table();
+  for(Integer i=0;i<onLayers.Count();i++)
+  {
+    ON_Layer onLayer = onLayers.At(i);
+    String uuid = onLayer.cxx_get_m_layer_id().toString();
+    this.onLayerUuidToIndex[uuid] = this.onLayers.size();
+    this.onLayers.push(onLayer);
+
+    String path = this.getLayerPath(Integer(i));
+
+    Ref<ImporterLayer> layer = this.getOrCreateObject('Layer', uuid, path);
+    layer.initProperty('ON_IsInstanceDefinitionObject', ImporterBoolean(false));
+    layer.setVisible(onLayer.IsVisible());
+    layer.setColor(onLayer.cxx_get_m_color().toColor());
+
+    // the root layers should be scaled
+    String parentUuid = onLayer.cxx_get_m_parent_layer_id().toString();
+    if(!this.onLayerUuidToIndex.has(parentUuid)) {
+      Xfo xfo;
+      xfo.sc = 100.0 / this.scale; // default to cm
+      layer.setLocalTransform(xfo.toMat44());
+    }
+  }
+
+  // gather all of the group names
+  ON_GroupObjectArray onGroups = this.onModel.cxx_get_m_group_table();
+  String groupNames[];
+  for(Integer i=0;i<onGroups.Count();i++)
+  {
+    ON_Group group = onGroups.At(i);
+    String groupName = group.cxx_get_m_group_name().toString();
+    if(groupName.length() == 0)
+      groupName = group.cxx_get_m_group_id().toString();
+    groupNames.push(groupName);
+  }
+
+  // store all objects
+  ONX_Model_ObjectClassArray onModelObjects = this.onModel.cxx_get_m_object_table();
+  for(Integer i=0;i<onModelObjects.Count();i++)
+  {
+    ONX_Model_Object onModelObj = onModelObjects.At(i);
+    ON_Object onObj = onModelObj.cxx_get_m_object();
+    ON_3dmObjectAttributes onAttributes = onModelObj.getAttributes();
+    String uuid = onAttributes.cxx_get_m_uuid().toString();
+    this.onObjectUuidToIndex[uuid] = this.onObjects.size();
+    this.onObjects.push(onObj);
+    this.onAttributes.push(onAttributes);
+
+    Integer layerIndex = onAttributes.cxx_get_m_layer_index();
+    String pathPrefix = this.getLayerPath(layerIndex) + '/';
+
+    String name = onAttributes.cxx_get_m_name().toString();
+    if(name)
+    {
+      ImporterObject existingObject = this.getObjectFromPath(pathPrefix + name);
+      if(existingObject != null)
+      {
+        Integer suffix = 1;
+        while(existingObject)
+        {
+          suffix++;
+          existingObject = this.getObjectFromPath(pathPrefix + name + '_' + suffix);
+        }
+        name = name + '_' + suffix;
+      }
+    }
+    if(!name)
+      name = uuid;
+
+    ImporterObject obj = null;
+    switch(onObj.ObjectType())
+    {
+      case ON_brep_object:
+      case ON_mesh_object:
+      case ON_beam_object:
+      case ON_extrusion_object:
+      {
+        Ref<ImporterShape> shape = this.getOrCreateObject('Shape', uuid, pathPrefix + name);
+        obj = shape;
+
+        // setup lazy eval
+        shape.callback = this;
+        break;
+      }
+      case ON_light_object:
+      {
+        Ref<ImporterLight> light = this.getOrCreateObject('Light', uuid, pathPrefix + name);
+        obj = light;
+
+        ON_Light onLight = ON_Light_Cast(onObj);
+
+        // first set the light type
+        switch(onLight.Style()) {
+          case ON_world_spot_light:
+          {
+            light.setLightType(ImporterLight_SpotLight);
+            break;
+          }
+          case ON_world_directional_light:
+          {
+            light.setLightType(ImporterLight_DirectionalLight);
+            break;
+          }
+          case ON_world_point_light:
+          {
+            light.setLightType(ImporterLight_PointLight);
+            break;
+          }
+        }
+
+        // now set the settings on the light
+        // and don't break - fall through since some light types
+        // are super sets of other light types
+        switch(onLight.Style()) {
+          case ON_world_spot_light:
+          {
+            Float32 angle = Float32(onLight.SpotAngleDegrees()) * 2.0;
+            Float32 hotspot = Float32(onLight.HotSpot());
+
+            light.setConeAngle(angle * hotspot);
+            light.setPenumbraAngle(angle * (1.0 - hotspot));
+
+            light.setCastShadow(onLight.ShadowIntensity() > 0);
+          }
+          case ON_world_directional_light:
+          case ON_world_point_light:
+          {
+            light.setLightEnabled(onLight.IsEnabled());
+            light.setIntensity(Float32(onLight.Intensity()));
+            light.setColor(onLight.Diffuse().toColor());
+
+            Vec3_d location_d = onLight.Location();
+            Vec3_d direction_d = onLight.Direction();
+            Vec3_d pdirection_d = onLight.PerpindicularDirection();
+            Vec3 location = Vec3(Float32(location_d.x), Float32(location_d.y), Float32(location_d.z));
+            Vec3 direction = Vec3(Float32(direction_d.x), Float32(direction_d.y), Float32(direction_d.z));
+            Vec3 pdirection = Vec3(Float32(pdirection_d.x), Float32(pdirection_d.y), Float32(pdirection_d.z));
+
+            Xfo lightXfo;
+            lightXfo.tr = location;
+            lightXfo.ori.setFromDirectionAndUpvector(direction, pdirection);
+            Quat lightOffset;
+            lightOffset.setFromAxisAndAngle(Vec3(0, 1, 0), -HALF_PI);
+            lightXfo.ori *= lightOffset;
+            light.setLocalTransform(ON_transformMat44(lightXfo.toMat44()));
+
+            light.initProperty('ON_lightAmbientColor', ImporterColor(onLight.Ambient().toColor()));
+            light.initProperty('ON_lightSpecularColor', ImporterColor(onLight.Specular().toColor()));
+            break;
+          }
+        }
+
+        break;
+      }
+      case ON_instance_reference:
+      {
+        ON_InstanceRef onInstanceRef = ON_InstanceRef_Cast(onObj);
+
+        Ref<ImporterInstance> instance = this.getOrCreateObject("Instance", uuid, pathPrefix+name);
+        obj = instance;
+
+        Mat44_d xform_d = onInstanceRef.cxx_get_m_xform();
+        Mat44 xform = ON_transformMat44(xform_d);
+        instance.setLocalTransform(xform);
+
+        // store the master of the instance
+        String masterUuid = onInstanceRef.cxx_get_m_instance_definition_uuid().toString();
+        instance.setMasterID(masterUuid);
+        break;          
+      }
+      // todo FE-8728: support curves!
+      default:
+      {
+        // other types are not supported for now.
+        // report(onObj.ObjectType());
+        break;
+      }
+    }
+
+    if(obj == null)
+      continue;
+
+    this.setObjectDefaults(onObj, onAttributes, obj);
+    if(!onAttributes.IsInstanceDefinitionObject())
+    {
+      ON_Layer onLayer = this.onLayers[onAttributes.cxx_get_m_layer_index()];
+      String layerUuid = onLayer.cxx_get_m_layer_id().toString();
+      ImporterLayer layer = this.getObjectFromID(layerUuid);
+      if(layer)
+        layer.addMember(obj.getID());
+    }
+
+    ON_SInt32Array groupIndices;
+    onAttributes.GetGroupList(groupIndices);
+    if(groupIndices.Count() > 0)
+    {
+      String groupKeys;
+      for(Integer j=0;j<groupIndices.Count();j++)
+      {
+        String groupKey = groupNames[groupIndices.cxx_getAtIndex(j)];
+        if(j>0)
+          groupKeys += ",";
+        groupKeys += groupKey;
+      }
+      obj.setMetaData('ON_Groups', groupKeys);
+    }
+  }
+}
+
+private String OpenNurbsImporter.getLayerPath(Integer layerIndex)
+{
+  if(layerIndex < 0)
+    return "";
+
+  String name = this.onLayers[layerIndex].LayerName().toString();
+  String parentUuid = this.onLayers[layerIndex].cxx_get_m_parent_layer_id().toString();
+  Integer parentIndex = this.onLayerUuidToIndex.get(parentUuid, -1);
+  return this.getLayerPath(parentIndex) + '/' + name;
+}
+
+private function OpenNurbsImporter.setObjectDefaults!(
+  ON_Object onObj,
+  ON_3dmObjectAttributes onAttributes,
+  io ImporterObject obj
+) {
+  ON_Layer onLayer = this.onLayers[onAttributes.cxx_get_m_layer_index()];
+  obj.setLayerID(onLayer.cxx_get_m_layer_id().toString());
+
+  obj.setVisible(onAttributes.IsVisible() && onLayer.IsVisible());
+
+  // set the color, except for lights (we use the light's color instead here)
+  if(onObj.ObjectType() != ON_light_object)
+  {
+    Color c;
+    if(onAttributes.ColorSource() == ON_color_from_layer)
+      c = onLayer.cxx_get_m_color().toColor();
+    else
+      c = onAttributes.cxx_get_m_color().toColor();
+    obj.setColor(c);
+  }
+
+  // also store other information such as the original colors of the object
+  obj.initProperty('ON_DisplayColor', ImporterColor(onAttributes.cxx_get_m_color().toColor()));
+  obj.initProperty('ON_IsInstanceDefinitionObject', ImporterBoolean(onAttributes.IsInstanceDefinitionObject()));
+
+  Integer materialIndex = -1;
+  if(onAttributes.MaterialSource() == ON_material_from_layer)
+  {
+    materialIndex = onLayer.cxx_get_m_material_index();
+  }
+  else
+  {
+    materialIndex = onAttributes.cxx_get_m_material_index();
+  }
+  this.setupMaterial(materialIndex, obj);
+}
+
+private function OpenNurbsImporter.setupMaterial!(Integer materialIndex, io ImporterObject obj) {
+
+  if(materialIndex < 0 || materialIndex > this.onMaterials.size())
+    return;
+
+  ON_Material onMat = this.onMaterials[materialIndex];
+  String uuid = onMat.cxx_get_m_material_id().toString();
+  Ref<ImporterMaterial> mat = this.getObjectFromID(uuid);
+  if(mat == null)
+  {
+    String materialName = onMat.cxx_get_m_material_name().toString();
+    if(materialName == "")
+      materialName = uuid;
+    String path = '/materials/' + materialName;
+
+    mat = this.getObjectFromPath(path);
+    if(mat != null)
+    {
+      Integer suffix = 1;
+      while(mat)
+      {
+        suffix++;
+        mat = this.getObjectFromPath('/materials/' + materialName + '_' + suffix);
+      }
+      materialName = materialName + '_' + suffix;
+      path = '/materials/' + materialName;
+    }
+
+    mat = this.getOrCreateObject('Material', uuid, path);
+    mat.initProperty('ON_IsInstanceDefinitionObject', ImporterBoolean(false));
+    mat.setMetaData('ON_MaterialName', onMat.cxx_get_m_material_name().toString());
+
+    Boolean hasDiffuseTexture = false;
+    Boolean hasBumpTexture = false;
+
+    ON_TextureObjectArray onTextures = onMat.cxx_get_m_textures();
+    for(Size i=0;i<onTextures.Count();i++) {
+      ON_Texture onTex = onTextures.At(i);
+      if(!onTex.cxx_get_m_bOn())
+        continue;
+      String texUuid = onTex.cxx_get_m_texture_id().toString();
+      Ref<ImporterTexture> texture = this.getObjectFromID(texUuid);
+      if(texture == null) {
+        texture = this.getOrCreateObject('Texture', texUuid, '/textures/'+texUuid);
+        texture.initProperty('ON_IsInstanceDefinitionObject', ImporterBoolean(false));
+        String filePath = onTex.cxx_get_m_filename().toString();
+        if(onTex.cxx_get_m_filename_bRelativePath()) {
+          FilePath folder = FilePath(this.filePath).parentPath();
+          folder = folder / filePath;
+          filePath = folder.string();
+        }
+        texture.setFilePath(filePath);
+      }
+
+      switch(onTex.cxx_get_m_type())
+      {
+        case ON_Texture_bitmap_texture:
+        {
+          texture.setMetaData('ON_Texture_Mode', ON_Texture_bitmap_texture);
+          mat.setMetaData('ON_bitmap_texture', texUuid);
+          if(!hasDiffuseTexture) {
+            mat.initProperty('diffuse', ImporterString(texUuid));
+            hasDiffuseTexture = true;
+          }
+          break;
+        }
+        case ON_Texture_bump_texture:
+        {
+          texture.setMetaData('ON_Texture_Mode', ON_Texture_bump_texture);
+          mat.setMetaData('ON_bump_texture', texUuid);
+          if(!hasBumpTexture) {
+            mat.initProperty('bump', ImporterString(texUuid));
+            hasBumpTexture = true;
+          }
+          break;
+        }
+        case ON_Texture_transparency_texture:
+        {
+          texture.setMetaData('ON_Texture_Mode', ON_Texture_transparency_texture);
+          mat.setMetaData('ON_transparency_texture', texUuid);
+          break;
+        }
+        case ON_Texture_emap_texture:
+        {
+          texture.setMetaData('ON_Texture_Mode', ON_Texture_emap_texture);
+          mat.setMetaData('ON_emap_texture', texUuid);
+          break;
+        }
+        default:
+        {
+          continue;
+        }
+      }
+    }
+
+    mat.initProperty('ambient', ImporterColor(onMat.Ambient().toColor()));
+    if(!hasDiffuseTexture)
+      mat.initProperty('diffuse', ImporterColor(onMat.Diffuse().toColor()));
+    mat.initProperty('emission', ImporterColor(onMat.Emission().toColor()));
+    mat.initProperty('specular', ImporterColor(onMat.Specular().toColor()));
+    mat.initProperty('reflection', ImporterColor(onMat.cxx_get_m_reflection().toColor()));
+    mat.initProperty('transparent', ImporterColor(onMat.cxx_get_m_transparent().toColor()));
+    mat.initProperty('indexOfRefraction', ImporterScalar(Float32(onMat.cxx_get_m_index_of_refraction())));
+    mat.initProperty('metalness', ImporterScalar(Float32(onMat.cxx_get_m_reflectivity())));
+    Float32 shine = Float32(onMat.Shine());
+    Float32 roughness = Math_clamp((120.0 - shine) / 120.0, 0.0, 1.0);
+    roughness = roughness * roughness;
+    mat.initProperty('shine', ImporterScalar(shine));
+    mat.initProperty('roughness', ImporterScalar(roughness));
+    mat.initProperty('transparency', ImporterScalar(Float32(onMat.Transparency())));
+  }
+
+  ImporterShape shape(obj);
+  if(shape)
+    shape.addMaterial(uuid);
+}
+
+// \dfgPresetOmit
+function Boolean OpenNurbsImporter.updateProperty!(ImporterContext context, io Ref<ImporterObject> subject, String prop) {
+
+  Integer index = this.onObjectUuidToIndex.get(subject.getID(), -1);
+  if(index < 0)
+    return false;
+
+  ON_Object onObj = this.onObjects[index];
+
+  ImporterShape shape = subject;
+  if(shape) {
+    if(prop == 'bounds') {
+      
+      Box3 bounds;
+      switch(onObj.ObjectType())
+      {
+        case ON_mesh_object:
+        {
+          ON_Mesh onMesh = ON_Mesh_Cast(onObj);
+          bounds = this.getBounds(onMesh);
+          break;
+        }
+        case ON_brep_object:
+        {
+          ON_Brep onBrep = ON_Brep_Cast(onObj);
+          ON_ConstMeshArray onMeshes;
+          onBrep.GetMesh(ON_render_mesh, onMeshes);
+          for(SInt32 i=0;i<onMeshes.Count();i++)
+            bounds.merge(this.getBounds(onMeshes.cxx_getAtIndex(i)));
+          break;
+        }
+        case ON_beam_object:
+        case ON_extrusion_object:
+        {
+          ON_Extrusion onExtrusion = ON_Extrusion_Cast(onObj);
+          ON_Mesh onMesh = onExtrusion.Mesh(ON_render_mesh);
+          bounds = this.getBounds(onMesh);
+          break;
+        }
+      }
+
+      shape.setBounds(bounds);
+      return true;
+
+    } else if(prop == 'geometry') {
+
+      Geometry geo = null;
+      switch(onObj.ObjectType())
+      {
+        case ON_mesh_object:
+        {
+          ON_Mesh onMesh = ON_Mesh_Cast(onObj);
+          geo = this.getPolygonMesh(onMesh);
+          break;
+        }
+        case ON_brep_object:
+        {
+          ON_Brep onBrep = ON_Brep_Cast(onObj);
+          ON_ConstMeshArray onMeshes;
+          onBrep.GetMesh(ON_render_mesh, onMeshes);
+          PolygonMesh mesh();
+          for(SInt32 i=0;i<onMeshes.Count();i++)
+          {
+            PolygonMesh subMesh = this.getPolygonMesh(onMeshes.cxx_getAtIndex(i));
+            if(!subMesh)
+              continue;
+            mesh.mergeMesh(subMesh);
+          }
+          geo = mesh;
+          break;
+        }
+        case ON_beam_object:
+        case ON_extrusion_object:
+        {
+          ON_Extrusion onExtrusion = ON_Extrusion_Cast(onObj);
+          ON_Mesh onMesh = onExtrusion.Mesh(ON_render_mesh);
+          geo = this.getPolygonMesh(onMesh);
+          break;
+        }
+      }
+
+      shape.setGeometry(geo);
+      return true;
+    }
+  }
+  return false;
+}
+
+function Box3 OpenNurbsImporter.getBounds(ON_Mesh onMesh)
+{
+  Box3 result;
+  ON_BoundingBox box;
+  if(onMesh.GetTightBoundingBox(box))
+  {
+    result = box.toBox3();
+  }
+  else
+  {
+    ON_3fPointArray m_V = onMesh.cxx_get_m_V();
+    for(Integer i=0;i<m_V.Count();i++)
+      result.merge(m_V.cxx_getAtIndex(i));
+  }
+
+  result.min = ON_transformPosition(result.min);
+  result.max = ON_transformPosition(result.max);
+  return result;
+}
+
+function PolygonMesh OpenNurbsImporter.getPolygonMesh(ON_Mesh onMesh)
+{
+  PolygonMesh mesh();
+
+  ON_3fPointArray VA = onMesh.cxx_get_m_V();
+  ON_3fVectorArray NA = onMesh.cxx_get_m_N();
+  ON_2fPointArray TA = onMesh.cxx_get_m_T();
+  ON_MeshFaceArray FA = onMesh.cxx_get_m_F();
+
+  Vec3 V<>(VA.Array(), VA.Count());
+  Vec3 N<>(NA.Array(), NA.Count());
+  Vec2 T<>(TA.Array(), TA.Count());
+
+  // mesh face only has a int[4] member
+  SInt32 F<>(FA.Array(), FA.Count() * 4);
+
+  mesh.createPoints(V.size());
+  for(Size i=0;i<V.size();i++)
+    mesh.setPointPosition(i, ON_transformPosition(V[i]));
+
+  mesh.beginStructureChanges();
+  for(Size i=0;i<F.size();i+=4) {
+    UInt32 a = UInt32(F[i+0]);
+    UInt32 b = UInt32(F[i+1]);
+    UInt32 c = UInt32(F[i+2]);
+    UInt32 d = UInt32(F[i+3]);
+    if(c == d)
+      mesh.addPolygon(a, b, c);
+    else
+      mesh.addPolygon(a, b, c, d);
+  }
+  mesh.endStructureChanges();
+
+  for(Size i=0;i<N.size();i++)
+    mesh.setPointNormal(i, ON_transformNormal(N[i]));
+
+  GeometryAttributes attributes = mesh.getAttributes();
+  if(T.size() == V.size()) {
+    Ref<Vec2Attribute> uvsAttr = attributes.getOrCreateVec2Attribute('uvs0');
+    for(Size i=0;i<T.size();i++)
+      mesh.setPointAttribute(i, uvsAttr, T[i]);
+  }
+
+  return mesh;
+}

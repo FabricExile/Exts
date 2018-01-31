@@ -1,0 +1,58 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/SpatialQuery.html",
+    "uiTooltip" : "Gets the elements intersecting a local bounding sphere.\nThe definition of an `element` is Geometry-specific (polygon for PolygonMesh, segment for Lines, point for Points).\nThe number of intersected elements is returned, and individual element indices must be gathered with the\n:kl-ref:`SpatialQuery.getQueriedElement` before issuing another query.\n**Important**: the returned values is a conservative approximation since only the bounding volume of the elements will be considered (eg: polygon's bounding box for a PolygonMesh).\nThis implies that some elements that are returned might not actually touch the queried bounding sphere (but are close to it). For more precision, the caller must perform additional filtering.\n\n\n Supported by SpatialQuery"
+    },
+  "title" : "GetElementsInBSphere",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "SpatialQuery"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "center",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Vec3"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "radius",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Scalar"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Size"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "DE22BFB4236E4E8D94949D1B3A7B6167",
+  "code" : "require Geometry;
+
+dfgEntry {
+  result = this.getElementsInBSphere(center, radius);
+}
+"
+  }

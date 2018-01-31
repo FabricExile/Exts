@@ -1,0 +1,131 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 132,\n  \"g\" : 106,\n  \"b\" : 97\n  }",
+    "uiTooltip" : "Adds a new behavior to this object\n\nSupported types:\n  this: ImporterObject\n  behavior: String\n  result: ImporterObject\n"
+    },
+  "title" : "addBehavior",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 206,\n  \"g\" : 165,\n  \"b\" : 151\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Ref<ImporterObject>"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "behavior",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "String"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 206,\n  \"g\" : 165,\n  \"b\" : 151\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Ref<ImporterObject>"
+      }
+    ],
+  "blocks" : [
+    {
+      "objectType" : "ExecBlock",
+      "metadata" : {
+        "uiGraphPos" : "{\"x\":0.0,\"y\":0.0}"
+        },
+      "name" : "properties",
+      "ports" : [
+        {
+          "objectType" : "ExecFixedPort",
+          "name" : "result",
+          "nodePortType" : "In",
+          "outsidePortType" : "Out"
+          },
+        {
+          "objectType" : "ExecBlockPort",
+          "name" : "behavior",
+          "nodePortType" : "IO",
+          "outsidePortType" : "IO",
+          "typeSpec" : "Ref<ImporterObject>"
+          },
+        {
+          "objectType" : "ExecBlockPort",
+          "name" : "owner",
+          "nodePortType" : "Out",
+          "outsidePortType" : "In",
+          "typeSpec" : "Ref<ImporterObject>"
+          },
+        {
+          "objectType" : "ExecBlockPort",
+          "name" : "importer",
+          "nodePortType" : "Out",
+          "outsidePortType" : "In",
+          "typeSpec" : "Importer"
+          }
+        ],
+      "defaultExec" : {
+        "objectType" : "Graph",
+        "title" : "",
+        "ports" : [],
+        "fixedPorts" : [
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "result",
+            "nodePortType" : "In",
+            "outsidePortType" : "Out"
+            },
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "behavior",
+            "nodePortType" : "IO",
+            "outsidePortType" : "IO"
+            },
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "owner",
+            "nodePortType" : "Out",
+            "outsidePortType" : "In"
+            },
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "importer",
+            "nodePortType" : "Out",
+            "outsidePortType" : "In"
+            }
+          ],
+        "extDeps" : {},
+        "nodes" : [],
+        "connections" : {
+          "behavior" : [
+            "result"
+            ]
+          }
+        }
+      }
+    ],
+  "extDeps" : {
+    "AssetPatterns" : "*"
+    },
+  "presetGUID" : "D1684B3BE9AF97928CE6D3AC3957E29E",
+  "code" : "require AssetPatterns;
+
+dfgEntry {
+  result = this.getOrCreateBehavior(behavior);
+  result = dfgPullBlockPort('properties.result', result, this, this.importer);
+}
+"
+}

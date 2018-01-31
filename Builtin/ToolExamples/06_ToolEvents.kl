@@ -1,0 +1,86 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+using namespace Tool;
+
+const String ToolEventsExample_enter = "toolEvExample_enter";
+const String ToolEventsExample_leave = "toolEvExample_leave";
+const String ToolEventsExample_toggleColor = "toolEvExample_toggle";
+
+object ToolEventsExample : BaseTool{
+  Boolean mouseIsOver;
+  Boolean redElseGreen;
+};
+
+ToolEventsExample() {
+
+  // This example toggles the sphere color when:
+  // - the mouse is over it
+  // - the mouse clicks it
+  // - a HUD push button widget is clicked
+  // - a keystroke is hit
+
+  // This is an example for showing how events are working; however not that 
+  // some of the behavior implemented here are better done by attaching built-in 
+  // components such as Tool::HighlightUnderMouse.
+
+  // create a sphere
+  BaseTool sphere = this.addChild( "worldSphere", SphereShape( 1 ) );
+  sphere.setMaterial( HeadLightShadedMaterial() );
+
+  // create a MouseClickRaycastInteraction to the sphere and connects to its clicked
+  // event (MouseClickRaycastInteraction_SuccessEvent).
+  MouseClickRaycastInteraction clickInteraction();
+
+  // succeed on button click, not on button release
+  clickInteraction.sendSuccessOnlyIfReleaseOnTarget( false );
+
+  // By attaching to the sphere, the interaction will, by default, use the sphere 
+  // as the raycast target. Also, the component needs to be owned by something, 
+  // else it will destroy at the end of this function.
+  sphere.attachComponent( clickInteraction );
+  clickInteraction.addListener( this, false, MouseClickRaycastInteraction_SuccessEvent, ToolEventsExample_toggleColor );
+
+  // Attach a mouse over interaction and connect to its enter/leave events
+  MouseOverRaycastInteraction mouseOverInteraction();
+  sphere.attachComponent( mouseOverInteraction );
+  mouseOverInteraction.addListener( this, false, MouseOverRaycastInteraction_EnterEvent, ToolEventsExample_enter );
+  mouseOverInteraction.addListener( this, false, MouseOverRaycastInteraction_LeaveEvent, ToolEventsExample_leave );
+
+  // Create a push button
+  PushButtonWidget pushButton( Vec2( 30 ), Color( 0.0, 1.0, 0.0 ), Color( 1.0 ), Color( 1.0, 1.0, 0.0 ) );
+  pushButton.setPixelCoordinatesTransform( Vec2( 10 ), Vec2( 40 ), Tool::DrawContext() );
+  this.addChild( "button", pushButton );
+  pushButton.addListener( this, false, PushButtonWidget_onTrigger, ToolEventsExample_toggleColor );
+
+  // Register to raw event so we send ToolEventsExample_toggleColor when hitting the 'space' key
+  this.registerToRawEvents( true );
+}
+
+ToolEventsExample.onRawEvent!( io Event event ) {
+  KeyEvent key = event;
+  if( Boolean( key ) && key.key == Key_Space && key.eventType == Event_KeyPress ) {
+    key.accept();//Make sure it's not sent to the application
+    report( "Space key pressed" );
+    this.sendEventToSelf( ToolEventsExample_toggleColor );
+  }
+}
+
+ToolEventsExample.onEvent!( ToolEvent event, ToolEventUserID userID ) {
+  report( "Event: " + event.name );
+  if( event.name == ToolEventsExample_toggleColor )
+    this.redElseGreen = !this.redElseGreen;
+  else if( event.name == ToolEventsExample_enter )
+    this.mouseIsOver = true;
+  else if( event.name == ToolEventsExample_leave )
+    this.mouseIsOver = false;
+
+  // update the color based on these
+  Color color = this.redElseGreen ? Color( 1.0, 0.0, 0.0 ) : Color( 0.0, 1.0, 0.0 );
+  if( this.mouseIsOver )
+    color = color * 0.6 + Color( 0.4 );// lighter color if mouse is over
+
+  this.setColor( color );
+  this.parent.onEvent( event, userID );
+}

@@ -1,0 +1,311 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require FabricSynchronization, Math;
+
+/**
+\versionadded 1.12.0
+
+The InlineMaterial represents a collection of values for a given InlineShader. The InlineMaterial also manages all InlineInstance objects using that shader with the material's settings.
+
+\example
+InlineMaterial mat = InlineMaterial();
+mat.setUniform('u_color', Color(1.0, 0.0, 0.0));
+mat.setUniform('u_factor', 1.7);
+\endexample
+\dfgPresetOmit
+*/
+
+object InlineInstance;
+interface InlineShader;
+
+object InlineMaterial : InlineEntityBase {
+  /// \internal
+  Ref<InlineShader> shader;
+  /// \internal
+  Ref<InlineInstance> instances[];
+  /// \internal
+  InlineUniform uniforms[];
+  /// \internal
+  Size uniformOffsets[String];
+  /// \internal
+  Boolean mActive;
+  /// \internal
+  SimpleLock simpleLock;
+};
+
+/// default constructor using a name for the material
+function InlineMaterial(InlineShader shader, String name) {
+  this.shader = shader;
+  this.init(name);
+}
+
+/// default constructor using a name
+function InlineMaterial(String name) {
+  this.init(name);
+}
+
+/// default constructor
+function InlineMaterial() {
+  this.init("Material");
+}
+
+/// default constructor using a name
+function InlineMaterial.init!(String name) {
+  this.simpleLock = SimpleLock("InlineMaterial");
+  this.name = name;
+  this.mActive = true;
+}
+
+function ~InlineMaterial() {
+
+  for(Index i=0; i<this.instances.size(); ++i)
+  {
+    Ref<InlineInstance> instance = this.instances[i];
+    if(instance) this.removeFromInstance(instance);
+  }
+}
+
+/// returns true if the material has the given instance
+function Boolean InlineMaterial.hasInstance(io Ref<InlineInstance> instance) {
+  AutoLock AL(this.simpleLock);
+
+  for(Size i=0; i<this.instances.size(); i++) {
+    if(this.instances[i] === instance) 
+      return true;
+  }
+  return false;
+}
+
+/// adds a single instance to the InlineMaterial
+/// \internal
+function InlineMaterial.addInstance!(io Ref<InlineInstance> instance) {
+  AutoLock AL(this.simpleLock);
+  this.instances.push(instance);
+
+  // The Material and the instance share a bi-directional relationship.
+  // From the instance we can reference the assigned materials, and from the 
+  // Material we can find the assigned instances. Here we only add the reverse
+  // connection if it hasn't already been made...
+  InlineMaterial thisMaterial = this;
+  if(!instance.hasMaterial(thisMaterial)){
+    instance.addMaterial(thisMaterial);
+  }
+}
+
+/// adds a single instance to the InlineMaterial
+function InlineMaterial.addInstance!(InlineInstance instance) {
+  Ref<InlineInstance> ref = instance;
+  this.addInstance(ref);
+}
+
+/// remove an instances from the InlineMaterial while not removing the material back pointer from the Instance.
+/// \internal
+function Boolean InlineMaterial.removeInstance!(io Ref<InlineInstance> instance) {
+  AutoLock AL(this.simpleLock);
+  
+  for(Size i=0; i<this.instances.size(); i++) 
+  {
+    if(this.instances[i] === instance) 
+    {
+      if(i < this.instances.size()-1)
+        this.instances[i] = this.instances[this.instances.size()-1];
+      this.instances.resize(this.instances.size()-1);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/// remove an instances from the InlineMaterial
+function InlineMaterial.removeFromInstance!(io Ref<InlineInstance> instance) {
+  InlineMaterial keepAlive( this ); // We might be destroyed: ensure that the this.simpleLock isn't locked when destroying
+  {
+    AutoLock AL(this.simpleLock);
+    if(Boolean(instance) && instance.hasMaterial(this))
+      instance.removeMaterial(this);
+  }
+}
+
+/// remove an instances from the InlineMaterial
+function InlineMaterial.removeFromShader!() {
+  InlineMaterial keepAlive( this ); // We might be destroyed: ensure that the this.simpleLock isn't locked when destroying
+  {
+    AutoLock AL(this.simpleLock);
+    Ref<InlineShader> shader = this.shader;
+    this.shader = null;//destruction order is sensitive, take no chances
+    if(Boolean(shader) && shader.hasMaterial(this.getName()))
+      shader.removeMaterial(this.getName());
+  }
+}
+
+/// returns the number of instances in this InlineMaterial
+inline Size InlineMaterial.getInstanceCount() {
+  AutoLock AL(this.simpleLock);
+  return this.instances.size();
+}
+
+/// returns an instance given its index, or null
+function Ref<InlineInstance> InlineMaterial.getInstance(Index index) {
+  AutoLock AL(this.simpleLock);
+  if(index >= this.instances.size()) {
+    setError('InlineMaterial.getInstance: Index out of bounds');
+    Ref<InlineInstance> result = null;
+    return result;
+  }
+  Ref<InlineInstance> instance = this.instances[index];
+  return instance;
+}
+
+/// set a uniform on this material given a name and an InlineUniform.
+/// this will error if the uniform is not supported by the shader.
+function InlineMaterial.setUniform!(InlineUniform uniform) {
+  AutoLock AL(this.simpleLock);
+  if(this.shader) {
+    InlineShader shader = this.shader;
+    if(!shader.hasUniform(uniform.getName())) {
+      if(!uniform.isOptional())
+        setError('Shader "'+shader.getName()+'" does not support uniform "'+uniform.getName()+'".');
+      report('Skipping uniform "'+uniform.getName()+'" for shader "'+shader.getName()+'".');
+      return;
+    }
+  }
+
+  Size offset = this.uniformOffsets.get(uniform.getName(), this.uniforms.size());
+  if(offset == this.uniforms.size()) {
+    this.uniformOffsets[uniform.getName()] = offset;
+    this.uniforms.push(uniform);
+  } else {
+    this.uniforms[offset] = uniform;
+  }
+}
+
+/// set a uniform given its name and a Integer value
+function InlineMaterial.setUniform!(String name, Integer value) {
+  AutoLock AL(this.simpleLock);
+  this.setUniform(InlineUniform(name, value));
+}
+
+/// set a uniform given its name and a Float32 value
+function InlineMaterial.setUniform!(String name, Float32 value) {
+  AutoLock AL(this.simpleLock);
+  this.setUniform(InlineUniform(name, value));
+}
+
+/// set a uniform given its name and a Vec2 value
+function InlineMaterial.setUniform!(String name, Vec2 value) {
+  AutoLock AL(this.simpleLock);
+  this.setUniform(InlineUniform(name, value));
+}
+
+/// set a uniform given its name and a Vec3 value
+function InlineMaterial.setUniform!(String name, Vec3 value) {
+  AutoLock AL(this.simpleLock);
+  this.setUniform(InlineUniform(name, value));
+}
+
+/// set a uniform given its name and a Quat value
+function InlineMaterial.setUniform!(String name, Quat value) {
+  AutoLock AL(this.simpleLock);
+  this.setUniform(InlineUniform(name, value));
+}
+
+/// set a uniform given its name and a Color value
+function InlineMaterial.setUniform!(String name, Color value) {
+  AutoLock AL(this.simpleLock);
+  this.setUniform(InlineUniform(name, value));
+}
+
+/// set a uniform given its name and a Vec4 value
+function InlineMaterial.setUniform!(String name, Vec4 value) {
+  AutoLock AL(this.simpleLock);
+  this.setUniform(InlineUniform(name, value));
+}
+
+/// set a uniform given its name and a Mat33 value
+function InlineMaterial.setUniform!(String name, Mat33 value) {
+  AutoLock AL(this.simpleLock);
+  this.setUniform(InlineUniform(name, value));
+}
+
+/// set a uniform given its name and a Mat44 value
+function InlineMaterial.setUniform!(String name, Mat44 value) {
+  AutoLock AL(this.simpleLock);
+  this.setUniform(InlineUniform(name, value));
+}
+
+/// set a uniform given its name and a InlineTexture value
+function InlineMaterial.setUniform!(String name, InlineTexture value) {
+  AutoLock AL(this.simpleLock);
+  this.setUniform(InlineUniform(name, value));
+}
+
+/// returns a uniform by name
+function InlineUniform InlineMaterial.getUniform(String name) {
+  Size offset = this.uniformOffsets.get(name, this.uniforms.size());
+  if(offset == this.uniforms.size())
+    return InlineUniform();
+  return this.uniforms[offset];
+}
+
+/// enables or disables this material
+function InlineMaterial.setActive!(Boolean active) {
+  this.mActive = active;
+}
+
+/// returns true if this material is currently active
+function Boolean InlineMaterial.isActive() {
+  return this.mActive;
+}
+
+/// \internal
+function Boolean InlineMaterial.preDraw!(io DrawContext context) {
+  if( this.shader == null )
+    return false;
+
+  InlineShader shader = this.shader;
+  context.setMetaData('currentMaterial', this);
+
+  for(Size i=0; i<this.uniforms.size(); i++) {
+    if(!shader.drawUniform(context, this.uniforms[i])) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/// draws the material on screen. this is used by the 
+/// InlineShader.draw, you should not call this manually.
+/// \internal
+function Boolean InlineMaterial.draw!( io DrawContext context ) {
+  if( !this.mActive )
+    return true;
+
+  if( !this.preDraw( context ) )
+    return false;
+
+  for( Size i = 0; i<this.instances.size(); i++ ) {
+    InlineInstance instance = this.instances[i];
+
+    if( !instance.draw( context ) ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/// \internal
+function InlineMaterial.drawExplicitInstance!( Ref<InlineInstance> inst, io DrawContext context ) {
+  if( !this.mActive )
+    return;
+
+  if( !this.preDraw( context ) )
+    return;
+
+  Ref<InlineInstance> mutableInst = inst;
+  mutableInst.draw( context );
+}

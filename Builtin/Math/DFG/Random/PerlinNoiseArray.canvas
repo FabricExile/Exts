@@ -1,0 +1,93 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiTooltip" : "Three-dimensional perlin noise function.\n\n\n Supported by Float32"
+    },
+  "title" : "PerlinNoise[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "ix",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float32[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float32[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "iy",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float32[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float32[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "iz",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float32[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float32[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Float32[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "3191110B3FC5CE94DFD4882CA6609E50",
+  "code" : "require Math;
+
+operator Math_perlinNoise_task<<<index>>>(
+  io Float32[] result
+, in Float32[] ix
+, in Float32[] iy
+, in Float32[] iz
+) {
+  result[index] = perlinNoise(ix[index < ix.size() ? index : ix.size() - 1], iy[index < iy.size() ? index : iy.size() - 1], iz[index < iz.size() ? index : iz.size() - 1]);
+}
+
+dfgEntry {
+  if( ix.size() == 0) return;
+  if( iy.size() == 0) return;
+  if( iz.size() == 0) return;
+  Size task_size = 0;
+  if(task_size < ix.size()) task_size = ix.size();
+  if(task_size < iy.size()) task_size = iy.size();
+  if(task_size < iz.size()) task_size = iz.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_perlinNoise_task(index, result, ix, iy, iz);
+    }
+  } else {
+    Math_perlinNoise_task<<<task_size>>>(result, ix, iy, iz);
+  }
+}
+"
+  }

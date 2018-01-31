@@ -1,0 +1,69 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "returns true if this AlembicSampleInfo is using multiple samples\n\nSupported types:\n  this: AlembicSampleInfo\n  result: Boolean\n"
+    },
+  "title" : "RequiresInterpolation[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "AlembicSampleInfo[]" : [
+          {
+            "indexA" : -1,
+            "indexB" : -1,
+            "time" : -100000,
+            "timeA" : -100000,
+            "timeB" : -100000,
+            "fraction" : 0,
+            "ifraction" : 1
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "AlembicSampleInfo[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "C56456849DA955390AF624671E365301",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicSampleInfo_requiresInterpolation_task<<<index>>>(
+  io Boolean[] result
+, in AlembicSampleInfo[] this
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].requiresInterpolation();
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  Size task_size = this.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      AlembicWrapper_AlembicSampleInfo_requiresInterpolation_task(index, result, this);
+    }
+  } else {
+    AlembicWrapper_AlembicSampleInfo_requiresInterpolation_task<<<task_size>>>(result, this);
+  }
+}
+"
+  }

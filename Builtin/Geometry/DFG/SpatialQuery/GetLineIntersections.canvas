@@ -1,0 +1,68 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/SpatialQuery.html",
+    "uiTooltip" : "Gathers all intersections from a line, semi-line or line segment.\nThe number of intersections is returned, and individual GeometryLocation can be retrieved using :kl-ref:`SpatialQuery.getQueriedLocation` .\nIntersections will be sorted in the `start` to `end` direction.\n- if `lineIntersectionType` == `SpatialQuery_lineIntersection` : intersects with an infinite line passing through `start` and `end`\n- if `lineIntersectionType` == `SpatialQuery_semiLineIntersection` : intersects with a semi-line starting at `start`, passing through `end` and continuing infinitely in that direction\n- if `lineIntersectionType` == `SpatialQuery_segmentIntersection` : intersects with a segment starting at `start` and ending at `end`\n\n\n Supported by SpatialQuery"
+    },
+  "title" : "GetLineIntersections",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "SpatialQuery"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "start",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Vec3"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "end",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Vec3"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "lineIntersectionType",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "UInt8"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Size"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "A32EEA61C23963DC83AEF30F9FDA1F83",
+  "code" : "require Geometry;
+
+dfgEntry {
+  result = this.getLineIntersections(start, end, lineIntersectionType);
+}
+"
+  }

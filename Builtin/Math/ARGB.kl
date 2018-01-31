@@ -1,0 +1,178 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+The :kl-ref:`argb` type represents a 8 bit 4 channel color value, storing the components ordered as alpha, red, green and blue as Byte values.
+
+\rst
+  .. kl-example:: Construct ARGB
+
+    ARGB color(255, 255, 0, 0);
+
+\endrst
+
+\seealso Color
+\dfgTypeColor Color(255, 0, 0)
+\dfgPresetColor Color(99, 129, 92)
+*/
+struct ARGB
+{
+  Byte a;
+  Byte r;
+  Byte g;
+  Byte b;
+};
+
+/// Default constructor
+inline ARGB(Byte a, Byte r, Byte g, Byte b) {
+  this.a = a;
+  this.r = r;
+  this.g = g;
+  this.b = b;
+}
+
+/// Constructor from component wise integers.
+/// \note Automatic casting would mean that the default constructor above would be called, but would also generate warnings due to the loss of precision
+inline ARGB(Integer a, Integer r, Integer g, Integer b) {
+  this.a = Byte(a);
+  this.r = Byte(r);
+  this.g = Byte(g);
+  this.b = Byte(b);
+}
+
+/// Returns true if both colors are the same
+inline Boolean ARGB.equal(ARGB other) {
+  return this.a == other.a && this.r == other.r && this.g == other.g && this.b == other.b;
+}
+
+/// Equal operator
+inline Boolean == (ARGB a, ARGB b) {
+  return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
+}
+
+/// Not equal operator
+inline Boolean != (ARGB a, ARGB b) {
+  return a.r != b.r || a.g != b.g || a.b != b.b || a.a != b.a;
+}
+
+/// Hash for this value
+inline UInt32 ARGB.hash() {
+  return (this.r << 24) | (this.g << 16) | (this.b << 8) | this.a;
+}
+
+/// Add operator. Adds two colors per component.
+inline ARGB + (ARGB a, ARGB b) {
+  return ARGB(
+    Integer(a.a) + Integer(b.a),
+    Integer(a.r) + Integer(b.r),
+    Integer(a.g) + Integer(b.g),
+    Integer(a.b) + Integer(b.b)
+    );
+}
+
+/// Add-assign operator. Adds another color to this one.
+inline ARGB. += (ARGB other) {
+  this = this + other;
+}
+
+/// Subtract operator. Returns the subtraction of b from a
+inline ARGB - (ARGB a, ARGB b) {
+  Integer aval = Integer(a.a) - Integer(b.a);
+  Integer rval = Integer(a.r) - Integer(b.r);
+  Integer gval = Integer(a.g) - Integer(b.g);
+  Integer bval = Integer(a.b) - Integer(b.b);
+  if(aval < 0) aval = 0;
+  if(rval < 0) rval = 0;
+  if(gval < 0) gval = 0;
+  if(bval < 0) bval = 0;
+  return ARGB(aval, rval, gval, bval);
+}
+
+/// Subtract-assign operator. Subtracts a color from this one.
+inline ARGB. -= (ARGB other) {
+  this = this - other;
+}
+
+/// Multiply operator. Multiplies a Scalar with an ARGB
+/// \dfgPresetDefault a 1.0
+inline ARGB * (Scalar a, ARGB b) {
+  return ARGB(
+    Integer(Scalar(Integer(b.a)) * a),
+    Integer(Scalar(Integer(b.r)) * a),
+    Integer(Scalar(Integer(b.g)) * a),
+    Integer(Scalar(Integer(b.b)) * a)
+  );
+}
+
+/// Multiply operator. Multiplies an ARGB with a Scalar
+/// \dfgPresetDefault b 1.0
+inline ARGB * (ARGB a, Scalar b) {
+  // \note casting Byte -> Scalar generated incorrect results.
+  return ARGB(
+    Integer(Scalar(Integer(a.a)) * b),
+    Integer(Scalar(Integer(a.r)) * b),
+    Integer(Scalar(Integer(a.g)) * b),
+    Integer(Scalar(Integer(a.b)) * b)
+  );
+}
+
+/// Multiply operator. Multiplies two ARGB colors.
+/// \dfgPresetDefault b {"a": 1, "r": 1, "g": 1, "b": 1}
+inline ARGB * (ARGB a, ARGB b) {
+  return ARGB(
+    Integer(Scalar(Integer(a.a)) * Scalar(Integer(b.a))), 
+    Integer(Scalar(Integer(a.r)) * Scalar(Integer(b.r))), 
+    Integer(Scalar(Integer(a.g)) * Scalar(Integer(b.g))), 
+    Integer(Scalar(Integer(a.b)) * Scalar(Integer(b.b)))
+    );
+}
+
+/// Multiply-assign operator. Multiplies this color with a Scalar
+/// \dfgPresetDefault other 1.0.
+inline ARGB. *= (Scalar other) {
+  this = this * other;
+}
+
+/// Multiply-assign operator. Multiplies this color with another one
+/// \dfgPresetDefault other {"a": 1, "r": 1, "g": 1, "b": 1}
+inline ARGB. *= (ARGB other) {
+  this = this * other;
+}
+
+/// Overload method for the add operator.
+inline ARGB ARGB.add(ARGB other) {
+  return this + other;
+}
+
+/// Overload method for the subtract operator.
+inline ARGB ARGB.subtract(ARGB other) {
+  return this - other;
+}
+
+/// Overload method for the multiply operator.
+/// \dfgPresetDefault other {"a": 1, "r": 1, "g": 1, "b": 1}
+inline ARGB ARGB.multiply(ARGB other) {
+  return this * other;
+}
+
+/// Overload method for the multiply operator.
+/// \dfgPresetDefault other 1.0
+inline ARGB ARGB.multiplyScalar(Scalar other) {
+  return this * other;
+}
+
+/// Linearly interpolates this color towards the given color using the provided parameter t
+/// \param other The ARGB color to interpollate towards.
+/// \param t the parameter to use for the interpolation. Should range from 0.0 to 1.0, but is not checked.
+inline ARGB ARGB.linearInterpolate(in ARGB other, in Scalar t) {
+  // Byte values cannot be negative, so here we have inlined the sbutraction function so that we can interpollate down towards zero
+  return ARGB( 
+    Integer(this.a) + Integer((Scalar(Integer(other.a) - Integer(this.a)) * t)),
+    Integer(this.r) + Integer((Scalar(Integer(other.r) - Integer(this.r)) * t)),
+    Integer(this.g) + Integer((Scalar(Integer(other.g) - Integer(this.g)) * t)),
+    Integer(this.b) + Integer((Scalar(Integer(other.b) - Integer(this.b)) * t))
+    );
+}
+
+

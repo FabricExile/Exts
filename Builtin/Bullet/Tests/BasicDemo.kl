@@ -1,0 +1,215 @@
+
+require Bullet;
+
+///The MyOverlapCallback is used to show how to collect object that overlap with a given bounding box defined by aabbMin and aabbMax. 
+///See m_dynamicsWorld.getBroadphase().aabbTest.
+object  MyOverlapCallback : BulletBroadphaseAabbCallback
+{
+  Vec3 queryAabbMin;
+  Vec3 queryAabbMax;
+  Integer numOverlap;
+};
+
+function MyOverlapCallback(Vec3 aabbMin, Vec3 aabbMax){
+  this.queryAabbMin = aabbMin;
+  this.queryAabbMax = aabbMax;
+  this.numOverlap = 0;
+}
+function Boolean MyOverlapCallback.process!(BulletBroadphaseProxy proxy)
+{
+  report("MyOverlapCallback.process:" + proxy);
+  Vec3 proxyAabbMin, proxyAabbMax;
+  BulletCollisionObject colObj0(proxy.getClientObject());
+  BulletCollisionShape shape = colObj0.getCollisionShape();
+  shape.getAabb(colObj0.getWorldTransform(), proxyAabbMin, proxyAabbMax);
+  if (TestAabbAgainstAabb2(proxyAabbMin, proxyAabbMax, this.queryAabbMin, this.queryAabbMax))
+  {
+    this.numOverlap++;
+  }
+  return true;
+}
+
+function Data MyOverlapCallback.getPointer(){
+  report("MyOverlapCallback.getPointer");
+  Integer dumy[];
+  return dumy.data();
+}
+
+
+object BasicDemo
+{ 
+  // TODO: once we have interfaces working, this should be a pointer to a BulletDynamicsWorld instead;
+  BulletDiscreteDynamicsWorld dynamicsWorld;
+  
+  //keep the collision shapes, for deletion/cleanup
+  BulletCollisionShape collisionShapes[];
+
+  BulletRigidBody bodies[];
+
+  BulletBroadphaseInterface  broadphase;
+
+  BulletCollisionDispatcher  dispatcher;
+
+  BulletConstraintSolver solver;
+
+  BulletDefaultCollisionConfiguration collisionConfiguration;
+};
+
+
+function BasicDemo.stepDemo()
+{
+  //simple dynamics world doesn't handle fixed-time-stepping
+  Scalar ms = 1.0/60.0;//getDeltaTimeMicroseconds();
+  
+  ///step the simulation
+  if (this.dynamicsWorld)
+  {
+    this.dynamicsWorld.stepSimulation(ms);
+    
+    //optional but useful: debug drawing
+    // this.dynamicsWorld.debugDrawWorld();
+
+    Vec3 aabbMin(-10,0,-10);
+    Vec3 aabbMax(10,3,10);
+
+    MyOverlapCallback aabbOverlap(aabbMin,aabbMax);
+    this.dynamicsWorld.getBroadphase().aabbTest(aabbMin, aabbMax, aabbOverlap);
+    
+    if (aabbOverlap.numOverlap > 0)
+      report("#aabb overlap = " + aabbOverlap.numOverlap);
+  }
+
+  report(this.bodies[3].getWorldTransform().tr);
+}
+
+
+function BasicDemo()
+{
+  ///collision configuration contains default setup for memory, collision setup
+  this.collisionConfiguration = BulletDefaultCollisionConfiguration();
+  //this.collisionConfiguration.setConvexConvexMultipointIterations();
+
+  ///use the default collision dispatcher. For parallel processing you can use a diffent dispatcher (see Extras/BulletMultiThreaded)
+  this.dispatcher = BulletCollisionDispatcher(this.collisionConfiguration);
+
+  this.broadphase = BulletDbvtBroadphase();
+
+  ///the default constraint solver. For parallel processing you can use a different solver (see Extras/BulletMultiThreaded)
+  this.solver = BulletSequentialImpulseConstraintSolver();
+  
+  this.dynamicsWorld = BulletDiscreteDynamicsWorld(this.dispatcher,this.broadphase,this.solver,this.collisionConfiguration);
+  // this.dynamicsWorld.setDebugDrawer(&gDebugDraw);
+ 
+  
+  this.dynamicsWorld.setGravity(Vec3(0,-10,0));
+  report("getGravity" + this.dynamicsWorld.getGravity());
+
+  ///create a few basic rigid bodies
+  BulletBoxShape groundShape(Vec3(50.0, 50.0, 50.0));
+  //groundShape.initializePolyhedralFeatures();
+  
+  this.collisionShapes.push(groundShape);
+
+  Xfo groundTransform;
+  groundTransform.setIdentity();
+  groundTransform.tr = Vec3(0,-50,0);
+
+  //We can also use DemoApplication::localCreateRigidBody, but for clarity it is provided here:
+  {
+    Scalar mass(0.0);
+
+    //rigidbody is dynamic if and only if mass is non zero, otherwise static
+    Boolean isDynamic = (mass != 0.0);
+
+    Vec3 localInertia(0,0,0);
+    if (isDynamic)
+      groundShape.calculateLocalInertia(mass,localInertia);
+    
+    //using motionstate is recommended, it provides interpolation capabilities, and only synchronizes 'active' objects
+    BulletDefaultMotionState myMotionState = BulletDefaultMotionState(groundTransform);
+
+    BulletRigidBodyConstructionInfo rbInfo(mass,myMotionState,groundShape,localInertia);
+
+    BulletRigidBody body(rbInfo);
+
+    // //add the body to the dynamics world
+    this.dynamicsWorld.addRigidBody(body);
+  }
+
+  ///create 125 (5x5x5) dynamic object
+  const Integer ARRAY_SIZE_X = 5;
+  const Integer ARRAY_SIZE_Y = 5;
+  const Integer ARRAY_SIZE_Z = 5;
+
+  ///scaling of the objects (0.1 = 20 centimeter boxes )
+  const Scalar SCALING = 1.0;
+  const Scalar START_POS_X = -5.0;
+  const Scalar START_POS_Y = -5.0;
+  const Scalar START_POS_Z = -3.0;
+
+  {
+    //create a few dynamic rigidbodies
+    // Re-using the same collision is better for memory usage and performance
+
+    BulletBoxShape colShape = BulletBoxShape(Vec3(SCALING*1,SCALING*1,SCALING*1));
+    // BulletCollisionShape colShape = BulletSphereShape(1.0);
+    this.collisionShapes.push(colShape);
+
+    /// Create Dynamic Objects
+    Xfo startTransform;
+    startTransform.setIdentity();
+
+    Scalar  mass(1.0);
+
+    //rigidbody is dynamic if and only if mass is non zero, otherwise static
+    Boolean isDynamic = (mass != 0.0);
+
+    Vec3 localInertia(0,0,0);
+    if (isDynamic)
+      colShape.calculateLocalInertia(mass, localInertia);
+
+    Scalar start_x = START_POS_X - ARRAY_SIZE_X/2.0;
+    Scalar start_y = START_POS_Y;
+    Scalar start_z = START_POS_Z - ARRAY_SIZE_Z/2.0;
+
+    for (Integer k=0; k<ARRAY_SIZE_Y; k++)
+    {
+      for (Integer i=0; i<ARRAY_SIZE_X; i++)
+      {
+        for(Integer j=0; j<ARRAY_SIZE_Z; j++)
+        {
+          startTransform.tr = SCALING * Vec3(
+                    Scalar(2.0 * i + start_x),
+                    Scalar(20+2.0 * k + start_y),
+                    Scalar(2.0 * j + start_z));
+
+      
+          //using motionstate is recommended, it provides interpolation capabilities, and only synchronizes 'active' objects
+          BulletDefaultMotionState myMotionState = BulletDefaultMotionState(startTransform);
+          BulletRigidBodyConstructionInfo rbInfo(mass, myMotionState, colShape, localInertia);
+          BulletRigidBody body(rbInfo);
+          
+          this.dynamicsWorld.addRigidBody(body);
+          this.bodies.push(body);
+        }
+      }
+    }
+  }
+}
+
+
+operator entry(){
+
+  BasicDemo demo();
+
+  for(Integer i=0; i<100; i++){
+    demo.stepDemo();
+  }
+ 
+
+  // Force the destruction of the demo object earl.
+  demo = null;
+
+  report("entry<<<<");
+
+}

@@ -1,0 +1,66 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+    "uiNodeColor" : "{\n  \"r\" : 132,\n  \"g\" : 106,\n  \"b\" : 97\n  }",
+    "uiTooltip" : "Defines and sets the value for a color property."
+    },
+  "title" : "defineColorProperty",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Execute" : {}
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 206,\n  \"g\" : 165,\n  \"b\" : 151\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "ImporterObject" : null
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Ref<ImporterObject>"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "key",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String" : "diffuse"
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "value",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Color"
+      }
+    ],
+  "extDeps" : {
+    "AssetPatterns" : "*"
+    },
+  "presetGUID" : "1CD217B19A5EB6F73C5811E02CE48810",
+  "code" : "require AssetPatterns;
+
+dfgEntry {
+
+  if(!this.hasProperty(key))
+    this.initProperty(key, ImporterColor(value));
+  else
+    this.setProperty(key, value);
+    
+}
+"
+  }

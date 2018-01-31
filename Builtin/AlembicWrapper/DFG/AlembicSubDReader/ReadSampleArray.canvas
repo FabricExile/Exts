@@ -1,0 +1,75 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "reads a sample at a given time. this will properly interpolate between samples.\nthe result is stored into the provided PolygonMesh.\n\nSupported types:\n  this: AlembicSubDReader\n  time: Float64\n  mesh: PolygonMesh\n"
+    },
+  "title" : "ReadSample[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicSubDReader[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "time",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float64[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float64[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "mesh",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "PolygonMesh[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "23CE839022BF3D5061FDABE8847081A7",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicSubDReader_readSample_task<<<index>>>(
+  io AlembicSubDReader[] this
+, in Float64[] time
+, io PolygonMesh[] mesh
+) {
+  this[index < this.size() ? index : this.size() - 1].readSample(time[index < time.size() ? index : time.size() - 1], mesh[index < mesh.size() ? index : mesh.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( time.size() == 0) return;
+  if( mesh.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < time.size()) task_size = time.size();
+  mesh.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      AlembicWrapper_AlembicSubDReader_readSample_task(index, this, time, mesh);
+    }
+  } else {
+    AlembicWrapper_AlembicSubDReader_readSample_task<<<task_size>>>(this, time, mesh);
+  }
+}
+"
+  }

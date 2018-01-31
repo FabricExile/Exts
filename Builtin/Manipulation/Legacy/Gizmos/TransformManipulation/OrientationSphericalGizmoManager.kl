@@ -1,0 +1,87 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require InlineDrawing;
+
+
+/**
+\versionadded 1.12.0
+
+The :kl-ref:`OrientationSphericalGizmoManager` displays a sphere as its gizmo 
+geometry and connects it to a OrientationSphericalGizmoHandler for handling the 
+manipulation.
+
+\seealso OrientationSphericalGizmoHandler, OrientationSphericalGizmoHandler
+\dfgPresetOmit
+*/
+object OrientationSphericalGizmoManager {
+  OrientationSphericalGizmoHandler handler;
+  InlineMaterial gizmosMaterial;
+  InlineInstance instance;
+};
+
+/// \internal
+function ~OrientationSphericalGizmoManager(){
+  // Prune the hierarchy from its parent. This will cause the hierarchy
+  // to be destroyed if no other objects maintain a reference to the nodes
+  // in the hierarchy. 
+  InlineTransform nullTranform = null;
+  if(this.instance != null)
+    this.instance.getTransform().setParent(nullTranform);
+}
+
+function OrientationSphericalGizmoManager(io InlineTransform parent, Color color, GizmoManipulationCallback callback){
+
+  InlineDrawing drawing = OGLInlineDrawing_GetInstance();
+  InlineShader gizmoShader = drawing.getShader('gizmos');
+  if(!gizmoShader){
+    gizmoShader = OGLSurfaceGizmoShader('gizmos');
+    drawing.registerShader(gizmoShader);
+  }
+  this.gizmosMaterial = gizmoShader.getOrCreateMaterial("gizmos");
+
+  InlineMeshShape shape = drawing.getShape('OrientationSphericalGizmo_Shape');
+  if(shape == null){
+    PolygonMesh mesh();
+    Size detail = 24;
+    Scalar radius = 0.7;
+    mesh.addSphere(Xfo(), radius, detail, true, false);
+
+    shape = InlineMeshShape('OrientationSphericalGizmo_Shape', mesh);
+    drawing.registerShape(shape);
+  }
+
+  {
+    InlineTransform transform = ConstantScreenSizeTransform('OrientationSphericalGizmo_Transform', Xfo());
+    parent.addChild(transform);
+
+    this.instance = InlineInstance('OrientationSphericalGizmoManager', transform, shape);
+    this.instance.setInstanceUniform(InlineUniform('u_diffuseColor', color));
+
+    this.handler = OrientationSphericalGizmoHandler(this.instance, 0.001, callback);
+    this.instance.setMetaData('gizmoHandler', this.handler);
+  }
+}
+
+/// Hide gizmos based on the current manipulation mode.
+/// \internal
+function OrientationSphericalGizmoManager.hide!(){
+  if(this.instance.hasMaterial(this.gizmosMaterial))
+    this.instance.removeMaterial(this.gizmosMaterial);
+}
+
+/// Show gizmos based on the current manipulation mode.
+/// \internal
+function OrientationSphericalGizmoManager.show!(){
+  if(!this.instance.hasMaterial(this.gizmosMaterial))
+    this.instance.addMaterial(this.gizmosMaterial);
+}
+
+/// Returns the set of InlineInstances used as gizmos.
+/// \internal
+function InlineInstance[] OrientationSphericalGizmoManager.getGizmos(){
+  InlineInstance gizmos[];
+  gizmos.push(this.instance);
+  return gizmos;
+}

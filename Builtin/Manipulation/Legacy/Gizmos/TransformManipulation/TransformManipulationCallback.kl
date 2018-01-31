@@ -1,0 +1,122 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+require InlineDrawing;
+
+/**
+\versionadded 1.12.0
+
+The TransformManipulationCallback supporting the :kl-ref:`GizmoManipulationCallback` interface is used to apply gizmo manipulation directly to InlineInstances from InlineDrawing.
+\dfgPresetOmit
+
+*/
+object TransformManipulationCallback : GizmoManipulationCallback {
+  Ref<InlineTransform> targets[];
+  TransformManipulationCommand command;
+  String graphName;
+  String portToDrive;
+};
+
+function TransformManipulationCallback.setTargets!(Ref<InlineTransform> targets[]){
+  this.targets = targets;
+  for(Size i=0;i<targets.size();i++) {
+    // Set a reference from the owner to this callback. 
+    // this reference will mean that the callback's 
+    // lifetime will be managed by the lifetime of the instance. 
+    // If the instance is destroyed, or the 'TransformManipulationCallback' meta data reference removed
+    // then the transformcallback will be deleted unless another reference exists to 
+    // the handler. (normally not the case)
+    if(targets[i])
+    {
+      InlineTransformBase target = targets[i];
+      if(target)
+        target.setMetaData('TransformManipulationCallback', this);
+    }
+  }
+}
+
+function TransformManipulationCallback.addTarget!(io InlineTransform target){
+  this.targets.push(target);
+  InlineTransformBase castTarget = target;
+  if(castTarget)
+    castTarget.setMetaData('TransformManipulationCallback', this);
+}
+
+function TransformManipulationCallback.setPortToDrive!(String portToDrive){
+  this.portToDrive = portToDrive;
+}
+
+function TransformManipulationCallback.setGraph!(String graphName){
+  this.graphName = graphName;
+}
+
+/// Invoked by the GizmoHandler when the mouse drag is starting
+/// \param mouseEvent The event passed in is the mouse down event.  
+function TransformManipulationCallback.onDragBegin!(io MouseEvent mouseEvent){
+  this.command = TransformManipulationCommand(this.targets);
+}
+
+/// Invoked by the GizmoHandler when the mouse drag is ending
+/// \param mouseEvent The event passed in is the mouse up event. 
+function TransformManipulationCallback.onDragEnd!(io MouseEvent mouseEvent){
+  mouseEvent.getHost().addUndoRedoCommand(this.command);
+}
+
+/// Invoked during a drag on a gizmo.
+/// \param mouseEvent The mouse move events received between onDragBegin and onDragEnd
+/// \param space The coordinate space defined by the gizmo that was used to compute the delta.
+/// \param delta The delta in the coordinate space provided
+/// \param flags flags used to filter the element of the transform being modified. 
+function TransformManipulationCallback.onDrag!(io MouseEvent mouseEvent, Xfo space, Xfo delta, UInt32 flags){
+  // Now set the value back to the targets. 
+  // Note: this should in turn update the gizmo Xfo, if it is computed based on the targets.
+  Xfo invSpace = space.inverse();
+  for(Integer i=0; i<this.targets.size(); i++){
+    if(!this.targets[i])
+      continue;
+    InlineTransform target = this.targets[i];
+    for(Integer j=0; j<target.getGlobalCount(); j++){
+      // Retrieve the cached xfo so that the values are not accumulated
+      // during the manipulation.
+      Xfo xfo = invSpace * this.command.oldValues[i][j];
+      if(flags&ManipulationMode_Position){
+        xfo.tr += delta.tr;
+      }
+      if(flags&ManipulationMode_Orientation){
+        xfo.ori = delta.ori * xfo.ori;
+      }
+      if(flags&ManipulationMode_Scale){
+        xfo.sc *= delta.sc; // TODO: handle rotated scale values. 
+      }
+
+      String hostName = mouseEvent.getHost().hostName;
+      if(this.portToDrive.length() > 0 && hostName.length() > 0) {
+        if(hostName == 'Canvas') {
+
+          // Generate a command that will change the arg back in Canvas.
+          ParamDict params = ParamDict();
+          params.setString('portName', this.portToDrive);
+          params.setXfo('xfo', xfo);
+          mouseEvent.getHost().callCustomCommand('setArg', params);
+
+        } else if(hostName == 'Maya') {
+          // Generate a command that will change the attribute value back in Maya.
+          ParamDict params = ParamDict();
+          params.setString('attribute', this.graphName + '.' + this.portToDrive);
+          params.setXfo('value', xfo);
+          mouseEvent.getHost().callCustomCommand('setAttr', params);
+
+        }      
+
+      }
+
+      xfo = space * xfo;
+      target.setGlobalXfo(j, xfo);
+      this.command.newValues[i][j] = xfo;
+    }
+  }
+
+  // Notify the system that data has changed, and that we should redraw
+  mouseEvent.getHost().requestRedraw();
+}
+   

@@ -1,0 +1,97 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "adds a new AlembicOSubD object below the parent (specified by its path), using the childPath as its name and a given timeSampling index.\n\nSupported types:\n  this: AlembicArchiveWriter\n  parentPath: String\n  childPath: String\n  timeSampling: SInt32\n  result: AlembicSubDWriter\n"
+    },
+  "title" : "AddSubD[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicArchiveWriter[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "parentPath",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String[]" : [
+          ""
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "childPath",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String[]" : [
+          ""
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "timeSampling",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "SInt32[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "SInt32[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "AlembicSubDWriter[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "A9D8FD57649D2DF69EDD8E9FA4E98A88",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicArchiveWriter_addSubD_task<<<index>>>(
+  io AlembicSubDWriter[] result
+, io AlembicArchiveWriter[] this
+, in String[] parentPath
+, in String[] childPath
+, in SInt32[] timeSampling
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].addSubD(parentPath[index < parentPath.size() ? index : parentPath.size() - 1], childPath[index < childPath.size() ? index : childPath.size() - 1], timeSampling[index < timeSampling.size() ? index : timeSampling.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( parentPath.size() == 0) return;
+  if( childPath.size() == 0) return;
+  if( timeSampling.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < parentPath.size()) task_size = parentPath.size();
+  if(task_size < childPath.size()) task_size = childPath.size();
+  if(task_size < timeSampling.size()) task_size = timeSampling.size();
+  result.resize(task_size);
+  for(Size index = 0; index < task_size; index++) {
+    AlembicWrapper_AlembicArchiveWriter_addSubD_task(index, result, this, parentPath, childPath, timeSampling);
+  }
+}
+"
+  }

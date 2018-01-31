@@ -1,0 +1,584 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+require AssetPatterns;
+require USD;
+require Util;
+
+object UsdImporter : BaseImporter, ImporterCallback {
+  String filePath;
+  UsdStage stage;
+  String materialAssignments[String];
+};
+
+/// \dfgPresetOmit
+function UsdImporter.cloneMembersTo(io UsdImporter other) {
+  this.parent.cloneMembersTo(other);
+  other.stage = this.stage;
+}
+
+function UsdImporter(String filePath) {
+
+  this.filePath = filePath;
+
+  FilePath fpath = filePath;
+  fpath = fpath.makePreferred().expandEnvVars();
+  if(!fpath.exists()) {
+    if(filePath)
+      report("UsdImporter: filePath '"+filePath+"' does not exist.");
+    return;
+  }
+
+  this.stage = UsdStage_Open(fpath.string());
+  this.init();
+}
+
+function UsdImporter(UsdStage stage) {
+  this.stage = stage;
+  this.init();
+}
+
+private UsdImporter.init!() {
+  this.traversePrim(this.stage.GetPseudoRoot());
+
+  for(key in this.materialAssignments) {
+    ImporterShape shape = this.getObjectFromPath(key);
+    if(shape == null)
+      continue;
+    ImporterMaterial material = this.getObjectFromPath(this.materialAssignments[key]);
+    if(material == null)
+      continue;
+    shape.addMaterial(material.getID());
+  }
+  this.materialAssignments.clear();
+}
+
+private ImporterObject UsdImporter.traversePrim!(UsdPrim prim) {
+
+  ImporterObject obj = this.getObjectFromPath(prim.GetPath().GetString());
+  if(obj)
+    return obj;
+
+  String path = prim.GetPath().GetString();
+  String typeName = prim.GetTypeName().GetText();
+
+  // report('processing '+path);
+  // report("'"+typeName+"'");
+  // report(prim.IsInstance());
+
+  if(prim.IsInstance())
+  {
+    ImporterInstance instance = this.getOrCreateObject('Instance', path, path);
+    obj = instance;
+
+    UsdPrim masterPrim = prim.GetMaster();
+    ImporterObject masterObject = this.traversePrim(masterPrim);
+    instance.setMasterID(masterObject.getID());
+  }
+  else
+  {
+    switch(typeName)
+    {
+      case '':
+      {
+        // this might happen for roots + instance masters
+        if(path == '/')
+          break;
+
+        // this falls throuth to Xform for any other non type prims
+        // for example instance masters
+      }
+      case 'Scope':
+      case 'Xform':
+      {
+        ImporterGroup group = this.getOrCreateObject('Group', path, path);
+        obj = group;
+
+        // check if we need to setup an evaluator
+        UsdGeomXformable xformable(prim);
+        Float64 timeSamples[];
+        xformable.GetTimeSamples(timeSamples);
+        if(timeSamples.size() > 1)
+        {
+          KLEvaluator evaluator('UsdGroup', false /* deformer */);
+          evaluator.addExtDep('UsdPatterns');
+          evaluator.defineArg('filePath', 'String', Evaluator_PortType_In, RTVal(this.filePath));
+          evaluator.defineArg('primPath', 'String', Evaluator_PortType_In, RTVal(path));
+          evaluator.defineArg('time', 'Float32', Evaluator_PortType_In, RTVal(Float32(0.0)));
+          evaluator.defineArg('translate', 'Vec3', Evaluator_PortType_Out);
+          evaluator.defineArg('rotate', 'Euler', Evaluator_PortType_Out);
+          evaluator.defineArg('scale', 'Vec3', Evaluator_PortType_Out);
+          evaluator.defineArg('handle', 'UsdStageHandle', Evaluator_PortType_IO);
+          evaluator.defineArg('prim', 'UsdPrim', Evaluator_PortType_IO);
+          evaluator.addKLCode("Boolean clearPrims = false;");
+          evaluator.addKLCode("if(!UsdStageDict_getPrim(filePath, primPath, handle, prim, clearPrims))");
+          evaluator.addKLCode("  return;");
+          evaluator.addKLCode("UsdTimeCode tc(time);");
+          evaluator.addKLCode("Xfo xfo = UsdPrim_getTransform(prim, tc);");
+          evaluator.addKLCode("translate = xfo.tr;");
+          evaluator.addKLCode("rotate = xfo.ori.toEulerAngles();");
+          evaluator.addKLCode("scale = xfo.sc;");
+
+          obj.evaluator = evaluator;
+        }
+
+        break;
+      }
+      case 'Camera':
+      {
+        ImporterCamera camera = this.getOrCreateObject('Camera', path, path);
+        obj = camera;
+
+        UsdGeomCamera cam(prim);
+
+        // determine if there is some deformation
+        Boolean isConstant = true;
+        {
+          Boolean isPropConstant = cam.GetVerticalApertureAttr().GetNumTimeSamples() <= 1;
+          isConstant = !(!isConstant || !isPropConstant);
+          obj.setPropertyConstant('fovY', isPropConstant);
+        }
+        {
+          Boolean isPropConstant = cam.GetFocalLengthAttr().GetNumTimeSamples() <= 1;
+          isConstant = !(!isConstant || !isPropConstant);
+          obj.setPropertyConstant('focalLength', isPropConstant);
+        }
+        {
+          Boolean isPropConstant = cam.GetClippingRangeAttr().GetNumTimeSamples() <= 1;
+          isConstant = !(!isConstant || !isPropConstant);
+          obj.setPropertyConstant('near', isPropConstant);
+          obj.setPropertyConstant('far', isPropConstant);
+        }
+        {
+          Boolean isPropConstant = cam.GetFStopAttr().GetNumTimeSamples() <= 1;
+          isConstant = !(!isConstant || !isPropConstant);
+          obj.setPropertyConstant('fStop', isPropConstant);
+        }
+        {
+          Boolean isPropConstant = cam.GetFocusDistanceAttr().GetNumTimeSamples() <= 1;
+          isConstant = !(!isConstant || !isPropConstant);
+          obj.setPropertyConstant('focusDistance', isPropConstant);
+        }
+
+        if(obj.isConstant(obj.defaultContext))
+          obj.setProperty('isConstant', isConstant);
+
+        if(!isConstant)
+        {
+          KLEvaluator evaluator('UsdCamera', false /* deformer */);
+          evaluator.addExtDep('UsdPatterns');
+          evaluator.defineArg('filePath', 'String', Evaluator_PortType_In, RTVal(this.filePath));
+          evaluator.defineArg('primPath', 'String', Evaluator_PortType_In, RTVal(path));
+          evaluator.defineArg('time', 'Float32', Evaluator_PortType_In, RTVal(Float32(0.0)));
+          evaluator.defineArg('focalLength', 'Float32', Evaluator_PortType_Out);
+          evaluator.defineArg('focusDistance', 'Float32', Evaluator_PortType_Out);
+          evaluator.defineArg('near', 'Float32', Evaluator_PortType_Out);
+          evaluator.defineArg('far', 'Float32', Evaluator_PortType_Out);
+          evaluator.defineArg('handle', 'UsdStageHandle', Evaluator_PortType_IO);
+          evaluator.defineArg('prim', 'UsdPrim', Evaluator_PortType_IO);
+          evaluator.addKLCode("Boolean clearPrims = false;");
+          evaluator.addKLCode("if(!UsdStageDict_getPrim(filePath, primPath, handle, prim, clearPrims))");
+          evaluator.addKLCode("  return;");
+          evaluator.addKLCode("UsdTimeCode tc(time);");
+          evaluator.addKLCode("UsdGeomCamera cam(prim);");
+          evaluator.addKLCode("UsdAttribute focalLengthAttr = cam.GetFocalLengthAttr();");
+          evaluator.addKLCode("if(focalLengthAttr.HasValue())");
+          evaluator.addKLCode("  focalLength = focalLengthAttr.GetFloat32(tc);");
+          evaluator.addKLCode("UsdAttribute focusDistanceAttr = cam.GetFocusDistanceAttr();");
+          evaluator.addKLCode("if(focusDistanceAttr.HasValue())");
+          evaluator.addKLCode("  focusDistance = focusDistanceAttr.GetFloat32(tc);");
+          evaluator.addKLCode("UsdAttribute clippingRangeAttr = cam.GetClippingRangeAttr();");
+          evaluator.addKLCode("if(clippingRangeAttr.HasValue())");
+          evaluator.addKLCode("{");
+          evaluator.addKLCode("  Vec2 clippingRange = clippingRangeAttr.GetVec2(tc);");
+          evaluator.addKLCode("  near = clippingRange.x;");
+          evaluator.addKLCode("  far = clippingRange.y;");
+          evaluator.addKLCode("}");
+
+          obj.evaluator = evaluator;
+        }
+        break;
+      }
+      case 'Sphere':
+      {
+        ImporterShape shape = this.getOrCreateObject('Shape', path, path);
+        shape.setGeometryType(ImporterShape_Mesh);
+        obj = shape;
+        break;
+      }
+      case 'Mesh':
+      {
+        ImporterShape shape = this.getOrCreateObject('Shape', path, path);
+        shape.setGeometryType(ImporterShape_Mesh);
+        obj = shape;
+
+        UsdGeomBoundable boundable(prim);
+        UsdGeomMesh mesh(prim);
+
+        // determine if there is some deformation
+        Boolean isConstant = boundable.GetExtentAttr().GetNumTimeSamples() <= 1;
+        if(isConstant)
+          isConstant = mesh.GetPointsAttr().GetNumTimeSamples() <= 1;
+
+        obj.setPropertyConstant('geometry', isConstant);
+        obj.setPropertyConstant('bounds', isConstant);
+        if(obj.isConstant(obj.defaultContext))
+          obj.setProperty('isConstant', isConstant);
+
+        if(!isConstant)
+        {
+          // let's setup the evaluator - for now always use a deformer
+          // if we want to support animated UVs / or vertex colors then
+          // we will have to support similar solutions as for alembic.
+          KLEvaluator evaluator('UsdMesh', true /* deformer */);
+          evaluator.addExtDep('UsdPatterns');
+          evaluator.defineArg('meshes', 'PolygonMesh[]', Evaluator_PortType_IO);
+          evaluator.defineArg('filePath', 'String', Evaluator_PortType_In, RTVal(this.filePath));
+          evaluator.defineArg('primPath', 'String', Evaluator_PortType_In, RTVal(path));
+          evaluator.defineArg('time', 'Float32', Evaluator_PortType_In, RTVal(Float32(0.0)));
+          evaluator.defineArg('handle', 'UsdStageHandle', Evaluator_PortType_IO);
+          evaluator.defineArg('prim', 'UsdPrim', Evaluator_PortType_IO);
+          evaluator.addKLCode("Boolean clearPrims = false;");
+          evaluator.addKLCode("if(!UsdStageDict_getPrim(filePath, primPath, handle, prim, clearPrims))");
+          evaluator.addKLCode("  return;");
+          evaluator.addKLCode("if(meshes.size() == 0)");
+          evaluator.addKLCode("  return;");
+          evaluator.addKLCode("if(meshes[0] == null)");
+          evaluator.addKLCode("  return;");
+          evaluator.addKLCode("UsdTimeCode tc(time);");
+          evaluator.addKLCode("UsdPrim_ReadPolygonMeshSample(prim, tc, meshes[0]);");
+
+          obj.evaluator = evaluator;
+
+        }
+        break;
+      }
+      case 'Look':
+      case 'Material':
+      {
+        ImporterMaterial material = this.getOrCreateObject('Material', path, path);
+        obj = material;
+
+        // search for material parameters
+        UsdPrimSubtreeRange descendants = prim.GetDescendants();
+        if(!descendants.empty())
+        {
+          String members[];
+          for(UsdPrimSubtreeIterator it = descendants.cxx_begin(); it != descendants.cxx_end(); it.cxx_inc())
+          {
+            UsdPrim descendant = it.cxx_deref();
+            String descendantTypeName = descendant.GetTypeName().GetText();
+            switch(descendantTypeName) {
+
+              case 'RisBxdf': {
+
+                TfToken properties[] = descendant.GetPropertyNames();
+                for(Size i=0;i<properties.size();i++) {
+                  if(descendant.HasAttribute(properties[i])) {
+                    UsdAttribute attribute = descendant.GetAttribute(properties[i]);
+                    if(!attribute.HasValue())
+                      continue;
+
+                    String attributeName = attribute.GetBaseName().GetString();
+                    switch(attributeName) {
+                      case 'color': {
+                        material.setProperty('color', Color(attribute.GetVec3()));
+                        break;
+                      }
+                      default: {
+                        // report('Unsupported look sub attribute: '+descendant.GetPath().GetString()+'.'+attributeName);
+                        break;
+                      }
+                    }
+                  }
+                }
+
+                String risPropertyToMaterialProperty[String];
+                risPropertyToMaterialProperty['color'] = 'colorTexture';
+                risPropertyToMaterialProperty['normalCamera'] = 'normalTexture';
+
+                for(risPropertyName in risPropertyToMaterialProperty) {
+                  UsdPrim risFilePrim = this.findFileRisPattern(descendant, risPropertyName);
+                  if(!risFilePrim.cxx_IsValid())
+                    continue;
+                  String filePath = risFilePrim.GetAttribute('fileTextureName').GetString();
+                  String texturePath = risFilePrim.GetPath().GetString();
+                  ImporterTexture texture = this.getOrCreateObject('Texture', texturePath, texturePath);
+                  texture.setFilePath(filePath);
+                  material.setTexture(risPropertyToMaterialProperty[risPropertyName], texture);
+                }
+
+              }
+            }
+          }
+        }
+        break;
+      }
+      case 'RisPattern':
+      case 'RisBxdf':
+      {
+        return null;
+      }
+      default:
+      {
+        report('UsdImporter: UsdPrim type "'+typeName+'" not supported yet.');
+        break;
+      }
+    }
+  }
+
+  if(obj)
+  {
+    // store metadata
+    obj.setMetaData('USD_PRIM_TYPE', typeName);
+
+    ImporterTransform transform(obj);
+    if(transform)
+    {
+      // todo: maybe there's a faster way than asking for all time samples?
+      UsdGeomXformable xformable(prim);
+      Float64 timeSamples[];
+      xformable.GetTimeSamples(timeSamples);
+      Boolean isConstant = timeSamples.size() <= 1;
+      obj.setPropertyConstant('localTransform', isConstant);
+      if(obj.isConstant(obj.defaultContext))
+        obj.setProperty('isConstant', isConstant);
+
+      // todo: we should really copy all of the time samples - or at least
+      // do it in the callback....
+    }
+
+    ImporterShape shape(obj);
+    if(shape)
+    {
+      UsdRelationship rss[] = prim.GetRelationships();
+      for(Size i=0;i<rss.size();i++) {
+        UsdRelationship rs = rss[i];
+        SdfPath targets[];
+        if(!rs.GetTargets(targets, true))
+          continue;
+        if(targets.size() != 1)
+          continue;
+        SdfPath target = targets[0];
+        if(!target.IsPrimPath())
+          continue;
+        UsdPrim lookPrim = this.stage.GetPrimAtPath(target);
+        if(!lookPrim.cxx_IsValid())
+          continue;
+        String lookTypename = lookPrim.GetTypeName().GetText();
+        if(lookTypename != 'Look' &&
+          lookTypename != 'Material')
+          continue;
+
+        this.materialAssignments[path] = target.GetString();
+      }
+    }
+
+    // setup lazy eval
+    obj.callback = this;
+  }
+
+  UsdPrimSiblingRange children = prim.GetChildren();
+  if(!children.empty())
+  {
+    String members[];
+    for(UsdPrimSiblingIterator it = children.cxx_begin(); it != children.cxx_end(); it.cxx_inc())
+    {
+      UsdPrim child = it.cxx_deref();
+      ImporterObject member = this.traversePrim(child);
+      if(member)
+        members.push(member.getID());
+    }
+
+    ImporterGroup group(obj);
+    if(group)
+      group.setMembers(members);
+  }
+
+  return obj;
+}
+
+private UsdPrim UsdImporter.findFileRisPattern(UsdPrim prim, String property) {
+  if(prim.GetTypeName().GetString() == 'RisPattern') {
+    if(prim.GetName().GetString().startsWith('file'))
+      return prim;
+  }
+
+  UsdRelationship rs;
+  UsdRelationship rss[] = prim.GetRelationships();
+  for(Size i=0;i<rss.size();i++) {
+    if(rss[i].GetBaseName().GetString() == property) {
+      rs = rss[i];
+      break;
+    }
+  }
+
+  if(!rs.cxx_IsValid())
+    return UsdPrim();
+
+  SdfPath targets[];
+  if(!rs.GetTargets(targets, true))
+    return UsdPrim();
+  if(targets.size() == 0)
+    return UsdPrim();
+
+  SdfPath target = targets[0];
+  if(!target.IsPropertyPath())
+    return UsdPrim();
+
+  UsdPrim targetPrim = this.stage.GetPrimAtPath(target.GetPrimPath());
+  if(!targetPrim.cxx_IsValid())
+    return UsdPrim();
+  if(targetPrim.GetTypeName().GetText() != 'RisPattern')
+    return UsdPrim();
+
+  TfToken properties[] = targetPrim.GetPropertyNames();
+  for(Size i=0;i<properties.size();i++) {
+    UsdPrim result = this.findFileRisPattern(targetPrim, properties[i].GetText());
+    if(!result.cxx_IsValid())
+      continue;
+    return result;
+  }
+
+  return UsdPrim();
+}
+
+// \dfgPresetOmit
+function Boolean UsdImporter.updateProperty!(ImporterContext context, io Ref<ImporterObject> subject, String prop) {
+
+  String path = subject.getPath();
+  UsdPrim prim = this.stage.GetPrimAtPath(path);
+  String typeName = prim.GetTypeName().GetText();
+  UsdTimeCode timeCode;
+  if(context.time > -SCALAR_INFINITE && context.time < SCALAR_INFINITE)
+    timeCode = UsdTimeCode(context.time);
+  else
+    timeCode = UsdTimeCode(0.0);
+
+  if(!prim.cxx_IsValid())
+    return false;
+
+  switch(prop)
+  {
+    case 'localTransform':
+    {
+      ImporterTransform transform(subject);
+
+      Mat44 m = UsdPrim_getTransform(prim, timeCode);
+      transform.setLocalTransform(m);
+      break;
+    }
+    case 'fovY':
+    {
+      UsdGeomCamera cam(prim);
+      UsdAttribute attr = cam.GetVerticalApertureAttr();
+      if(!attr.HasValue())
+        return false;
+      GfCamera baseCam = cam.GetCamera(timeCode);
+      subject.setProperty(prop, baseCam.GetFieldOfView(GfCamera_FOVVertical));
+      break;
+    }
+    case 'focalLength':
+    {
+      UsdGeomCamera cam(prim);
+      UsdAttribute attr = cam.GetFocalLengthAttr();
+      if(!attr.HasValue())
+        return false;
+      subject.setProperty(prop, attr.GetFloat32(timeCode));
+      break;
+    }
+    case 'near':
+    {
+      UsdGeomCamera cam(prim);
+      UsdAttribute attr = cam.GetClippingRangeAttr();
+      if(!attr.HasValue())
+        return false;
+      subject.setProperty(prop, attr.GetVec2(timeCode).x);
+      break;
+    }
+    case 'far':
+    {
+      UsdGeomCamera cam(prim);
+      UsdAttribute attr = cam.GetClippingRangeAttr();
+      if(!attr.HasValue())
+        return false;
+      subject.setProperty(prop, attr.GetVec2(timeCode).y);
+      break;
+    }
+    case 'fStop':
+    {
+      UsdGeomCamera cam(prim);
+      UsdAttribute attr = cam.GetFStopAttr();
+      if(!attr.HasValue())
+        return false;
+      subject.setProperty(prop, attr.GetFloat32(timeCode));
+      break;
+    }
+    case 'focusDistance':
+    {
+      UsdGeomCamera cam(prim);
+      UsdAttribute attr = cam.GetFocusDistanceAttr();
+      if(!attr.HasValue())
+        return false;
+      subject.setProperty(prop, attr.GetFloat32(timeCode));
+      break;
+    }
+    case "bounds":
+    { 
+      UsdGeomBoundable boundable(prim);
+      UsdAttribute extentAttr = boundable.GetExtentAttr();
+      if(!extentAttr.HasValue())
+        return false;
+      GfVec3fArray extent = extentAttr.GetGfVec3fArray(timeCode);
+
+      if(extent.size() == 2)
+      {
+        Box3 box;
+        box.min = extent.cxx_getAtIndex(0);
+        box.max = extent.cxx_getAtIndex(1);
+
+        ImporterShape shape(subject);
+        shape.setBounds(box);
+      }
+
+      break;
+    }
+    case "geometry":
+    {
+      ImporterShape shape(subject);
+
+      switch(typeName)
+      {
+        case "Sphere":
+        {
+          UsdGeomSphere sphere(prim);
+
+          Float64 radius = 1.0;
+          sphere.GetRadiusAttr().Get(radius);
+
+          PolygonMesh geo(path);
+          geo.addSphere(Xfo(), Float32(radius), 12, true, true);
+          shape.setGeometry(geo);
+
+          break;
+        }
+        case "Mesh":
+        {
+          PolygonMesh geo = null;
+          UsdPrim_ReadPolygonMeshSample(prim, timeCode, geo);
+          shape.setGeometry(geo);
+          break;
+        }
+        default:
+        {
+          report('UsdImporter: Geometry typeName '+typeName+' not supported yet.');
+          return false;
+        }
+      }
+      break;
+    }
+  }
+
+  return true;
+}

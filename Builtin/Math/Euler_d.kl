@@ -1,0 +1,215 @@
+
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/**
+The :kl-ref:`Euler_d` type represents a 3D rotation as Euler_d X, Y, and Z angles and a :kl-ref:`RotationOrder`. 
+The X, Y, and Z angles are expressed in radians. The Euler_d type also provides conversion methods to :kl-ref:`Mat33_d`.
+
+\rst
+  .. kl-example:: Construct Euler_d
+
+    RotationOrder ro('xyz');
+    Euler_d euler(0.0, PI, 0.0, ro);
+    Mat33_d matrix = euler.toMat33_d();
+
+\endrst
+\seealso Quat
+\dfgTypeColor Color(0, 191, 232)
+\dfgPresetColor Color(99, 129, 92)
+*/
+struct Euler_d
+{
+  Float64 x;
+  Float64 y;
+  Float64 z;
+  RotationOrder ro;
+};
+
+/// Default constructor
+inline Euler_d() {
+  this.x = 0.0;
+  this.y = 0.0;
+  this.z = 0.0;
+  this.ro.setXYZ();
+}
+
+/// Constructor using a Vec3_d as angles in radians, RotationOrder = XYZ
+inline Euler_d(in Vec3_d angles) {
+  this.x = angles.x;
+  this.y = angles.y;
+  this.z = angles.z;
+  this.ro.setXYZ();
+}
+
+/// Constructor using a Vec3_d as radians and a RotationOrder
+inline Euler_d(in Vec3_d angles, in RotationOrder order) {
+  this.set(angles, order);
+}
+
+/// Constructor using three Float64s as angles in radians, RotationOrder = XYZ
+inline Euler_d(in Float64 x, in Float64 y, in Float64 z) {
+  this.set(x, y, z);
+}
+
+/// Constructor using three Float64s as angles in radians and a RotationOrder
+inline Euler_d(in Float64 x, in Float64 y, in Float64 z, in RotationOrder order) {
+  this.set(x, y, z, order);
+}
+
+/// Setter using a Vec3_d as angles in radians, RotationOrder = XYZ
+inline Euler_d.set!(in Vec3_d angles) {
+  this.x = angles.x;
+  this.y = angles.y;
+  this.z = angles.z;
+  this.ro.setXYZ();
+}
+
+/// Setter using a Vec3_d as radians and a RotationOrder
+inline Euler_d.set!(in Vec3_d angles, in RotationOrder order) {
+  this.x = angles.x;
+  this.y = angles.y;
+  this.z = angles.z;
+  this.ro = order;
+}
+
+/// Setter using three Float64s as angles in radians, RotationOrder = XYZ
+inline Euler_d.set!(in Float64 x, in Float64 y, in Float64 z) {
+  this.x = x;
+  this.y = y;
+  this.z = z;
+  this.ro.setXYZ();
+}
+
+/// Setter using three Float64s as angles in radians and a RotationOrder
+inline Euler_d.set!(in Float64 x, in Float64 y, in Float64 z, in RotationOrder order) {
+  this.x = x;
+  this.y = y;
+  this.z = z;
+  this.ro = order;
+}
+
+/// Setter using a Vec3_d as angles in radians, RotationOrder = XYZ
+inline Euler_d.setAngles!(in Vec3_d angles) {
+  this.set(angles);
+}
+
+/// Returns the angles as a Vec3_d in radians
+inline Vec3_d Euler_d.getAngles() {
+  return Vec3_d(this.x, this.y, this.z);
+}
+
+/// Sets from Vec.
+inline Euler_d(Vec_d vec) {
+  this.set(vec);
+}
+
+/// Sets from Vec.
+inline Euler_d.set!(Vec_d vec) {
+  this.setAngles(Vec3_d(vec));
+}
+
+/// Converts to Vec.
+inline Vec_d Euler_d.toVec() {
+  return this.getAngles().toVec();
+}
+
+/// Sets all components of this Euler to 0.0
+inline Euler_d.setNull!() {
+  this.x = this.y = this.z = Float64();
+  this.ro = RotationOrder();
+}
+
+/// Returns true if this Euler_d is the same as another one (precisely)
+inline Boolean Euler_d.equal(in Euler_d other) {
+  return this.x == other.x && this.y == other.y && this.z == other.z && this.ro.order == other.ro.order;
+}
+
+/// Returns true if this Euler_d is almost the same as another one (based on a precision)
+inline Boolean Euler_d.almostEqual(in Euler_d other, in Float64 precision) {
+  return
+      (abs(this.x - other.x) < precision) &&
+      (abs(this.y - other.y) < precision) &&
+      (abs(this.z - other.z) < precision) &&
+      (this.ro.order == other.ro.order);
+}
+
+/// Equals operator
+inline Boolean == (Euler_d a, Euler_d b) {
+  return a.x == b.x && a.y == b.y && a.z == b.z && a.ro.order == b.ro.order;
+}
+
+/// Not equals operator
+inline Boolean != (Euler_d a, Euler_d b) {
+  return a.x != b.x || a.y != b.y || a.z != b.z || a.ro.order != b.ro.order;
+}
+
+/// Hash for this value
+inline UInt32 Euler_d.hash() {
+  return this.x.hash() ^ this.y.hash() ^ this.z.hash() ^ this.ro.order.hash();
+}
+
+/// Adds two Eulers
+inline Euler_d + (in Euler_d a, in Euler_d b) {
+  return Euler_d(a.x + b.x, a.y + b.y, a.z + b.z, a.ro);
+}
+
+/// Adds another Euler to this one
+inline Euler_d. += (in Euler_d b) {
+  this = this + b;
+}
+
+/// Subtracts two Eulers
+inline Euler_d - (in Euler_d a, in Euler_d b) {
+  return Euler_d(a.x - b.x, a.y - b.y, a.z - b.z, a.ro);
+}
+
+/// Subtracts another Euler from this one
+inline Euler_d. -= (in Euler_d b) {
+  this = this - b;
+}
+
+/// unary -
+inline Euler_d -Euler_d() {
+  return Euler_d(-this.x, -this.y, -this.z);
+}
+
+/// Converts the Euler_d to a Mat33_d representing 
+/// the same 3D rotation transformation
+function Mat33_d Euler_d.toMat33_d() {
+  Float64 Cx = cos(this.x), Sx = sin(this.x);
+  Float64 Cy = cos(this.y), Sy = sin(this.y);
+  Float64 Cz = cos(this.z), Sz = sin(this.z);
+
+  Mat33_d Rx( 1.0, 0.0, 0.0,
+            0.0,  Cx, -Sx,
+            0.0,  Sx,  Cx);
+
+  Mat33_d Ry(  Cy,  0.0,  Sy,
+            0.0,  1.0, 0.0,
+            -Sy,  0.0,  Cy);
+
+  Mat33_d Rz(  Cz,  -Sz,  0.0,
+             Sz,   Cz,  0.0,
+            0.0,  0.0,  1.0);
+
+  Mat33_d result;
+
+  if (this.ro.isZYX())
+    result = Rx * Ry * Rz;
+  else if (this.ro.isXZY())
+    result = Ry * Rz * Rx;
+  else if (this.ro.isYXZ())
+    result = Rz * Rx * Ry;
+  else if (this.ro.isYZX())
+    result = Rx * Rz * Ry;
+  else if (this.ro.isXYZ())
+    result = Rz * Ry * Rx;
+  else if (this.ro.isZXY())
+    result = Ry * Rx * Rz;
+
+  return result;
+}
+
+

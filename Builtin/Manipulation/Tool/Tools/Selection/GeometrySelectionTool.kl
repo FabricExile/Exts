@@ -1,0 +1,171 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  object GeometrySelectionTool;
+
+  /// \internal
+  /// Specialized per-geometry data required by the GeometrySelectionTool
+  object GeometrySelectionToolItemReference : BaseObjectItemReference, SelectionDrawableItem{
+    Ref<GeometrySelectionTool> tool;
+    SelectionDrawableItem selectionDrawableItem;
+    Ref<GeometricShape> shape;
+
+    UInt32 index;
+
+    Xfo xfo;
+    Geometry geometry;
+  };
+
+  /// BaseObjectItemReference specialization
+  String GeometrySelectionToolItemReference.getCategory() {
+    return ItemReferenceCategory_geometry;
+  }
+
+  /// BaseObjectItemReference specialization
+  Ref<Object> GeometrySelectionToolItemReference.getReferencedObject() {
+    return this.geometry;
+  }
+
+  /// SelectionDrawableItem redirection
+  String GeometrySelectionToolItemReference.getCustomTransformShaderName() {
+    return this.selectionDrawableItem ? this.selectionDrawableItem.getCustomTransformShaderName() : String();
+  }
+
+  /// SelectionDrawableItem redirection
+  GeometrySelectionToolItemReference.buildCustomTransformShader( String shaderName, io OGLProgram shader ) {
+    this.selectionDrawableItem.buildCustomTransformShader( shaderName, shader );
+  }
+
+  /// SelectionDrawableItem redirection
+  GeometrySelectionToolItemReference.prepareForSelectionDraw!( SelectionManagerDrawListKey userKey, UInt8 selectionMode, Ref<Viewport> viewport, io UInt32 glInstanceCount, io Mat44 transform, io OGLBuffer_ positionsBuffer, io OGLBuffer legacyPositionsBuffer, io Ref<OGLProgramParamValues> shaderParamValues, io Ref<OGLContext> context ) {
+    if( this.selectionDrawableItem )
+      this.selectionDrawableItem.prepareForSelectionDraw( userKey, selectionMode, viewport, glInstanceCount, transform, positionsBuffer, legacyPositionsBuffer, shaderParamValues, context );
+  }
+
+  /// SelectionDrawableItem redirection
+  Ref<Geometry> GeometrySelectionToolItemReference.getGeometry( SelectionManagerDrawListKey userKey ) {
+    return this.geometry;
+  }
+
+  /// SelectionDrawableItem redirection
+  GeometrySelectionToolItemReference.drawGLPrimitivesForSelection!( SelectionManagerDrawListKey userKey, UInt8 selectionMode, Mat44 positionsTransform, UInt32 shaderPrimitiveIndex, io Ref<OGLContext> context ) {
+    if( this.selectionDrawableItem )
+      this.selectionDrawableItem.drawGLPrimitivesForSelection( userKey, selectionMode, positionsTransform, shaderPrimitiveIndex, context );
+  }
+
+  /// SelectionDrawableItem redirection
+  UInt32[] GeometrySelectionToolItemReference.primitiveIDsToComponents( UInt8 selectionMode, IndexSet primitiveIDs ) {
+    if( this.selectionDrawableItem )
+      return this.selectionDrawableItem.primitiveIDsToComponents( selectionMode, primitiveIDs );
+    else {
+      UInt32 result[];
+      return result;
+    }
+  }
+
+  /// SelectionDrawableItem redirection
+  GeometrySelectionToolItemReference.drawGLComponents!( SelectionManagerDrawListKey userKey, io Ref<ItemReference> itemAndComponents, Ref<Viewport> viewport, io Ref<OGLContext> context ) {
+    if( this.selectionDrawableItem )
+      this.selectionDrawableItem.drawGLComponents( userKey, itemAndComponents, viewport, context );
+  }
+
+  /// The GeometrySelectionTool specializes :kl-ref:`Tool::BaseSelectionTool`
+  /// so it works on an array of :kl-ref:`Geometry`.
+  ///
+  /// See :ref:`TPG.selection` for more information and examples.
+  object GeometrySelectionTool : BaseSelectionTool{
+
+    // Inputs
+    GeometrySelectionToolItemReference perGeometryData[];
+
+  // Options
+  Boolean drawGeometries;
+  Color drawGeometriesColor;
+
+  EnableSelectionMaterial selNoDrawMaterial;
+  HeadLightShadedMaterial selDrawMaterial;
+  };
+
+  GeometrySelectionTool() {
+    this.drawGeometries = true;
+    this.drawGeometriesColor = Color( 0.5 );
+    this.selNoDrawMaterial = EnableSelectionMaterial();
+    this.selDrawMaterial = HeadLightShadedMaterial();
+  }
+
+  GeometrySelectionTool.setGeometries!( Geometry geometries[], Xfo xfos[], Boolean drawGeometries ) {
+    Size count = geometries.size() < xfos.size() ? geometries.size() : xfos.size();
+    this.drawGeometries = drawGeometries;
+
+    // Update children
+    Size prevCount = this.perGeometryData.size();
+
+    this.perGeometryData.resize( count );
+
+    // Delete old children
+    for( Size i = count; i < prevCount; ++i )
+      this.removeChild( "selGeom_" + i );
+
+    // Create new children
+    for( Size i = prevCount; i < count; ++i ) {
+      GeometricShape shape();
+      shape.constraintTransformToParent( false );//Not constrained to our transform
+      shape.setHideAllIfNotActive( false );// When not active, we still want to see the geometry
+      Ref<Material> mat = this.selDrawMaterial;
+      shape.setMaterial( mat );
+      shape.setRenderPass( MainRenderPass );
+      this.addChild( "selGeom_" + i, shape );
+
+      this.perGeometryData[i] = GeometrySelectionToolItemReference();
+      this.perGeometryData[i].name = i;
+      this.perGeometryData[i].xfo = xfos[i];
+      this.perGeometryData[i].shape = shape;
+    }
+
+    // Update geoms and xfos
+    for( Size i = 0; i < count; ++i ) {
+      this.perGeometryData[i].geometry = geometries[i];
+
+      Ref<GeometricShape> shape = this.perGeometryData[i].shape;
+      shape.setGeometry( geometries[i] );
+      shape.setLocalTransform( xfos[i] );
+      shape.setColor( this.drawGeometriesColor );
+      shape.setVisible( true );
+      shape.setRaycastVisibleOnly( !this.drawGeometries );
+    }
+
+    if( count != prevCount ) {
+      // rebuild selection draw list
+      SelectionManagerDrawList drawList();
+      ItemReference referencePerDrawListItem[];
+
+      for( Size i = 0; i < this.perGeometryData.size(); ++i ) {
+        drawList.addItem( this.perGeometryData[i], SelectionManagerDrawListKey() );
+        referencePerDrawListItem.push( this.perGeometryData[i] );
+      }
+
+      this.setDrawList( drawList, referencePerDrawListItem, false, true );
+    }
+  }
+
+  Ref<Geometry> GeometrySelectionTool.getGeometry( Size index ) {
+    return this.perGeometryData[index].geometry;
+  }
+
+  Ref<GeometrySelectionToolItemReference> GeometrySelectionTool.getGeometryItemReference( Size index ) {
+    return this.perGeometryData[index];
+  }
+
+  GeometrySelectionTool.updateDrawListForDraw!( DrawContext context ) {
+
+    // Update items for the current context
+    for( Size i = 0; i < this.perGeometryData.size(); ++i ) {
+      Ref<GeometricShape> shape = this.perGeometryData[i].shape;
+      this.perGeometryData[i].selectionDrawableItem = shape.getSelectionDrawableItem( context );
+    }
+  }
+
+}// namespace Tool

@@ -1,0 +1,231 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+  namespace InlineDrawingRender {
+
+    /// \internal
+    /// Flat shader mapping the Tool parameter naming conventions.
+    object HeadLightShadedShader : OGLInlineShader{};
+
+    /// default constructor
+    HeadLightShadedShader() {
+      this.init( this.type() );
+    }
+
+    /// initialize the shader using a name.
+    /// \internal
+    HeadLightShadedShader.init!( String name ) {
+      this.name = name;
+      this.setVertexCode( "
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+
+    uniform mat4 renderTransform;
+      uniform mat4 positionsTransform;
+      uniform mat3 normalsTransform;
+
+      attribute vec4 positions;
+      attribute vec3 normals;
+
+      varying vec4 v_position;
+      varying vec3 v_normal;
+
+      void main() {
+        v_normal = normalsTransform * normals;
+        v_position = positionsTransform * positions;
+        gl_Position = renderTransform * positions;
+      }
+      ");
+
+        this.setFragmentCode( "
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+
+      uniform vec4 ambientColor;
+      uniform float transparency;
+      uniform vec4 color;
+      uniform vec4 specularColor;
+      uniform float specularFactor;
+      uniform int normalIsTangent;
+      uniform int doubleSided;
+      uniform  vec4 lightColor;
+
+      varying vec3 v_normal;
+      varying vec4 v_position;
+
+      void main() {
+        vec4 final_color = ambientColor;
+        vec3 pos = v_position.xyz / v_position.w;
+        vec3 eyeVec = pos;
+        vec3 N;
+        if( normalIsTangent == 0 )
+          N = normalize( v_normal );
+        else {
+          N = normalize( cross( v_normal, cross( v_normal, eyeVec ) ) );
+        }
+        if( dot( N, eyeVec ) < 0.0 )
+          N = -N;
+        vec3 L = normalize( pos );
+
+        float lambertTerm = dot( N, L );
+        if( doubleSided != 0 )
+          lambertTerm = abs( lambertTerm );
+
+        if( lambertTerm > 0.0 ) {
+          final_color += lightColor * color * lambertTerm;
+          vec3 E = normalize( eyeVec );
+          vec3 R = reflect( -L, N );
+          float specular = pow( max( dot( R, E ), 0.0 ), specularFactor );
+          final_color += specularColor * specular;
+        }
+
+        gl_FragColor = vec4( final_color.xyz, final_color.w * ( 1.0 - clamp( transparency, 0.0, 1.0 ) ) );
+      }
+
+      ");  
+      this.defineUniform( InlineUniform( "renderTransform", Mat44() ) );
+      this.defineUniform( InlineUniform( "positionsTransform", Mat44() ) );
+      this.defineUniform( InlineUniform( "normalsTransform", Mat33() ) );
+      this.defineAttribute( "positions", "Vec3" );
+      this.defineAttribute( "normals", "Vec3" );
+
+      this.defineUniform( InlineUniform( "transparency", 0.0f ) );
+      this.defineUniform( InlineUniform( "ambientColor", Color( 0.05, 0.05, 0.05 ) ) );
+      this.defineUniform( InlineUniform( "color", Color( 1.0 ) ) );
+      this.defineUniform( InlineUniform( "lightColor", Color( 1.0 ) ) );
+      this.defineUniform( InlineUniform( "specularColor", Color( 0.2, 0.2, 0.2 ) ) );
+      this.defineUniform( InlineUniform( "specularFactor", 16.0 ) );
+      this.defineUniform( InlineUniform( "normalIsTangent", Integer( 0 ) ) );
+      this.defineUniform( InlineUniform( "doubleSided", Integer( 0 ) ) );
+    }
+
+    /// \internal
+    /// Textured shader mapping the Tool parameter naming conventions.
+    object HeadLightShadedTexturedShader : OGLInlineShader{
+    };
+
+    /// default constructor
+    HeadLightShadedTexturedShader() {
+      this.init( this.type() );
+    }
+
+    /// initialize the shader using a name.
+    /// \internal
+    HeadLightShadedTexturedShader.init!( String name ) {
+      this.name = name;
+
+      this.setVertexCode( "
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+
+      uniform mat4 renderTransform;
+      uniform mat4 positionsTransform;
+      uniform mat3 normalsTransform;
+
+      attribute vec4 positions;
+      attribute vec3 normals;
+      attribute vec2 uvs0;
+
+      varying vec4 v_position;
+      varying vec3 v_normal;
+      varying vec2 v_uv0;
+
+      void main() {
+        v_normal = normalsTransform * normals;
+        v_position = positionsTransform * positions;
+        gl_Position = renderTransform * positions;
+        v_uv0 = uvs0;
+      }
+      ");
+
+        this.setFragmentCode( "
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+
+      uniform vec4 ambientColor;
+      uniform float transparency;
+      uniform sampler2D color;
+      uniform vec4 specularColor;
+      uniform float specularFactor;
+      uniform int normalIsTangent;
+      uniform int doubleSided;
+      uniform  vec4 lightColor;
+
+      varying vec4 v_position;
+      varying vec3 v_normal;
+      varying vec2 v_uv0;
+
+      void main() {
+        vec4 diffuseColor = texture2D( color, vec2( v_uv0.x, 1.0 - v_uv0.y ) );
+        if( transparency >= 1.0 || color.w <= 0 )
+          discard;
+
+        vec4 final_color = ambientColor;
+        vec3 pos = v_position.xyz / v_position.w;
+        vec3 eyeVec = pos;
+        vec3 N;
+        if( normalIsTangent == 0 )
+          N = normalize( v_normal );
+        else {
+          N = normalize( cross( v_normal, cross( v_normal, eyeVec ) ) );
+        }
+        if( dot( N, eyeVec ) < 0.0 )
+          N = -N;
+        vec3 L = normalize( pos );
+
+        float lambertTerm = dot( N, L );
+        if( doubleSided != 0 )
+          lambertTerm = abs( lambertTerm );
+
+        if( lambertTerm > 0.0 ) {
+          final_color += lightColor * diffuseColor * lambertTerm;
+          vec3 E = normalize( eyeVec );
+          vec3 R = reflect( -L, N );
+          float specular = pow( max( dot( R, E ), 0.0 ), specularFactor );
+          final_color += specularColor * specular;
+        }
+
+        gl_FragColor = vec4( final_color.xyz, final_color.w * ( 1.0 - clamp( transparency, 0.0, 1.0 ) ) );
+      }
+
+      ");  
+        this.defineUniform( InlineUniform( "renderTransform", Mat44() ) );
+      this.defineUniform( InlineUniform( "positionsTransform", Mat44() ) );
+      this.defineUniform( InlineUniform( "normalsTransform", Mat33() ) );
+      this.defineAttribute( "positions", "Vec3" );
+      this.defineAttribute( "normals", "Vec3" );
+      this.defineAttribute( 'uvs0', "Vec2" );
+
+      this.defineUniform( InlineUniform( "transparency", 0.0f ) );
+      this.defineUniform( InlineUniform( "ambientColor", Color( 0.05, 0.05, 0.05 ) ) );
+      this.defineUniform( InlineUniform( 'color', null ) );
+      this.defineUniform( InlineUniform( "lightColor", Color( 1.0 ) ) );
+      this.defineUniform( InlineUniform( "specularColor", Color( 0.2, 0.2, 0.2 ) ) );
+      this.defineUniform( InlineUniform( "specularFactor", 16.0 ) );
+      this.defineUniform( InlineUniform( "normalIsTangent", Integer( 0 ) ) );
+      this.defineUniform( InlineUniform( "doubleSided", Integer( 0 ) ) );
+    }
+
+    /// \internal
+    object HeadLightShadedMaterialToID : MaterialToID{
+    };
+
+    /// \internal
+    Type HeadLightShadedMaterialToID.getIDShaderType!( DrawContext context, Ref<InlineShape> contextualShape ) {
+      // Depends if the color is a texture
+      Ref<InlineLinesShape> linesShape = contextualShape;
+      Ref<InlinePointsShape> pointsShape = contextualShape;
+      Boolean noNormals = Boolean( linesShape ) || Boolean( pointsShape );
+
+      if( IsColorTexture( context.contextualProperties ) ) {
+        if( noNormals )
+          return FlatTexturedShader;
+        else
+          return HeadLightShadedTexturedShader;
+      } else {
+        if( noNormals )
+          return FlatShader;
+        else
+          return HeadLightShadedShader;
+      }
+    }
+  }// namespace InlineDrawingRender
+}// namespace Tool

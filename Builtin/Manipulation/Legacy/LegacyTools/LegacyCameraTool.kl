@@ -1,0 +1,347 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+
+/**
+  \versionadded 2.0.1
+
+  :kl-ref:`LegacyCameraTool` provides camera manpulations services for the Camera interface.
+  The LegacyCameraTool can only be used with standalone application, not from within DCC integrations.
+
+  Usage:
+   - Click the Left mouse button and drag with the mouse to cause camera orbiting.
+   - Click the Middle mouse button and drag with the mouse to cause camera panning.
+   - Click the Left mouse button, the Alt key, and drag with the mouse to cause camera dollying.
+   - Use the mouse wheel to cause camera dollying.
+
+  \seealso :kl-ref:`Camera`, :kl-ref:`InlineCamera`
+
+  \dfgPresetOmit
+*/
+object LegacyCameraTool : LegacyBaseTool{
+  /// Orbit, pan or dolly mode.
+  protected ManipulationMode mode;
+  /// Previous mouse position during a mouse drag. 
+  protected Vec2 prevMousePos;
+  /// Rate at which the mouse drag correlates to orbit velocity of the camera.  
+  protected Scalar orbitRate;
+  /// Factor at which mouse wheel actions are converted to dolly motion.
+  protected Scalar mouseWheelDollySpeed;
+  /// Scale factor for the camera translation speed
+  protected Float32 moveSpeed;
+  /// Scale factor for the camera orbit speed
+  protected Float32 turnSpeed;
+};
+
+/// Initializes a LegacyCameraTool.
+/// \param enableKey Enabled key stroke.
+/// \param isOwnedByDispatcher If true, owned by the dispatcher when registered.
+protected LegacyCameraTool.init!(Key enableKey, Boolean isOwnedByDispatcher) {
+  this.parent.init(enableKey, LegacyHandlerDisableNone, isOwnedByDispatcher);
+  this.mode = CameraMode_Active;
+  this.orbitRate = 0.01f;
+  this.moveSpeed = 0.7f;
+  this.mouseWheelDollySpeed = 0.0007f;
+  this.turnSpeed = 2.0f * 3.14f / 180.0f;
+}
+
+/// Default constructor.  
+LegacyCameraTool() {
+  this.init(0, true);
+}
+
+/// Constructor.  
+/// \param enableKey Enabled key stroke.
+LegacyCameraTool(Key enableKey) {
+  this.init(enableKey, true);
+}
+
+/// Camera orbiting (rotation).
+/// \param mouseDelta Mouse delta (in screen space).
+/// \param camera The camera.
+protected LegacyCameraTool.orbit!(Vec2 mouseDelta, io Camera camera) {
+  Xfo newcameraXfo = camera.getMat44();
+  Vec3 cameraTargetOffset = newcameraXfo.ori.getZaxis() * -camera.getFocalDistance();
+  Vec3 cameraTarget = newcameraXfo.tr + cameraTargetOffset;
+  
+  Quat orbit(); orbit.setFromAxisAndAngle(Vec3(0, 1, 0), mouseDelta.x * -this.orbitRate);
+  newcameraXfo.ori = orbit * newcameraXfo.ori;
+
+  Float32 xAngle = mouseDelta.y * this.orbitRate;
+  Quat pitch(); pitch.setFromAxisAndAngle(newcameraXfo.ori.getXaxis(), xAngle);
+  
+  newcameraXfo.ori = pitch * newcameraXfo.ori;
+  cameraTargetOffset = orbit.rotateVector(cameraTargetOffset);
+  cameraTargetOffset = pitch.rotateVector(cameraTargetOffset);
+  newcameraXfo.tr = cameraTarget - cameraTargetOffset;
+  camera.setFromMat44(newcameraXfo.toMat44());
+}
+
+/// Camera panning. 
+/// \param mouseDelta Mouse displacement (in screen space).
+/// \param viewport Reference to the viewport.
+/// \param camera The camera.
+protected LegacyCameraTool.pan!(
+  Vec2 mouseDelta, 
+  Viewport_Virtual viewport, 
+  io Camera camera) 
+{
+
+  Vec2 viewportDim = viewport.getDimensions();
+  Scalar cameraPlaneHeight = 2.0 * camera.getFocalDistance() * tan(0.5 * camera.getFovY());
+  Scalar cameraPlaneWidth = cameraPlaneHeight * (viewportDim.x/viewportDim.y);
+  
+  Vec3 delta, xAxis, yAxis, zAxis;
+  camera.getAxis(xAxis, yAxis, zAxis);
+  delta += xAxis * -(mouseDelta.x/viewportDim.x) * cameraPlaneWidth;
+  delta += yAxis * -(mouseDelta.y/viewportDim.y) * cameraPlaneHeight;
+
+  Xfo camXfo = camera.getMat44();
+  camXfo.tr += delta;
+  camera.setFromMat44(camXfo.toMat44());
+}
+
+/// Camera dolly.
+/// \param delta Value of the dolly 
+/// \param camera The camera.
+protected LegacyCameraTool.dolly!(Scalar delta, io Camera camera) {
+  // Stop the camera from dollying through the target. 
+  if(delta > 0.0 && camera.getFocalDistance() < 0.001)
+    return;
+  
+  Xfo camXfo = camera.getMat44();
+  Vec3 zAxis = camXfo.ori.getZaxis();
+  Vec3 cameraTarget = camXfo.tr + (zAxis * -camera.getFocalDistance());
+
+  // Apply the dolly to the focal distance and recompute the camera xfo.
+  camera.setFocalDistance(camera.getFocalDistance() - Scalar(delta) * camera.getFocalDistance());
+
+  if( camera.isOrthographic() )
+    camera.setOrthographicFrustumHeight(camera.getOrthographicFrustumHeight() - Scalar(delta) * camera.getOrthographicFrustumHeight());
+
+  camXfo.tr = cameraTarget - (zAxis * -camera.getFocalDistance());
+  camera.setFromMat44(camXfo.toMat44());
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyCameraTool.onEvent!(io Event event) {
+
+  Camera camera = event.getViewport().getCamera();
+
+  // Mouse events (panning, dolly and zoom)
+  if(event.eventType() == Event_MouseButtonPress)
+  {
+    MouseEvent mouseEvent = event;
+    switch(this.mode)
+    {
+      case CameraMode_Active:
+        if(mouseEvent.buttons & MouseButton_LeftButton)
+          this.mode = CameraMode_Orbite;
+        else if(mouseEvent.buttons & MouseButton_MiddleButton)
+          this.mode = CameraMode_Pan;
+        else if(mouseEvent.buttons & MouseButton_RightButton)
+          this.mode = CameraMode_Doll;
+        this.prevMousePos = mouseEvent.pos;
+        event.accept();
+      break;
+    }
+  }
+
+  else if(event.eventType() == Event_MouseMove) 
+  {
+    // suspend event handling while manipulating the camera. 
+    MouseEvent mouseEvent = event;
+    if(mouseEvent.buttons)
+    {
+      switch(this.mode)
+      {
+        case CameraMode_Orbite:
+          Vec2 mouseDelta = mouseEvent.pos - this.prevMousePos;
+          this.orbit(mouseDelta, camera);
+          this.prevMousePos = mouseEvent.pos;
+          event.getHost().requestRedraw();
+          event.accept();
+        break;
+        
+        case CameraMode_Pan:
+          Vec2 mouseDelta = mouseEvent.pos - this.prevMousePos;
+          this.pan(mouseDelta, event.getViewport(), camera);
+          this.prevMousePos = mouseEvent.pos;
+          event.getHost().requestRedraw();
+          event.accept();
+        break;
+        
+        case CameraMode_Doll:
+          Scalar drag = mouseEvent.pos.x - this.prevMousePos.x;
+          this.prevMousePos = mouseEvent.pos;
+          this.dolly(drag * this.mouseWheelDollySpeed * 2.0, camera);
+          event.getHost().requestRedraw();
+          event.accept();
+        break;
+      }
+    }
+  }
+
+  else if(event.eventType() == Event_MouseButtonRelease)
+  {
+    MouseEvent mouseEvent = event;
+    this.mode = CameraMode_Active;
+    event.getHost().requestRedraw();
+    event.accept();
+  }
+
+  else if(event.eventType() == Event_Wheel)
+  {
+    MouseWheelEvent mouseWheelEvent = event;
+    this.dolly(Scalar(mouseWheelEvent.delta) * this.mouseWheelDollySpeed, camera);
+    event.getHost().requestRedraw();
+    event.accept();
+  }
+
+  // Key events 
+  else if(event.eventType() == Event_KeyPress) 
+  {
+    KeyEvent keyEvent = event;
+    // Sets the camera angular and linear velocity
+    if(!keyEvent.isAutoRepeat) 
+    {
+      switch(keyEvent.key)
+      {
+        case Key_W:
+          Vec3 linearVelocity = camera.getGoalLinearVelocity();
+          linearVelocity.z = -this.moveSpeed;
+          camera.setGoalLinearVelocity(linearVelocity);
+          event.accept();
+        break;
+
+        case Key_S:
+          Vec3 linearVelocity = camera.getGoalLinearVelocity();
+          linearVelocity.z = this.moveSpeed;
+          camera.setGoalLinearVelocity(linearVelocity);
+          event.accept();
+        break;
+
+        case Key_A:
+          if(keyEvent.modifiers & ModiferKey_Shift)
+          {
+            Vec3 angularVelocity = camera.getGoalAngularVelocity();
+            angularVelocity.x = -this.turnSpeed;
+            camera.setGoalAngularVelocity(angularVelocity);
+          }
+          else
+          {
+            Vec3 linearVelocity = camera.getGoalLinearVelocity();
+            linearVelocity.x = -this.moveSpeed;
+            camera.setGoalLinearVelocity(linearVelocity);
+          }
+          event.accept();
+        break;
+
+        case Key_D:
+          if(keyEvent.modifiers & ModiferKey_Shift)
+          {
+            Vec3 angularVelocity = camera.getGoalAngularVelocity();
+            angularVelocity.x = this.turnSpeed;
+            camera.setGoalAngularVelocity(angularVelocity);
+          }
+          else
+          {
+            Vec3 linearVelocity = camera.getGoalLinearVelocity();
+            linearVelocity.x = this.moveSpeed;
+            camera.setGoalLinearVelocity(linearVelocity);
+          }
+          event.accept();
+        break;
+
+        case Key_PageUp:
+          Vec3 linearVelocity = camera.getGoalLinearVelocity();
+          linearVelocity.y = this.moveSpeed;
+          camera.setGoalLinearVelocity(linearVelocity);
+          event.accept();
+        break;
+
+        case Key_PageDown:
+          Vec3 linearVelocity = camera.getGoalLinearVelocity();
+          linearVelocity.y = -this.moveSpeed;
+          camera.setGoalLinearVelocity(linearVelocity);
+          event.accept();
+        break;
+      }
+    }
+
+    // Move the camera with keyboard arrows
+    if( keyEvent.key >= Key_Left && keyEvent.key <= Key_Down ) 
+    {
+
+      Mat44 camTransform = camera.getMat44();
+      if( keyEvent.key == Key_Up )
+        camTransform.setTranslation( camTransform.translation() * Vec3( 0.7, 0.7, 0.7 ) );
+      else if( keyEvent.key == Key_Down )
+        camTransform.setTranslation( camTransform.translation() * Vec3( 1.0f/0.7f, 1.0f/0.7f, 1.0f/0.7f ) );
+      else if( keyEvent.key == Key_Left )
+        camTransform = Xfo( Quat( Euler( Vec3( 0, Math_degToRad(10), 0) ) ) ).toMat44() * camTransform;
+      else if( keyEvent.key == Key_Right )
+        camTransform = Xfo( Quat( Euler( Vec3( 0, Math_degToRad(-10), 0) ) ) ).toMat44() * camTransform;
+      camera.setFromMat44(camTransform);
+      event.accept();
+    }
+  }
+ 
+  else if(event.eventType() == Event_KeyRelease) 
+  {
+    KeyEvent keyEvent = event;
+    if(keyEvent.isAutoRepeat) return;
+
+    switch(keyEvent.key)
+    {
+      case Key_W:
+        Vec3 linearVelocity = camera.getGoalLinearVelocity();
+        linearVelocity.z = 0.0;
+        camera.setGoalLinearVelocity(linearVelocity);
+        event.accept();
+      break;
+
+      case Key_S:
+        Vec3 linearVelocity = camera.getGoalLinearVelocity();
+        linearVelocity.z = 0.0;
+        camera.setGoalLinearVelocity(linearVelocity);
+        event.accept();
+      break;
+
+      case Key_A:
+        Vec3 angularVelocity = camera.getGoalAngularVelocity();
+        angularVelocity.x = 0.0;
+        camera.setGoalAngularVelocity(angularVelocity);
+        Vec3 linearVelocity = camera.getGoalLinearVelocity();
+        linearVelocity.x = 0.0;
+        camera.setGoalLinearVelocity(linearVelocity);
+        event.accept();
+      break;
+
+      case Key_D:
+        Vec3 angularVelocity = camera.getGoalAngularVelocity();
+        angularVelocity.x = 0.0;
+        camera.setGoalAngularVelocity(angularVelocity);
+        Vec3 linearVelocity = camera.getGoalLinearVelocity();
+        linearVelocity.x = 0.0;
+        camera.setGoalLinearVelocity(linearVelocity);
+        event.accept();
+      break;
+
+      case Key_PageUp:
+        Vec3 linearVelocity = camera.getGoalLinearVelocity();
+        linearVelocity.y = 0.0;
+        camera.setGoalLinearVelocity(linearVelocity);
+        event.accept();
+      break;
+
+      case Key_PageDown:
+        Vec3 linearVelocity = camera.getGoalLinearVelocity();
+        linearVelocity.y = 0.0;
+        camera.setGoalLinearVelocity(linearVelocity);
+        event.accept();
+      break;
+    }
+  }
+}

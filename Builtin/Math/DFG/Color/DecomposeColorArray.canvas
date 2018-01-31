@@ -1,0 +1,93 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Color.html"
+    },
+  "title" : "Color[] ->",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 0,\n  \"b\" : 0\n  }"
+        },
+      "name" : "value",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Color[]" : [
+          {
+            "r" : 0,
+            "g" : 0,
+            "b" : 0,
+            "a" : 1
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Color[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "r",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "g",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "b",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "a",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "07B212A3FBE3EB3CADE3472E0F7E9C75",
+  "code" : "require Math;
+
+operator Math_Color_decompose_task<<<index>>>(in Color[] value, io Scalar[] r, io Scalar[] g, io Scalar[] b, io Scalar[] a) {
+  r[index] = value[index].r;
+  g[index] = value[index].g;
+  b[index] = value[index].b;
+  a[index] = value[index].a;
+}
+
+dfgEntry {
+  Size task_size = value.size();
+  r.resize(task_size);
+  g.resize(task_size);
+  b.resize(task_size);
+  a.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size i = 0; i < task_size; i++) {
+      Math_Color_decompose_task(i, value, r, g, b, a);
+    }
+  } else {
+    Math_Color_decompose_task<<<task_size>>>(value, r, g, b, a);
+  }
+}
+"
+  }

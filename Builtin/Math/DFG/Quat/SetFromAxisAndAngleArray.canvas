@@ -1,0 +1,89 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Quat.html",
+    "uiTooltip" : "Set this quat to a rotation defined by an axis and an angle (in radians)\n\n Supported by Quat"
+    },
+  "title" : "SetFromAxisAndAngle[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "axis",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 1,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "angle",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 0,\n  \"g\" : 191,\n  \"b\" : 232\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Quat[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "F5DBAD54EBDE0457EF4FA10C392B8043",
+  "code" : "require Math;
+
+operator Math_Quat_setFromAxisAndAngle_task<<<index>>>(
+  io Quat[] result
+, in Vec3[] axis
+, in Scalar[] angle
+) {
+  result[index].setFromAxisAndAngle(axis[index < axis.size() ? index : axis.size() - 1], angle[index < angle.size() ? index : angle.size() - 1]);
+}
+
+dfgEntry {
+  if( axis.size() == 0) return;
+  if( angle.size() == 0) return;
+  Size task_size = 0;
+  if(task_size < axis.size()) task_size = axis.size();
+  if(task_size < angle.size()) task_size = angle.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Quat_setFromAxisAndAngle_task(index, result, axis, angle);
+    }
+  } else {
+    Math_Quat_setFromAxisAndAngle_task<<<task_size>>>(result, axis, angle);
+  }
+}
+"
+  }

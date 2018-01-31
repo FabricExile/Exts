@@ -1,0 +1,118 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// Mouse release. The source Event is set in the customData.
+  const String MouseClickRaycastEventHandler_ReleaseEvent = "mouseRelease";
+  /// Click on the background (unhandled mouse click)
+  const String MouseClickRaycastEventHandler_BackgroundClick = "backgroundMouseClick";
+
+  /// Provides base functionality for viewport clicking (selection) of multiple tool shapes.
+  object MouseClickRaycastEventHandler : BaseRaycastEventHandler{
+    RaycastResult lastClickResults[];
+    Boolean needsClickAndReleaseOnTargetPerTargetUID[UInt32];
+  };
+
+  MouseClickRaycastEventHandler() {}
+
+  /// \needsClickAndReleaseOnTarget If true, onRaycastSucceeded() will only be once both mouse click and release hit the target
+  MouseClickRaycastEventHandler.addRaycastTarget!( Ref<RaycastTarget> raycastTarget, Boolean needsClickAndReleaseOnTarget ) {
+    this.needsClickAndReleaseOnTargetPerTargetUID[raycastTarget.uid()] = needsClickAndReleaseOnTarget;
+    this.parent.addRaycastTarget( raycastTarget );
+  }
+
+  MouseClickRaycastEventHandler.removeRaycastTarget!( Ref<RaycastTarget> raycastTarget ) {
+    if( this.needsClickAndReleaseOnTargetPerTargetUID.has( raycastTarget.uid() ) )
+      this.needsClickAndReleaseOnTargetPerTargetUID.delete( raycastTarget.uid() );
+    this.parent.removeRaycastTarget( raycastTarget );
+  }
+
+  inline Boolean MouseClickRaycastEventHandler.waitingForMouseRelease( Ref<RaycastTarget> raycastTarget ) {
+    return this.needsClickAndReleaseOnTargetPerTargetUID.get( raycastTarget.uid(), false ) && Boolean( this.lastClickResults );
+  }
+
+  /// \internal
+  MouseClickRaycastEventHandler.onRawEvent!( io Event event ) {
+    MouseEvent mouseEvent = event;
+    if( !mouseEvent )
+      return;
+
+    if( mouseEvent.eventType() == Event_MouseButtonRelease ) {
+      if( this.lastClickResults ) {
+        RaycastContext context;
+        RaycastResult results[] = this.getRaycastResults( mouseEvent, context );
+        this.triggerRaycastResults( results, context );
+        if( results )
+          mouseEvent.setAccepted( true );
+
+        this.lastClickResults.resize( 0 );
+        this.sendEventToListeners( MouseClickRaycastEventHandler_ReleaseEvent, EventPropagationType_none, String(), event );
+      }
+    } else if( mouseEvent.eventType() == Event_MouseButtonPress ) {
+      RaycastContext context;
+      this.lastClickResults = this.getRaycastResults( mouseEvent, context );
+
+      this.triggerRaycastResults( this.lastClickResults, context );
+      if( this.lastClickResults )
+        mouseEvent.setAccepted( true );
+      else
+        this.sendEventToListeners( MouseClickRaycastEventHandler_BackgroundClick, EventPropagationType_none, String(), event );
+    }
+  }
+
+  /// \internal
+  MouseClickRaycastEventHandler.onRaycastSucceeded!( io Ref<RaycastTarget> target, io RaycastContext context, RaycastResult result ) {
+
+    Ref<MouseEvent> mouseEvent = this.manager.getCurrentEvent();
+    Boolean onClick = mouseEvent.eventType() == Event_MouseButtonPress;
+    Boolean needsClickAndRelease = this.needsClickAndReleaseOnTargetPerTargetUID.get( target.uid(), false );
+
+    if( onClick )
+      target.onRaycastInitiated( context, result );
+
+    if( onClick && needsClickAndRelease )
+      return;// To be treated at mouse release time
+
+    if( !onClick && !needsClickAndRelease )
+      return;// Already treated at mouse click time
+
+    Boolean succeeded;
+    if( onClick )
+      succeeded = true;
+    else {
+      // Check if the target was among the clicked targets
+      for( Size i = 0; i < this.lastClickResults.size(); ++i ) {
+        Ref<RaycastTarget> lastTarget = this.lastClickResults[i].owner;
+        if( lastTarget === target ) {
+          succeeded = true;
+          break;
+        }
+      }
+    }
+    if( succeeded )
+      target.onRaycastSucceeded( context, result );
+    else
+      target.onRaycastFail( context );
+  }
+
+  /// \internal
+  MouseClickRaycastEventHandler.onRaycastFail!( io Ref<RaycastTarget> target, io RaycastContext context ) {
+    Ref<MouseEvent> mouseEvent = this.manager.getCurrentEvent();
+    Boolean onClick = mouseEvent.eventType() == Event_MouseButtonPress;
+    Boolean needsClickAndRelease = this.needsClickAndReleaseOnTargetPerTargetUID.get( target.uid(), false );
+
+    if( onClick && needsClickAndRelease )
+      return;// To be treated at mouse release time
+
+    if( !onClick && !needsClickAndRelease )
+      return;// Already treated at mouse click time
+
+    target.onRaycastFail( context );
+  }
+
+  Ref<MouseClickRaycastEventHandler> GetMouseClickRaycastEventHandler() {
+    return GetOrCreateSingleton( "WMouseClickRaycastH", MouseClickRaycastEventHandler );
+  }
+}// namespace Tool

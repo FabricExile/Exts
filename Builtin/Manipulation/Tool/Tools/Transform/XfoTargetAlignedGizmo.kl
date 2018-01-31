@@ -1,0 +1,67 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+  const String XfoTargetAlignedGizmo_dragging = "dragging";
+  const String XfoTargetAlignedGizmo_waiting = "waiting";
+
+  /// Augments the :kl-ref:`XfoTargetAlignedShape`
+  /// to add a highlight behavior to the gizmo 
+  /// (color changes when mouse is over). It also
+  /// attached the passed-in :kl-ref:`Tool::BaseXfoDragInteraction`
+  /// and changes tool's state based on the dragging status
+  /// (XfoTargetAlignedGizmo_dragging, XfoTargetAlignedGizmo_waiting).
+  object XfoTargetAlignedGizmo : XfoTargetAlignedShape{
+    Color highlightColor;
+    BaseXfoDragInteraction xfoDragInteraction;
+  };
+
+  XfoTargetAlignedGizmo( TransformTarget target, Color highlightColor, Ref<BaseTool> gizmoShape, Ref<BaseXfoDragInteraction> xfoDragInteraction ) {
+    this.construct( target, highlightColor, gizmoShape, xfoDragInteraction );
+  }
+
+  /// By default, the this.alignModifier only aligns rotation
+  XfoTargetAlignedGizmo.construct!( TransformTarget target, Color highlightColor, Ref<BaseTool> gizmoShape, Ref<BaseXfoDragInteraction> xfoDragInteraction ) {
+    this.highlightColor = highlightColor;
+    this.xfoDragInteraction = xfoDragInteraction;
+
+    this.parent.construct( target, gizmoShape );
+
+    if( xfoDragInteraction )
+      this.connectDragInteraction( xfoDragInteraction.getInteraction(), false );
+
+    // Set initial state to "unselected"
+    this.setMainState( XfoTargetAlignedGizmo_waiting );
+  }
+
+  /// Connects a drag interaction and returns the created SetMainStateAction
+  SetMainStateAction XfoTargetAlignedGizmo.connectDragInteraction!( Ref<DragInteraction> dragInteraction, Boolean owned ) {
+    // When dragging, change our state from "waiting" to "dragging"
+    SetMainStateAction action = SetMainStateAction( dragInteraction, ToolEvent_DragBegin, dragInteraction, ToolEvent_DragEnd, XfoTargetAlignedGizmo_dragging );
+    this.attachComponent( action );
+    if( dragInteraction !== this.xfoDragInteraction.getInteraction() )
+      this.xfoDragInteraction.connect( dragInteraction, owned );
+    return action;
+  }
+
+  XfoTargetAlignedGizmo.onEnterState!( String newState, Boolean mainState ) {
+
+    switch( newState ) {
+      case XfoTargetAlignedGizmo_waiting:
+      {
+        // Add a highlight behavior to our shape
+        this.attachStateSpecificChildComponent( newState, HighlightUnderMouse( this.highlightColor ), "shape" );
+        return;
+      }
+      case XfoTargetAlignedGizmo_dragging:
+      {
+        // Selected: color = yellow for our shape
+        SetColorAction colorAction( this.highlightColor, true );
+        this.attachAndDoStateSpecificChildAction( newState, colorAction, "shape" );
+        return;
+      }
+    }
+  }
+
+}// namespace Tool

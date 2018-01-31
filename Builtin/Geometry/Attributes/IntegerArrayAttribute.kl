@@ -1,0 +1,76 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+/brief The ``IntegerArrayAttribute`` contains a sub-array of Integer per index. 
+For an index, array items can be set one by one or in batch.
+
+Various strategies are used to lower memory consumption and increase performance:
+
+- contiguous memory storage in a few buffers to lower memory fragmentation and minimize memory allocations
+
+- ``counts`` per index is implicit if values are appended in order (0 to N-1)
+
+\note Changing the size of sub-arrays is not thread safe
+
+*/
+object IntegerArrayAttribute : BaseArrayAttribute{};
+
+inline IntegerArrayAttribute.set!( Integer index, Integer offset, Integer value ) {
+  this.internalData.set( index, offset, value );
+}
+
+inline Integer IntegerArrayAttribute.get( Integer index, Integer offset ) {
+  return this.internalData.get( index, offset );
+}
+
+inline IntegerArrayAttribute.get( Integer index, out LocalL16SInt32Array values ) {
+  this.internalData.get( index, values );
+}
+
+inline IntegerArrayAttribute.set!( Integer index, LocalL16SInt32Array values ) {
+  this.internalData.set( index, values );
+}
+
+require Util;
+
+/// \internal
+function String IntegerArrayAttribute._valueDesc( Size index, Boolean unitTestPrint, Boolean truncateDec, Integer n ) {
+  LocalL16SInt32Array values;
+  this.get( index, values );
+  String result = '[';
+  for( Size i = 0; i < values.size(); ++i ) {
+    if( i )
+      result += ', ';
+    result += values.get( i );
+  }
+  result += ']';
+  return result;
+}
+
+inline String IntegerArrayAttribute.valueDesc( Size index ) {
+  return this._valueDesc( index, false, false, 0 );
+}
+
+function String IntegerArrayAttribute.unitTestPrint( Size index ) {
+  return this._valueDesc( index, true, false, 0 );
+}
+
+function String IntegerArrayAttribute.truncateDecimalsPrint( Size index, UInt32 n ) {
+  return this._valueDesc( index, false, true, n );
+}
+
+// We cannot merge arrays automatically; just keep the one with highest index.
+inline LocalL16SInt32Array IntegerArrayAttribute.getLinearCombination( LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights ) {
+  UInt32 index = this.getLinearCombinationIndex( sourceIndices, sourceWeights );
+  LocalL16SInt32Array values;
+  if( index != InvalidIndex )
+    this.get( index, values );
+  return values;
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+function Ref<IntegerArrayAttribute> GeometryAttributes.getOrCreateIntegerArrayAttribute!( String name ) {
+  return this.getOrCreateAttribute( name, IntegerArrayAttribute );
+}

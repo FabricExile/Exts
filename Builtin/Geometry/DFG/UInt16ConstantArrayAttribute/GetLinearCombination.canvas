@@ -1,0 +1,55 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/UInt16ConstantArrayAttribute.html",
+    "uiTooltip" : "Returns a linear combination of source values. If IntegerAttribute.canInterpolate is false, an arbitrary source value will be returned.\n\nCould be optimized for SIMD..\nrounding\n\n Supported by UInt16ConstantArrayAttribute"
+    },
+  "title" : "GetLinearCombination",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "UInt16ConstantArrayAttribute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "sourceIndices",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "LocalL16UInt32Array"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "sourceWeights",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "LocalL16ScalarArray"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "LocalL16UInt16Array"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "AC7C8889EBD71C28420CE6C73B81F14E",
+  "code" : "require Geometry;
+
+dfgEntry {
+  result = this.getLinearCombination(sourceIndices, sourceWeights);
+}
+"
+  }

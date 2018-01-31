@@ -1,0 +1,170 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+The OGLDebugShapeAdaptor implements the InlineShapeAdaptor interface. It is used to draw a InlineDebugShape within an OpenGL viewport.
+\dfgPresetOmit
+*/
+object OGLDebugShapeAdaptor : InlineShapeAdaptor {};
+
+/// default constructor
+function OGLDebugShapeAdaptor() {}
+
+/// returns the types this adaptor is capable of drawing
+function String[] OGLDebugShapeAdaptor.getShapeTypes() {
+  String result[];
+  result.push('InlineDebugShape');
+  return result;
+}
+
+/// draw the shape to the screen.
+/// this is called by the InlineInstance,
+/// you should not call this manually.
+/// \internal
+function Boolean OGLDebugShapeAdaptor.draw!(io DrawContext context, io Ref<InlineShape> shape) {
+
+  // access the lines shape
+  InlineDebugShape debugShape = shape;
+  Ref<DrawElements> elts = debugShape.drawElements;
+
+  OGLBufferDictionary buffers = debugShape.getMetaData('buffers');
+  if(buffers == null) {
+    buffers = OGLBufferDictionary();
+    debugShape.setMetaData('buffers', buffers);
+  }
+
+  elts.attributes.getOrCreateColorAttribute('vertexColors');
+  elts.attributes.getOrCreateScalarAttribute('pointSizes');
+
+  Ref<InlineShader> shader = context.getMetaData('currentShader');
+  OGLShape_updateGeometryAttributeBuffers(context, buffers, elts.attributes);
+
+  UInt32 version = elts.getVersion();
+  if(version == 0 && ( elts.pointsIndicesOffset > 0 || elts.linesIndicesOffset > 0 || elts.trianglesIndicesOffset > 0)){
+    setError("Error drawing "+shape.getName() + ": topology version has not been incremented. Call DrawElements.incrementVersion after making topology changes.");
+    return false;
+  }
+
+  if( elts.pointsIndicesOffset > 0 && buffers.getVersion('pointsTopology') != version) {
+
+    if( Fabric_Guarded && !Fabric_OnGPU )
+    {
+      UInt32 maxPointIndicesRange = OGLShape_GetArrayMaxValue( elts.pointsIndices);
+      UInt32 maxLinesIndicesRange = OGLShape_GetArrayMaxValue( elts.linesIndices);
+      UInt32 maxTrianglesIndicesRange = OGLShape_GetArrayMaxValue( elts.trianglesIndices);
+      UInt32 maxIndicesRange = Math_max(maxPointIndicesRange, Math_max(maxLinesIndicesRange, maxTrianglesIndicesRange));
+
+      if(!OGLShape_CheckGeometryAttributesIndicesRange( elts.attributes, maxIndicesRange))
+        return false;
+    }
+
+    OGLBuffer buffer = buffers.get('pointsTopology');
+    if(buffer == null) {
+      buffer = OGLBuffer();
+      buffer.bufferType = GL_ARRAY_BUFFER;
+      buffer.bufferUsage = GL_STATIC_DRAW;
+      buffer.bufferElementComponentType = GL_UNSIGNED_INT;
+      buffers.set('pointsTopology', buffer);
+    }
+    if( buffer.bufferID )
+      buffer.bufferUsage = GL_DYNAMIC_DRAW;//Loaded at least 2 times: lazily upgrade to "dynamic"
+
+    buffer.genBuffer( elts.pointsIndices.data(), elts.pointsIndices.dataSize(), elts.pointsIndicesOffset);
+    buffers.setVersion('pointsTopology', version);
+  }
+
+  if( elts.linesIndicesOffset > 0 && buffers.getVersion('linesTopology') != version) {
+    if( Fabric_Guarded && !Fabric_OnGPU )
+    {
+      UInt32 maxPointIndicesRange = OGLShape_GetArrayMaxValue( elts.pointsIndices);
+      UInt32 maxLinesIndicesRange = OGLShape_GetArrayMaxValue( elts.linesIndices);
+      UInt32 maxTrianglesIndicesRange = OGLShape_GetArrayMaxValue( elts.trianglesIndices);
+      UInt32 maxIndicesRange = Math_max(maxPointIndicesRange, Math_max(maxLinesIndicesRange, maxTrianglesIndicesRange));
+      if(!OGLShape_CheckGeometryAttributesIndicesRange( elts.attributes, maxIndicesRange))
+        return false;
+    }
+
+    OGLBuffer buffer = buffers.get('linesTopology');
+    if(buffer == null) {
+      buffer = OGLBuffer();
+      buffer.bufferType = GL_ARRAY_BUFFER;
+      buffer.bufferUsage = GL_STATIC_DRAW;
+      buffer.bufferElementComponentType = GL_UNSIGNED_INT;
+      buffers.set('linesTopology', buffer);
+    }
+    if( buffer.bufferID )
+      buffer.bufferUsage = GL_DYNAMIC_DRAW;//Loaded at least 2 times: lazily upgrade to "dynamic"
+
+    buffer.genBuffer( elts.linesIndices.data(), elts.linesIndices.dataSize(), elts.linesIndicesOffset);
+    buffers.setVersion('linesTopology', version);
+  }
+
+  if( elts.trianglesIndicesOffset > 0 && buffers.getVersion('trianglesTopology') != version) {
+    if( Fabric_Guarded && !Fabric_OnGPU )
+    {
+      UInt32 maxPointIndicesRange = OGLShape_GetArrayMaxValue( elts.pointsIndices);
+      UInt32 maxLinesIndicesRange = OGLShape_GetArrayMaxValue( elts.linesIndices);
+      UInt32 maxTrianglesIndicesRange = OGLShape_GetArrayMaxValue( elts.trianglesIndices);
+      UInt32 maxIndicesRange = Math_max(maxPointIndicesRange, Math_max(maxLinesIndicesRange, maxTrianglesIndicesRange));
+      if(!OGLShape_CheckGeometryAttributesIndicesRange( elts.attributes, maxIndicesRange))
+        return false;
+    }
+    OGLBuffer buffer = buffers.get('trianglesTopology');
+    if(buffer == null) {
+      buffer = OGLBuffer();
+      buffer.bufferType = GL_ARRAY_BUFFER;
+      buffer.bufferUsage = GL_STATIC_DRAW;
+      buffer.bufferElementComponentType = GL_UNSIGNED_INT;
+      buffers.set('trianglesTopology', buffer);
+    }
+    if( buffer.bufferID )
+      buffer.bufferUsage = GL_DYNAMIC_DRAW;//Loaded at least 2 times: lazily upgrade to "dynamic"
+
+    buffer.genBuffer( elts.trianglesIndices.data(), elts.trianglesIndices.dataSize(), elts.trianglesIndicesOffset);
+    buffers.setVersion('trianglesTopology', version);
+  }
+
+  Data NULL;
+  OGLBuffer buffer = null;
+
+  InlineTransform transform = context.getMetaData('currentTransform');
+  Xfo xfos[] = transform.nonLocking_getAllGlobalXfos();
+
+  // todo: implement hardware instancing
+  for(Size i=0;i<xfos.size();i++)
+  {
+    if(!OGLTransform_draw(context, shader, xfos[i].toMat44()))
+      return false;
+
+    if( elts.pointsIndicesOffset > 0) {
+      buffer = buffers.get('pointsTopology');
+      if(buffer != null) {
+        glPointSize( elts.getPointSize());
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffer.bufferID);
+        glDrawElements(GL_POINTS, buffer.elementCount, buffer.bufferElementComponentType, NULL);
+      }
+    }
+
+    if( elts.linesIndicesOffset > 0) {
+      buffer = buffers.get('linesTopology');
+      if(buffer != null) {
+        glLineWidth( elts.getLineWidth());
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffer.bufferID);
+        glDrawElements(GL_LINES, buffer.elementCount, buffer.bufferElementComponentType, NULL);
+      }
+    }
+
+    if( elts.trianglesIndicesOffset > 0) {
+      buffer = buffers.get('trianglesTopology');
+      if(buffer != null) {
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffer.bufferID);
+        glDrawElements(GL_TRIANGLES, buffer.elementCount, buffer.bufferElementComponentType, NULL);
+      }
+    }
+  }
+
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+  return true;
+}

@@ -1,0 +1,46 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+///
+/// Cholesky decomposition
+/// See https://en.wikipedia.org/wiki/Cholesky_decomposition
+///
+
+require Math;
+
+/// 
+/// Compute the solution y of the equation Ly=b where L is lower triangular
+///
+LA_Elimination_Forward(Mat L, io Vec y, Vec b) {
+  Integer n = b.size();
+  if (Fabric_Guarded)
+    if (L.rows() != n || L.cols() != n)
+      throw FUNC + ": incompatible sizes (L=" + L.sizeDesc() + " b=" + b.sizeDesc() + ")";
+  y.resize(n);
+  for (Integer i = 0; i < n; ++i) {
+    Scalar v = b.get(i);
+    for (Integer j = 0; j < i; ++j)
+      v -= L.get(i, j) * y.get(j);
+    v /= L.get(i, i);
+    y.set(i, v);
+  }
+}
+
+///
+/// Compute the solution X of Ux=y where U is upper triangular
+///
+LA_Elimination_Backward(Mat U, io Vec x, Vec y) {
+  Integer n = y.size();
+  if (Fabric_Guarded)
+    if (U.rows() != n || U.cols() != n)
+      throw FUNC + ": incompatible sizes (U=" + U.sizeDesc() + " y=" + y.sizeDesc() + ")";
+  x.resize(n);
+  for (Integer i = n; i--;) {
+    Scalar v = y.get(i);
+    for (Integer j = i+1; j < n; ++j)
+      v -= U.get(i,j) * x.get(j);
+    v /= U.get(i, i);
+    x.set(i, v);
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/RotationOrder.html",
+    "uiTooltip" : "Sets this rotation order to be YXZ\n\n Supported by RotationOrder"
+    },
+  "title" : "SetYXZ[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 0,\n  \"g\" : 191,\n  \"b\" : 232\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "RotationOrder[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "CD4A86DFE81F03D4A15F53811FA6DEB8",
+  "code" : "require Math;
+
+operator Math_RotationOrder_setYXZ_task<<<index>>>(
+  io RotationOrder[] this
+) {
+  this[index < this.size() ? index : this.size() - 1].setYXZ();
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_RotationOrder_setYXZ_task(index, this);
+    }
+  } else {
+    Math_RotationOrder_setYXZ_task<<<task_size>>>(this);
+  }
+}
+"
+  }

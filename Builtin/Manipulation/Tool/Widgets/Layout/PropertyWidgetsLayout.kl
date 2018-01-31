@@ -1,0 +1,200 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// The PropertyWidgetsLayout allows to place horizontally children widgets,
+  /// such as sliders, push bottons and checkboxes, along with text labels.
+  ///
+  /// Note: currently, it is limited to right alignment, since there
+  /// is no way to get the exact size of the text labels.
+  ///
+  /// See :ref:`TPG.2Dwidgets` for an overview of available 2D tool widgets and examples.
+  object PropertyWidgetsLayout : BaseTool, LayoutAlignment{
+    UInt8 alignment; // WAlignment_X
+
+    UInt32 viewportMarginPixels;
+    UInt32 widgetsRowHeightPixels;
+    UInt32 widgetsSpacingPixels;
+
+    Float32 widgetWidth;
+    Boolean widgetWidthIsRatio;
+
+    Color labelColor;
+    UInt32 nextRow;
+  };
+
+  PropertyWidgetsLayout() {
+    this.setAlignment( Alignment_upperLeft );
+    this.setSpacing( 5, 20, 4 );
+    this.setWidgetHeight( 0.3f, true );
+    this.setLabelColor( Color( 1.0f ) );
+    this.addDrawModifier( PropertyWidgetsChildLayoutModifier(), true );
+    this.setTransformSpace( PixelCoordinatesSpace );
+    this.setVisibleToActiveViewportOnly( true );// By default, only show in active viewport
+  }
+
+  /// Implementation of LayoutAlignment.
+  UInt8 PropertyWidgetsLayout.getAlignment() {
+    return this.alignment;
+  }
+
+  /// Implementation of LayoutAlignment.
+  /// \note Currently, only Alignment_upperLeft, Alignment_lowerLeft are supported.
+  PropertyWidgetsLayout.setAlignment!( UInt8 alignment ) {
+    // For now since we can't align the text on the right: set an error
+    if( alignment != Alignment_upperLeft && alignment != Alignment_lowerLeft ) {
+      setError( "PropertyWidgetsLayout: only Alignment_upperLeft and Alignment_lowerLeft are supported" );
+      return;
+    }
+    this.alignment = alignment;
+  }
+
+  /// Sets the properties widget outer and row spacing.
+  /// \param viewportMarginPixels Distance to the viewport corner, in pixels (see setAlignment())
+  /// \param widgetsRowHeightPixels Height of the rows, in pixels
+  /// \param widgetsSpacingPixels Spacing between the rows, and between the label and widget, in pixels. For the rows, this is in addition to the `widgetsRowHeightPixels`.
+  PropertyWidgetsLayout.setSpacing!( UInt32 viewportMarginPixels, UInt32 widgetsRowHeightPixels, UInt32 widgetsSpacingPixels ) {
+    this.viewportMarginPixels = viewportMarginPixels;
+    this.widgetsRowHeightPixels = widgetsRowHeightPixels;
+    this.widgetsSpacingPixels = widgetsSpacingPixels;
+
+    // Set the font size from the pixel size. Typically, a factor of 0.75 should be applied.
+    Size fontSize = Size( widgetsRowHeightPixels * 0.75f );
+    if( fontSize < 4 )
+      fontSize = 4;
+    this.setFontSize( fontSize );
+  }
+
+  /// Sets the properties widget width (excluding the labels).
+  /// \param isViewportRatio If true, the width is a ration to the viewport width, else it is in pixels.
+  PropertyWidgetsLayout.setWidgetHeight!( Float32 widgetWidth, Boolean isViewportRatio ) {
+    this.widgetWidth = widgetWidth;
+    this.widgetWidthIsRatio = isViewportRatio;
+  }
+
+  PropertyWidgetsLayout.setLabelColor!( Color color ) {
+    this.labelColor = color;
+
+    Size count = this.childCount();
+    for( Size i = 0; i < count; ++i ) {
+      Ref<PropertyWidgetsChildLayout> child = this.getChild( i );
+      if( child ) {
+        if( child.isLabel )
+          child.setColor( this.labelColor );
+      }
+    }
+  }
+
+  PropertyWidgetsLayout.addWidget!( BaseTool widget, String label ) {
+    UInt32 row = this.nextRow++;
+
+    PropertyWidgetsChildLayout widgetLayout();
+    widgetLayout.row = row;
+    widgetLayout.addChild( "widget", widget );
+
+    PropertyWidgetsChildLayout labelLayout();
+    labelLayout.row = row;
+    labelLayout.isLabel = true;
+    labelLayout.addChild( "label", Text( label ) );
+    labelLayout.setColor( this.labelColor );
+
+    this.addChild( "P" + row + "Widget", widgetLayout );
+    this.addChild( "P" + row + "Label", labelLayout );
+  }
+
+  /// \internal
+  object PropertyWidgetsChildLayout : BaseTool, LayoutAlignment{
+    UInt32 row;
+    Boolean isLabel;
+    UInt8 alignment;
+  };
+
+  /// Implementation of LayoutAlignment.
+  UInt8 PropertyWidgetsChildLayout.getAlignment() {
+    return this.alignment;
+  }
+
+  /// Implementation of LayoutAlignment.
+  PropertyWidgetsChildLayout.setAlignment!( UInt8 alignment ) {
+    this.alignment = alignment;
+  }
+
+  /// \internal
+  object PropertyWidgetsChildLayoutModifier : TransformModifier{
+  };
+
+  PropertyWidgetsChildLayoutModifier() {
+    this.composeWithParent = false;
+  }
+
+  PropertyWidgetsChildLayoutModifier.updateDrawData!( io DrawContext context, Ref<Object> target ) {
+    Ref<PropertyWidgetsLayout> parentLayout = target;
+
+    Box2 bbox;
+
+    // Push layout to all children
+    Size count = parentLayout.childCount();
+    for( Size i = 0; i < count; ++i ) {
+      Ref<PropertyWidgetsChildLayout> childLayout = parentLayout.getChild( i );
+      if( childLayout ) {
+        Vec2 viewportDims = context.viewport.getDimensions();
+
+        // Find the region in pixels. For now we don't do fancy, relative layouts; just do all in absolute viewport pixel space.
+        Float32 widgetWidth = parentLayout.widgetWidth;
+        if( parentLayout.widgetWidthIsRatio )
+          widgetWidth *= viewportDims.x;
+
+        // First, compute as if aligned with upperLeft corner.
+        Vec2 upperLeftCorner, lowerRightCorner;
+
+        UInt32 row = childLayout.row;
+        if( parentLayout.alignment == Alignment_lowerLeft ) { // || parentLayout.alignment == Alignment_lowerRight
+          // Inverse order, since we'll do a symmetry later
+          row = parentLayout.nextRow - 1 - row;
+        }
+
+        upperLeftCorner.y = parentLayout.viewportMarginPixels + ( parentLayout.widgetsRowHeightPixels + parentLayout.widgetsSpacingPixels ) * row;
+
+        lowerRightCorner.y = upperLeftCorner.y + parentLayout.widgetsRowHeightPixels;
+
+        upperLeftCorner.x = parentLayout.viewportMarginPixels;
+        if( childLayout.isLabel )
+          upperLeftCorner.x += parentLayout.widgetsSpacingPixels + widgetWidth;
+
+        lowerRightCorner.x = upperLeftCorner.x + widgetWidth;//For labels, this doesn't matter
+
+        if( parentLayout.alignment == Alignment_upperRight || parentLayout.alignment == Alignment_lowerRight ) {
+          lowerRightCorner.x = viewportDims.x - lowerRightCorner.x;
+          upperLeftCorner.x = viewportDims.x - upperLeftCorner.x;
+          Swap( lowerRightCorner.x, upperLeftCorner.x );
+        }
+
+        if( parentLayout.alignment == Alignment_lowerLeft ) {//|| parentLayout.alignment == Alignment_lowerRight
+          lowerRightCorner.y = viewportDims.y - lowerRightCorner.y;
+          upperLeftCorner.y = viewportDims.y - upperLeftCorner.y;
+          Swap( lowerRightCorner.y, upperLeftCorner.y );
+        }
+
+        if( childLayout.isLabel ) {
+          // The text is basically positioned to the lower right corner...
+          Float32 yOffset = -( parentLayout.widgetsRowHeightPixels * 0.25f ); // Heuristic given the results...
+          Vec2 textPos = Vec2( upperLeftCorner.x, lowerRightCorner.y + yOffset );
+          upperLeftCorner = textPos + Vec2( -1, -1 );
+          lowerRightCorner = textPos + Vec2( 1, 1 );
+        }
+
+        childLayout.setPixelCoordinatesTransform( upperLeftCorner, lowerRightCorner, context );
+        bbox += upperLeftCorner;
+        bbox += lowerRightCorner;
+
+        childLayout.setAlignment( ( parentLayout.alignment & Alignment_left ) ? Alignment_right : Alignment_left );
+      }
+    }
+    //Put our pixel size, since for now it's not automatically computed from children.
+    parentLayout.setPixelCoordinatesTransform( bbox.min, bbox.max, context );
+    this.parent.updateDrawData( context, target );
+  }
+
+}// namespace Tool

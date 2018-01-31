@@ -1,0 +1,63 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/RotationOrder.html"
+    },
+  "title" : "RotationOrder[] ->",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 0,\n  \"g\" : 191,\n  \"b\" : 232\n  }"
+        },
+      "name" : "value",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "RotationOrder[]" : [
+          {
+            "order" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "RotationOrder[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "order",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Integer[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "CD18AF5F31515C185E010001E12085BF",
+  "code" : "require Math;
+
+operator Math_RotationOrder_decompose_task<<<index>>>(in RotationOrder[] value, io Integer[] order) {
+  order[index] = value[index].order;
+}
+
+dfgEntry {
+  Size task_size = value.size();
+  order.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size i = 0; i < task_size; i++) {
+      Math_RotationOrder_decompose_task(i, value, order);
+    }
+  } else {
+    Math_RotationOrder_decompose_task<<<task_size>>>(value, order);
+  }
+}
+"
+  }

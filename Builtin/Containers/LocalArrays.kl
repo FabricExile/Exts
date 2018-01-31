@@ -1,0 +1,3756 @@
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Util;
+//-----------------------------------------------------------------------------------
+
+/// The LocalL4UInt8Array is an efficient container for 
+/// storing UInt8 values, where up to 4 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 4.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL4UInt8Array {
+  UInt8 first4[4];
+  UInt8 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL4UInt8Array
+function LocalL4UInt8Array.=( LocalL4UInt8Array other ) {
+  if( other.count <= 4 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first4[i] = other.first4[i];
+    UInt32 end = this.count;
+    if( end > 4 )
+      end = 4;
+    for( Size i = other.count; i < end; ++i )
+      this.first4[i] = 0;
+  } else {
+    this.first4 = other.first4;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL4UInt8Array( LocalL4UInt8Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL4UInt8Array.getMemUsage?() {
+  return 4*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL4UInt8Array with another one
+function swap( io LocalL4UInt8Array first, io LocalL4UInt8Array second ) {
+  UInt8 tempFirst4[4] = first.first4;
+  first.first4 = second.first4;
+  second.first4 = tempFirst4;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of UInt8 elements stored).
+inline UInt32 LocalL4UInt8Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL4UInt8Array.resize!( UInt32 size ) {
+  if( size >> 2 )
+    this.others.resize( size-4 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 4 )
+        end = 4;
+      for( UInt32 i = size; i != end; ++i )
+        this.first4[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL4UInt8Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 2 )
+    this.others.resize( size-4 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline UInt8 LocalL4UInt8Array.get( UInt32 index ) {
+  if( index >> 2 )
+    return this.others[ index-4 ];
+  else
+    return this.first4[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL4UInt8Array.set!( UInt32 index, UInt8 value ) {
+  if( index >> 2 )
+    this.others[ index-4 ] = value;
+  else
+    this.first4[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL4UInt8Array.set!( UInt32 nb, UInt32 valuesOffset, UInt8 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new UInt8 value to the end of the array
+inline LocalL4UInt8Array.push!( UInt8 value ) {
+  if( this.count >> 2 )
+    this.others.push( value );
+  else
+    this.first4[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL4UInt8Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL8UInt8Array is an efficient container for 
+/// storing UInt8 values, where up to 8 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 8.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL8UInt8Array {
+  UInt8 first8[8];
+  UInt8 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL8UInt8Array
+function LocalL8UInt8Array.=( LocalL8UInt8Array other ) {
+  if( other.count <= 8 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first8[i] = other.first8[i];
+    UInt32 end = this.count;
+    if( end > 8 )
+      end = 8;
+    for( Size i = other.count; i < end; ++i )
+      this.first8[i] = 0;
+  } else {
+    this.first8 = other.first8;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL8UInt8Array( LocalL8UInt8Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL8UInt8Array.getMemUsage?() {
+  return 8*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL8UInt8Array with another one
+function swap( io LocalL8UInt8Array first, io LocalL8UInt8Array second ) {
+  UInt8 tempFirst8[8] = first.first8;
+  first.first8 = second.first8;
+  second.first8 = tempFirst8;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of UInt8 elements stored).
+inline UInt32 LocalL8UInt8Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL8UInt8Array.resize!( UInt32 size ) {
+  if( size >> 3 )
+    this.others.resize( size-8 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 8 )
+        end = 8;
+      for( UInt32 i = size; i != end; ++i )
+        this.first8[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL8UInt8Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 3 )
+    this.others.resize( size-8 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline UInt8 LocalL8UInt8Array.get( UInt32 index ) {
+  if( index >> 3 )
+    return this.others[ index-8 ];
+  else
+    return this.first8[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL8UInt8Array.set!( UInt32 index, UInt8 value ) {
+  if( index >> 3 )
+    this.others[ index-8 ] = value;
+  else
+    this.first8[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL8UInt8Array.set!( UInt32 nb, UInt32 valuesOffset, UInt8 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new UInt8 value to the end of the array
+inline LocalL8UInt8Array.push!( UInt8 value ) {
+  if( this.count >> 3 )
+    this.others.push( value );
+  else
+    this.first8[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL8UInt8Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL16UInt8Array is an efficient container for 
+/// storing UInt8 values, where up to 16 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 16.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL16UInt8Array {
+  UInt8 first16[16];
+  UInt8 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL16UInt8Array
+function LocalL16UInt8Array.=( LocalL16UInt8Array other ) {
+  if( other.count <= 16 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first16[i] = other.first16[i];
+    UInt32 end = this.count;
+    if( end > 16 )
+      end = 16;
+    for( Size i = other.count; i < end; ++i )
+      this.first16[i] = 0;
+  } else {
+    this.first16 = other.first16;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL16UInt8Array( LocalL16UInt8Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL16UInt8Array.getMemUsage?() {
+  return 16*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL16UInt8Array with another one
+function swap( io LocalL16UInt8Array first, io LocalL16UInt8Array second ) {
+  UInt8 tempFirst16[16] = first.first16;
+  first.first16 = second.first16;
+  second.first16 = tempFirst16;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of UInt8 elements stored).
+inline UInt32 LocalL16UInt8Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL16UInt8Array.resize!( UInt32 size ) {
+  if( size >> 4 )
+    this.others.resize( size-16 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 16 )
+        end = 16;
+      for( UInt32 i = size; i != end; ++i )
+        this.first16[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL16UInt8Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 4 )
+    this.others.resize( size-16 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline UInt8 LocalL16UInt8Array.get( UInt32 index ) {
+  if( index >> 4 )
+    return this.others[ index-16 ];
+  else
+    return this.first16[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL16UInt8Array.set!( UInt32 index, UInt8 value ) {
+  if( index >> 4 )
+    this.others[ index-16 ] = value;
+  else
+    this.first16[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL16UInt8Array.set!( UInt32 nb, UInt32 valuesOffset, UInt8 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new UInt8 value to the end of the array
+inline LocalL16UInt8Array.push!( UInt8 value ) {
+  if( this.count >> 4 )
+    this.others.push( value );
+  else
+    this.first16[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL16UInt8Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL32UInt8Array is an efficient container for 
+/// storing UInt8 values, where up to 32 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 32.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL32UInt8Array {
+  UInt8 first32[32];
+  UInt8 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL32UInt8Array
+function LocalL32UInt8Array.=( LocalL32UInt8Array other ) {
+  if( other.count <= 32 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first32[i] = other.first32[i];
+    UInt32 end = this.count;
+    if( end > 32 )
+      end = 32;
+    for( Size i = other.count; i < end; ++i )
+      this.first32[i] = 0;
+  } else {
+    this.first32 = other.first32;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL32UInt8Array( LocalL32UInt8Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL32UInt8Array.getMemUsage?() {
+  return 32*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL32UInt8Array with another one
+function swap( io LocalL32UInt8Array first, io LocalL32UInt8Array second ) {
+  UInt8 tempFirst32[32] = first.first32;
+  first.first32 = second.first32;
+  second.first32 = tempFirst32;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of UInt8 elements stored).
+inline UInt32 LocalL32UInt8Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL32UInt8Array.resize!( UInt32 size ) {
+  if( size >> 5 )
+    this.others.resize( size-32 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 32 )
+        end = 32;
+      for( UInt32 i = size; i != end; ++i )
+        this.first32[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL32UInt8Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 5 )
+    this.others.resize( size-32 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline UInt8 LocalL32UInt8Array.get( UInt32 index ) {
+  if( index >> 5 )
+    return this.others[ index-32 ];
+  else
+    return this.first32[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL32UInt8Array.set!( UInt32 index, UInt8 value ) {
+  if( index >> 5 )
+    this.others[ index-32 ] = value;
+  else
+    this.first32[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL32UInt8Array.set!( UInt32 nb, UInt32 valuesOffset, UInt8 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new UInt8 value to the end of the array
+inline LocalL32UInt8Array.push!( UInt8 value ) {
+  if( this.count >> 5 )
+    this.others.push( value );
+  else
+    this.first32[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL32UInt8Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL64UInt8Array is an efficient container for 
+/// storing UInt8 values, where up to 64 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 64.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL64UInt8Array {
+  UInt8 first64[64];
+  UInt8 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL64UInt8Array
+function LocalL64UInt8Array.=( LocalL64UInt8Array other ) {
+  if( other.count <= 64 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first64[i] = other.first64[i];
+    UInt32 end = this.count;
+    if( end > 64 )
+      end = 64;
+    for( Size i = other.count; i < end; ++i )
+      this.first64[i] = 0;
+  } else {
+    this.first64 = other.first64;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL64UInt8Array( LocalL64UInt8Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL64UInt8Array.getMemUsage?() {
+  return 64*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL64UInt8Array with another one
+function swap( io LocalL64UInt8Array first, io LocalL64UInt8Array second ) {
+  UInt8 tempFirst64[64] = first.first64;
+  first.first64 = second.first64;
+  second.first64 = tempFirst64;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of UInt8 elements stored).
+inline UInt32 LocalL64UInt8Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL64UInt8Array.resize!( UInt32 size ) {
+  if( size >> 6 )
+    this.others.resize( size-64 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 64 )
+        end = 64;
+      for( UInt32 i = size; i != end; ++i )
+        this.first64[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL64UInt8Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 6 )
+    this.others.resize( size-64 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline UInt8 LocalL64UInt8Array.get( UInt32 index ) {
+  if( index >> 6 )
+    return this.others[ index-64 ];
+  else
+    return this.first64[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL64UInt8Array.set!( UInt32 index, UInt8 value ) {
+  if( index >> 6 )
+    this.others[ index-64 ] = value;
+  else
+    this.first64[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL64UInt8Array.set!( UInt32 nb, UInt32 valuesOffset, UInt8 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new UInt8 value to the end of the array
+inline LocalL64UInt8Array.push!( UInt8 value ) {
+  if( this.count >> 6 )
+    this.others.push( value );
+  else
+    this.first64[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL64UInt8Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL4UInt16Array is an efficient container for 
+/// storing UInt16 values, where up to 4 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 4.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL4UInt16Array {
+  UInt16 first4[4];
+  UInt16 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL4UInt16Array
+function LocalL4UInt16Array.=( LocalL4UInt16Array other ) {
+  if( other.count <= 4 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first4[i] = other.first4[i];
+    UInt32 end = this.count;
+    if( end > 4 )
+      end = 4;
+    for( Size i = other.count; i < end; ++i )
+      this.first4[i] = 0;
+  } else {
+    this.first4 = other.first4;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL4UInt16Array( LocalL4UInt16Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL4UInt16Array.getMemUsage?() {
+  return 4*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL4UInt16Array with another one
+function swap( io LocalL4UInt16Array first, io LocalL4UInt16Array second ) {
+  UInt16 tempFirst4[4] = first.first4;
+  first.first4 = second.first4;
+  second.first4 = tempFirst4;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of UInt16 elements stored).
+inline UInt32 LocalL4UInt16Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL4UInt16Array.resize!( UInt32 size ) {
+  if( size >> 2 )
+    this.others.resize( size-4 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 4 )
+        end = 4;
+      for( UInt32 i = size; i != end; ++i )
+        this.first4[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL4UInt16Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 2 )
+    this.others.resize( size-4 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline UInt16 LocalL4UInt16Array.get( UInt32 index ) {
+  if( index >> 2 )
+    return this.others[ index-4 ];
+  else
+    return this.first4[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL4UInt16Array.set!( UInt32 index, UInt16 value ) {
+  if( index >> 2 )
+    this.others[ index-4 ] = value;
+  else
+    this.first4[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL4UInt16Array.set!( UInt32 nb, UInt32 valuesOffset, UInt16 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new UInt16 value to the end of the array
+inline LocalL4UInt16Array.push!( UInt16 value ) {
+  if( this.count >> 2 )
+    this.others.push( value );
+  else
+    this.first4[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL4UInt16Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL8UInt16Array is an efficient container for 
+/// storing UInt16 values, where up to 8 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 8.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL8UInt16Array {
+  UInt16 first8[8];
+  UInt16 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL8UInt16Array
+function LocalL8UInt16Array.=( LocalL8UInt16Array other ) {
+  if( other.count <= 8 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first8[i] = other.first8[i];
+    UInt32 end = this.count;
+    if( end > 8 )
+      end = 8;
+    for( Size i = other.count; i < end; ++i )
+      this.first8[i] = 0;
+  } else {
+    this.first8 = other.first8;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL8UInt16Array( LocalL8UInt16Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL8UInt16Array.getMemUsage?() {
+  return 8*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL8UInt16Array with another one
+function swap( io LocalL8UInt16Array first, io LocalL8UInt16Array second ) {
+  UInt16 tempFirst8[8] = first.first8;
+  first.first8 = second.first8;
+  second.first8 = tempFirst8;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of UInt16 elements stored).
+inline UInt32 LocalL8UInt16Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL8UInt16Array.resize!( UInt32 size ) {
+  if( size >> 3 )
+    this.others.resize( size-8 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 8 )
+        end = 8;
+      for( UInt32 i = size; i != end; ++i )
+        this.first8[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL8UInt16Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 3 )
+    this.others.resize( size-8 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline UInt16 LocalL8UInt16Array.get( UInt32 index ) {
+  if( index >> 3 )
+    return this.others[ index-8 ];
+  else
+    return this.first8[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL8UInt16Array.set!( UInt32 index, UInt16 value ) {
+  if( index >> 3 )
+    this.others[ index-8 ] = value;
+  else
+    this.first8[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL8UInt16Array.set!( UInt32 nb, UInt32 valuesOffset, UInt16 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new UInt16 value to the end of the array
+inline LocalL8UInt16Array.push!( UInt16 value ) {
+  if( this.count >> 3 )
+    this.others.push( value );
+  else
+    this.first8[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL8UInt16Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL16UInt16Array is an efficient container for 
+/// storing UInt16 values, where up to 16 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 16.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL16UInt16Array {
+  UInt16 first16[16];
+  UInt16 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL16UInt16Array
+function LocalL16UInt16Array.=( LocalL16UInt16Array other ) {
+  if( other.count <= 16 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first16[i] = other.first16[i];
+    UInt32 end = this.count;
+    if( end > 16 )
+      end = 16;
+    for( Size i = other.count; i < end; ++i )
+      this.first16[i] = 0;
+  } else {
+    this.first16 = other.first16;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL16UInt16Array( LocalL16UInt16Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL16UInt16Array.getMemUsage?() {
+  return 16*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL16UInt16Array with another one
+function swap( io LocalL16UInt16Array first, io LocalL16UInt16Array second ) {
+  UInt16 tempFirst16[16] = first.first16;
+  first.first16 = second.first16;
+  second.first16 = tempFirst16;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of UInt16 elements stored).
+inline UInt32 LocalL16UInt16Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL16UInt16Array.resize!( UInt32 size ) {
+  if( size >> 4 )
+    this.others.resize( size-16 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 16 )
+        end = 16;
+      for( UInt32 i = size; i != end; ++i )
+        this.first16[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL16UInt16Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 4 )
+    this.others.resize( size-16 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline UInt16 LocalL16UInt16Array.get( UInt32 index ) {
+  if( index >> 4 )
+    return this.others[ index-16 ];
+  else
+    return this.first16[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL16UInt16Array.set!( UInt32 index, UInt16 value ) {
+  if( index >> 4 )
+    this.others[ index-16 ] = value;
+  else
+    this.first16[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL16UInt16Array.set!( UInt32 nb, UInt32 valuesOffset, UInt16 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new UInt16 value to the end of the array
+inline LocalL16UInt16Array.push!( UInt16 value ) {
+  if( this.count >> 4 )
+    this.others.push( value );
+  else
+    this.first16[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL16UInt16Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL32UInt16Array is an efficient container for 
+/// storing UInt16 values, where up to 32 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 32.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL32UInt16Array {
+  UInt16 first32[32];
+  UInt16 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL32UInt16Array
+function LocalL32UInt16Array.=( LocalL32UInt16Array other ) {
+  if( other.count <= 32 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first32[i] = other.first32[i];
+    UInt32 end = this.count;
+    if( end > 32 )
+      end = 32;
+    for( Size i = other.count; i < end; ++i )
+      this.first32[i] = 0;
+  } else {
+    this.first32 = other.first32;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL32UInt16Array( LocalL32UInt16Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL32UInt16Array.getMemUsage?() {
+  return 32*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL32UInt16Array with another one
+function swap( io LocalL32UInt16Array first, io LocalL32UInt16Array second ) {
+  UInt16 tempFirst32[32] = first.first32;
+  first.first32 = second.first32;
+  second.first32 = tempFirst32;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of UInt16 elements stored).
+inline UInt32 LocalL32UInt16Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL32UInt16Array.resize!( UInt32 size ) {
+  if( size >> 5 )
+    this.others.resize( size-32 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 32 )
+        end = 32;
+      for( UInt32 i = size; i != end; ++i )
+        this.first32[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL32UInt16Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 5 )
+    this.others.resize( size-32 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline UInt16 LocalL32UInt16Array.get( UInt32 index ) {
+  if( index >> 5 )
+    return this.others[ index-32 ];
+  else
+    return this.first32[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL32UInt16Array.set!( UInt32 index, UInt16 value ) {
+  if( index >> 5 )
+    this.others[ index-32 ] = value;
+  else
+    this.first32[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL32UInt16Array.set!( UInt32 nb, UInt32 valuesOffset, UInt16 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new UInt16 value to the end of the array
+inline LocalL32UInt16Array.push!( UInt16 value ) {
+  if( this.count >> 5 )
+    this.others.push( value );
+  else
+    this.first32[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL32UInt16Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL64UInt16Array is an efficient container for 
+/// storing UInt16 values, where up to 64 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 64.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL64UInt16Array {
+  UInt16 first64[64];
+  UInt16 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL64UInt16Array
+function LocalL64UInt16Array.=( LocalL64UInt16Array other ) {
+  if( other.count <= 64 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first64[i] = other.first64[i];
+    UInt32 end = this.count;
+    if( end > 64 )
+      end = 64;
+    for( Size i = other.count; i < end; ++i )
+      this.first64[i] = 0;
+  } else {
+    this.first64 = other.first64;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL64UInt16Array( LocalL64UInt16Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL64UInt16Array.getMemUsage?() {
+  return 64*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL64UInt16Array with another one
+function swap( io LocalL64UInt16Array first, io LocalL64UInt16Array second ) {
+  UInt16 tempFirst64[64] = first.first64;
+  first.first64 = second.first64;
+  second.first64 = tempFirst64;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of UInt16 elements stored).
+inline UInt32 LocalL64UInt16Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL64UInt16Array.resize!( UInt32 size ) {
+  if( size >> 6 )
+    this.others.resize( size-64 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 64 )
+        end = 64;
+      for( UInt32 i = size; i != end; ++i )
+        this.first64[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL64UInt16Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 6 )
+    this.others.resize( size-64 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline UInt16 LocalL64UInt16Array.get( UInt32 index ) {
+  if( index >> 6 )
+    return this.others[ index-64 ];
+  else
+    return this.first64[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL64UInt16Array.set!( UInt32 index, UInt16 value ) {
+  if( index >> 6 )
+    this.others[ index-64 ] = value;
+  else
+    this.first64[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL64UInt16Array.set!( UInt32 nb, UInt32 valuesOffset, UInt16 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new UInt16 value to the end of the array
+inline LocalL64UInt16Array.push!( UInt16 value ) {
+  if( this.count >> 6 )
+    this.others.push( value );
+  else
+    this.first64[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL64UInt16Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL4UInt32Array is an efficient container for 
+/// storing UInt32 values, where up to 4 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 4.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL4UInt32Array {
+  UInt32 first4[4];
+  UInt32 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL4UInt32Array
+function LocalL4UInt32Array.=( LocalL4UInt32Array other ) {
+  if( other.count <= 4 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first4[i] = other.first4[i];
+    UInt32 end = this.count;
+    if( end > 4 )
+      end = 4;
+    for( Size i = other.count; i < end; ++i )
+      this.first4[i] = 0;
+  } else {
+    this.first4 = other.first4;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL4UInt32Array( LocalL4UInt32Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL4UInt32Array.getMemUsage?() {
+  return 4*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL4UInt32Array with another one
+function swap( io LocalL4UInt32Array first, io LocalL4UInt32Array second ) {
+  UInt32 tempFirst4[4] = first.first4;
+  first.first4 = second.first4;
+  second.first4 = tempFirst4;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of UInt32 elements stored).
+inline UInt32 LocalL4UInt32Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL4UInt32Array.resize!( UInt32 size ) {
+  if( size >> 2 )
+    this.others.resize( size-4 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 4 )
+        end = 4;
+      for( UInt32 i = size; i != end; ++i )
+        this.first4[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL4UInt32Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 2 )
+    this.others.resize( size-4 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline UInt32 LocalL4UInt32Array.get( UInt32 index ) {
+  if( index >> 2 )
+    return this.others[ index-4 ];
+  else
+    return this.first4[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL4UInt32Array.set!( UInt32 index, UInt32 value ) {
+  if( index >> 2 )
+    this.others[ index-4 ] = value;
+  else
+    this.first4[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL4UInt32Array.set!( UInt32 nb, UInt32 valuesOffset, UInt32 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new UInt32 value to the end of the array
+inline LocalL4UInt32Array.push!( UInt32 value ) {
+  if( this.count >> 2 )
+    this.others.push( value );
+  else
+    this.first4[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL4UInt32Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL8UInt32Array is an efficient container for 
+/// storing UInt32 values, where up to 8 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 8.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL8UInt32Array {
+  UInt32 first8[8];
+  UInt32 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL8UInt32Array
+function LocalL8UInt32Array.=( LocalL8UInt32Array other ) {
+  if( other.count <= 8 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first8[i] = other.first8[i];
+    UInt32 end = this.count;
+    if( end > 8 )
+      end = 8;
+    for( Size i = other.count; i < end; ++i )
+      this.first8[i] = 0;
+  } else {
+    this.first8 = other.first8;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL8UInt32Array( LocalL8UInt32Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL8UInt32Array.getMemUsage?() {
+  return 8*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL8UInt32Array with another one
+function swap( io LocalL8UInt32Array first, io LocalL8UInt32Array second ) {
+  UInt32 tempFirst8[8] = first.first8;
+  first.first8 = second.first8;
+  second.first8 = tempFirst8;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of UInt32 elements stored).
+inline UInt32 LocalL8UInt32Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL8UInt32Array.resize!( UInt32 size ) {
+  if( size >> 3 )
+    this.others.resize( size-8 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 8 )
+        end = 8;
+      for( UInt32 i = size; i != end; ++i )
+        this.first8[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL8UInt32Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 3 )
+    this.others.resize( size-8 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline UInt32 LocalL8UInt32Array.get( UInt32 index ) {
+  if( index >> 3 )
+    return this.others[ index-8 ];
+  else
+    return this.first8[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL8UInt32Array.set!( UInt32 index, UInt32 value ) {
+  if( index >> 3 )
+    this.others[ index-8 ] = value;
+  else
+    this.first8[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL8UInt32Array.set!( UInt32 nb, UInt32 valuesOffset, UInt32 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new UInt32 value to the end of the array
+inline LocalL8UInt32Array.push!( UInt32 value ) {
+  if( this.count >> 3 )
+    this.others.push( value );
+  else
+    this.first8[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL8UInt32Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL16UInt32Array is an efficient container for 
+/// storing UInt32 values, where up to 16 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 16.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL16UInt32Array {
+  UInt32 first16[16];
+  UInt32 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL16UInt32Array
+function LocalL16UInt32Array.=( LocalL16UInt32Array other ) {
+  if( other.count <= 16 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first16[i] = other.first16[i];
+    UInt32 end = this.count;
+    if( end > 16 )
+      end = 16;
+    for( Size i = other.count; i < end; ++i )
+      this.first16[i] = 0;
+  } else {
+    this.first16 = other.first16;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL16UInt32Array( LocalL16UInt32Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL16UInt32Array.getMemUsage?() {
+  return 16*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL16UInt32Array with another one
+function swap( io LocalL16UInt32Array first, io LocalL16UInt32Array second ) {
+  UInt32 tempFirst16[16] = first.first16;
+  first.first16 = second.first16;
+  second.first16 = tempFirst16;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of UInt32 elements stored).
+inline UInt32 LocalL16UInt32Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL16UInt32Array.resize!( UInt32 size ) {
+  if( size >> 4 )
+    this.others.resize( size-16 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 16 )
+        end = 16;
+      for( UInt32 i = size; i != end; ++i )
+        this.first16[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL16UInt32Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 4 )
+    this.others.resize( size-16 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline UInt32 LocalL16UInt32Array.get( UInt32 index ) {
+  if( index >> 4 )
+    return this.others[ index-16 ];
+  else
+    return this.first16[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL16UInt32Array.set!( UInt32 index, UInt32 value ) {
+  if( index >> 4 )
+    this.others[ index-16 ] = value;
+  else
+    this.first16[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL16UInt32Array.set!( UInt32 nb, UInt32 valuesOffset, UInt32 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new UInt32 value to the end of the array
+inline LocalL16UInt32Array.push!( UInt32 value ) {
+  if( this.count >> 4 )
+    this.others.push( value );
+  else
+    this.first16[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL16UInt32Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL32UInt32Array is an efficient container for 
+/// storing UInt32 values, where up to 32 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 32.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL32UInt32Array {
+  UInt32 first32[32];
+  UInt32 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL32UInt32Array
+function LocalL32UInt32Array.=( LocalL32UInt32Array other ) {
+  if( other.count <= 32 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first32[i] = other.first32[i];
+    UInt32 end = this.count;
+    if( end > 32 )
+      end = 32;
+    for( Size i = other.count; i < end; ++i )
+      this.first32[i] = 0;
+  } else {
+    this.first32 = other.first32;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL32UInt32Array( LocalL32UInt32Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL32UInt32Array.getMemUsage?() {
+  return 32*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL32UInt32Array with another one
+function swap( io LocalL32UInt32Array first, io LocalL32UInt32Array second ) {
+  UInt32 tempFirst32[32] = first.first32;
+  first.first32 = second.first32;
+  second.first32 = tempFirst32;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of UInt32 elements stored).
+inline UInt32 LocalL32UInt32Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL32UInt32Array.resize!( UInt32 size ) {
+  if( size >> 5 )
+    this.others.resize( size-32 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 32 )
+        end = 32;
+      for( UInt32 i = size; i != end; ++i )
+        this.first32[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL32UInt32Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 5 )
+    this.others.resize( size-32 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline UInt32 LocalL32UInt32Array.get( UInt32 index ) {
+  if( index >> 5 )
+    return this.others[ index-32 ];
+  else
+    return this.first32[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL32UInt32Array.set!( UInt32 index, UInt32 value ) {
+  if( index >> 5 )
+    this.others[ index-32 ] = value;
+  else
+    this.first32[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL32UInt32Array.set!( UInt32 nb, UInt32 valuesOffset, UInt32 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new UInt32 value to the end of the array
+inline LocalL32UInt32Array.push!( UInt32 value ) {
+  if( this.count >> 5 )
+    this.others.push( value );
+  else
+    this.first32[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL32UInt32Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL64UInt32Array is an efficient container for 
+/// storing UInt32 values, where up to 64 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 64.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL64UInt32Array {
+  UInt32 first64[64];
+  UInt32 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL64UInt32Array
+function LocalL64UInt32Array.=( LocalL64UInt32Array other ) {
+  if( other.count <= 64 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first64[i] = other.first64[i];
+    UInt32 end = this.count;
+    if( end > 64 )
+      end = 64;
+    for( Size i = other.count; i < end; ++i )
+      this.first64[i] = 0;
+  } else {
+    this.first64 = other.first64;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL64UInt32Array( LocalL64UInt32Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL64UInt32Array.getMemUsage?() {
+  return 64*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL64UInt32Array with another one
+function swap( io LocalL64UInt32Array first, io LocalL64UInt32Array second ) {
+  UInt32 tempFirst64[64] = first.first64;
+  first.first64 = second.first64;
+  second.first64 = tempFirst64;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of UInt32 elements stored).
+inline UInt32 LocalL64UInt32Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL64UInt32Array.resize!( UInt32 size ) {
+  if( size >> 6 )
+    this.others.resize( size-64 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 64 )
+        end = 64;
+      for( UInt32 i = size; i != end; ++i )
+        this.first64[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL64UInt32Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 6 )
+    this.others.resize( size-64 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline UInt32 LocalL64UInt32Array.get( UInt32 index ) {
+  if( index >> 6 )
+    return this.others[ index-64 ];
+  else
+    return this.first64[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL64UInt32Array.set!( UInt32 index, UInt32 value ) {
+  if( index >> 6 )
+    this.others[ index-64 ] = value;
+  else
+    this.first64[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL64UInt32Array.set!( UInt32 nb, UInt32 valuesOffset, UInt32 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new UInt32 value to the end of the array
+inline LocalL64UInt32Array.push!( UInt32 value ) {
+  if( this.count >> 6 )
+    this.others.push( value );
+  else
+    this.first64[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL64UInt32Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL4UInt64Array is an efficient container for 
+/// storing UInt64 values, where up to 4 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 4.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL4UInt64Array {
+  UInt64 first4[4];
+  UInt64 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL4UInt64Array
+function LocalL4UInt64Array.=( LocalL4UInt64Array other ) {
+  if( other.count <= 4 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first4[i] = other.first4[i];
+    UInt32 end = this.count;
+    if( end > 4 )
+      end = 4;
+    for( Size i = other.count; i < end; ++i )
+      this.first4[i] = 0;
+  } else {
+    this.first4 = other.first4;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL4UInt64Array( LocalL4UInt64Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL4UInt64Array.getMemUsage?() {
+  return 4*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL4UInt64Array with another one
+function swap( io LocalL4UInt64Array first, io LocalL4UInt64Array second ) {
+  UInt64 tempFirst4[4] = first.first4;
+  first.first4 = second.first4;
+  second.first4 = tempFirst4;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of UInt64 elements stored).
+inline UInt32 LocalL4UInt64Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL4UInt64Array.resize!( UInt32 size ) {
+  if( size >> 2 )
+    this.others.resize( size-4 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 4 )
+        end = 4;
+      for( UInt32 i = size; i != end; ++i )
+        this.first4[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL4UInt64Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 2 )
+    this.others.resize( size-4 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline UInt64 LocalL4UInt64Array.get( UInt32 index ) {
+  if( index >> 2 )
+    return this.others[ index-4 ];
+  else
+    return this.first4[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL4UInt64Array.set!( UInt32 index, UInt64 value ) {
+  if( index >> 2 )
+    this.others[ index-4 ] = value;
+  else
+    this.first4[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL4UInt64Array.set!( UInt32 nb, UInt32 valuesOffset, UInt64 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new UInt64 value to the end of the array
+inline LocalL4UInt64Array.push!( UInt64 value ) {
+  if( this.count >> 2 )
+    this.others.push( value );
+  else
+    this.first4[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL4UInt64Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL8UInt64Array is an efficient container for 
+/// storing UInt64 values, where up to 8 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 8.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL8UInt64Array {
+  UInt64 first8[8];
+  UInt64 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL8UInt64Array
+function LocalL8UInt64Array.=( LocalL8UInt64Array other ) {
+  if( other.count <= 8 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first8[i] = other.first8[i];
+    UInt32 end = this.count;
+    if( end > 8 )
+      end = 8;
+    for( Size i = other.count; i < end; ++i )
+      this.first8[i] = 0;
+  } else {
+    this.first8 = other.first8;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL8UInt64Array( LocalL8UInt64Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL8UInt64Array.getMemUsage?() {
+  return 8*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL8UInt64Array with another one
+function swap( io LocalL8UInt64Array first, io LocalL8UInt64Array second ) {
+  UInt64 tempFirst8[8] = first.first8;
+  first.first8 = second.first8;
+  second.first8 = tempFirst8;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of UInt64 elements stored).
+inline UInt32 LocalL8UInt64Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL8UInt64Array.resize!( UInt32 size ) {
+  if( size >> 3 )
+    this.others.resize( size-8 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 8 )
+        end = 8;
+      for( UInt32 i = size; i != end; ++i )
+        this.first8[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL8UInt64Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 3 )
+    this.others.resize( size-8 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline UInt64 LocalL8UInt64Array.get( UInt32 index ) {
+  if( index >> 3 )
+    return this.others[ index-8 ];
+  else
+    return this.first8[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL8UInt64Array.set!( UInt32 index, UInt64 value ) {
+  if( index >> 3 )
+    this.others[ index-8 ] = value;
+  else
+    this.first8[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL8UInt64Array.set!( UInt32 nb, UInt32 valuesOffset, UInt64 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new UInt64 value to the end of the array
+inline LocalL8UInt64Array.push!( UInt64 value ) {
+  if( this.count >> 3 )
+    this.others.push( value );
+  else
+    this.first8[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL8UInt64Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL16UInt64Array is an efficient container for 
+/// storing UInt64 values, where up to 16 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 16.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL16UInt64Array {
+  UInt64 first16[16];
+  UInt64 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL16UInt64Array
+function LocalL16UInt64Array.=( LocalL16UInt64Array other ) {
+  if( other.count <= 16 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first16[i] = other.first16[i];
+    UInt32 end = this.count;
+    if( end > 16 )
+      end = 16;
+    for( Size i = other.count; i < end; ++i )
+      this.first16[i] = 0;
+  } else {
+    this.first16 = other.first16;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL16UInt64Array( LocalL16UInt64Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL16UInt64Array.getMemUsage?() {
+  return 16*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL16UInt64Array with another one
+function swap( io LocalL16UInt64Array first, io LocalL16UInt64Array second ) {
+  UInt64 tempFirst16[16] = first.first16;
+  first.first16 = second.first16;
+  second.first16 = tempFirst16;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of UInt64 elements stored).
+inline UInt32 LocalL16UInt64Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL16UInt64Array.resize!( UInt32 size ) {
+  if( size >> 4 )
+    this.others.resize( size-16 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 16 )
+        end = 16;
+      for( UInt32 i = size; i != end; ++i )
+        this.first16[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL16UInt64Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 4 )
+    this.others.resize( size-16 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline UInt64 LocalL16UInt64Array.get( UInt32 index ) {
+  if( index >> 4 )
+    return this.others[ index-16 ];
+  else
+    return this.first16[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL16UInt64Array.set!( UInt32 index, UInt64 value ) {
+  if( index >> 4 )
+    this.others[ index-16 ] = value;
+  else
+    this.first16[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL16UInt64Array.set!( UInt32 nb, UInt32 valuesOffset, UInt64 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new UInt64 value to the end of the array
+inline LocalL16UInt64Array.push!( UInt64 value ) {
+  if( this.count >> 4 )
+    this.others.push( value );
+  else
+    this.first16[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL16UInt64Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL32UInt64Array is an efficient container for 
+/// storing UInt64 values, where up to 32 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 32.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL32UInt64Array {
+  UInt64 first32[32];
+  UInt64 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL32UInt64Array
+function LocalL32UInt64Array.=( LocalL32UInt64Array other ) {
+  if( other.count <= 32 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first32[i] = other.first32[i];
+    UInt32 end = this.count;
+    if( end > 32 )
+      end = 32;
+    for( Size i = other.count; i < end; ++i )
+      this.first32[i] = 0;
+  } else {
+    this.first32 = other.first32;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL32UInt64Array( LocalL32UInt64Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL32UInt64Array.getMemUsage?() {
+  return 32*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL32UInt64Array with another one
+function swap( io LocalL32UInt64Array first, io LocalL32UInt64Array second ) {
+  UInt64 tempFirst32[32] = first.first32;
+  first.first32 = second.first32;
+  second.first32 = tempFirst32;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of UInt64 elements stored).
+inline UInt32 LocalL32UInt64Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL32UInt64Array.resize!( UInt32 size ) {
+  if( size >> 5 )
+    this.others.resize( size-32 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 32 )
+        end = 32;
+      for( UInt32 i = size; i != end; ++i )
+        this.first32[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL32UInt64Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 5 )
+    this.others.resize( size-32 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline UInt64 LocalL32UInt64Array.get( UInt32 index ) {
+  if( index >> 5 )
+    return this.others[ index-32 ];
+  else
+    return this.first32[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL32UInt64Array.set!( UInt32 index, UInt64 value ) {
+  if( index >> 5 )
+    this.others[ index-32 ] = value;
+  else
+    this.first32[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL32UInt64Array.set!( UInt32 nb, UInt32 valuesOffset, UInt64 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new UInt64 value to the end of the array
+inline LocalL32UInt64Array.push!( UInt64 value ) {
+  if( this.count >> 5 )
+    this.others.push( value );
+  else
+    this.first32[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL32UInt64Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL64UInt64Array is an efficient container for 
+/// storing UInt64 values, where up to 64 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 64.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL64UInt64Array {
+  UInt64 first64[64];
+  UInt64 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL64UInt64Array
+function LocalL64UInt64Array.=( LocalL64UInt64Array other ) {
+  if( other.count <= 64 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first64[i] = other.first64[i];
+    UInt32 end = this.count;
+    if( end > 64 )
+      end = 64;
+    for( Size i = other.count; i < end; ++i )
+      this.first64[i] = 0;
+  } else {
+    this.first64 = other.first64;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL64UInt64Array( LocalL64UInt64Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL64UInt64Array.getMemUsage?() {
+  return 64*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL64UInt64Array with another one
+function swap( io LocalL64UInt64Array first, io LocalL64UInt64Array second ) {
+  UInt64 tempFirst64[64] = first.first64;
+  first.first64 = second.first64;
+  second.first64 = tempFirst64;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of UInt64 elements stored).
+inline UInt32 LocalL64UInt64Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL64UInt64Array.resize!( UInt32 size ) {
+  if( size >> 6 )
+    this.others.resize( size-64 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 64 )
+        end = 64;
+      for( UInt32 i = size; i != end; ++i )
+        this.first64[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL64UInt64Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 6 )
+    this.others.resize( size-64 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline UInt64 LocalL64UInt64Array.get( UInt32 index ) {
+  if( index >> 6 )
+    return this.others[ index-64 ];
+  else
+    return this.first64[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL64UInt64Array.set!( UInt32 index, UInt64 value ) {
+  if( index >> 6 )
+    this.others[ index-64 ] = value;
+  else
+    this.first64[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL64UInt64Array.set!( UInt32 nb, UInt32 valuesOffset, UInt64 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new UInt64 value to the end of the array
+inline LocalL64UInt64Array.push!( UInt64 value ) {
+  if( this.count >> 6 )
+    this.others.push( value );
+  else
+    this.first64[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL64UInt64Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL4SInt32Array is an efficient container for 
+/// storing SInt32 values, where up to 4 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 4.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL4SInt32Array {
+  SInt32 first4[4];
+  SInt32 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL4SInt32Array
+function LocalL4SInt32Array.=( LocalL4SInt32Array other ) {
+  if( other.count <= 4 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first4[i] = other.first4[i];
+    UInt32 end = this.count;
+    if( end > 4 )
+      end = 4;
+    for( Size i = other.count; i < end; ++i )
+      this.first4[i] = 0;
+  } else {
+    this.first4 = other.first4;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL4SInt32Array( LocalL4SInt32Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL4SInt32Array.getMemUsage?() {
+  return 4*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL4SInt32Array with another one
+function swap( io LocalL4SInt32Array first, io LocalL4SInt32Array second ) {
+  SInt32 tempFirst4[4] = first.first4;
+  first.first4 = second.first4;
+  second.first4 = tempFirst4;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of SInt32 elements stored).
+inline UInt32 LocalL4SInt32Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL4SInt32Array.resize!( UInt32 size ) {
+  if( size >> 2 )
+    this.others.resize( size-4 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 4 )
+        end = 4;
+      for( UInt32 i = size; i != end; ++i )
+        this.first4[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL4SInt32Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 2 )
+    this.others.resize( size-4 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline SInt32 LocalL4SInt32Array.get( UInt32 index ) {
+  if( index >> 2 )
+    return this.others[ index-4 ];
+  else
+    return this.first4[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL4SInt32Array.set!( UInt32 index, SInt32 value ) {
+  if( index >> 2 )
+    this.others[ index-4 ] = value;
+  else
+    this.first4[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL4SInt32Array.set!( UInt32 nb, UInt32 valuesOffset, SInt32 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new SInt32 value to the end of the array
+inline LocalL4SInt32Array.push!( SInt32 value ) {
+  if( this.count >> 2 )
+    this.others.push( value );
+  else
+    this.first4[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL4SInt32Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL8SInt32Array is an efficient container for 
+/// storing SInt32 values, where up to 8 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 8.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL8SInt32Array {
+  SInt32 first8[8];
+  SInt32 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL8SInt32Array
+function LocalL8SInt32Array.=( LocalL8SInt32Array other ) {
+  if( other.count <= 8 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first8[i] = other.first8[i];
+    UInt32 end = this.count;
+    if( end > 8 )
+      end = 8;
+    for( Size i = other.count; i < end; ++i )
+      this.first8[i] = 0;
+  } else {
+    this.first8 = other.first8;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL8SInt32Array( LocalL8SInt32Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL8SInt32Array.getMemUsage?() {
+  return 8*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL8SInt32Array with another one
+function swap( io LocalL8SInt32Array first, io LocalL8SInt32Array second ) {
+  SInt32 tempFirst8[8] = first.first8;
+  first.first8 = second.first8;
+  second.first8 = tempFirst8;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of SInt32 elements stored).
+inline UInt32 LocalL8SInt32Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL8SInt32Array.resize!( UInt32 size ) {
+  if( size >> 3 )
+    this.others.resize( size-8 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 8 )
+        end = 8;
+      for( UInt32 i = size; i != end; ++i )
+        this.first8[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL8SInt32Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 3 )
+    this.others.resize( size-8 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline SInt32 LocalL8SInt32Array.get( UInt32 index ) {
+  if( index >> 3 )
+    return this.others[ index-8 ];
+  else
+    return this.first8[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL8SInt32Array.set!( UInt32 index, SInt32 value ) {
+  if( index >> 3 )
+    this.others[ index-8 ] = value;
+  else
+    this.first8[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL8SInt32Array.set!( UInt32 nb, UInt32 valuesOffset, SInt32 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new SInt32 value to the end of the array
+inline LocalL8SInt32Array.push!( SInt32 value ) {
+  if( this.count >> 3 )
+    this.others.push( value );
+  else
+    this.first8[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL8SInt32Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL16SInt32Array is an efficient container for 
+/// storing SInt32 values, where up to 16 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 16.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL16SInt32Array {
+  SInt32 first16[16];
+  SInt32 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL16SInt32Array
+function LocalL16SInt32Array.=( LocalL16SInt32Array other ) {
+  if( other.count <= 16 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first16[i] = other.first16[i];
+    UInt32 end = this.count;
+    if( end > 16 )
+      end = 16;
+    for( Size i = other.count; i < end; ++i )
+      this.first16[i] = 0;
+  } else {
+    this.first16 = other.first16;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL16SInt32Array( LocalL16SInt32Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL16SInt32Array.getMemUsage?() {
+  return 16*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL16SInt32Array with another one
+function swap( io LocalL16SInt32Array first, io LocalL16SInt32Array second ) {
+  SInt32 tempFirst16[16] = first.first16;
+  first.first16 = second.first16;
+  second.first16 = tempFirst16;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of SInt32 elements stored).
+inline UInt32 LocalL16SInt32Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL16SInt32Array.resize!( UInt32 size ) {
+  if( size >> 4 )
+    this.others.resize( size-16 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 16 )
+        end = 16;
+      for( UInt32 i = size; i != end; ++i )
+        this.first16[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL16SInt32Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 4 )
+    this.others.resize( size-16 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline SInt32 LocalL16SInt32Array.get( UInt32 index ) {
+  if( index >> 4 )
+    return this.others[ index-16 ];
+  else
+    return this.first16[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL16SInt32Array.set!( UInt32 index, SInt32 value ) {
+  if( index >> 4 )
+    this.others[ index-16 ] = value;
+  else
+    this.first16[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL16SInt32Array.set!( UInt32 nb, UInt32 valuesOffset, SInt32 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new SInt32 value to the end of the array
+inline LocalL16SInt32Array.push!( SInt32 value ) {
+  if( this.count >> 4 )
+    this.others.push( value );
+  else
+    this.first16[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL16SInt32Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL32SInt32Array is an efficient container for 
+/// storing SInt32 values, where up to 32 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 32.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL32SInt32Array {
+  SInt32 first32[32];
+  SInt32 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL32SInt32Array
+function LocalL32SInt32Array.=( LocalL32SInt32Array other ) {
+  if( other.count <= 32 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first32[i] = other.first32[i];
+    UInt32 end = this.count;
+    if( end > 32 )
+      end = 32;
+    for( Size i = other.count; i < end; ++i )
+      this.first32[i] = 0;
+  } else {
+    this.first32 = other.first32;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL32SInt32Array( LocalL32SInt32Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL32SInt32Array.getMemUsage?() {
+  return 32*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL32SInt32Array with another one
+function swap( io LocalL32SInt32Array first, io LocalL32SInt32Array second ) {
+  SInt32 tempFirst32[32] = first.first32;
+  first.first32 = second.first32;
+  second.first32 = tempFirst32;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of SInt32 elements stored).
+inline UInt32 LocalL32SInt32Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL32SInt32Array.resize!( UInt32 size ) {
+  if( size >> 5 )
+    this.others.resize( size-32 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 32 )
+        end = 32;
+      for( UInt32 i = size; i != end; ++i )
+        this.first32[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL32SInt32Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 5 )
+    this.others.resize( size-32 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline SInt32 LocalL32SInt32Array.get( UInt32 index ) {
+  if( index >> 5 )
+    return this.others[ index-32 ];
+  else
+    return this.first32[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL32SInt32Array.set!( UInt32 index, SInt32 value ) {
+  if( index >> 5 )
+    this.others[ index-32 ] = value;
+  else
+    this.first32[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL32SInt32Array.set!( UInt32 nb, UInt32 valuesOffset, SInt32 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new SInt32 value to the end of the array
+inline LocalL32SInt32Array.push!( SInt32 value ) {
+  if( this.count >> 5 )
+    this.others.push( value );
+  else
+    this.first32[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL32SInt32Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL64SInt32Array is an efficient container for 
+/// storing SInt32 values, where up to 64 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 64.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL64SInt32Array {
+  SInt32 first64[64];
+  SInt32 others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL64SInt32Array
+function LocalL64SInt32Array.=( LocalL64SInt32Array other ) {
+  if( other.count <= 64 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first64[i] = other.first64[i];
+    UInt32 end = this.count;
+    if( end > 64 )
+      end = 64;
+    for( Size i = other.count; i < end; ++i )
+      this.first64[i] = 0;
+  } else {
+    this.first64 = other.first64;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL64SInt32Array( LocalL64SInt32Array other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL64SInt32Array.getMemUsage?() {
+  return 64*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL64SInt32Array with another one
+function swap( io LocalL64SInt32Array first, io LocalL64SInt32Array second ) {
+  SInt32 tempFirst64[64] = first.first64;
+  first.first64 = second.first64;
+  second.first64 = tempFirst64;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of SInt32 elements stored).
+inline UInt32 LocalL64SInt32Array.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL64SInt32Array.resize!( UInt32 size ) {
+  if( size >> 6 )
+    this.others.resize( size-64 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 64 )
+        end = 64;
+      for( UInt32 i = size; i != end; ++i )
+        this.first64[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL64SInt32Array.resizeNoClear!( UInt32 size ) {
+  if( size >> 6 )
+    this.others.resize( size-64 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline SInt32 LocalL64SInt32Array.get( UInt32 index ) {
+  if( index >> 6 )
+    return this.others[ index-64 ];
+  else
+    return this.first64[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL64SInt32Array.set!( UInt32 index, SInt32 value ) {
+  if( index >> 6 )
+    this.others[ index-64 ] = value;
+  else
+    this.first64[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL64SInt32Array.set!( UInt32 nb, UInt32 valuesOffset, SInt32 values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new SInt32 value to the end of the array
+inline LocalL64SInt32Array.push!( SInt32 value ) {
+  if( this.count >> 6 )
+    this.others.push( value );
+  else
+    this.first64[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL64SInt32Array.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL4ScalarArray is an efficient container for 
+/// storing Scalar values, where up to 4 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 4.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL4ScalarArray {
+  Scalar first4[4];
+  Scalar others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL4ScalarArray
+function LocalL4ScalarArray.=( LocalL4ScalarArray other ) {
+  if( other.count <= 4 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first4[i] = other.first4[i];
+    UInt32 end = this.count;
+    if( end > 4 )
+      end = 4;
+    for( Size i = other.count; i < end; ++i )
+      this.first4[i] = 0;
+  } else {
+    this.first4 = other.first4;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL4ScalarArray( LocalL4ScalarArray other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL4ScalarArray.getMemUsage?() {
+  return 4*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL4ScalarArray with another one
+function swap( io LocalL4ScalarArray first, io LocalL4ScalarArray second ) {
+  Scalar tempFirst4[4] = first.first4;
+  first.first4 = second.first4;
+  second.first4 = tempFirst4;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of Scalar elements stored).
+inline UInt32 LocalL4ScalarArray.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL4ScalarArray.resize!( UInt32 size ) {
+  if( size >> 2 )
+    this.others.resize( size-4 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 4 )
+        end = 4;
+      for( UInt32 i = size; i != end; ++i )
+        this.first4[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL4ScalarArray.resizeNoClear!( UInt32 size ) {
+  if( size >> 2 )
+    this.others.resize( size-4 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline Scalar LocalL4ScalarArray.get( UInt32 index ) {
+  if( index >> 2 )
+    return this.others[ index-4 ];
+  else
+    return this.first4[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL4ScalarArray.set!( UInt32 index, Scalar value ) {
+  if( index >> 2 )
+    this.others[ index-4 ] = value;
+  else
+    this.first4[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL4ScalarArray.set!( UInt32 nb, UInt32 valuesOffset, Scalar values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new Scalar value to the end of the array
+inline LocalL4ScalarArray.push!( Scalar value ) {
+  if( this.count >> 2 )
+    this.others.push( value );
+  else
+    this.first4[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL4ScalarArray.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL8ScalarArray is an efficient container for 
+/// storing Scalar values, where up to 8 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 8.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL8ScalarArray {
+  Scalar first8[8];
+  Scalar others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL8ScalarArray
+function LocalL8ScalarArray.=( LocalL8ScalarArray other ) {
+  if( other.count <= 8 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first8[i] = other.first8[i];
+    UInt32 end = this.count;
+    if( end > 8 )
+      end = 8;
+    for( Size i = other.count; i < end; ++i )
+      this.first8[i] = 0;
+  } else {
+    this.first8 = other.first8;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL8ScalarArray( LocalL8ScalarArray other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL8ScalarArray.getMemUsage?() {
+  return 8*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL8ScalarArray with another one
+function swap( io LocalL8ScalarArray first, io LocalL8ScalarArray second ) {
+  Scalar tempFirst8[8] = first.first8;
+  first.first8 = second.first8;
+  second.first8 = tempFirst8;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of Scalar elements stored).
+inline UInt32 LocalL8ScalarArray.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL8ScalarArray.resize!( UInt32 size ) {
+  if( size >> 3 )
+    this.others.resize( size-8 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 8 )
+        end = 8;
+      for( UInt32 i = size; i != end; ++i )
+        this.first8[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL8ScalarArray.resizeNoClear!( UInt32 size ) {
+  if( size >> 3 )
+    this.others.resize( size-8 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline Scalar LocalL8ScalarArray.get( UInt32 index ) {
+  if( index >> 3 )
+    return this.others[ index-8 ];
+  else
+    return this.first8[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL8ScalarArray.set!( UInt32 index, Scalar value ) {
+  if( index >> 3 )
+    this.others[ index-8 ] = value;
+  else
+    this.first8[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL8ScalarArray.set!( UInt32 nb, UInt32 valuesOffset, Scalar values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new Scalar value to the end of the array
+inline LocalL8ScalarArray.push!( Scalar value ) {
+  if( this.count >> 3 )
+    this.others.push( value );
+  else
+    this.first8[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL8ScalarArray.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL16ScalarArray is an efficient container for 
+/// storing Scalar values, where up to 16 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 16.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL16ScalarArray {
+  Scalar first16[16];
+  Scalar others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL16ScalarArray
+function LocalL16ScalarArray.=( LocalL16ScalarArray other ) {
+  if( other.count <= 16 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first16[i] = other.first16[i];
+    UInt32 end = this.count;
+    if( end > 16 )
+      end = 16;
+    for( Size i = other.count; i < end; ++i )
+      this.first16[i] = 0;
+  } else {
+    this.first16 = other.first16;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL16ScalarArray( LocalL16ScalarArray other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL16ScalarArray.getMemUsage?() {
+  return 16*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL16ScalarArray with another one
+function swap( io LocalL16ScalarArray first, io LocalL16ScalarArray second ) {
+  Scalar tempFirst16[16] = first.first16;
+  first.first16 = second.first16;
+  second.first16 = tempFirst16;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of Scalar elements stored).
+inline UInt32 LocalL16ScalarArray.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL16ScalarArray.resize!( UInt32 size ) {
+  if( size >> 4 )
+    this.others.resize( size-16 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 16 )
+        end = 16;
+      for( UInt32 i = size; i != end; ++i )
+        this.first16[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL16ScalarArray.resizeNoClear!( UInt32 size ) {
+  if( size >> 4 )
+    this.others.resize( size-16 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline Scalar LocalL16ScalarArray.get( UInt32 index ) {
+  if( index >> 4 )
+    return this.others[ index-16 ];
+  else
+    return this.first16[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL16ScalarArray.set!( UInt32 index, Scalar value ) {
+  if( index >> 4 )
+    this.others[ index-16 ] = value;
+  else
+    this.first16[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL16ScalarArray.set!( UInt32 nb, UInt32 valuesOffset, Scalar values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new Scalar value to the end of the array
+inline LocalL16ScalarArray.push!( Scalar value ) {
+  if( this.count >> 4 )
+    this.others.push( value );
+  else
+    this.first16[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL16ScalarArray.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL32ScalarArray is an efficient container for 
+/// storing Scalar values, where up to 32 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 32.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL32ScalarArray {
+  Scalar first32[32];
+  Scalar others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL32ScalarArray
+function LocalL32ScalarArray.=( LocalL32ScalarArray other ) {
+  if( other.count <= 32 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first32[i] = other.first32[i];
+    UInt32 end = this.count;
+    if( end > 32 )
+      end = 32;
+    for( Size i = other.count; i < end; ++i )
+      this.first32[i] = 0;
+  } else {
+    this.first32 = other.first32;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL32ScalarArray( LocalL32ScalarArray other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL32ScalarArray.getMemUsage?() {
+  return 32*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL32ScalarArray with another one
+function swap( io LocalL32ScalarArray first, io LocalL32ScalarArray second ) {
+  Scalar tempFirst32[32] = first.first32;
+  first.first32 = second.first32;
+  second.first32 = tempFirst32;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of Scalar elements stored).
+inline UInt32 LocalL32ScalarArray.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL32ScalarArray.resize!( UInt32 size ) {
+  if( size >> 5 )
+    this.others.resize( size-32 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 32 )
+        end = 32;
+      for( UInt32 i = size; i != end; ++i )
+        this.first32[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL32ScalarArray.resizeNoClear!( UInt32 size ) {
+  if( size >> 5 )
+    this.others.resize( size-32 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline Scalar LocalL32ScalarArray.get( UInt32 index ) {
+  if( index >> 5 )
+    return this.others[ index-32 ];
+  else
+    return this.first32[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL32ScalarArray.set!( UInt32 index, Scalar value ) {
+  if( index >> 5 )
+    this.others[ index-32 ] = value;
+  else
+    this.first32[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL32ScalarArray.set!( UInt32 nb, UInt32 valuesOffset, Scalar values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new Scalar value to the end of the array
+inline LocalL32ScalarArray.push!( Scalar value ) {
+  if( this.count >> 5 )
+    this.others.push( value );
+  else
+    this.first32[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL32ScalarArray.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}
+//-----------------------------------------------------------------------------------
+
+/// The LocalL64ScalarArray is an efficient container for 
+/// storing Scalar values, where up to 64 values can be added
+/// without requiring memory allocations on the heap. This allows to efficiently
+/// contain array of values, where arrays are usually smaller than 64.
+/// \note Avoiding frequent heap memory allocations can have a significant performance impact. Using this type can avoid the memory allocation overhead in some scenarios (eg: various PolygonMesh methods use local arrays).
+struct LocalL64ScalarArray {
+  Scalar first64[64];
+  Scalar others[];
+  UInt32 count;
+};
+
+/// copy the content of another LocalL64ScalarArray
+function LocalL64ScalarArray.=( LocalL64ScalarArray other ) {
+  if( other.count <= 64 ) {
+    for( Size i = 0; i < other.count; ++i )
+      this.first64[i] = other.first64[i];
+    UInt32 end = this.count;
+    if( end > 64 )
+      end = 64;
+    for( Size i = other.count; i < end; ++i )
+      this.first64[i] = 0;
+  } else {
+    this.first64 = other.first64;
+    this.others = other.others.clone();
+  }
+  this.count = other.count;
+}
+
+/// copy constructor
+inline LocalL64ScalarArray( LocalL64ScalarArray other ) {
+  this = other;
+}
+
+/// \internal returns the memory usage of this container
+function Size LocalL64ScalarArray.getMemUsage?() {
+  return 64*4 + 8 + 4 + this.others.size()*4;
+}
+
+/// swaps one LocalL64ScalarArray with another one
+function swap( io LocalL64ScalarArray first, io LocalL64ScalarArray second ) {
+  Scalar tempFirst64[64] = first.first64;
+  first.first64 = second.first64;
+  second.first64 = tempFirst64;
+  swap( first.others, second.others );
+  swap( first.count, second.count );
+}
+
+/// returns the size of the array (number of Scalar elements stored).
+inline UInt32 LocalL64ScalarArray.size() {
+  return this.count;
+}
+
+/// resizes the array.
+inline LocalL64ScalarArray.resize!( UInt32 size ) {
+  if( size >> 6 )
+    this.others.resize( size-64 );
+  else
+  {
+    this.others.resize( 0 );
+    if( size < this.count ) {
+      //Initialize mem (could be an option...)
+      UInt32 end = this.count;
+      if( end > 64 )
+        end = 64;
+      for( UInt32 i = size; i != end; ++i )
+        this.first64[i] = 0;
+    }
+  }
+  this.count = size;
+}
+
+/// \internal resizes the array, but doesn't resets unused values to 0 when shrinking
+inline LocalL64ScalarArray.resizeNoClear!( UInt32 size ) {
+  if( size >> 6 )
+    this.others.resize( size-64 );
+  else
+    this.others.resize( 0 );
+  this.count = size;
+}
+
+/// returns the value stored at an index.
+inline Scalar LocalL64ScalarArray.get( UInt32 index ) {
+  if( index >> 6 )
+    return this.others[ index-64 ];
+  else
+    return this.first64[ index ];
+}
+
+/// sets the value stored at an index
+inline LocalL64ScalarArray.set!( UInt32 index, Scalar value ) {
+  if( index >> 6 )
+    this.others[ index-64 ] = value;
+  else
+    this.first64[ index ] = value;
+}
+
+/// \internal sets several values inside the array with an offset and count
+inline LocalL64ScalarArray.set!( UInt32 nb, UInt32 valuesOffset, Scalar values[] ) {
+  this.resize( nb );
+  for( UInt32 i = 0; i < nb; ++i )
+    this.set( i, values[ valuesOffset + i ] );
+}
+
+/// appends a new Scalar value to the end of the array
+inline LocalL64ScalarArray.push!( Scalar value ) {
+  if( this.count >> 6 )
+    this.others.push( value );
+  else
+    this.first64[ this.count ] = value;
+  ++this.count;
+}
+
+/// returns a description of the array as a String
+function String LocalL64ScalarArray.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i != this.count; ++i ) {
+    if( i != 0 )
+      str += ", ";
+    str += this.get(i);
+  }
+  str += "]";
+  return str;
+}

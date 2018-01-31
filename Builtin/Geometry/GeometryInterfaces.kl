@@ -1,0 +1,544 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// The Geometry interface regroups a set of function that should be implemented by every Geometry type.
+/// \dfgTypeColor Color(51, 1, 106)
+interface Geometry {
+
+  /// Returns the debug name used when constructing the geometry.
+  String getDebugName();
+
+  /// Returns the version of the geometry including attribute values
+  UInt32 getVersion();
+
+  /// Returns the version of the geometry structure including the the attribute set (but not attribute values).
+  UInt32 getStructureVersion();
+
+  // Moves the contents of the Geometry to the GPU for use in GPU operators. Does not modify Attribute data location.
+  convertToGPU!();
+
+  // Moves the contents of the Geometry to the CPU for use in GPU operators. Does not modify Attribute data location.
+  convertToCPU!();
+
+  /// Returns the memory location id. CPU = 0, GPU = 1, VSM = 2;
+  UInt32 getMemType();
+
+  /// Returns the number of elements for this Geometry.
+  /// Elements are geometry specific: polygons for PolygonMesh, line segments for Lines, points for Points...
+  Size elementCount();
+
+  /// Returns the local bounding volume of the geometry (typically a bounding box around the point positions)
+  LocalBoundingVolume getBoundingVolume();
+
+  /// Returns the bounding volume of an element.
+  /// Elements are geometry specific: polygons for PolygonMesh, line segments for Lines, points for Points...
+  LocalBoundingVolume getElementBoundingVolume( Size index );
+
+  /// Returns the associated attribute container, if any.
+  /// \note the usage and meaning of attribute values is geometry specific.
+  Ref<GeometryAttributes> getAttributes();
+
+  /// Returns the metaData container for this Geometry.
+  Ref<ThreadsafeMetaDataContainer> getMetaData();
+
+  /// Copies all the data from source Geometry, including attributes.
+  copy!( Geometry src );
+
+  /// Transforms the positions of the geometry (and normals if applicable)
+  applyTransform!( Mat44 transform );
+
+  /// Transforms the positions of the geometry (and normals if applicable)
+  applyTransform!( Xfo transform );
+
+  /// Returns a description of the Geometry.
+  /// \param withAttributes If true, will print all attributes and their values
+  /// \param useUnitTestPrint If true, floats will use a numerically stable, unit test friendly output
+  String getDesc?( Boolean withAttributes, Boolean useUnitTestPrint );
+
+  /// Returns the number of points.
+  Size pointCount();
+
+  /// Returns the position of a point.
+  Vec3 getPointPosition( Size point );
+  
+  /// Sets the positions of a point.
+  setPointPosition!( Size point, Vec3 position );
+
+  /// Returns all point positions
+  Vec3[] getAllPointPositions();
+
+  /// Sets all point positions
+  setAllPointPositions!( Vec3 positions[] );
+};
+
+/// The GeometryLocation struct represents the description of a location on the surface of a geometry 
+/// such as a PolygonMesh. Members' usage is Geometry type specific: see :ref:`geometrylocationstructure` .
+struct GeometryLocation
+{
+  /// Usage is Geometry type specific: see :ref:`geometrylocationstructure` .
+  Size index;
+  /// Usage is Geometry type specific: see :ref:`geometrylocationstructure` .
+  Size subIndex;
+  /// Usage is Geometry type specific: see :ref:`geometrylocationstructure` .
+  Vec3 barycentric;
+};
+
+/// \internal
+inline GeometryLocation() {
+  this.index = InvalidIndex;
+}
+
+/// Returns true if the location data was initialized. However, this is not verifying that the values are valid for a given geometry.
+/// \dfgCreateArrayPreset
+inline Boolean GeometryLocation.isValid() {
+  return this.index != InvalidIndex;
+}
+
+/// Constant for parameter `lineIntersectionType` of :kl-ref:`SpatialQuery.getLineIntersections`
+const UInt8 SpatialQuery_lineIntersection = 0;
+/// Constant for parameter `lineIntersectionType` of :kl-ref:`SpatialQuery.getLineIntersections`
+const UInt8 SpatialQuery_semiLineIntersection = 1;
+/// Constant for parameter `lineIntersectionType` of :kl-ref:`SpatialQuery.getLineIntersections`
+const UInt8 SpatialQuery_segmentIntersection = 2;
+
+/**
+  The SpatialQuery interface wraps a temporary query object that holds the spatial query context for a given SpatialQueryable geometry.
+  To be valid, this query object needs to be used between a :kl-ref:`SpatialQueryable.beginSpatialQuery` and :kl-ref:`SpatialQueryable.endSpatialQuery`
+  bracket, which allows to recycle the SpatialQuery to avoid the cost of memory allocations.
+  See :ref:`spatialqueriesusage` and :ref:`spatialqueryobject` for more details.
+*/
+interface SpatialQuery {
+
+  /**
+    Raycasts a Geometry and returns the result as a GeometryLocation . A hit was found if :kl-ref:`GeometryLocation.isValid` is true.
+    Properly calling :kl-ref:`SpatialQueryable.prepareForSpatialQueries` beforehand can increase significatively the performance of multiple raycasts.
+    \note this function is threadsafe, as long as the Geometry is not modified, and :kl-ref:`SpatialQueryable.prepareForSpatialQueries` is not called during this function.
+    \param doubleSided intersections for both surface sides will be returned
+    \param coneThreshold if not 0, raycast with a thin cone, which is mostly used for selection in a projected view. The value of `coneThreshold` represents the radius of a cone of height 1. If < 0, surface geometries will use 0, while line/points will use -x. **When `coneThreshold` is not 0, no spatial acceleration is provided (slow)**.
+    \param maxDistance defines a cutoff distance for the raycast. To have no distance limit, pass <= 0 or SCALAR_INFINITE
+  */
+  GeometryLocation raycast!( Ray ray, Boolean doubleSided, Scalar coneThreshold, Scalar maxDistance );
+
+  /**
+    Finds the closest position of a Geometry from a specified local position, returns the result as a GeometryLocation . 
+    A hit was found if :kl-ref:`GeometryLocation.isValid` is true.
+    A scaling factor needs to be specified for proper support of non-uniform scaling, since it can influence the result.
+    Properly calling :kl-ref:`SpatialQueryable.prepareForSpatialQueries` beforehand can increase significatively the performance of multiple raycasts.
+    \note this function is threadsafe, as long as the Geometry is not modified, and :kl-ref:`SpatialQueryable.prepareForSpatialQueries` is not called during this function.
+    \param maxUnscaledDistance cutoff distance for the raycast. To have no distance limit, pass <= 0 or SCALAR_INFINITE. The `maxUnscaledDistance` is defined in non-scaled space (world space, before 'scaling' is applied).
+  */
+  GeometryLocation getClosest!( Vec3 position, Vec3 scaling, Scalar maxUnscaledDistance );
+
+  /**
+    Gathers all intersections from a line, semi-line or line segment.
+    The number of intersections is returned, and individual GeometryLocation can be retrieved using :kl-ref:`SpatialQuery.getQueriedLocation` .
+    Intersections will be sorted in the `start` to `end` direction.
+
+    - if `lineIntersectionType` == `SpatialQuery_lineIntersection` : intersects with an infinite line passing through `start` and `end`
+
+    - if `lineIntersectionType` == `SpatialQuery_semiLineIntersection` : intersects with a semi-line starting at `start`, passing through `end` and continuing infinitely in that direction
+
+    - if `lineIntersectionType` == `SpatialQuery_segmentIntersection` : intersects with a segment starting at `start` and ending at `end`
+
+    \versionadded 1.13.0
+  */
+  Size getLineIntersections!( Vec3 start, Vec3 end, UInt8 lineIntersectionType );
+
+  /**
+    Gets the elements intersecting a local bounding box. 
+    The definition of an `element` is Geometry-specific (polygon for PolygonMesh, segment for Lines, point for Points).
+    The number of intersected elements is returned, and individual element indices must be gathered with the 
+    :kl-ref:`SpatialQuery.getQueriedElement` before issuing another query.
+
+    **Important**: the returned values is a conservative approximation since only the bounding volume of the elements will be considered (eg: polygon's bounding box for a PolygonMesh).
+    This implies that some elements that are returned might not actually touch the queried bounding box (but are close to it). For more precision, the caller must perform additional filtering.
+
+    \note The choice to use :kl-ref:`SpatialQuery.getQueriedElement` instead of simply returning an array of element indices avoids to allocate heap memory, which increases the performance.
+  */
+  Size getElementsInBBox!( Vec3 min, Vec3 max );
+
+  /**
+    Gets the elements intersecting a local bounding sphere.
+    The definition of an `element` is Geometry-specific (polygon for PolygonMesh, segment for Lines, point for Points).
+    The number of intersected elements is returned, and individual element indices must be gathered with the 
+    :kl-ref:`SpatialQuery.getQueriedElement` before issuing another query.
+
+    **Important**: the returned values is a conservative approximation since only the bounding volume of the elements will be considered (eg: polygon's bounding box for a PolygonMesh).
+    This implies that some elements that are returned might not actually touch the queried bounding sphere (but are close to it). For more precision, the caller must perform additional filtering.
+
+    \note The choice to use :kl-ref:`SpatialQuery.getQueriedElement` instead of simply returning an array of element indices avoids to allocate heap memory, which increases the performance.
+  */
+  Size getElementsInBSphere!( Vec3 center, Scalar radius );
+
+  /**
+    Returns an element index gathered from a call to :kl-ref:`SpatialQuery.getElementsInBBox` or :kl-ref:`SpatialQuery.getElementsInBSphere` .
+    The total element count is the returned value from these methods.
+    Stored element indices are only valid until another query call is made.
+
+    \note The choice to use :kl-ref:`SpatialQuery.getQueriedElement` instead of simply returning an array of element indices avoids to allocate heap memory, which increases the performance.
+  */
+  Size getQueriedElement( Size index );
+
+  /**
+    Returns a location gathered from a call to :kl-ref:`SpatialQuery.getLineIntersections` .
+    The total element count is the returned value from that method.
+    Stored locations are only valid until another query call is made.
+
+    \note The choice to use :kl-ref:`SpatialQuery.getQueriedLocation` instead of simply returning an array of locations avoids to allocate heap memory, which increases the performance.
+    \versionadded 1.13.0
+  */
+  GeometryLocation getQueriedLocation( Size index );
+};
+
+
+/// The SpatialQueryable interface is implemented by geometries which support required spatial query operations such as raycast and getClosest.
+/// See :ref:`spatialqueriesusage` for more details about using spatial queries.
+interface SpatialQueryable {
+
+  /**
+    Builds an acceleration structure that will accelerate future queries such as :kl-ref:`SpatialQueryable.raycast` or 
+    :kl-ref:`SpatialQueryable.getClosest` . For built-in Geometry types, the default acceleration structure is the
+    :kl-ref:`Octree`, however it is possible to use a :kl-ref:`SparseGrid` (see `options` parameter description).
+    See :ref:`spatialqueryaccelerationstructures` for more details about acceleration structures.
+    
+    **Important**: prepareForSpatialQueries must be called if geometry's structure or positions changed. Otherwise, the
+    acceleration will be silently disabled.
+
+    \param options can be null, values are implementation specific, and can be configured by calling one of these: :kl-ref:`PrepareForSpatialQueries_setOctree`, :kl-ref:`PrepareForSpatialQueries_setOctreeMaxDepth`, :kl-ref:`PrepareForSpatialQueries_setSparseGrid`, :kl-ref:`PrepareForSpatialQueries_setSparseGridCellSize`, :kl-ref:`PrepareForSpatialQueries_setSparseGridAutoCellSizeMultiplier` .
+    \param approximateNumberOfQueries an approximation of the number of queries (eg: raycast) that will be issued. Structures such as the :kl-ref:`Octree` with choose their level of precision accordingly, to provide an optimal balance between build and query costs.
+    
+    Because building an acceleration structure incurs memory and computation overhead, this function should be called only when multiple queries are expected.
+    The acceleration structure will remain attached to the geometry so it can be reused and incrementally updated, unless 
+    :kl-ref:`SpatialQueryable.removeSpatialQueryAcceleration` is explicitly called.
+
+    \note Calling prepareForSpatialQueries is not threadsafe, and must be called before issuing parallel queries.
+    \seealso :ref:`spatialqueryobject`
+    \endrst
+    \category SpatialQueryable
+  */
+  prepareForSpatialQueries( Size approximateNumberOfQueries, GenericValueContainer options );
+
+  /**
+    Releases the cached acceleration structure created by :kl-ref:`SpatialQueryable.prepareForSpatialQueries`, which will
+    reduce memory usage. However, if future queries are expected for the same geometry (even if modified), calling this
+    method can significatively reduce the performance, as the next :kl-ref:`SpatialQueryable.prepareForSpatialQueries`
+    will need to fully fully reallocate and rebuild on acceleration structure (prevents potential incremental updates).
+    \seealso :ref:`spatialqueryobject`
+    \endrst
+    \category SpatialQueryable
+  */
+  removeSpatialQueryAcceleration!();
+
+  /**
+    Returns a local SpatialQuery object for issuing one or multiple queries.
+    The returned SpatialQuery object must be locally released by calling
+    :kl-ref:`SpatialQueryable.endSpatialQuery`, and should not be used afterward.
+    \seealso  :ref:`spatialqueryobject`
+    \category SpatialQueryable
+  */
+  Ref<SpatialQuery> beginSpatialQuery();
+
+  /**
+    Releases (recycles) a query object previously obtained by a call to :kl-ref:`SpatialQueryable.beginSpatialQuery` .
+    \seealso :ref:`spatialqueryobject`
+    \category SpatialQueryable
+  */
+  endSpatialQuery( Ref<SpatialQuery> query );
+
+  /**
+    A shortcut to :kl-ref:`SpatialQuery.raycast`, without the need to call
+    :kl-ref:`SpatialQueryable.beginSpatialQuery` and :kl-ref:`SpatialQueryable.endSpatialQuery`.
+    See :kl-ref:`SpatialQuery.raycast` for more details.
+    \category SpatialQueryable
+    \dfgCreateArrayPreset
+  */
+  GeometryLocation raycast( Ray ray, Boolean doubleSided, Scalar coneThreshold, Scalar maxDistance );
+
+  /**
+    A shortcut to :kl-ref:`SpatialQuery.getClosest`, without the need to call
+    :kl-ref:`SpatialQueryable.beginSpatialQuery` and :kl-ref:`SpatialQueryable.endSpatialQuery`.
+    See :kl-ref:`SpatialQuery.getClosest` for more details.
+    \category SpatialQueryable
+    \dfgCreateArrayPreset
+  */
+  GeometryLocation getClosest( Vec3 position, Vec3 scaling, Scalar maxUnscaledDistance );
+
+  /**
+    For a GeometryLocation returned by this SpatialQueryable, returns the attribute indices and weights 
+    required to linearly interpolate attribute values. The GeometryLocation must be valid.
+    See :ref:`geometrylocationstructure` for more details.
+    \category SpatialQueryable
+    \dfgCreateArrayPreset
+  */
+  getLocationAttributeIndicesAndWeights( GeometryLocation location, io LocalL16UInt32Array attributeIndices, io LocalL16ScalarArray weights );
+
+  /**
+    From a GeometryLocation built from this Geometry, returns the local position.
+    The location must be valid, and must have been created by this Geometry or one with the same structure, and no structure changes should have been made.
+    \category SpatialQueryable
+    \dfgCreateArrayPreset
+  */
+  Vec3 getPositionAtLocation( GeometryLocation location );
+
+  /**
+    Returns true if the geometry locations are equal or equivalent for this geometry.
+    \note For a PolygonMesh, geometry locations on points and edges can be different but equivalent when defined at the junction of different triangles (different polygon and/or triangle, but same point or edge location).
+    \versionadded 1.13.0
+    \category SpatialQueryable
+    \dfgCreateArrayPreset
+  */
+  Boolean areGeometryLocationsEquivalent( GeometryLocation location0, GeometryLocation location1 );
+};
+
+/// \internal Key used for prepareForSpatialQueries options.
+const String PrepareForSpatialQueriesOption_method = "method";
+/// \internal Key used for prepareForSpatialQueries options.
+const String PrepareForSpatialQueriesOption_none = "";
+/// \internal Key used for prepareForSpatialQueries options.
+const String PrepareForSpatialQueriesOption_octree = "Octree";
+/// \internal Key used for prepareForSpatialQueries options.
+const String PrepareForSpatialQueriesOption_octreeMaxDepth = "OctreeMaxDepth";
+/// \internal Key used for prepareForSpatialQueries options.
+const String PrepareForSpatialQueriesOption_sparseGrid = "SparseGrid";
+/// \internal Key used for prepareForSpatialQueries options.
+const String PrepareForSpatialQueriesOption_sparseGridCellSize = "SparseGridCellSize";
+/// \internal Key used for prepareForSpatialQueries options.
+const String PrepareForSpatialQueriesOption_sparseGridAutoCellSizeMultiplier = "SparseGridAutoCellSizeMultiplier";
+
+
+/// Helper for initializing :kl-ref:`SpatialQueryable.prepareForSpatialQueries` options: 
+/// sets preferred acceleration method as :kl-ref:`Octree` (which is the default).
+/// \category SpatialQueryable
+/// \seealso :ref:`spatialqueryaccelerationstructures`
+function PrepareForSpatialQueries_setOctree( io GenericValueContainer options ) {
+  options.set( PrepareForSpatialQueriesOption_method, GenericStringValue( PrepareForSpatialQueriesOption_octree ) );
+}
+
+/// Helper for initializing :kl-ref:`SpatialQueryable.prepareForSpatialQueries` options: 
+/// sets :kl-ref:`Octree` 's maximum depth.
+/// \category SpatialQueryable
+/// \seealso :ref:`spatialqueryaccelerationstructures`
+function PrepareForSpatialQueries_setOctreeMaxDepth( io GenericValueContainer options, UInt8 octreeMaxDepth ) {
+  options.set( PrepareForSpatialQueriesOption_octreeMaxDepth, GenericUInt8Value( octreeMaxDepth ) );
+}
+
+/// Helper for initializing :kl-ref:`SpatialQueryable.prepareForSpatialQueries` options: 
+/// sets preferred acceleration method as :kl-ref:`SparseGrid` (default: :kl-ref:`Octree`).
+/// \category SpatialQueryable
+/// \seealso :ref:`spatialqueryaccelerationstructures`
+function PrepareForSpatialQueries_setSparseGrid( io GenericValueContainer options ) {
+  options.set( PrepareForSpatialQueriesOption_method, GenericStringValue( PrepareForSpatialQueriesOption_sparseGrid ) );
+}
+
+/// Helper for initializing :kl-ref:`SpatialQueryable.prepareForSpatialQueries` options: 
+/// sets :kl-ref:`SparseGrid` 's cellSize (default: auto cellSize).
+/// \category SpatialQueryable
+/// \seealso :ref:`spatialqueryaccelerationstructures`
+function PrepareForSpatialQueries_setSparseGridCellSize( io GenericValueContainer options, Scalar cellSize ) {
+  options.set( PrepareForSpatialQueriesOption_sparseGridCellSize, GenericFloat32Value( cellSize ) );
+}
+
+/// Helper for initializing :kl-ref:`SpatialQueryable.prepareForSpatialQueries` options: 
+/// sets :kl-ref:`SparseGrid` 's auto cellSize factor (default: 1.0).
+/// \category SpatialQueryable
+/// \seealso :ref:`spatialqueryaccelerationstructures`
+function PrepareForSpatialQueries_setSparseGridAutoCellSizeMultiplier( io GenericValueContainer options, Scalar autoCellSizeMultiplier ) {
+  options.set( PrepareForSpatialQueriesOption_sparseGridAutoCellSizeMultiplier, GenericFloat32Value( autoCellSizeMultiplier ) );
+}
+
+/// GeometryLocation helper: evaluates a ScalarAttribute a specific location.
+/// \category SpatialQueryable
+/// \dfgPresetOmit
+inline Scalar GetAttributeAtLocation( Ref<SpatialQueryable> geometry, GeometryLocation location, Ref<ScalarAttribute> attribute ) {
+  LocalL16UInt32Array attributeIndices;
+  LocalL16ScalarArray weights;
+  geometry.getLocationAttributeIndicesAndWeights( location, attributeIndices, weights );
+  return attribute.getLinearCombination( attributeIndices, weights );
+}
+
+/// GeometryLocation helper: evaluates a IntegerAttribute a specific location.
+/// \category SpatialQueryable
+/// \dfgPresetOmit
+inline Integer GetAttributeAtLocation( Ref<SpatialQueryable> geometry, GeometryLocation location, Ref<IntegerAttribute> attribute ) {
+  LocalL16UInt32Array attributeIndices;
+  LocalL16ScalarArray weights;
+  geometry.getLocationAttributeIndicesAndWeights( location, attributeIndices, weights );
+  return attribute.getLinearCombination( attributeIndices, weights );
+}
+
+/// GeometryLocation helper: evaluates a ScalarConstantArrayAttribute a specific location.
+/// The location must be valid, and must have been created by the Geometry or one with the same structure, and no structure changes should have been made.
+/// \category SpatialQueryable
+/// \dfgPresetOmit
+inline LocalL16ScalarArray GetAttributeAtLocation( Ref<SpatialQueryable> geometry, GeometryLocation location, Ref<ScalarConstantArrayAttribute> attribute ) {
+  LocalL16UInt32Array attributeIndices;
+  LocalL16ScalarArray weights;
+  geometry.getLocationAttributeIndicesAndWeights( location, attributeIndices, weights );
+  return attribute.getLinearCombination( attributeIndices, weights );
+}
+
+/// GeometryLocation helper: evaluates a ScalarArrayAttribute a specific location.
+/// The location must be valid, and must have been created by the Geometry or one with the same structure, and no structure changes should have been made.
+/// \category SpatialQueryable
+/// \dfgPresetOmit
+inline LocalL16ScalarArray GetAttributeAtLocation( Ref<SpatialQueryable> geometry, GeometryLocation location, Ref<ScalarArrayAttribute> attribute ) {
+  LocalL16UInt32Array attributeIndices;
+  LocalL16ScalarArray weights;
+  geometry.getLocationAttributeIndicesAndWeights( location, attributeIndices, weights );
+  return attribute.getLinearCombination( attributeIndices, weights );
+}
+
+/// GeometryLocation helper: evaluates a UInt32Attribute a specific location.
+/// The location must be valid, and must have been created by the Geometry or one with the same structure, and no structure changes should have been made.
+/// \category SpatialQueryable
+/// \dfgPresetOmit
+inline UInt32 GetAttributeAtLocation( Ref<SpatialQueryable> geometry, GeometryLocation location, Ref<UInt32Attribute> attribute ) {
+  LocalL16UInt32Array attributeIndices;
+  LocalL16ScalarArray weights;
+  geometry.getLocationAttributeIndicesAndWeights( location, attributeIndices, weights );
+  return attribute.getLinearCombination( attributeIndices, weights );
+}
+
+/// GeometryLocation helper: evaluates a UInt16ConstantArrayAttribute a specific location.
+/// The location must be valid, and must have been created by the Geometry or one with the same structure, and no structure changes should have been made.
+/// \category SpatialQueryable
+/// \dfgPresetOmit
+inline LocalL16UInt16Array GetAttributeAtLocation( Ref<SpatialQueryable> geometry, GeometryLocation location, Ref<UInt16ConstantArrayAttribute> attribute ) {
+  LocalL16UInt32Array attributeIndices;
+  LocalL16ScalarArray weights;
+  geometry.getLocationAttributeIndicesAndWeights( location, attributeIndices, weights );
+  return attribute.getLinearCombination( attributeIndices, weights );
+}
+
+/// GeometryLocation helper: evaluates a UInt32ArrayAttribute a specific location.
+/// The location must be valid, and must have been created by the Geometry or one with the same structure, and no structure changes should have been made.
+/// \category SpatialQueryable
+/// \dfgPresetOmit
+inline LocalL16UInt32Array GetAttributeAtLocation( Ref<SpatialQueryable> geometry, GeometryLocation location, Ref<UInt32ArrayAttribute> attribute ) {
+  LocalL16UInt32Array attributeIndices;
+  LocalL16ScalarArray weights;
+  geometry.getLocationAttributeIndicesAndWeights( location, attributeIndices, weights );
+  return attribute.getLinearCombination( attributeIndices, weights );
+}
+
+/// GeometryLocation helper: evaluates a IntegerArrayAttribute a specific location.
+/// The location must be valid, and must have been created by the Geometry or one with the same structure, and no structure changes should have been made.
+/// \category SpatialQueryable
+/// \dfgPresetOmit
+inline LocalL16SInt32Array GetAttributeAtLocation( Ref<SpatialQueryable> geometry, GeometryLocation location, Ref<IntegerArrayAttribute> attribute ) {
+  LocalL16UInt32Array attributeIndices;
+  LocalL16ScalarArray weights;
+  geometry.getLocationAttributeIndicesAndWeights( location, attributeIndices, weights );
+  return attribute.getLinearCombination( attributeIndices, weights );
+}
+
+/// GeometryLocation helper: evaluates a RGBAttribute a specific location.
+/// The location must be valid, and must have been created by the Geometry or one with the same structure, and no structure changes should have been made.
+/// \category SpatialQueryable
+/// \dfgPresetOmit
+inline RGB GetAttributeAtLocation( Ref<SpatialQueryable> geometry, GeometryLocation location, Ref<RGBAttribute> attribute ) {
+  LocalL16UInt32Array attributeIndices;
+  LocalL16ScalarArray weights;
+  geometry.getLocationAttributeIndicesAndWeights( location, attributeIndices, weights );
+  return attribute.getLinearCombination( attributeIndices, weights );
+}
+
+/// GeometryLocation helper: evaluates a RGBAAttribute a specific location.
+/// The location must be valid, and must have been created by the Geometry or one with the same structure, and no structure changes should have been made.
+/// \category SpatialQueryable
+/// \dfgPresetOmit
+inline RGBA GetAttributeAtLocation( Ref<SpatialQueryable> geometry, GeometryLocation location, Ref<RGBAAttribute> attribute ) {
+  LocalL16UInt32Array attributeIndices;
+  LocalL16ScalarArray weights;
+  geometry.getLocationAttributeIndicesAndWeights( location, attributeIndices, weights );
+  return attribute.getLinearCombination( attributeIndices, weights );
+}
+
+/// GeometryLocation helper: evaluates a Vec2Attribute a specific location.
+/// The location must be valid, and must have been created by the Geometry or one with the same structure, and no structure changes should have been made.
+/// \category SpatialQueryable
+/// \dfgPresetOmit
+inline Vec2 GetAttributeAtLocation( Ref<SpatialQueryable> geometry, GeometryLocation location, Ref<Vec2Attribute> attribute ) {
+  LocalL16UInt32Array attributeIndices;
+  LocalL16ScalarArray weights;
+  geometry.getLocationAttributeIndicesAndWeights( location, attributeIndices, weights );
+  return attribute.getLinearCombination( attributeIndices, weights );
+}
+
+/// GeometryLocation helper: evaluates a Vec3Attribute a specific location.
+/// The location must be valid, and must have been created by the Geometry or one with the same structure, and no structure changes should have been made.
+/// \category SpatialQueryable
+/// \dfgPresetOmit
+inline Vec3 GetAttributeAtLocation( Ref<SpatialQueryable> geometry, GeometryLocation location, Ref<Vec3Attribute> attribute ) {
+  LocalL16UInt32Array attributeIndices;
+  LocalL16ScalarArray weights;
+  geometry.getLocationAttributeIndicesAndWeights( location, attributeIndices, weights );
+  return attribute.getLinearCombination( attributeIndices, weights );
+}
+
+/// GeometryLocation helper: evaluates a Vec3_dAttribute a specific location.
+/// The location must be valid, and must have been created by the Geometry or one with the same structure, and no structure changes should have been made.
+/// \category SpatialQueryable
+/// \dfgPresetOmit
+inline Vec3_d GetAttributeAtLocation( Ref<SpatialQueryable> geometry, GeometryLocation location, Ref<Vec3_dAttribute> attribute ) {
+  LocalL16UInt32Array attributeIndices;
+  LocalL16ScalarArray weights;
+  geometry.getLocationAttributeIndicesAndWeights( location, attributeIndices, weights );
+  return attribute.getLinearCombination( attributeIndices, weights );
+}
+
+/// GeometryLocation helper: evaluates a Vec4Attribute a specific location.
+/// The location must be valid, and must have been created by the Geometry or one with the same structure, and no structure changes should have been made.
+/// \category SpatialQueryable
+/// \dfgPresetOmit
+inline Vec4 GetAttributeAtLocation( Ref<SpatialQueryable> geometry, GeometryLocation location, Ref<Vec4Attribute> attribute ) {
+  LocalL16UInt32Array attributeIndices;
+  LocalL16ScalarArray weights;
+  geometry.getLocationAttributeIndicesAndWeights( location, attributeIndices, weights );
+  return attribute.getLinearCombination( attributeIndices, weights );
+}
+
+/// GeometryLocation helper: evaluates a QuatAttribute a specific location.
+/// The location must be valid, and must have been created by the Geometry or one with the same structure, and no structure changes should have been made.
+/// \category SpatialQueryable
+/// \dfgPresetOmit
+inline Quat GetAttributeAtLocation( Ref<SpatialQueryable> geometry, GeometryLocation location, Ref<QuatAttribute> attribute ) {
+  LocalL16UInt32Array attributeIndices;
+  LocalL16ScalarArray weights;
+  geometry.getLocationAttributeIndicesAndWeights( location, attributeIndices, weights );
+  return attribute.getLinearCombination( attributeIndices, weights );
+}
+
+/// GeometryLocation helper: evaluates a ColorAttribute a specific location.
+/// The location must be valid, and must have been created by the Geometry or one with the same structure, and no structure changes should have been made.
+/// \category SpatialQueryable
+/// \dfgPresetOmit
+inline Color GetAttributeAtLocation( Ref<SpatialQueryable> geometry, GeometryLocation location, Ref<ColorAttribute> attribute ) {
+  LocalL16UInt32Array attributeIndices;
+  LocalL16ScalarArray weights;
+  geometry.getLocationAttributeIndicesAndWeights( location, attributeIndices, weights );
+  return attribute.getLinearCombination( attributeIndices, weights );
+}
+
+/// GeometryLocation helper: evaluates a Mat33Attribute a specific location.
+/// The location must be valid, and must have been created by the Geometry or one with the same structure, and no structure changes should have been made.
+/// \category SpatialQueryable
+/// \dfgPresetOmit
+inline Mat33 GetAttributeAtLocation( Ref<SpatialQueryable> geometry, GeometryLocation location, Ref<Mat33Attribute> attribute ) {
+  LocalL16UInt32Array attributeIndices;
+  LocalL16ScalarArray weights;
+  geometry.getLocationAttributeIndicesAndWeights( location, attributeIndices, weights );
+  return attribute.getLinearCombination( attributeIndices, weights );
+}
+
+/// GeometryLocation helper: evaluates a Mat44Attribute a specific location.
+/// The location must be valid, and must have been created by the Geometry or one with the same structure, and no structure changes should have been made.
+/// \category SpatialQueryable
+/// \dfgPresetOmit
+inline Mat44 GetAttributeAtLocation( Ref<SpatialQueryable> geometry, GeometryLocation location, Ref<Mat44Attribute> attribute ) {
+  LocalL16UInt32Array attributeIndices;
+  LocalL16ScalarArray weights;
+  geometry.getLocationAttributeIndicesAndWeights( location, attributeIndices, weights );
+  return attribute.getLinearCombination( attributeIndices, weights );
+}

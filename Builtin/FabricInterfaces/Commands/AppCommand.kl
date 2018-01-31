@@ -1,0 +1,39 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 2.6.0
+  
+  An AppCommand wraps a KL call to a command that has been defined in C++ or Python. 
+  Existing C++ and Python commands are registered in the AppCommandRegistry, 
+  accessible through the GetCommandRegistry which returns a singleton. An AppCommand
+  should be created by calling :kl-ref:`AppCommandRegistry.createCommand`.
+
+  These commands (:kl-ref:`CommandManager.scheduleCommand`) don't execute right away, but only after 
+  the control is returned to the app (back from KL code execution).
+
+  The command holds the args required to call the C++ or Python command.
+*/
+object AppCommand : BaseScriptableCommand {
+};
+
+/// Implementation of ScriptableCommand
+/// In the case of an AppCommand, we don't validate the args; that will be done on the App side.
+AppCommand.setArgValue!( String key, RTVal value, io String error ) {
+  
+  if( !key ) {
+    error = "key not specified";
+    return;
+  }
+
+  PathValue pathValue = this.getArg( key );
+  pathValue.value = value;
+  this.setArg( key, pathValue, error );
+}
+
+/// \internal
+/// Implementation of ScriptableCommand.
+/// In the case of an AppCommand, we don't validate the args; that will be done on the App side.
+AppCommand.validateSetArgs!( io String error ) {
+}

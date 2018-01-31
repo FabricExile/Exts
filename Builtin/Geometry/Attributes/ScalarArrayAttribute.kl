@@ -1,0 +1,76 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+/brief The ``ScalarArrayAttribute`` contains a sub-array of Scalar per index. 
+For an index, array items can be set one by one or in batch.
+
+Various strategies are used to lower memory consumption and increase performance:
+
+- contiguous memory storage in a few buffers to lower memory fragmentation and minimize memory allocations
+
+- ``counts`` per index is implicit if values are appended in order (0 to N-1)
+
+\note Changing the size of sub-arrays is not thread safe
+
+*/
+object ScalarArrayAttribute : BaseArrayAttribute{};
+
+inline ScalarArrayAttribute.set!( UInt32 index, UInt32 offset, Scalar value ) {
+  this.internalData.set( index, offset, bitcastFloatToUInt(value) );
+}
+
+inline Scalar ScalarArrayAttribute.get( UInt32 index, UInt32 offset ) {
+  return bitcastUIntToFloat( this.internalData.get( index, offset ) );
+}
+
+inline ScalarArrayAttribute.get( UInt32 index, out LocalL16ScalarArray values ) {
+  this.internalData.get( index, values );
+}
+
+inline ScalarArrayAttribute.set!( UInt32 index, LocalL16ScalarArray values ) {
+  this.internalData.set( index, values );
+}
+
+require Util;
+
+/// \internal
+function String ScalarArrayAttribute._valueDesc( Size index, Boolean unitTestPrint, Boolean truncateDec, UInt32 n ) {
+  LocalL16ScalarArray values;
+  this.get( index, values );
+  String result = '[';
+  for( Size i = 0; i < values.size(); ++i ) {
+    if( i )
+      result += ', ';
+    result += values.get( i );
+  }
+  result += ']';
+  return result;
+}
+
+inline String ScalarArrayAttribute.valueDesc( Size index ) {
+  return this._valueDesc( index, false, false, 0 );
+}
+
+function String ScalarArrayAttribute.unitTestPrint( Size index ) {
+  return this._valueDesc( index, true, false, 0 );
+}
+
+function String ScalarArrayAttribute.truncateDecimalsPrint( Size index, UInt32 n ) {
+  return this._valueDesc( index, false, true, n );
+}
+
+// We cannot merge arrays automatically; just keep the one with highest index.
+inline LocalL16ScalarArray ScalarArrayAttribute.getLinearCombination( LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights ) {
+  UInt32 index = this.getLinearCombinationIndex( sourceIndices, sourceWeights );
+  LocalL16ScalarArray values;
+  if( index != InvalidIndex )
+    this.get( index, values );
+  return values;
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+function Ref<ScalarArrayAttribute> GeometryAttributes.getOrCreateScalarArrayAttribute!( String name ) {
+  return this.getOrCreateAttribute( name, ScalarArrayAttribute );
+}

@@ -1,0 +1,47 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "returns the value in the property as a UInt64.\nthis method interpolates values between frames.\n\nSupported types:\n  this: AlembicPropertyReader\n  time: Float64\n  result: UInt64\n"
+    },
+  "title" : "ReadUInt64Sample",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicPropertyReader"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "time",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Float64"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "UInt64"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "31592CCC3E841B25D5A86E46C682D078",
+  "code" : "require AlembicWrapper;
+
+dfgEntry {
+  result = this.readUInt64Sample(time);
+}
+"
+  }

@@ -1,0 +1,64 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Mat22.html",
+    "uiTooltip" : "setting the diagonal components of\nthis matrix to a scalar\n\n Supported by Mat22,Mat33,Mat44"
+    },
+  "title" : "SetDiagonal[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "$TYPE$[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "v",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "FA5634FE90B82154E6EEC2CF96343239",
+  "code" : "require Math;
+
+operator Math_Mat22_setDiagonal_task<<<index>>>(
+  io $TYPE$[] this
+, in Scalar[] v
+) {
+  this[index < this.size() ? index : this.size() - 1].setDiagonal(v[index < v.size() ? index : v.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( v.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < v.size()) task_size = v.size();
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Mat22_setDiagonal_task(index, this, v);
+    }
+  } else {
+    Math_Mat22_setDiagonal_task<<<task_size>>>(this, v);
+  }
+}
+"
+  }

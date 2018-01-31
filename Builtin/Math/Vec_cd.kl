@@ -1,0 +1,401 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+/**
+The :kl-ref:`Vec_cd` represents a dense vector.
+
+\rst
+  .. kl-example:: Vec_cd
+
+    // create a 7-element vector
+    Vec_cd vec(7);
+
+\endrst
+
+\dfgTypeColor Color(249, 157, 28)
+\dfgPresetColor Color(99, 129, 92)
+*/
+
+struct Vec_cd {
+  private Complex_d vals[];
+};
+
+/// Construct a vector with ``size`` elements
+inline Vec_cd(Integer size) {
+  this.vals.resize(size);
+}
+
+/// Construct a vector with predefined values
+inline Vec_cd(Complex_d vals[]) {
+  this.vals = vals.clone();
+}
+
+/// Construct a vector from the vector ``that``
+inline Vec_cd(Vec_cd that) {
+  this.vals = that.vals.clone();
+}
+
+/// Sets from Vec.
+inline Vec_cd.set!(Vec_cd vec) {
+  this.vals = vec.vals.clone();
+}
+
+/// Converts to Vec.
+inline Vec_cd Vec_cd.toVec() {
+  return this;
+}
+
+/// Get the size of the vector
+inline Integer Vec_cd.size() {
+  return this.vals.size();
+}
+
+/// Return all of the values
+inline Complex_d[] Vec_cd.getValues() {
+  return this.vals.clone();
+}
+
+/// In Fabric guarded mode this method throws an exception if the size
+/// of the current vector differs from the size of the ``that`` vector
+inline Integer Vec_cd.validateSize(Vec_cd that, String desc) {
+  Integer thisSize = this.size();
+  if (Fabric_Guarded) {
+    Integer thatSize = that.size();
+    if (thatSize != thisSize)
+      throw desc + ": incompatible sizes (" + thisSize + " vs. " + thatSize + ")";
+  }
+  return thisSize;
+}
+
+/// Get value of the vector element at the ``ind`` position
+inline Complex_d Vec_cd.get(Integer ind) {
+  return this.vals[ind];
+}
+
+/// Change the number of elements in the vector to ``newSize``
+inline Vec_cd.resize!(Integer newSize) {
+  this.vals.resize(newSize);
+}
+
+/// Set the value of element ``ind`` to ``val``
+inline Vec_cd.set!(Integer ind, Complex_d val) {
+  this.vals[ind] = val;
+}
+
+/// Inserts a value ``val`` at index ``ind``.
+/// Resize the vector accordingly if ``ind`` is superior to its size.
+inline Vec_cd.insert!(Integer ind, Complex_d val) {
+  this.vals.resize( ind > this.size()  ? ind + 1 : this.size()+1);
+  for(Index i=this.size()-1; i>ind; i--)
+    this.vals[i] = this.vals[i-1];
+  this.vals[ind] = val;
+}
+
+/// Remove and retuens the value at index ``ind``
+/// resize the vector.
+inline Complex_d Vec_cd.remove!(Integer ind) {
+  Complex_d temp = this.vals[ind];
+  for(Index i=ind; i<this.size()-1; i++)
+    this.vals[i] = this.vals[i+1];
+  this.vals.resize(this.size()-1);
+  return temp;
+}
+
+inline Vec_cd.push_top!(Complex_d val) {
+  this.insert(0, val);
+}
+
+inline Vec_cd.push_back!(Complex_d val) {
+  this.insert(this.size(), val);
+}
+
+inline Complex_d Vec_cd.pop_top!() {
+  return this.remove(0);
+}
+
+inline Complex_d Vec_cd.pop_back!() {
+  return this.remove(this.size()-1);
+}
+
+/// Return a String description of this vector and its size
+inline String Vec_cd.sizeDesc() {
+  return "Vec_cd(" + this.size() + ")";
+}
+
+/// Append a String description of this vector's size and contents
+/// to the io variable ``string``
+Vec_cd.appendDesc(io String string) {
+  string += this.sizeDesc();
+  string += ":[";
+  Integer size = this.size();
+  for (Integer ind = 0; ind < size; ++ind) {
+    if (ind > 0)
+      string += " ";
+    string += this.get(ind);
+  }
+  string += "]";
+}
+
+/// Set the value of all vector elements to ``val``
+inline Vec_cd.setAll!(Complex_d val) {
+  Integer size = this.size();
+  for (Integer ind = 0; ind < size; ++ind)
+    this.set(ind, val);
+}
+
+/// Set the value of all vector elements to zero
+inline Vec_cd.setNull!() {
+  this.setAll(Complex_d());
+}
+
+/// Returns true if this vector is the same as another one
+inline Boolean Vec_cd.equal(Vec_cd that) {
+  for (Integer i = 0; i < this.vals.size(); ++i)
+    if (this.vals[i] != that.vals[i])
+      return false;
+  return true;
+}
+
+/// Returns true if this vector is almost the same as another one
+/// (using a default precision)
+inline Boolean Vec_cd.almostEqual(
+  Vec_cd that,
+  Float64 precision
+  )
+{
+  for (Integer i = 0; i < this.vals.size(); ++i)
+    if (!this.vals[i].almostEqual(that.vals[i], precision))
+      return false;
+  return true;
+}
+
+/// Returns true if this vector is almost the same as another one
+/// (using a default precision)
+inline Boolean Vec_cd.almostEqual(in Vec_cd other) {
+  return this.almostEqual(other, PRECISION);
+}
+
+/// Equals operator
+inline Boolean == (Vec_cd lhs, Vec_cd rhs) {
+  return lhs.equal(rhs);
+}
+
+/// Not equals operator
+inline Boolean != (Vec_cd lhs, Vec_cd rhs) {
+  return !lhs.equal(rhs);
+}
+
+/// Hash for this matrix
+inline UInt32 Vec_cd.hash() {
+  UInt32 hash;
+  for (Integer ind = 0; ind < this.vals.size(); ++ind)
+    hash ^= this.get(ind).hash();
+  return hash;
+}
+
+/// Returns the addition of two matrices
+inline Vec_cd +(Vec_cd a, Vec_cd b) {
+  Integer size = a.validateSize(b, FUNC);
+  Vec_cd result(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    result.set(ind, a.get(ind) + b.get(ind));
+  return result;
+}
+
+/// Add another matrix in place
+inline Vec_cd.+=(Vec_cd that) {
+  Integer size = this.validateSize(that, FUNC);
+  for (Integer ind = 0; ind < size; ++ind)
+    this.set(ind, this.get(ind) + that.get(ind));
+}
+
+/// Returns the addition of two matrices
+inline Vec_cd -(Vec_cd a, Vec_cd b) {
+  Integer size = a.validateSize(b, FUNC);
+  Vec_cd result(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    result.set(ind, a.get(ind) - b.get(ind));
+  return result;
+}
+
+/// Add another matrix in place
+inline Vec_cd.-=(Vec_cd that) {
+  Integer size = this.validateSize(that, FUNC);
+  for (Integer ind = 0; ind < size; ++ind)
+    this.set(ind, this.get(ind) - that.get(ind));
+}
+
+/// unary -
+inline Vec_cd -Vec_cd() {
+  Integer size = this.size();
+  Vec_cd res(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    res.set(ind, -this.get(ind));
+  return res;
+}
+
+inline Vec_cd *(Vec_cd lhs, Complex_d rhs) {
+  Integer size = lhs.size();
+  Vec_cd res(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    res.set(ind, lhs.get(ind) * rhs);
+  return res;
+}
+
+inline Vec_cd *(Complex_d lhs, Vec_cd rhs) {
+  Integer size = rhs.size();
+  Vec_cd result(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    result.set(ind, lhs * rhs.get(ind));
+  return result;
+}
+
+inline Vec_cd.*=(Complex_d val) {
+  Integer size = this.size();
+  for (Integer ind = 0; ind < size; ++ind)
+    this.set(ind, this.get(ind) * val);
+}
+
+inline Vec_cd /(Vec_cd lhs, Complex_d rhs) {
+  Integer size = lhs.size();
+  Vec_cd res(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    res.set(ind, lhs.get(ind) / rhs);
+  return res;
+}
+
+inline Vec_cd /(Complex_d lhs, Vec_cd rhs) {
+  Integer size = rhs.size();
+  Vec_cd result(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    result.set(ind, lhs / rhs.get(ind));
+  return result;
+}
+
+inline Vec_cd./=(Complex_d val) {
+  Integer size = this.size();
+  for (Integer ind = 0; ind < size; ++ind)
+    this.set(ind, this.get(ind) / val);
+}
+
+inline Vec_cd *(Vec_cd lhs, Vec_cd rhs) {
+  Integer size = lhs.validateSize(rhs, FUNC);
+  Vec_cd res(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    res.set(ind, lhs.get(ind) * rhs.get(ind));
+  return res;
+}
+
+inline Vec_cd.*=(Vec_cd val) {
+  Integer size = this.validateSize(val, FUNC);
+  for (Integer ind = 0; ind < size; ++ind)
+    this.set(ind, this.get(ind) * val.get(ind));
+}
+
+inline Vec_cd /(Vec_cd lhs, Vec_cd rhs) {
+  Integer size = lhs.validateSize(rhs, FUNC);
+  Vec_cd res(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    res.set(ind, lhs.get(ind) / rhs.get(ind));
+  return res;
+}
+
+inline Vec_cd./=(Vec_cd val) {
+  Integer size = this.validateSize(val, FUNC);
+  for (Integer ind = 0; ind < size; ++ind)
+    this.set(ind, this.get(ind) / val.get(ind));
+}
+
+inline Complex_d Vec_cd.dot(Vec_cd that) {
+  Integer size = this.validateSize(that, FUNC);
+  Complex_d res;
+  for (Integer ind = 0; ind < size; ++ind)
+    res += this.get(ind) * that.get(ind);
+  return res;
+}
+
+inline Complex_d Vec_cd.lengthSquared() {
+  Integer size = this.size();
+  Complex_d res;
+  for (Integer ind = 0; ind < size; ++ind) {
+    Complex_d val = this.get(ind);
+    res += val * val;
+  }
+  return res;
+}
+
+/// Return the length of the vector
+inline Complex_d Vec_cd.length() {
+  return sqrt(this.lengthSquared());
+}
+
+/// Returns the unit vector of this one, throws and exception if almost zero length
+inline Vec_cd Vec_cd.unit() {
+  Complex_d len = this.length();
+  if (Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor(len))
+    Math_reportBadDivisor(len, FUNC);
+  return this / len;
+}
+
+/// Sets this vector to its unit vector
+/// and returns its previous length
+inline Complex_d Vec_cd.setUnit!() {
+  Complex_d len = this.length();
+  if (Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor(len))
+    Math_reportBadDivisor(len, FUNC);
+  this /= len;
+  return len;
+}
+
+/// Mormalizes the vector, same as setUnit.
+inline Vec_cd.normalize!() {
+  this.setUnit();
+}
+
+
+/// Linearly interpolates this vector with another one
+/// based on a scalar blend value (0.0 to 1.0)
+inline Vec_cd Vec_cd.linearInterpolate(Vec_cd that, Complex_d t) {
+  return this * (1 - t) + that * t;
+}
+
+// Return a subvector of elements in the range [s, e)
+inline Vec_cd Vec_cd.sub(Integer s, Integer e) {
+  if (Fabric_Guarded) {
+    if (s > e)
+      throw FUNC + ": must have s <= e";
+    if (e > this.size())
+      throw FUNC + ": must have e <= this.size()";
+  }
+  Integer n = e - s;
+  Vec_cd res(n);
+  for (Integer i = 0; i < n; ++i)
+    res.set(i, this.get(s + i));
+  return res;
+}
+
+// Return first part of vector
+inline Vec_cd Vec_cd.head(Integer n) {
+  return this.sub(0, n);
+}
+
+inline Complex_d Vec_cd.minimum() {
+  Complex_d smallest = this.get(0);
+  for (UInt32 i = 1; i < this.size(); i++) 
+    if (this.get(i) < smallest) smallest = this.get(i);
+  return smallest;
+}
+
+inline Complex_d Vec_cd.maximum() {
+  Complex_d biggest = this.get(0);
+  for (UInt32 i = 1; i < this.size(); i++) 
+    if (this.get(i) > biggest) biggest = this.get(i);
+  return biggest;
+}
+
+inline Complex_d Vec_cd.sum() {
+  Complex_d result;
+  for (UInt32 i = 0; i < this.size(); i++)
+      result += this.get(i);
+  return result;
+}

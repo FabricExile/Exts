@@ -1,0 +1,52 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/AlembicWrapper/AlembicPolyMeshWriter.html",
+    "uiTooltip" : "writes a single sample into the file based on the provided PolygonMesh.\n\n Supported by AlembicPolyMeshWriter,AlembicSubDWriter"
+    },
+  "title" : "WriteSample",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "$TYPE$"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "mesh",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "PolygonMesh"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "BA6929A8B39E81A02CC82956266B33E4",
+  "code" : "require AlembicWrapper;
+
+dfgEntry {
+  Ref<PolygonMesh> mesh_ref = mesh;
+  result = this.writeSample(mesh_ref);
+}
+"
+  }

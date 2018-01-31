@@ -1,0 +1,134 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+interface ItemReference;
+
+namespace Tool {
+
+  interface SelectionDrawableItem;
+
+  /// \internal
+  struct SelectionManagerDrawListKey {
+    Ref<Object> userRef;
+    UInt32 userRefUID;// set from userRef, for stable behavior
+    UInt32 userID;
+  };
+
+  SelectionManagerDrawListKey( Ref<Object> userRef, UInt32 userID ) {
+    this.set( userRef, userID );
+  }
+
+  SelectionManagerDrawListKey( Ref<Object> userRef ) {
+    this.set( userRef );
+  }
+
+  SelectionManagerDrawListKey.set!( Ref<Object> userRef, UInt32 userID ) {
+    this.userRef = userRef;
+    this.userRefUID = userRef.uid();
+    this.userID = userID;
+  }
+
+  SelectionManagerDrawListKey.set!( Ref<Object> userRef ) {
+    this.userRef = userRef;
+    this.userRefUID = userRef.uid();
+  }
+
+  inline Boolean == ( SelectionManagerDrawListKey a, SelectionManagerDrawListKey b ) {
+    return a.userRefUID == b.userRefUID && a.userID == b.userID;
+  }
+
+  inline Boolean != ( SelectionManagerDrawListKey a, SelectionManagerDrawListKey b ) {
+    return !( a == b );
+  }
+
+  inline UInt32 SelectionManagerDrawListKey.hash() {
+    return this.userRefUID ^ this.userID;
+  }
+
+  const UInt8 SelectionMode_Objects = 0;// Selecting objects
+  const UInt8 SelectionMode_Points = 1;// Selection points (vertices)
+  const UInt8 SelectionMode_Elements_includePartial = 2;// Selection elements totally or partially selected (Curves: sub-curves, PolygonMesh: polygon, Lines: line segment, Points: points)
+  const UInt8 SelectionMode_Elements_excludePartial = 3;// Selection elements totally selected (Curves: sub-curves, PolygonMesh: polygon, Lines: line segment, Points: points)
+  const UInt8 SelectionModeCount = 4;
+
+  /// \internal
+  String GetSelectionModeString( UInt8 selectionMode ) {
+    switch( selectionMode ) {
+      case SelectionMode_Objects:
+        return "objects";
+      case SelectionMode_Elements_includePartial:
+        return "elements (inclusive)";
+      case SelectionMode_Elements_excludePartial:
+        return "elements";
+      case SelectionMode_Points:
+        return "points";
+    }
+    return "(unknown selection type)";
+  }
+
+  /// Interface required by primtives in order to be selectable by SelectionManager (members of SelectionManagerDrawList).
+  /// The BaseSelectionDrawableItem object implements the services required to be selected by the SelectionManager.
+  /// Note that the SelectionDrawableItem object must have owning references to its SelectionManagerDrawList(s)
+  /// and remove itself from the lists upon release (destructor).
+  ///
+  /// See :ref:`TPG.selection` for more information and examples.
+  interface SelectionDrawableItem {
+
+    /// If there is some custom shader transform code required (vertex / geometry / tesselation), a unique name should be returned.
+    /// If multiple SelectionDrawableItem return the same shader name, it is assumed that the shader can be shared.
+    /// If String() is returned, the default shader will be used.
+    /// Else, buildCustomTransformShader() will be called to allow to build the shader.
+    String getCustomTransformShaderName();
+
+    /// If getCustomTransformShaderName() returned a non-empy value, this function will be called the first time the shader is required.
+    /// Note that the shader already contains the default vertex and fragment code, so only custom shaders need to be updated (eg: vertex, geometry, tesselation).
+    buildCustomTransformShader( String shaderName, io OGLProgram shader );
+
+    /// \param userKey The associated key from the SelectionManagerDrawList
+    /// \param selectionMode Type of selection: SelectionMode_Objects, SelectionMode_Elements_includePartial, SelectionMode_Elements_excludePartial, SelectionMode_Points
+    /// \param transform The matrix for multiplying the position attribute to get the normalized viewport coordinate. Typically, this would be PerspectiveMat * ViewMat * ModelMat.
+    /// \param positionsBuffer The buffer of the positions, if applicable.
+    /// \param legacyPositionsBuffer The buffer (InlineDrawing type) of the positions, if applicable.
+    /// \param glInstanceCount Number of GL instances being drawn if drawn as instances, else 1.
+    /// \param shaderParamValues If a custom shader was defined with buildCustomTransformShader(), additional required shader parameters can be specified.
+    prepareForSelectionDraw!(
+      SelectionManagerDrawListKey userKey,
+      UInt8 selectionMode,
+      Ref<Viewport> viewport,
+      io UInt32 glInstanceCount,
+      io Mat44 transform,
+      io OGLBuffer_ positionsBuffer,
+      io OGLBuffer legacyPositionsBuffer,
+      io Ref<OGLProgramParamValues> shaderParamValues,
+      io Ref<OGLContext> context );
+
+    /// Returns the geometry, if applicable, else null.
+    /// This is used by component selection services.
+    Ref<Geometry> getGeometry( SelectionManagerDrawListKey userKey );
+
+    /// When called by this method, the user should draw its primitive.
+    /// There is already a default shader set-up with shaderPrimitiveIndex, but the user
+    /// can use its own shader if required, as long as it writes "shaderPrimitiveIndex" to an "out unsigned int" fragment
+    /// shader output. Note: in order to enable selection of thin triangles, these should be drawn twice, with glPolygonMode(GL_FRONT_AND_BACK, GL_LINES)
+    /// and with glPolygonMode(GL_FRONT_AND_BACK, GL_FILL). Value should be set back to GL_FILL.
+    ///
+    /// \param userKey The associated key from the SelectionManagerDrawList
+    /// \param selectionMode Type of selection: SelectionMode_Objects, SelectionMode_Elements_includePartial, SelectionMode_Elements_excludePartial, SelectionMode_Points
+    /// \param positionsTransform If using a custom selection shader, this matrix should be used to tranform the vertices for the selection framebuffer, since it contains additional viewport transform to prepareForSelectionDraw's transform.
+    /// \param shaderPrimitiveIndex If using a custom selection shader, this value should be written to the "out unsigned int" fragment shader output.
+    /// \param OGLContext GL context wrapper. If GL states are changed without using context.stateCache, then context.stateCache.reset() must be called after drawing.
+    drawGLPrimitivesForSelection!( SelectionManagerDrawListKey userKey, UInt8 selectionMode, Mat44 positionsTransform, UInt32 shaderPrimitiveIndex, io Ref<OGLContext> context );
+
+    /// Translates drawn primitive IDs (eg: triangle IDs) to component IDs (eg: polygons).
+    /// \param selectionMode Type of selection: SelectionMode_Objects, SelectionMode_Elements_includePartial, SelectionMode_Elements_excludePartial, SelectionMode_Points
+    /// \param componentIDs Actual selected components. Note: if applicable, primitiveIDs.indices can be safely returned.
+    UInt32[] primitiveIDsToComponents( UInt8 selectionMode, IndexSet primitiveIDs );
+
+    /// \param userKey The associated key from the SelectionManagerDrawList
+    /// \param itemAndComponents Components to draw
+    /// \param OGLContext GL context wrapper. If GL states are changed without using context.stateCache, then context.stateCache.reset() must be called after drawing.
+    drawGLComponents!( SelectionManagerDrawListKey userKey, io Ref<ItemReference> itemAndComponents, Ref<Viewport> viewport, io Ref<OGLContext> context );
+  };
+
+}// namespace Tool

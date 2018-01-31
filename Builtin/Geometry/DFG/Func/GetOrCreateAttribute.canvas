@@ -1,0 +1,56 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/GeometryAttributes.html",
+    "uiTooltip" : "Returns an attribute of a given name and type if it exists, else it creates and returns it.\n\n Supported by GeometryAttributes,PolygonMesh"
+    },
+  "title" : "GetOrCreateAttribute",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "$TYPE$"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "name",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "String"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "attributeType",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Type"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "GeometryAttribute"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "25EA1F5EBCE34A694B61FEE882044947",
+  "code" : "require Geometry;
+
+dfgEntry {
+  Ref<GeometryAttribute> result_ref = this.getOrCreateAttribute(name, attributeType);
+  result = result_ref;
+}
+"
+  }

@@ -1,0 +1,45 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// Draws a perspective-compensated shape (constant size no matter 
+  /// the distance) and constraints it to a TransformTarget
+  /// using an :kl-ref:`Tool::AlignWithTransformModifier`.
+  object XfoTargetAlignedShape : PerspectiveCompensatedShape{
+    TransformTarget target;
+    AlignWithTransformModifier alignModifier;
+  };
+
+  XfoTargetAlignedShape( TransformTarget target, Ref<BaseTool> shape ) {
+    this.construct( target, shape );
+  }
+
+  inline Ref<TransformTarget> XfoTargetAlignedShape.getTarget() {
+    return this.target;
+  }
+
+  Mat44 XfoTargetAlignedShape.getTargetTransform() {
+    return this.target.getParentTransform() * this.target.getLocalTransform().toMat44();
+  }
+
+  Mat44 XfoTargetAlignedShape.getAlignedTransform() {
+    return this.alignModifier.getTransform( Mat44() );//TODO: should take parentTool transform * local transform if constrained to parent
+  }
+
+  Mat44 XfoTargetAlignedShape.getPerspectiveCompensatedTransform( Ref<Viewport> viewport ) {
+    return this.compensatePerspectiveModifier.computeTransform( viewport, this.getAlignedTransform() );
+  }
+
+  /// By default, the this.alignModifier only aligns rotation
+  XfoTargetAlignedShape.construct!( TransformTarget target, Ref<BaseTool> shape ) {
+    this.target = target;
+
+    // Make translation with the XfoTarget
+    this.alignModifier = AlignWithTransformModifier( this.target, true, true, false, true );
+    this.addDrawModifier( this.alignModifier, false );
+
+    this.parent.construct( shape );
+  }
+}// namespace Tool

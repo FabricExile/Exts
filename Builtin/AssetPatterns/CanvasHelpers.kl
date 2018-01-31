@@ -1,0 +1,345 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+require InlineDrawing;
+
+/// \dfgPresetOmit
+function DrawImporterObjectArray(
+  io DrawingHandle handle, 
+  String name,
+  Ref<ImporterObject> objects[],
+  SInt32 drawMode,
+  SInt32 labelMode,
+  Float32 labelSize,
+  String colorChannel,
+  String textureChannel,
+  Color defaultColor,
+  Color hiddenColor,
+  Color labelColor,
+  Xfo preOffset,
+  Xfo postOffset,
+  Boolean wireFrame,
+  Boolean doubleSided
+) {
+  if(handle == null)
+    return;
+    
+  Vec3 dummyResult;
+  InlineInstance instance = null;
+  InlineDebugShape helperShape = null;
+
+  Xfo axes[];
+  Color axesColors[];
+  Vec3 labelPos[];
+  Color labelColors[];
+  String labelText[];
+
+  Mat44 preOffsetM = preOffset.toMat44();
+  Mat44 postOffsetM = postOffset.toMat44();
+    
+  for(Size i=0;i<objects.size();i++) {
+    if(objects[i] == null)
+      continue;
+    
+    if(objects[i].getType() == 'Light')
+    {
+      Ref<ImporterLight> light = objects[i];
+
+      Mat44 m = light.getGlobalTransform(light.defaultContext);
+      m = preOffsetM * m * postOffsetM;
+
+      if(helperShape == null)
+        helperShape = handle.getEmptyDebugShape(name+'_helpers');
+
+      helperShape.setPen(light.getColor(light.defaultContext), 1.0);
+      Vec3 starts[];
+      Vec3 ends[];
+
+      switch(light.getLightType(light.defaultContext))
+      {
+        case 0: // pointlight
+        {
+          starts.push(m * Vec3(-0.5, 0.0, -0.5));
+          starts.push(m * Vec3(0.5, 0.0, -0.5));
+          starts.push(m * Vec3(0.5, 0.0, 0.5));
+          starts.push(m * Vec3(-0.5, 0.0, 0.5));
+          starts.push(m * Vec3(-0.5, 0.0, -0.5));
+          starts.push(m * Vec3(0.5, 0.0, -0.5));
+          starts.push(m * Vec3(0.5, 0.0, 0.5));
+          starts.push(m * Vec3(-0.5, 0.0, 0.5));
+          starts.push(m * Vec3(-0.5, 0.0, -0.5));
+          starts.push(m * Vec3(0.5, 0.0, -0.5));
+          starts.push(m * Vec3(0.5, 0.0, 0.5));
+          starts.push(m * Vec3(-0.5, 0.0, 0.5));
+
+          ends.push(m * Vec3(0.5, 0.0, -0.5));
+          ends.push(m * Vec3(0.5, 0.0, 0.5));
+          ends.push(m * Vec3(-0.5, 0.0, 0.5));
+          ends.push(m * Vec3(-0.5, 0.0, -0.5));
+          ends.push(m * Vec3(0.0, 0.5, 0.0));
+          ends.push(m * Vec3(0.0, 0.5, 0.0));
+          ends.push(m * Vec3(0.0, 0.5, 0.0));
+          ends.push(m * Vec3(0.0, 0.5, 0.0));
+          ends.push(m * Vec3(0.0, -0.5, 0.0));
+          ends.push(m * Vec3(0.0, -0.5, 0.0));
+          ends.push(m * Vec3(0.0, -0.5, 0.0));
+          ends.push(m * Vec3(0.0, -0.5, 0.0));
+          break;
+        }
+        case 1: // directional
+        {
+          Vec3 v(0.0, 0.0, 1.0);
+          Float32 attenuation = light.getFarAttenuation(light.defaultContext);
+          if(attenuation > 0.0)
+            v.z = attenuation;
+
+          v.z *= -1.0;
+
+          starts.push(m.translation());
+          ends.push(m * v);
+
+          helperShape.drawCircle(m, v.z * 0.1, 12);
+          break;
+        }
+        case 2: // spotlight
+        {
+          Float32 dist = 1.0;
+          Float32 attenuation = light.getFarAttenuation(light.defaultContext);
+          if(attenuation > 0.0)
+            dist = attenuation;
+
+          Float32 cone = DEG_TO_RAD * 0.5 * light.getConeAngle(light.defaultContext);
+          Float32 penumbra = DEG_TO_RAD * 0.5 * light.getPenumbraAngle(light.defaultContext);
+
+          Vec3 vCone(0.0, 0.0, -dist / cos(cone));
+          Vec3 vPenumbra(0.0, 0.0, -dist / cos(penumbra));
+
+          Xfo circleXfo;
+          circleXfo.tr.z = -dist;
+          circleXfo.ori.setFromAxisAndAngle(Vec3(1.0, 0.0, 0.0), HALF_PI);
+          circleXfo = m * circleXfo.toMat44();
+          helperShape.drawCircle(circleXfo, tan(cone) * dist, 12);
+          helperShape.drawCircle(circleXfo, tan(penumbra) * dist, 12);
+
+          starts.push(m.translation());
+          starts.push(m.translation());
+          starts.push(m.translation());
+          starts.push(m.translation());
+          starts.push(m.translation());
+          starts.push(m.translation());
+          starts.push(m.translation());
+          starts.push(m.translation());
+
+          Quat ori;
+
+          ori.setFromAxisAndAngle(Vec3(1.0, 0.0, 0.0), cone);
+          ends.push(m * ori.rotateVector(vCone));
+          ori.setFromAxisAndAngle(Vec3(1.0, 0.0, 0.0), -cone);
+          ends.push(m * ori.rotateVector(vCone));
+          ori.setFromAxisAndAngle(Vec3(0.0, 1.0, 0.0), cone);
+          ends.push(m * ori.rotateVector(vCone));
+          ori.setFromAxisAndAngle(Vec3(0.0, 1.0, 0.0), -cone);
+          ends.push(m * ori.rotateVector(vCone));
+          ori.setFromAxisAndAngle(Vec3(1.0, 0.0, 0.0), penumbra);
+          ends.push(m * ori.rotateVector(vPenumbra));
+          ori.setFromAxisAndAngle(Vec3(1.0, 0.0, 0.0), -penumbra);
+          ends.push(m * ori.rotateVector(vPenumbra));
+          ori.setFromAxisAndAngle(Vec3(0.0, 1.0, 0.0), penumbra);
+          ends.push(m * ori.rotateVector(vPenumbra));
+          ori.setFromAxisAndAngle(Vec3(0.0, 1.0, 0.0), -penumbra);
+          ends.push(m * ori.rotateVector(vPenumbra));
+          break;
+        }
+      }
+
+      if(starts.size() > 0)
+      {
+        helperShape.drawLineSegments(starts, ends);
+      }
+    }
+    else if(objects[i].getType() == 'Camera')
+    {
+      Ref<ImporterCamera> camera = objects[i];
+
+      Mat44 m = camera.getGlobalTransform(camera.defaultContext);
+      m = preOffsetM * m * postOffsetM;
+
+      if(helperShape == null)
+        helperShape = handle.getEmptyDebugShape(name+'_helpers');
+
+      helperShape.setPen(camera.getColor(camera.defaultContext), 1.0);
+      helperShape.drawBBox(m, Vec3(-0.5, -0.5, 0), Vec3(0.5, 0.5, 2));
+
+      Vec3 starts[];
+      Vec3 ends[];
+      starts.push(m.translation());
+      starts.push(m.translation());
+      starts.push(m.translation());
+      starts.push(m.translation());
+      ends.push(m * Vec3(-0.5, -0.5, -1.0));
+      ends.push(m * Vec3(-0.5, 0.5, -1.0));
+      ends.push(m * Vec3(0.5, 0.5, -1.0));
+      ends.push(m * Vec3(0.5, -0.5, -1.0));
+      starts.push(m * Vec3(0.5, -0.5, -1.0));
+      starts.push(m * Vec3(-0.5, -0.5, -1.0));
+      starts.push(m * Vec3(-0.5, 0.5, -1.0));
+      starts.push(m * Vec3(0.5, 0.5, -1.0));
+      ends.push(m * Vec3(-0.5, -0.5, -1.0));
+      ends.push(m * Vec3(-0.5, 0.5, -1.0));
+      ends.push(m * Vec3(0.5, 0.5, -1.0));
+      ends.push(m * Vec3(0.5, -0.5, -1.0));
+      helperShape.drawLineSegments(starts, ends);
+    }
+    else if(objects[i].getType() == 'Shape')
+    {
+      Ref<ImporterShape> shape = objects[i];
+      String objectName = name + shape.getInstancePath();
+
+      Mat44 m = shape.getGlobalTransform(shape.defaultContext);
+      m = preOffsetM * m * postOffsetM;
+      
+      Color color = defaultColor;
+      if(shape.hasProperty('color'))
+        color = shape.getColor(shape.defaultContext);
+
+      String textureFilePath;
+      UInt32 numMaterials = shape.getMaterialCount(shape.defaultContext);
+      if(!shape.getVisible(shape.defaultContext)) {
+        color = hiddenColor;
+      } else if(numMaterials > 0 && drawMode < 3 /* textured or shaded or box */) {
+        Ref<ImporterMaterial> material = shape.getMaterials(shape.defaultContext)[numMaterials-1];
+        if(material) {
+          if(material.hasProperty(colorChannel)) {
+            if(material.getPropertyType(colorChannel) == 'Color') {
+              material.updateProperty(colorChannel, material.defaultContext);
+              color = material.getColorProperty(colorChannel);
+            }
+          }
+          
+          if(material.hasProperty(textureChannel)) {
+            if(material.getPropertyType(textureChannel) == 'String') {
+              Ref<ImporterTexture> texture = material.getTexture(material.defaultContext, textureChannel);
+              if(texture) {
+                textureFilePath = texture.getFilePath(texture.defaultContext);
+              }
+            }
+          }
+        }
+      }
+      
+      if(labelMode > 0) {
+        switch(labelMode)
+        {
+          case 1: // path
+          {
+            labelText.push(shape.getPath());
+            break;
+          }
+          case 2: // name
+          {
+            labelText.push(shape.getName());
+            break;
+          }
+          case 3: // id
+          {
+            labelText.push(shape.getID());
+            break;
+          }
+          case 4: // instancepath
+          {
+            labelText.push(shape.getInstancePath());
+            break;
+          }
+          default:
+          {
+            labelText.push(shape.getPath());
+            break;
+          }
+        }
+        labelPos.push(m.translation());
+        labelColors.push(labelColor);
+      }
+      
+      switch(drawMode) {
+        case 0: // textured
+        case 1: // shaded
+        {
+          Geometry geo = shape.getGeometry(shape.defaultContext);
+          if(geo == null)
+            continue;
+          
+          switch(shape.getGeometryType(shape.defaultContext)) {
+            case ImporterShape_Mesh:
+            {
+              PolygonMesh mesh = geo;
+              if(mesh) {
+                Boolean hasUvs = geo.getAttributes().has('uvs0');
+                if(textureFilePath.length() == 0 || !hasUvs || drawMode == 1)
+                  handle.drawPolygonMesh(objectName, color, Color(0.2, 0.2, 0.2), 16.0, m, mesh, wireFrame, doubleSided, dummyResult, instance);
+                else
+                  handle.drawTexturedPolygonMesh(objectName, textureFilePath, Color(0.2, 0.2, 0.2), 16.0, Color(0.0, 0.0, 0.0), m, mesh, wireFrame, doubleSided, dummyResult, instance);
+              }
+              break;
+            }
+            case ImporterShape_Curves:
+            {
+              Lines lines = geo;
+              if(lines)
+                handle.drawLines(objectName, color, Color(0.0, 0.0, 0.0), 0.0, m, lines, dummyResult, instance);
+              break;
+            }
+            case ImporterShape_Points:
+            {
+              Points points = geo;
+              if(points)
+                handle.drawPoints(objectName, m, points, dummyResult, instance);
+              break;
+            }
+          }
+          break;
+        }
+        case 2: // box
+        {
+          Box3 box = shape.getBounds(shape.defaultContext);
+          Xfo boxXfo;
+          boxXfo.tr = box.center();
+          boxXfo.sc = box.diagonal();
+          axes.push(m * boxXfo.toMat44());
+          axesColors.push(color);
+          break;
+        }
+        case 3: // axes
+        {
+          axes.push(m);
+          break;
+        }
+      }
+    }
+  }
+  
+  if((drawMode == 2 || drawMode == 3) && axes.size() > 0) { // boxes or axes
+    InlineDebugShape shape = handle.getEmptyDebugShape(name);
+    if(drawMode == 2) { // boxes
+      shape.setPen(defaultColor, 1.0);
+      shape.drawBBox(Xfo(), Vec3(-0.5), Vec3(0.5));
+    } else if(drawMode == 3) { // axes
+      shape.drawAxes(Xfo(), true);
+    }
+    String uidName = shape.name;
+    InlineTransform transform = handle.rootTransform.getChild(uidName);
+    InlineInstance transformInstance = transform.getChild(uidName);
+    if(axesColors.size() > 0)
+      transformInstance.setInstanceUniform(InlineUniform('u_useVertexColors', SInt32(0)));
+    transform.setLocalCount(axes.size());
+    for(Size i=0;i<axes.size();i++) {
+      transform.setLocalXfo(i, axes[i]);
+      if(axesColors.size() > i)
+        transformInstance.setTransformUniform(InlineUniform('u_defaultColor', axesColors[i]), i);
+    }
+  }
+  
+  if(labelText.size() > 0) {
+    handle.draw3DTextArray("", labelSize, labelText, labelPos, labelColors, instance);
+  }
+}

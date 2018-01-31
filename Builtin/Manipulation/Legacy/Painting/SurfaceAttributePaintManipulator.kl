@@ -1,0 +1,337 @@
+
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+
+
+require Singletons;
+require InlineDrawing;
+
+
+
+//////////////////////////////////////
+// SurfaceAttributePaintManipulator_PaintData
+
+/**
+\versionadded 1.12.0
+
+The :kl-ref:`SurfaceAttributePaintManipulator_PaintData` defines the data collected
+during painting. :kl-ref:`SurfaceAttributePaintManipulator_PaintData` objects are generated
+with each invocation of :kl-ref:`SurfaceAttributePaintManipulator.onPaint`
+
+\seealso SurfaceAttributePaintManipulator, UndoRedoCommand
+\dfgPresetOmit
+*/
+struct SurfaceAttributePaintManipulator_PaintData {
+  PolygonMesh mesh;
+  ScalarAttribute attribute;
+  Integer pointIds[];
+  /// The previous values of the ScalarAttribute before this 
+  Scalar oldValues[];
+  Scalar newValues[];
+};
+
+function SurfaceAttributePaintManipulator_PaintData(PolygonMesh mesh, ScalarAttribute attribute){
+  this.mesh = mesh;
+  this.attribute = attribute;
+}
+
+// Merge the new patin data into the existing paint data to create one set that can be undone/redone
+function SurfaceAttributePaintManipulator_PaintData.mergeIn!(SurfaceAttributePaintManipulator_PaintData paintData){
+  for (Integer i = 0; i < paintData.pointIds.size(); i++) {
+    Integer id = -1;
+    for (Integer j = 0; j < this.pointIds.size(); j++) {
+      if(paintData.pointIds[i] == this.pointIds[j]){
+        id = j;
+        break;
+      }
+    }
+    if(id != -1){
+      this.newValues[id] = paintData.newValues[i];
+    }
+    else{
+      this.pointIds.push(paintData.pointIds[i]);
+      this.oldValues.push(paintData.oldValues[i]);
+      this.newValues.push(paintData.newValues[i]);
+    }
+  }
+}
+
+function SurfaceAttributePaintManipulator_PaintData.doAction!(){
+  Ref<ScalarAttribute> attrRef = this.attribute;
+  for (Integer i = 0; i < this.pointIds.size(); i++) {
+    this.mesh.setPointAttribute(this.pointIds[i], attrRef, this.newValues[i]);
+  }
+  attrRef.incrementVersion();
+}
+
+function SurfaceAttributePaintManipulator_PaintData.undoAction!(){
+  Ref<ScalarAttribute> attrRef = this.attribute;
+  for (Integer i = 0; i < this.pointIds.size(); i++) {
+    this.mesh.setPointAttribute(this.pointIds[i], attrRef, this.oldValues[i]);
+  }
+  attrRef.incrementVersion();
+}
+
+//////////////////////////////////////
+
+/**
+\versionadded 1.12.0
+\internal
+
+The :kl-ref:`SurfaceAttributePaintCommand` contains a dictionary of
+:kl-ref:`SurfaceAttributePaintManipulator_PaintData` object. One for
+each geometry. As a paint stoke moves from one geometry to another
+the paint data is added to the relevant container in the 
+:kl-ref:`SurfaceAttributePaintCommand`.
+
+\seealso SurfaceAttributePaintManipulator, UndoRedoCommand
+\dfgPresetOmit
+*/
+object SurfaceAttributePaintCommand : UndoRedoCommand {
+  /// a dictionary of :kl-ref:`SurfaceAttributePaintManipulator_PaintData` object. 
+  /// One for each geometry. As a paint stoke moves from one geometry to another
+  /// the paint data is added to the relevant container in the 
+  /// :kl-ref:`SurfaceAttributePaintCommand`.
+  SurfaceAttributePaintManipulator_PaintData paintData[PolygonMesh];
+};
+
+function SurfaceAttributePaintCommand(){
+}
+
+function String SurfaceAttributePaintCommand.getDesc(){
+  String desc;
+  for(mesh in this.paintData){
+    desc += this.paintData[mesh].attribute.getName();
+    break;
+  }
+  return "Paint Surface attribute:" + desc;
+}
+
+function SurfaceAttributePaintCommand.doAction!(){
+  for(mesh in this.paintData){
+    this.paintData[mesh].doAction();
+  }
+}
+
+function SurfaceAttributePaintCommand.undoAction!(){
+  for(mesh in this.paintData){
+    this.paintData[mesh].undoAction();
+  }
+}
+
+/// Merges the current stroke data with the existing data collected over the
+/// course of the paint stroke. 
+/// \param paintData the data collected during the current event.
+function SurfaceAttributePaintCommand.addPaintData!(SurfaceAttributePaintManipulator_PaintData paintData){
+  if(this.paintData.has(paintData.mesh)){
+    this.paintData[paintData.mesh].mergeIn(paintData); 
+  }
+  else{
+    this.paintData[paintData.mesh] = paintData;
+  }
+}
+
+
+///////////////////////////////////////////////
+// SurfaceAttributePaintManipulator
+
+/**
+\versionadded 1.12.0
+
+The :kl-ref:`SurfaceAttributePaintManipulator` enables the painting of a scalar 
+vertex attribute on a :kl-ref:`PolygonMesh`. These scalar attributes can be used 
+to control the effects of custom deformers and the SurfaceAttributePaintManipulator 
+can provide an artist workflow for defining these weightmaps. 
+
+\rst
+ Usage
+ =====
+ - Click and drag with the Left mouse button to paint a paint stroke
+ - Click and drag with the Right mouse button to erase existing paint data.
+ - Click and drag with the Middle mouse button to smooth existing paint data.
+ - The mouse wheel can be used to resize the paint brush, except on platforms that do not support the mouse wheel.
+ - The 'Ctrl' modifier key can be held during a left button mouse drag to resize the brush.
+ - The 'Alt' modifier key can be held during a left button mouse drag to erase paint data.
+ - The 'Shift' modifier key can be held during a left button mouse drag to smooth paint data.
+
+\endrst
+
+\seealso SurfacePaintManipulator
+\dfgPresetOmit
+*/
+object SurfaceAttributePaintManipulator : SurfacePaintManipulator {
+  String attributeName;
+
+  Integer paintMode;
+  SurfaceAttributePaintCommand command;
+};
+
+function SurfaceAttributePaintManipulator(){
+  this.init();
+  this.attributeName = "WeightMap";
+}
+
+function SurfaceAttributePaintManipulator.setAttributeName!(String attributeName){
+  this.attributeName = attributeName;
+}
+
+function SurfaceAttributePaintManipulator.addTargetGeometry!(InlineInstance instance){
+  InlineShape shape = instance.getShape();
+  PolygonMesh mesh = shape.getGeometry();
+  if(mesh == null){
+    report("WARNING: InlineInstance's geometry is not a PolygonMesh:" + instance.getName() );
+    return;
+  }
+  // Ensure that the attribute is added to the mesh.
+  mesh.getOrCreateAttribute(this.attributeName, ScalarAttribute);
+
+  this.parent.addTargetGeometry(instance);
+}
+
+/// Called when the stroke starts when the user presses down the mouse button
+/// Adds the generated :kl-ref:`SurfaceAttributePaintCommand` command to the Host undo stack.
+function SurfaceAttributePaintManipulator.onStrokeBegin!(io MouseEvent mouseEvent){
+
+  // On MouseMove/Mousedown.
+  if(mouseEvent.button == MouseButton_LeftButton){
+    // Some DCC apps are not giving us Middle and Right mouse buttons. 
+    // Use modifier keys to distinguish the action.
+    if((mouseEvent.modifiers & ModiferKey_Alt) != 0)
+      this.paintMode = 1; // Erase
+    else if((mouseEvent.modifiers & ModiferKey_Shift) != 0)
+      this.paintMode = 2; // Smooth
+    else
+      this.paintMode = 0; // Paint
+  }
+  else if(mouseEvent.button == MouseButton_RightButton)
+    this.paintMode = 1; // Erase
+  else if(mouseEvent.button == MouseButton_MiddleButton)
+    this.paintMode = 2; // Smooth
+
+  this.command = SurfaceAttributePaintCommand();
+  mouseEvent.accept();
+}
+
+/// Called when the stroke ends when the user releases the mouse button
+/// Adds the generated command to the Host undo stack.
+function SurfaceAttributePaintManipulator.onStrokeEnd!(io MouseEvent mouseEvent){
+  // Register a command only if painting actually occured.
+  // There should be at least one geometry added to the paint data. 
+  if(this.command.paintData.size() > 0)
+    mouseEvent.getHost().addUndoRedoCommand(this.command);
+}
+
+/// \internal
+operator SurfaceSculptManipulator_paint<<<index>>>(
+  SurfacePaintManipulator_PointCollection collectedPoints,
+  Ref<ScalarAttribute> weightMapAttr,
+  io SurfaceAttributePaintManipulator_PaintData paintData
+ ) {
+  Scalar weight = collectedPoints.weights[index];
+  Integer pointId = collectedPoints.pointIds[index];
+  Scalar oldScalar = weightMapAttr.values[pointId];
+  Scalar newScalar = Math_linearInterpolate(oldScalar, Scalar(1.0), weight); 
+
+  paintData.oldValues[index] = oldScalar;
+  paintData.newValues[index] = newScalar;
+}
+
+/// \internal
+operator SurfaceSculptManipulator_erase<<<index>>>(
+  SurfacePaintManipulator_PointCollection collectedPoints,
+  Ref<ScalarAttribute> weightMapAttr,
+  io SurfaceAttributePaintManipulator_PaintData paintData
+ ) {
+    Scalar weight = collectedPoints.weights[index];
+    Integer pointId = collectedPoints.pointIds[index];
+    Scalar oldScalar = weightMapAttr.values[pointId];
+    Scalar newScalar = Math_linearInterpolate(oldScalar, Scalar(0.0), weight);
+
+    paintData.oldValues[index] = oldScalar;
+    paintData.newValues[index] = newScalar;
+}
+
+/// Smooth Points
+/// \internal
+operator SurfaceAttributePaintManipulator_smoothAttributeData<<<index>>>(
+  Scalar weightMapValues[],
+  SurfacePaintManipulator_PointCollection collectedPoints,
+  io Scalar results[]
+ ) {
+
+  //Pseudo-gaussian: center weight = 0.5, neighbor weights sum = 0.5
+  Index pointId = collectedPoints.pointIds[index];
+  Scalar weight = collectedPoints.weights[index];
+  Scalar value = weightMapValues[pointId];
+
+  LocalL16UInt32Array surroundingPoints;
+  collectedPoints.mesh.getPointSurroundingPoints(pointId, false, surroundingPoints);
+  UInt32 nbNei = surroundingPoints.size();
+  
+  if( nbNei ) {
+    Scalar neiSum = 0.0;
+    for( UInt32 i = 0; i < nbNei; ++i ) {
+      UInt32 neiPt = surroundingPoints.get(i);
+      neiSum += weightMapValues[neiPt];
+    }
+    neiSum /= Scalar(nbNei);
+    value = Math_linearInterpolate(value, (value + neiSum) * 0.5, weight);
+  }
+  results[index] = value;
+}
+
+/// Called during the paint stroke for each mouse move event.
+function SurfaceAttributePaintManipulator.onPaint!(io MouseEvent mouseEvent, SurfacePaintManipulator_PointCollection collectedPoints){
+
+  Ref<ScalarAttribute> weightMapAttr = collectedPoints.mesh.getAttribute(this.attributeName);
+
+  if(weightMapAttr == null){
+    report("ERROR: Geometry Does not have the attribute:" + this.attributeName );
+    return;
+  }
+
+  UInt32 nbPoints = collectedPoints.pointIds.size();
+
+  SurfaceAttributePaintManipulator_PaintData paintData(collectedPoints.mesh, weightMapAttr);
+  paintData.pointIds = collectedPoints.pointIds;
+  paintData.oldValues.resize(collectedPoints.pointIds.size());
+  paintData.newValues.resize(collectedPoints.pointIds.size());
+
+  switch(this.paintMode){
+  case 0: // Paint
+    SurfaceSculptManipulator_paint<<<nbPoints>>>(
+      collectedPoints,
+      weightMapAttr,
+      paintData
+    );
+    break;
+  case 1: // Erase
+    SurfaceSculptManipulator_erase<<<nbPoints>>>(
+      collectedPoints,
+      weightMapAttr,
+      paintData
+    );
+    break;
+  case 2: // Smooth
+    Scalar smoothedValues[];
+    smoothedValues.resize(nbPoints);
+    SurfaceAttributePaintManipulator_smoothAttributeData<<<nbPoints>>>(
+      weightMapAttr.values,
+      collectedPoints,
+      smoothedValues
+    );
+    for(Integer i = 0; i < nbPoints; ++i ) {
+      paintData.oldValues[i] = weightMapAttr.values[ collectedPoints.pointIds[i] ];
+      paintData.newValues[i] = smoothedValues[i];
+    }
+    break;
+  }
+  // do the command immedietly...
+  paintData.doAction();
+  // Merge this paintData with the command so that we only generate one undo command 
+  // for the entire paint stroke, even if we cross multipel geometries. 
+  this.command.addPaintData(paintData);
+}

@@ -1,0 +1,36 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /**
+  The ViewportCenterModifier, when attached to a BaseTool (:kl-ref:`Tool::BaseTool.addDrawModifier` ),
+  sets the target translation so it is at the center of the viewport.
+
+  See :ref:`TPG.tooldrawmodifier` for more information about draw modifiers.
+  */
+  object ViewportCenterModifier : BaseDrawModifier{};
+
+  ViewportCenterModifier.updateDrawData!( io DrawContext context, Ref<Object> target ) {
+    this.parent.updateDrawData( context, target );
+
+    String space = GetTransformSpace( context.contextualProperties );
+    Mat44 transform = GetTransform( context.contextualProperties );
+    Vec2 centerPixel = NormalizedScreenSpaceToPixel( context.viewport, Vec2() );
+
+    if( space == WorldSpace ) {
+      Ray cameraRay = context.viewport.calcRayFromScreenPos( centerPixel );
+      transform.setTranslation( cameraRay.start + cameraRay.direction * 5 );
+      // TODO: other spaces
+    } else if( space == NormalizedViewportSpace )
+      transform.setTranslation( Vec3() );
+    else if( space == PixelCoordinatesSpace )
+      transform.setTranslation( Vec3( centerPixel.x, centerPixel.y, 0 ) );
+
+    SetTransform( context.contextualProperties, transform );
+
+    // Update the renderTransform (viewport space) accordingly
+    UpdateRenderTransform( context );
+  }
+}// namespace Tool

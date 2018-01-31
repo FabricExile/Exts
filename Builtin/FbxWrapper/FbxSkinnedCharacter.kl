@@ -1,0 +1,149 @@
+/*
+ *  Copyright 2010-2015 Fabric Software Inc. All rights reserved.
+ */
+
+require Fbx, Characters;
+
+object FbxSkinnedCharacter : Character
+{
+  private String filePath;
+  private FbxArchive archive;
+};
+
+function FbxSkinnedCharacter(String filePath)
+{
+  if(!this.readFromFile(filePath))
+    return;
+  this.init();
+}
+
+function FbxSkinnedCharacter(FbxArchive archive)
+{
+  this.archive = archive;
+  if(!this.archive)
+    return;
+  this.filePath = this.archive.GetFilePath();
+  this.init();
+}
+
+/// \internal
+/// Opens the file specified by the file path. Called by the FbxSkinnedCharacter constructors
+private Boolean FbxSkinnedCharacter.readFromFile!(String filePath) {
+
+  this.archive = FbxArchive();
+  if(!this.archive.ReadFromFile(filePath))
+    return false;
+  this.filePath = filePath;
+  return true;
+}
+
+private FbxSkinnedCharacter.init!()
+{
+  this.name = this.filePath;
+  this.skeleton = Skeleton(this.name);
+  this.pose = Pose(this.skeleton);
+  this.version = -1; // Ensure the version is invalid at construction time. 
+  this.simpleLock = SimpleLock(this.name);
+
+  FbxNode nodes[] = this.archive.getAllNodes();
+  if(nodes.size() == 0)
+    return;
+
+  FbxScene scene = nodes[0].GetScene();
+  FbxPose bindPose;
+  for(SInt32 j=0;j<scene.GetPoseCount();j++)
+  {
+    FbxPose pose = scene.GetPose(j);
+    if(!pose.IsBindPose())
+      continue;
+    bindPose = pose;
+    break;
+  }
+
+  if(!bindPose.cxx_isValid())
+  {
+    report('No bind pose found in '+this.filePath);
+    return;
+  }
+
+  for(Size i=0;i<nodes.size();i++)
+  {
+    if(nodes[i].GetTypeName() != "Mesh")
+      continue;
+
+    PolygonMesh mesh = null;
+    Mat44 meshReferencePose;
+    FbxNode boneNodes[];
+
+    if(!nodes[i].GetSkinningInformation(mesh, meshReferencePose, boneNodes))
+    {
+      report('No skinning info found.');
+      continue;
+    }
+
+    mesh.recomputePointNormals();
+    this.geometries.push(mesh);
+    this.bindShapeTransforms.push(meshReferencePose);
+
+    if(this.skeleton.getNumBones() == 0)
+    {
+      SInt32 boneNameToIndex[String];
+      Bone bones[];
+
+      for(Size j=0;j<boneNodes.size();j++)
+      {
+        String boneName = boneNodes[j].GetName();
+        boneName = boneName.reversePartition(':')[2];
+
+        Bone bone;
+        bone.name = boneName;
+        bone.setFlag(BONEFLAG_DEFORMER);
+
+        for(SInt32 k=0;k<bindPose.GetCount();k++)
+        {
+          String poseName = bindPose.GetNodeName(k).GetCurrentName();
+          if(poseName == boneNodes[j].GetName())
+          {
+            bone.referencePose = Mat44(bindPose.GetMatrix(k)).transpose();
+            break;
+          }
+        }
+
+        boneNameToIndex[boneNodes[j].GetName()] = bones.size();
+
+        bone.calcInvRefPose();
+        bones.push(bone);
+      }
+
+      for(Size j=0;j<boneNodes.size();j++)
+      {
+        FbxNode parentNode = boneNodes[j].GetParent();
+        if(parentNode.cxx_isValid())
+        {
+          SInt32 parentIndex = boneNameToIndex.get(parentNode.GetName(), -1);
+          if(parentIndex >= 0)
+          {
+            bones[j].parentIndex = parentIndex;
+          }
+        }
+
+        for(Size k=0;k<boneNodes[j].GetChildCount(false /* recursive */);k++)
+        {
+          FbxNode child = boneNodes[j].GetChild(k);
+          SInt32 childIndex = boneNameToIndex.get(child.GetName(), -1);
+          if(childIndex >= 0)
+          {
+            bones[j].childIndices.push(childIndex);
+          }
+        }
+      }
+
+      this.skeleton = Skeleton(this.name, bones);
+      this.pose = Pose(this.skeleton);
+    }
+  }
+
+  FbxClip clip(this.archive, '' /* default anim layer */);
+  ClipPose pose(this.skeleton, clip.getClip());
+  this.setPose(pose);
+}

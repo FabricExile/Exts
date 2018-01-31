@@ -1,0 +1,136 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Parameters, Util;
+
+interface UndoRedoCommand {
+  /// Gets a string to use in the undo list.
+  String getDesc();
+
+  /// Invoked by the redo action in the Host DCC.
+  doAction!();
+  
+  /// Invoked by the undo action in the Host DCC.
+  undoAction!();
+};
+
+/**
+  \versionadded 1.12.0
+
+  :kl-ref:`Host` object encapsulates data about the host DCC that the event originated from.
+  It is also used to propagate data back to the DCC, such as undo/redo commands, and parameter changes.
+
+  \seealso :kl-ref:`EvalContext`
+
+  \dfgPresetOmit
+*/
+object Host {
+
+  /// The name of the host DCC. This could be 'Maya', '3dsMax' etc..
+  String hostName;
+
+  /// A boolean flag indicating that the Host application needs to redraw its viewport.
+  Boolean redrawRequested;
+
+  /// An array of commands generated during the event handling. These commands will be added as a single
+  /// command on the Host undo/redo stack. Usually, this will be an array containing 0, or 1 items, but
+  /// it is possible for a manipulator to generate multiple changes within the same event.
+  UndoRedoCommand commands[];
+
+  /// A string indicating the name of the node in the Host graph that should be dirtied.
+  String dirtifyNode;
+
+  /// The name of a custom command that should be invoked in the host.
+  String customCommand;
+
+  /// A string containing any arguments for the custom command.
+  String customCommandArgs[];
+
+  /// A param list containing any parameters for the custom command
+  ParamDict customCommandParams;
+};
+
+Host() {
+  this.customCommandParams = ParamDict();
+}
+
+/// Gets the name of the host application.
+String Host.getHostName() {
+  return this.hostName;
+}
+
+/// Requests that the host application redraw its viewports.
+/// \note This redraw could also cause the Splice drawing to be invoked.
+Host.requestRedraw!() {
+  this.redrawRequested = true;
+}
+
+/** 
+  \versionadded 1.13.0
+  Specify a DCC node to dirtify.
+  \param dirtifyNode The name of the node in the DCC to be made dirty.
+  \note the name of the node to dirty can often be determined by :kl-ref:`EvalContext` provided with the evaluation of the Splice node.
+
+  \rst
+    .. kl-example:: dirtifyDCCNode
+      event.getHost().addUndoRedoCommand(MyCommand());
+      event.getHost().dirtifyDCCNode("MyNode");
+
+      // Notify the system that data has changed, and that we should redraw
+      event.getHost().requestRedraw();
+
+  \endrst
+*/
+Host.dirtifyDCCNode!(String dirtifyNode) {
+  this.dirtifyNode = dirtifyNode;
+}
+
+/** 
+  \versionadded 1.13.0
+  Specify a custom command to invoke in the DCC along with an args string.
+  \param customCommand The name of a custom command that should be invoked in the host.
+  \param A string containing any arguments for the custom command.
+
+  \rst
+    .. kl-example:: callCustomCommand
+      String args[];
+      args.push("Sphere.radius");
+      args.push("3.2");
+      if(this.hostName == 'Maya')
+        event.getHost().callCustomCommand("setAttr", args);
+  \endrst
+*/
+Host.callCustomCommand!(String customCommand, String args[]) {
+  this.customCommand = customCommand;
+  this.customCommandArgs = args;
+  this.customCommandParams.clear();
+}
+
+/** 
+  \versionadded 2.0
+  Specify a custom command to invoke in the DCC along with a parameter list.
+*/
+Host.callCustomCommand!(String customCommand, ParamDict params) {
+  this.customCommand = customCommand;
+  this.customCommandParams = params;
+  this.customCommandArgs.resize(0);
+}
+
+/// Adds a new command to the Host object to be propagated back and added to the undo stack of the host application.
+/// \param command the command to add to the host application stack.
+Host.addUndoRedoCommand!(UndoRedoCommand command) {
+  this.commands.push(command);
+}
+
+/// \internal
+/// Checks if custom undo/redo commands are being propagated back to the host.
+Boolean Host.undoRedoCommandsAdded() {
+  return this.commands.size() > 0;
+}
+
+/// \internal
+/// Gets the array of commands that will be added to the host application undo stack.
+UndoRedoCommand[] Host.getUndoRedoCommands() {
+  return this.commands;
+}

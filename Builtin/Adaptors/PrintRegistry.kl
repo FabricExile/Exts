@@ -1,0 +1,322 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require FabricSynchronization, Math;
+
+interface PrintAdaptor {
+  String printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize );
+};
+
+interface Printable {
+  String print!( Boolean detailed );
+};
+
+// Pre-register base types
+
+/// \internal
+object UInt8PrintAdaptor : PrintAdaptor {};
+String UInt8PrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{UInt8});
+}
+
+/// \internal
+object SInt8PrintAdaptor : PrintAdaptor {};
+String SInt8PrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{SInt8});
+}
+
+/// \internal
+object UInt16PrintAdaptor : PrintAdaptor {};
+String UInt16PrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{UInt16});
+}
+
+/// \internal
+object SInt16PrintAdaptor : PrintAdaptor {};
+String SInt16PrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{SInt16});
+}
+
+/// \internal
+object UInt32PrintAdaptor : PrintAdaptor {};
+String UInt32PrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{UInt32});
+}
+
+/// \internal
+object SInt32PrintAdaptor : PrintAdaptor {};
+String SInt32PrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{SInt32});
+}
+
+/// \internal
+object UInt64PrintAdaptor : PrintAdaptor {};
+String UInt64PrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{UInt64});
+}
+
+/// \internal
+object SInt64PrintAdaptor : PrintAdaptor {};
+String SInt64PrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{SInt64});
+}
+
+/// \internal
+object Float32PrintAdaptor : PrintAdaptor {};
+String Float32PrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Float32});
+}
+
+/// \internal
+object Float64PrintAdaptor : PrintAdaptor {};
+String Float64PrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Float64});
+}
+
+/// \internal
+object StringPrintAdaptor : PrintAdaptor {};
+String StringPrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{String});
+}
+
+/// \internal
+object BooleanPrintAdaptor : PrintAdaptor {};
+String BooleanPrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Boolean});
+}
+
+// Pre-register math types
+
+/// \internal
+object Vec2PrintAdaptor : PrintAdaptor {};
+String Vec2PrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Vec2});
+}
+
+/// \internal
+object Vec2_dPrintAdaptor : PrintAdaptor {};
+String Vec2_dPrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Vec2_d});
+}
+
+/// \internal
+object Vec2_iPrintAdaptor : PrintAdaptor {};
+String Vec2_iPrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Vec2_i});
+}
+
+/// \internal
+object Vec3PrintAdaptor : PrintAdaptor {};
+String Vec3PrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Vec3});
+}
+
+/// \internal
+object Vec3_dPrintAdaptor : PrintAdaptor {};
+String Vec3_dPrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Vec3_d});
+}
+
+/// \internal
+object Vec3_iPrintAdaptor : PrintAdaptor {};
+String Vec3_iPrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Vec3_i});
+}
+
+/// \internal
+object Vec4PrintAdaptor : PrintAdaptor {};
+String Vec4PrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Vec4});
+}
+
+/// \internal
+object Vec4_dPrintAdaptor : PrintAdaptor {};
+String Vec4_dPrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Vec4_d});
+}
+
+/// \internal
+object Vec4_iPrintAdaptor : PrintAdaptor {};
+String Vec4_iPrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Vec4_i});
+}
+
+/// \internal
+object Mat22PrintAdaptor : PrintAdaptor {};
+String Mat22PrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Mat22});
+}
+
+/// \internal
+object Mat22_dPrintAdaptor : PrintAdaptor {};
+String Mat22_dPrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Mat22_d});
+}
+
+/// \internal
+object Mat33PrintAdaptor : PrintAdaptor {};
+String Mat33PrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Mat33});
+}
+
+/// \internal
+object Mat33_dPrintAdaptor : PrintAdaptor {};
+String Mat33_dPrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Mat33_d});
+}
+
+/// \internal
+object Mat44PrintAdaptor : PrintAdaptor {};
+String Mat44PrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Mat44});
+}
+
+/// \internal
+object Mat44_dPrintAdaptor : PrintAdaptor {};
+String Mat44_dPrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Mat44_d});
+}
+
+/// \internal
+object ColorPrintAdaptor : PrintAdaptor {};
+String ColorPrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Color});
+}
+
+/// \internal
+object QuatPrintAdaptor : PrintAdaptor {};
+String QuatPrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Quat});
+}
+
+/// \internal
+object Quat_dPrintAdaptor : PrintAdaptor {};
+String Quat_dPrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Quat_d});
+}
+
+/// \internal
+object EulerPrintAdaptor : PrintAdaptor {};
+String EulerPrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Euler});
+}
+
+/// \internal
+object Euler_dPrintAdaptor : PrintAdaptor {};
+String Euler_dPrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Euler_d});
+}
+
+/// \internal
+object XfoPrintAdaptor : PrintAdaptor {};
+String XfoPrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Xfo});
+}
+
+/// \internal
+object Box2PrintAdaptor : PrintAdaptor {};
+String Box2PrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Box2});
+}
+
+/// \internal
+object Box3PrintAdaptor : PrintAdaptor {};
+String Box3PrintAdaptor.printValue( Boolean detailed, Ref<Object> objValue, Data structData, UInt64 structDataSize ) {
+  return String(structData->{Box3});
+}
+
+/// \internal
+object PrintRegistry {
+  SimpleLock lockVar;
+  PrintAdaptor adaptorsByType[Type];
+};
+
+function PrintRegistry() {
+  this.lockVar = SimpleLock("PrintRegistry");
+
+  // Pre-register base types
+  this.registerAdaptor( UInt8, UInt8PrintAdaptor() );
+  this.registerAdaptor( SInt8, SInt8PrintAdaptor() );
+  this.registerAdaptor( UInt16, UInt16PrintAdaptor() );
+  this.registerAdaptor( SInt16, SInt16PrintAdaptor() );
+  this.registerAdaptor( UInt32, UInt32PrintAdaptor() );
+  this.registerAdaptor( SInt32, SInt32PrintAdaptor() );
+  this.registerAdaptor( UInt64, UInt64PrintAdaptor() );
+  this.registerAdaptor( SInt64, SInt64PrintAdaptor() );
+  this.registerAdaptor( Float32, Float32PrintAdaptor() );
+  this.registerAdaptor( Float64, Float64PrintAdaptor() );
+  this.registerAdaptor( String, StringPrintAdaptor() );
+  this.registerAdaptor( Boolean, BooleanPrintAdaptor() );
+
+  // Pre-register math types
+  this.registerAdaptor( Vec2, Vec2PrintAdaptor() );
+  this.registerAdaptor( Vec2_d, Vec2_dPrintAdaptor() );
+  this.registerAdaptor( Vec2_i, Vec2_iPrintAdaptor() );
+  this.registerAdaptor( Vec3, Vec3PrintAdaptor() );
+  this.registerAdaptor( Vec3_d, Vec3_dPrintAdaptor() );
+  this.registerAdaptor( Vec3_i, Vec3_iPrintAdaptor() );
+  this.registerAdaptor( Vec4, Vec4PrintAdaptor() );
+  this.registerAdaptor( Vec4_d, Vec4_dPrintAdaptor() );
+  this.registerAdaptor( Vec4_i, Vec4_iPrintAdaptor() );
+  this.registerAdaptor( Mat22, Mat22PrintAdaptor() );
+  this.registerAdaptor( Mat22_d, Mat22_dPrintAdaptor() );
+  this.registerAdaptor( Mat33, Mat33PrintAdaptor() );
+  this.registerAdaptor( Mat33_d, Mat33_dPrintAdaptor() );
+  this.registerAdaptor( Mat44, Mat44PrintAdaptor() );
+  this.registerAdaptor( Mat44_d, Mat44_dPrintAdaptor() );
+  this.registerAdaptor( Color, ColorPrintAdaptor() );
+  this.registerAdaptor( Quat, QuatPrintAdaptor() );
+  this.registerAdaptor( Quat_d, Quat_dPrintAdaptor() );
+  this.registerAdaptor( Euler, EulerPrintAdaptor() );
+  this.registerAdaptor( Euler_d, Euler_dPrintAdaptor() );
+  this.registerAdaptor( Xfo, XfoPrintAdaptor() );
+  this.registerAdaptor( Box2, Box2PrintAdaptor() );
+  this.registerAdaptor( Box3, Box3PrintAdaptor() );
+}
+
+function PrintRegistry.registerAdaptor!( Type sourceType, PrintAdaptor adaptor ) {
+  {
+    AutoLock AL(this.lockVar);
+    this.adaptorsByType[sourceType] = adaptor;
+  }
+}
+
+inline Ref<PrintRegistry> GetPrintRegistry() = "_getPrintRegistry";
+
+inline RegisterPrintAdaptor( Type sourceType, PrintAdaptor adaptor ) {
+  Ref<PrintRegistry> adaptors = GetPrintRegistry();
+  adaptors.registerAdaptor( sourceType, adaptor );
+}
+
+function Boolean PrintWithAdaptor( Boolean detailed, Ref<Object> objValue, Type structType, Data structData, UInt64 structDataSize, io String result ) {
+  Ref<PrintAdaptor> adaptor = null;
+  Ref<PrintRegistry> registry = GetPrintRegistry();
+  Type type = objValue ? objValue.type() : structType;
+  {
+    AutoLock AL(registry.lockVar);
+    adaptor = registry.adaptorsByType.get(type, null);
+  }
+  if( !adaptor ) {
+
+    Ref<Printable> printable = objValue;
+    if( printable ) {
+      result = printable.print(detailed);
+      return true;
+    }
+
+    result = String();
+    return false;
+  }
+  result = adaptor.printValue(detailed, objValue, structData, structDataSize);
+  return true;
+}
+
+inline Boolean PrintWithAdaptor( Boolean detailed, Ref<Object> objValue, io String result ) {
+  return PrintWithAdaptor( detailed, objValue, None, Data(), 0, result );
+}
+
+inline Boolean PrintWithAdaptor( Boolean detailed, Type structType, Data structData, UInt64 structDataSize, io String result ) {
+  return PrintWithAdaptor( detailed, null, structType, structData, structDataSize, result );
+}
+

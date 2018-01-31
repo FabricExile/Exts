@@ -1,0 +1,48 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/**
+The ImporterAnimCurve represents an animation curve being imported. The curve
+contains a AnimX::AnimCurve property storing the actual animation curve data.
+\dfgPresetOmit
+*/
+object ImporterAnimCurve : ImporterObject permits Importer
+{
+};
+
+/// \dfgPresetOmit
+function ImporterAnimCurve(String id, String path) {
+  this.initialize(id, path, 'AnimCurve');
+}
+
+/// \dfgPresetOmit
+protected function ImporterAnimCurve.initialize!(String id, String path, String type) {
+  this.parent.initialize(id, path, type);
+  this.initProperty('targetPath', ImporterString(this.getParentPath()));
+  this.initProperty('curve', ImporterAnimCurveValue());
+}
+
+/// \dfgPresetOmit
+function String ImporterAnimCurve.getTargetPath(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('targetPath', context);
+  return mutableThis.getStringProperty('targetPath');
+}
+
+/// \dfgPresetOmit
+function ImporterAnimCurve.setTargetPath!(String targetPath) {
+  this.setProperty('targetPath', targetPath);
+}
+
+/// \dfgPresetOmit
+function AnimX::AnimCurve ImporterAnimCurve.getCurve(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('curve', context);
+  return mutableThis.getAnimCurveProperty('curve');
+}
+
+/// \dfgPresetOmit
+function ImporterAnimCurve.setCurve!(AnimX::AnimCurve curve) {
+  this.setProperty('curve', curve);
+}

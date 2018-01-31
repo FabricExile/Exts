@@ -1,0 +1,94 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/PolygonMesh.html",
+    "uiTooltip" : "Returns the polygon point indices and weights that define the location, relative to the polygon returned by :kl-ref:`PolygonMesh.getLocationPolygon`.\n\n Supported by PolygonMesh"
+    },
+  "title" : "GetLocationPolygonPointIndicesAndWeights[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "PolygonMesh[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "location",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "GeometryLocation[]" : [
+          {
+            "index" : -1,
+            "subIndex" : 0,
+            "barycentric" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "GeometryLocation[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "polygonPointIndices",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "UInt32[3][]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "weights",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[3][]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "332268F1703C97B3B137F8D4CEEB8B8D",
+  "code" : "require Geometry;
+
+operator Geometry_PolygonMesh_getLocationPolygonPointIndicesAndWeights_task<<<index>>>(
+  in PolygonMesh[] this
+, in GeometryLocation[] location
+, out UInt32[3][] polygonPointIndices
+, out Scalar[3][] weights
+) {
+  this[index < this.size() ? index : this.size() - 1].getLocationPolygonPointIndicesAndWeights(location[index < location.size() ? index : location.size() - 1], polygonPointIndices[index < polygonPointIndices.size() ? index : polygonPointIndices.size() - 1], weights[index < weights.size() ? index : weights.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( location.size() == 0) return;
+  if( polygonPointIndices.size() == 0) return;
+  if( weights.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < location.size()) task_size = location.size();
+  polygonPointIndices.resize(task_size);
+  weights.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Geometry_PolygonMesh_getLocationPolygonPointIndicesAndWeights_task(index, this, location, polygonPointIndices, weights);
+    }
+  } else {
+    Geometry_PolygonMesh_getLocationPolygonPointIndicesAndWeights_task<<<task_size>>>(this, location, polygonPointIndices, weights);
+  }
+}
+"
+  }

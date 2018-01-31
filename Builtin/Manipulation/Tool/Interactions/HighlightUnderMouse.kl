@@ -1,0 +1,109 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /**
+    The HighlightUnderMouse interaction will override the color of a
+    BaseTool (usually a shape) while the mouse cursor is over it.
+    The target shape can be explicit, else it will be the owner
+    BaseTool of the component.
+
+    See :ref:`TPG.interactive-tools` for more information and examples related to tool interactions.
+  */
+  object HighlightUnderMouse : BaseComponent, Activable{
+    SetColorAction highlightColorAction;
+    MouseOverRaycastInteraction mouseOverInteraction;
+    Boolean active;
+  };
+
+  /// Highlight behavior. The parent hierarchy is the target shape.
+  HighlightUnderMouse() {
+    this.construct( RTVal( Color( 1 ) ), null );
+  }
+
+  /// Highlight behavior. The parent hierarchy is the target shape.
+  HighlightUnderMouse( RTVal highlightTexture ) {
+    this.construct( highlightTexture, null );
+  }
+
+  /// Highlight behavior. The shape is the target shape (not our parent).
+  HighlightUnderMouse( RTVal highlightTexture, Ref<BaseTool> shape ) {
+    this.construct( highlightTexture, shape );
+  }
+
+  /// Highlight behavior. The parent hierarchy is the target shape.
+  HighlightUnderMouse( Color highlightColor ) {
+    this.construct( RTVal( highlightColor ), null );
+  }
+
+  /// Highlight behavior. The shape is the target shape (not our parent).
+  HighlightUnderMouse( Color highlightColor, Ref<BaseTool> shape ) {
+    this.construct( RTVal( highlightColor ), shape );
+  }
+
+  /// Highlight behavior. The parent hierarchy is the target shape.
+  HighlightUnderMouse( Image2D highlightTexture ) {
+    this.construct( RTVal( highlightTexture ), null );
+  }
+
+  /// Highlight behavior. The shape is the target shape (not our parent).
+  HighlightUnderMouse( Image2D highlightTexture, Ref<BaseTool> shape ) {
+    this.construct( RTVal( highlightTexture ), shape );
+  }
+
+  /// \internal
+  HighlightUnderMouse.construct!( RTVal highlightColor, Ref<BaseTool> explicitShape ) {
+    this.active = true;
+    this.mouseOverInteraction = MouseOverRaycastInteraction( 0, !explicitShape );//If no explicit shape, the parent is the target shape
+
+    this.highlightColorAction = SetColorAction( highlightColor, true );
+    this.highlightColorAction.connectToDoAndAttach( this.mouseOverInteraction, MouseOverRaycastInteraction_EnterEvent );
+    this.highlightColorAction.connectToUndoAndAttach( this.mouseOverInteraction, MouseOverRaycastInteraction_LeaveEvent );
+
+    if( explicitShape ) {
+      this.mouseOverInteraction.addRaycastHierarchy( explicitShape, false );
+      Ref<BaseTool> mutableExplicitShape = explicitShape;
+      mutableExplicitShape.attachComponent( this.highlightColorAction );
+    } else
+      this.highlightColorAction.setParent( this );
+  }
+
+  /// Adds a shape (area) that will also cause the highlight
+  HighlightUnderMouse.addHighlightAreaShape!( Ref<RaycastTargetShape> shape ) {
+    this.mouseOverInteraction.addRaycastShape( shape, true );
+  }
+
+  HighlightUnderMouse.setColor!( RTVal color ) {
+    this.highlightColorAction.setColor( color );
+  }
+
+  HighlightUnderMouse.setColor!( Color color ) {
+    this.highlightColorAction.setColor( color );
+  }
+
+  HighlightUnderMouse.setColor!( Image2D colorTexture ) {
+    this.highlightColorAction.setColor( colorTexture );
+  }
+
+  /// Implementation of Activable
+  Boolean HighlightUnderMouse.isActive() {
+    return this.active;
+  }
+
+  /// Implementation of Activable
+  HighlightUnderMouse.activate!() {
+    if( this.mouseOverInteraction )
+      this.mouseOverInteraction.activate();
+    this.active = true;
+  }
+
+  /// Implementation of Activable
+  HighlightUnderMouse.deactivate!() {
+    if( this.mouseOverInteraction )
+      this.mouseOverInteraction.deactivate();
+    this.active = false;
+  }
+
+}// namespace Tool

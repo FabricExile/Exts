@@ -1,0 +1,112 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/ARGB.html",
+    "uiTooltip" : "Default constructor\n\n Supported by ARGB"
+    },
+  "title" : "ARGB[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "a",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Byte[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Byte[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "r",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Byte[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Byte[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "g",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Byte[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Byte[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "b",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Byte[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Byte[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 0,\n  \"b\" : 0\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "ARGB[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "E48A130F4F02852404828A40B0D0CF31",
+  "code" : "require Math;
+
+operator Math_ARGB_ARGB_task<<<index>>>(
+  io ARGB[] result
+, in Byte[] a
+, in Byte[] r
+, in Byte[] g
+, in Byte[] b
+) {
+  result[index] = ARGB(a[index < a.size() ? index : a.size() - 1], r[index < r.size() ? index : r.size() - 1], g[index < g.size() ? index : g.size() - 1], b[index < b.size() ? index : b.size() - 1]);
+}
+
+dfgEntry {
+  if( a.size() == 0) return;
+  if( r.size() == 0) return;
+  if( g.size() == 0) return;
+  if( b.size() == 0) return;
+  Size task_size = 0;
+  if(task_size < a.size()) task_size = a.size();
+  if(task_size < r.size()) task_size = r.size();
+  if(task_size < g.size()) task_size = g.size();
+  if(task_size < b.size()) task_size = b.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_ARGB_ARGB_task(index, result, a, r, g, b);
+    }
+  } else {
+    Math_ARGB_ARGB_task<<<task_size>>>(result, a, r, g, b);
+  }
+}
+"
+  }

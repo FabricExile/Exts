@@ -1,0 +1,92 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "constructor taking time, timesampling and numsamples\n\nSupported types:\n  time: Float64\n  ts: AlembicTimeSampling\n  numSamples: SInt32\n  result: AlembicSampleInfo\n"
+    },
+  "title" : "AlembicSampleInfo[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "time",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float64[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float64[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "ts",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "AlembicTimeSampling[]" : [
+          null
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "AlembicTimeSampling[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "numSamples",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "SInt32[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "SInt32[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "AlembicSampleInfo[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "43D78C61487489ABE800EC78CEF1954C",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicSampleInfo_AlembicSampleInfo_task<<<index>>>(
+  io AlembicSampleInfo[] result
+, in Float64[] time
+, in AlembicTimeSampling[] ts
+, in SInt32[] numSamples
+) {
+  result[index] = AlembicSampleInfo(time[index < time.size() ? index : time.size() - 1], ts[index < ts.size() ? index : ts.size() - 1], numSamples[index < numSamples.size() ? index : numSamples.size() - 1]);
+}
+
+dfgEntry {
+  if( time.size() == 0) return;
+  if( ts.size() == 0) return;
+  if( numSamples.size() == 0) return;
+  Size task_size = 0;
+  if(task_size < time.size()) task_size = time.size();
+  if(task_size < ts.size()) task_size = ts.size();
+  if(task_size < numSamples.size()) task_size = numSamples.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      AlembicWrapper_AlembicSampleInfo_AlembicSampleInfo_task(index, result, time, ts, numSamples);
+    }
+  } else {
+    AlembicWrapper_AlembicSampleInfo_AlembicSampleInfo_task<<<task_size>>>(result, time, ts, numSamples);
+  }
+}
+"
+  }

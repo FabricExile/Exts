@@ -1,0 +1,101 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+
+/**
+  \versionadded 2.2
+
+  :kl-ref:`LegacyHandlerDescription` are a set of class used to store the attributs that describe an LegacyEventHandler.
+  It is used for debugging and to construct a tool menu.
+
+  \seealso :kl-ref:`LegacyEventHandler`, :kl-ref:`LegacyHandlerDispatchers`
+
+  \dfgPresetOmit
+*/
+
+interface LegacyHandlerDescription {
+  String getHandlerType();
+  describe();
+};
+
+object LegacyBaseHandlerDescription : LegacyHandlerDescription{
+  String name;
+LegacyHandlerExclusivity handlerExclusivity;
+  Boolean isIndependent;
+  Boolean takeAllEvents;
+  Key enableKey;
+  Boolean isEnabled;
+};
+
+String LegacyBaseHandlerDescription.getHandlerType() {
+  return "Handler";
+}
+
+LegacyBaseHandlerDescription.describe() {
+  report(this.getHandlerType() + " : " + this.name);
+  report("  isEnabled : " + this.isEnabled);
+  report("  enableKey : " + this.enableKey);
+  report("  exclusivity : " + this.handlerExclusivity);
+  report("  isIndependent : " + this.isIndependent);
+  report("  takeAllEvents : " + this.takeAllEvents);
+}
+
+object ToolModeDescription {
+  String name;
+  Key enableKey;
+  Boolean isEnabled;
+};
+
+ToolModeDescription.describe() {
+  report("  Mode : " + this.name);
+  report("    isEnabled : " + this.isEnabled);
+  report("    enableKey : " + this.enableKey);
+}
+
+object ToolDescription : LegacyBaseHandlerDescription {
+  ToolModeDescription modes[];
+};
+
+ToolDescription( LegacyBaseHandlerDescription desc) {
+  this.name = desc.name;
+  this.handlerExclusivity = desc.handlerExclusivity;
+  this.enableKey = desc.enableKey;
+  this.isEnabled = desc.isEnabled;
+  this.isIndependent = desc.isIndependent;
+  this.takeAllEvents = desc.takeAllEvents;
+}
+
+String ToolDescription.getHandlerType() {
+  return "Tool";
+}
+
+ToolDescription.describe() {
+  this.parent.describe();
+  for(Index i=0; i<this.modes.size(); ++i)
+    this.modes[i].describe();
+}
+
+object LegacyDispatcherDescription : LegacyBaseHandlerDescription {
+  LegacyHandlerDescription handlers[];
+};
+
+LegacyDispatcherDescription( LegacyBaseHandlerDescription desc) {
+  this.name = desc.name;
+  this.handlerExclusivity = desc.handlerExclusivity;
+  this.enableKey = desc.enableKey;
+  this.isEnabled = desc.isEnabled;
+  this.isIndependent = desc.isIndependent;
+  this.takeAllEvents = desc.takeAllEvents;
+}
+ 
+String LegacyDispatcherDescription.getHandlerType() {
+  return "Dispatcher";
+}
+
+LegacyDispatcherDescription.describe() {
+  report("\n");
+  this.parent.describe();
+  for(Index i=0; i<this.handlers.size(); ++i)
+    this.handlers[i].describe();
+}

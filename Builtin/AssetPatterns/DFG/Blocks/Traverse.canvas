@@ -1,0 +1,52 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+    "uiNodeColor" : "{\n  \"r\" : 132,\n  \"g\" : 106,\n  \"b\" : 97\n  }",
+    "uiTooltip" : "Expands the instances inside the list of objects into actual objects."
+    },
+  "title" : "Traverse",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Execute" : {}
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "objects",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "ImporterObject[]" : []
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Ref<ImporterObject>[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "defaultValues" : {
+        "ImporterObject[]" : []
+        },
+      "execPortType" : "Out",
+      "typeSpec" : "Ref<ImporterObject>[]"
+      }
+    ],
+  "extDeps" : {
+    "AssetPatterns" : "*"
+    },
+  "presetGUID" : "1BE6069F2DA4C05D2BADD8C35A78D92B",
+  "code" : "require AssetPatterns;
+
+dfgEntry {
+  ImporterTraverser traverser(objects);
+  result = traverser.traverse();
+}
+"
+  }

@@ -1,0 +1,115 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+require Alembic;
+
+const SInt32 AlembicExportFeature_Complete = 0;
+const SInt32 AlembicExportFeature_Positions = 1;
+const SInt32 AlembicExportFeature_Normals = 2;
+const SInt32 AlembicExportFeature_Topology = 4;
+const SInt32 AlembicExportFeature_Velocities = 8;
+const SInt32 AlembicExportFeature_VertexColors = 16;
+const SInt32 AlembicExportFeature_Uvs = 32;
+const SInt32 AlembicExportFeature_Sizes = 64;
+const SInt32 AlembicExportFeature_Scales = 128;
+const SInt32 AlembicExportFeature_Orientations = 256;
+const SInt32 AlembicExportFeature_Ids = 512;
+const SInt32 AlembicExportFeature_PointSizes = 1024;
+const SInt32 AlembicExportFeature_TextureRefs = 2048;
+
+// combination of export attrs
+const SInt32 AlembicExportFeature_JustPositions = 1;
+
+/**
+  The AlembicSampleInfo is used to represent an interpolation between two samples on any AlembicIObject. 
+  It stores both the relevant times, indices of the samples as well as the fraction of the interpolation.
+*/
+struct AlembicSampleInfo {
+  UInt32 indexA;
+  UInt32 indexB;
+  Float64 time;
+  Float64 timeA;
+  Float64 timeB;
+  Float64 fraction;
+  Float64 ifraction;
+};
+
+/// default constructor
+function AlembicSampleInfo() {
+  this.indexA = -1;
+  this.indexB = -1;
+  this.time = -100000.0;
+  this.timeA = this.time;
+  this.timeB = this.time;
+  this.fraction = 0.0;
+  this.ifraction = 1.0;
+}
+
+/// constructor taking time, timesampling and numsamples
+function AlembicSampleInfo(Float64 time, AlembicTimeSampling ts, SInt32 numSamples) {
+
+  if( time.isNaN() ) {
+    //report('AlembicSampleInfo : Invalid time value = ' + time + " (reading the first sample instead)");
+    this.time = ts.getSampleTime( 0 );
+  } else {
+    this.time = time;
+  }
+
+  AlembicTimeSamplingPair pairA = ts.getFloorIndex(this.time, numSamples);
+  AlembicTimeSamplingPair pairB = ts.getCeilIndex(this.time, numSamples);
+  this.indexA = pairA.index;  
+  this.indexB = pairB.index;  
+  this.timeA = pairA.time;  
+  this.timeB = pairB.time;  
+
+  if(this.indexA == -1)
+  {
+    this.indexA = this.indexB;
+    this.timeA = this.timeB;
+  }
+  else if(this.indexB == -1)
+  {
+    this.indexB = this.indexA;
+    this.timeB = this.timeA;
+  }
+  
+  if(this.requiresInterpolation()) {
+    this.fraction = (this.time - this.timeA) / (this.timeB - this.timeA);
+    this.ifraction = 1.0 - this.fraction;
+  } else {
+    this.fraction = 0.0;
+    this.ifraction = 1.0;
+  }
+}
+
+/// returns true if this AlembicSampleInfo is using multiple samples
+function Boolean AlembicSampleInfo.requiresInterpolation() {
+  return this.indexA != this.indexB;
+}
+
+/// rounds the info the closest frame
+function AlembicSampleInfo.roundToClosestFrame!() {
+  if(!this.requiresInterpolation())
+    return;
+
+  if(this.fraction > 0.5) {
+    this.indexA = this.indexB;
+    this.timeA = this.timeB;
+  } else {
+    this.indexB = this.indexA;
+    this.timeB = this.timeA;
+  }
+  
+  this.fraction = 0.0;
+  this.ifraction = 1.0;
+}
+
+/// equal operator
+function Boolean == (AlembicSampleInfo a, AlembicSampleInfo b) {
+  return a.indexA == b.indexA && a.indexB == b.indexB && a.fraction == b.fraction;
+}
+
+/// not equal operator
+function Boolean != (AlembicSampleInfo a, AlembicSampleInfo b) {
+  return a.indexA != b.indexA || a.indexB != b.indexB || a.fraction != b.fraction;
+}

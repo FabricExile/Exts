@@ -1,0 +1,410 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+/**
+The :kl-ref:`Vec_i` represents a dense vector.
+
+\rst
+  .. kl-example:: Vec_i
+
+    // create a 7-element vector
+    Vec_i vec(7);
+
+\endrst
+
+\dfgTypeColor Color(249, 157, 28)
+\dfgPresetColor Color(99, 129, 92)
+*/
+
+struct Vec_i {
+  private SInt32 vals[];
+};
+
+/// Construct a vector with ``size`` elements
+inline Vec_i(Integer size) {
+  this.vals.resize(size);
+}
+
+/// Construct a vector with predefined values
+inline Vec_i(SInt32 vals[]) {
+  this.vals = vals.clone();
+}
+
+/// Construct a vector from the vector ``that``
+inline Vec_i(Vec_i that) {
+  this.vals = that.vals.clone();
+}
+
+/// Sets from Vec.
+inline Vec_i.set!(Vec_i vec) {
+  this.vals = vec.vals.clone();
+}
+
+/// Converts to Vec.
+inline Vec_i Vec_i.toVec() {
+  return this;
+}
+
+/// Get the size of the vector
+inline Integer Vec_i.size() {
+  return this.vals.size();
+}
+
+/// Return all of the values
+inline SInt32[] Vec_i.getValues() {
+  return this.vals.clone();
+}
+
+/// In Fabric guarded mode this method throws an exception if the size
+/// of the current vector differs from the size of the ``that`` vector
+inline Integer Vec_i.validateSize(Vec_i that, String desc) {
+  Integer thisSize = this.size();
+  if (Fabric_Guarded) {
+    Integer thatSize = that.size();
+    if (thatSize != thisSize)
+      throw desc + ": incompatible sizes (" + thisSize + " vs. " + thatSize + ")";
+  }
+  return thisSize;
+}
+
+/// Get value of the vector element at the ``ind`` position
+inline SInt32 Vec_i.get(Integer ind) {
+  return this.vals[ind];
+}
+
+/// Change the number of elements in the vector to ``newSize``
+inline Vec_i.resize!(Integer newSize) {
+  this.vals.resize(newSize);
+}
+
+/// Set the value of element ``ind`` to ``val``
+inline Vec_i.set!(Integer ind, SInt32 val) {
+  this.vals[ind] = val;
+}
+
+/// Inserts a value ``val`` at index ``ind``.
+/// Resize the vector accordingly if ``ind`` is superior to its size.
+inline Vec_i.insert!(Integer ind, SInt32 val) {
+  this.vals.resize( ind > this.size()  ? ind + 1 : this.size()+1);
+  for(Index i=this.size()-1; i>ind; i--)
+    this.vals[i] = this.vals[i-1];
+  this.vals[ind] = val;
+}
+
+/// Remove and retuens the value at index ``ind``
+/// resize the vector.
+inline SInt32 Vec_i.remove!(Integer ind) {
+  SInt32 temp = this.vals[ind];
+  for(Index i=ind; i<this.size()-1; i++)
+    this.vals[i] = this.vals[i+1];
+  this.vals.resize(this.size()-1);
+  return temp;
+}
+
+inline Vec_i.push_top!(SInt32 val) {
+  this.insert(0, val);
+}
+
+inline Vec_i.push_back!(SInt32 val) {
+  this.insert(this.size(), val);
+}
+
+inline SInt32 Vec_i.pop_top!() {
+  return this.remove(0);
+}
+
+inline SInt32 Vec_i.pop_back!() {
+  return this.remove(this.size()-1);
+}
+
+/// Return a String description of this vector and its size
+inline String Vec_i.sizeDesc() {
+  return "Vec_i(" + this.size() + ")";
+}
+
+/// Append a String description of this vector's size and contents
+/// to the io variable ``string``
+Vec_i.appendDesc(io String string) {
+  string += this.sizeDesc();
+  string += ":[";
+  Integer size = this.size();
+  for (Integer ind = 0; ind < size; ++ind) {
+    if (ind > 0)
+      string += " ";
+    string += this.get(ind);
+  }
+  string += "]";
+}
+
+/// Set the value of all vector elements to ``val``
+inline Vec_i.setAll!(SInt32 val) {
+  Integer size = this.size();
+  for (Integer ind = 0; ind < size; ++ind)
+    this.set(ind, val);
+}
+
+/// Set the value of all vector elements to zero
+inline Vec_i.setNull!() {
+  this.setAll(SInt32());
+}
+
+/// Returns true if this vector is the same as another one
+inline Boolean Vec_i.equal(Vec_i that) {
+  for (Integer i = 0; i < this.vals.size(); ++i)
+    if (this.vals[i] != that.vals[i])
+      return false;
+  return true;
+}
+
+/// Returns true if this vector is almost the same as another one
+/// (using a default precision)
+inline Boolean Vec_i.almostEqual(
+  Vec_i that,
+  SInt32 precision
+  )
+{
+  for (Integer i = 0; i < this.vals.size(); ++i)
+    if (abs(this.vals[i] - that.vals[i]) >= precision)
+      return false;
+  return true;
+}
+
+/// Returns true if this vector is almost the same as another one
+/// (using a default precision)
+inline Boolean Vec_i.almostEqual(in Vec_i other) {
+  return this.almostEqual(other, PRECISION);
+}
+
+/// Equals operator
+inline Boolean == (Vec_i lhs, Vec_i rhs) {
+  return lhs.equal(rhs);
+}
+
+/// Not equals operator
+inline Boolean != (Vec_i lhs, Vec_i rhs) {
+  return !lhs.equal(rhs);
+}
+
+/// Hash for this matrix
+inline UInt32 Vec_i.hash() {
+  UInt32 hash;
+  for (Integer ind = 0; ind < this.vals.size(); ++ind)
+    hash ^= this.get(ind).hash();
+  return hash;
+}
+
+/// Returns the addition of two matrices
+inline Vec_i +(Vec_i a, Vec_i b) {
+  Integer size = a.validateSize(b, FUNC);
+  Vec_i result(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    result.set(ind, a.get(ind) + b.get(ind));
+  return result;
+}
+
+/// Add another matrix in place
+inline Vec_i.+=(Vec_i that) {
+  Integer size = this.validateSize(that, FUNC);
+  for (Integer ind = 0; ind < size; ++ind)
+    this.set(ind, this.get(ind) + that.get(ind));
+}
+
+/// Returns the addition of two matrices
+inline Vec_i -(Vec_i a, Vec_i b) {
+  Integer size = a.validateSize(b, FUNC);
+  Vec_i result(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    result.set(ind, a.get(ind) - b.get(ind));
+  return result;
+}
+
+/// Add another matrix in place
+inline Vec_i.-=(Vec_i that) {
+  Integer size = this.validateSize(that, FUNC);
+  for (Integer ind = 0; ind < size; ++ind)
+    this.set(ind, this.get(ind) - that.get(ind));
+}
+
+/// unary -
+inline Vec_i -Vec_i() {
+  Integer size = this.size();
+  Vec_i res(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    res.set(ind, -this.get(ind));
+  return res;
+}
+
+inline Vec_i *(Vec_i lhs, SInt32 rhs) {
+  Integer size = lhs.size();
+  Vec_i res(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    res.set(ind, lhs.get(ind) * rhs);
+  return res;
+}
+
+inline Vec_i *(SInt32 lhs, Vec_i rhs) {
+  Integer size = rhs.size();
+  Vec_i result(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    result.set(ind, lhs * rhs.get(ind));
+  return result;
+}
+
+inline Vec_i.*=(SInt32 val) {
+  Integer size = this.size();
+  for (Integer ind = 0; ind < size; ++ind)
+    this.set(ind, this.get(ind) * val);
+}
+
+inline Vec_i /(Vec_i lhs, SInt32 rhs) {
+  Integer size = lhs.size();
+  Vec_i res(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    res.set(ind, lhs.get(ind) / rhs);
+  return res;
+}
+
+inline Vec_i /(SInt32 lhs, Vec_i rhs) {
+  Integer size = rhs.size();
+  Vec_i result(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    result.set(ind, lhs / rhs.get(ind));
+  return result;
+}
+
+inline Vec_i./=(SInt32 val) {
+  Integer size = this.size();
+  for (Integer ind = 0; ind < size; ++ind)
+    this.set(ind, this.get(ind) / val);
+}
+
+inline Vec_i *(Vec_i lhs, Vec_i rhs) {
+  Integer size = lhs.validateSize(rhs, FUNC);
+  Vec_i res(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    res.set(ind, lhs.get(ind) * rhs.get(ind));
+  return res;
+}
+
+inline Vec_i.*=(Vec_i val) {
+  Integer size = this.validateSize(val, FUNC);
+  for (Integer ind = 0; ind < size; ++ind)
+    this.set(ind, this.get(ind) * val.get(ind));
+}
+
+inline Vec_i /(Vec_i lhs, Vec_i rhs) {
+  Integer size = lhs.validateSize(rhs, FUNC);
+  Vec_i res(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    res.set(ind, lhs.get(ind) / rhs.get(ind));
+  return res;
+}
+
+inline Vec_i./=(Vec_i val) {
+  Integer size = this.validateSize(val, FUNC);
+  for (Integer ind = 0; ind < size; ++ind)
+    this.set(ind, this.get(ind) / val.get(ind));
+}
+
+inline SInt32 Vec_i.dot(Vec_i that) {
+  Integer size = this.validateSize(that, FUNC);
+  SInt32 res;
+  for (Integer ind = 0; ind < size; ++ind)
+    res += this.get(ind) * that.get(ind);
+  return res;
+}
+
+inline SInt32 Vec_i.lengthSquared() {
+  Integer size = this.size();
+  SInt32 res;
+  for (Integer ind = 0; ind < size; ++ind) {
+    SInt32 val = this.get(ind);
+    res += val * val;
+  }
+  return res;
+}
+
+/// Return the length of the vector
+inline SInt32 Vec_i.length() {
+  return sqrt(this.lengthSquared());
+}
+
+/// Returns the unit vector of this one, throws and exception if almost zero length
+inline Vec_i Vec_i.unit() {
+  SInt32 len = this.length();
+  if (Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor(len))
+    Math_reportBadDivisor(len, FUNC);
+  return this / len;
+}
+
+/// Sets this vector to its unit vector
+/// and returns its previous length
+inline SInt32 Vec_i.setUnit!() {
+  SInt32 len = this.length();
+  if (Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor(len))
+    Math_reportBadDivisor(len, FUNC);
+  this /= len;
+  return len;
+}
+
+/// Mormalizes the vector, same as setUnit.
+inline Vec_i.normalize!() {
+  this.setUnit();
+}
+
+/// Clamps this vector per component by a min and max vector
+inline Vec_i Vec_i.clamp(Vec_i min, Vec_i max) {
+  Integer size = this.validateSize(min, FUNC);
+  this.validateSize(max, FUNC);
+  Vec_i result(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    result.set(ind, Math_clamp(this.get(ind), min.get(ind), max.get(ind)));
+  return result;
+}
+
+/// Linearly interpolates this vector with another one
+/// based on a scalar blend value (0.0 to 1.0)
+inline Vec_i Vec_i.linearInterpolate(Vec_i that, SInt32 t) {
+  return this * (1 - t) + that * t;
+}
+
+// Return a subvector of elements in the range [s, e)
+inline Vec_i Vec_i.sub(Integer s, Integer e) {
+  if (Fabric_Guarded) {
+    if (s > e)
+      throw FUNC + ": must have s <= e";
+    if (e > this.size())
+      throw FUNC + ": must have e <= this.size()";
+  }
+  Integer n = e - s;
+  Vec_i res(n);
+  for (Integer i = 0; i < n; ++i)
+    res.set(i, this.get(s + i));
+  return res;
+}
+
+// Return first part of vector
+inline Vec_i Vec_i.head(Integer n) {
+  return this.sub(0, n);
+}
+
+inline SInt32 Vec_i.minimum() {
+  SInt32 smallest = this.get(0);
+  for (UInt32 i = 1; i < this.size(); i++) 
+    if (this.get(i) < smallest) smallest = this.get(i);
+  return smallest;
+}
+
+inline SInt32 Vec_i.maximum() {
+  SInt32 biggest = this.get(0);
+  for (UInt32 i = 1; i < this.size(); i++) 
+    if (this.get(i) > biggest) biggest = this.get(i);
+  return biggest;
+}
+
+inline SInt32 Vec_i.sum() {
+  SInt32 result;
+  for (UInt32 i = 0; i < this.size(); i++)
+      result += this.get(i);
+  return result;
+}

@@ -1,0 +1,117 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Box3.html",
+    "uiTooltip" : "Similar to 'Box3 * (Mat44 mat44, Box3 b)', but optimized for affine transforms (SRT)\n\n Supported by Box3"
+    },
+  "title" : "AffineTransform[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Box3[]" : [
+          {
+            "min" : {
+              "x" : null,
+              "y" : null,
+              "z" : null
+              },
+            "max" : {
+              "x" : null,
+              "y" : null,
+              "z" : null
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Box3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 249,\n  \"g\" : 157,\n  \"b\" : 28\n  }"
+        },
+      "name" : "mat44",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Mat44[]" : [
+          {
+            "row0" : {
+              "x" : 1,
+              "y" : 0,
+              "z" : 0,
+              "t" : 0
+              },
+            "row1" : {
+              "x" : 0,
+              "y" : 1,
+              "z" : 0,
+              "t" : 0
+              },
+            "row2" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 1,
+              "t" : 0
+              },
+            "row3" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0,
+              "t" : 1
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Mat44[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Box3[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "42687674BC17B487BEC011A4AD3A38F0",
+  "code" : "require Math;
+
+operator Math_Box3_affineTransform_task<<<index>>>(
+  io Box3[] result
+, in Box3[] this
+, in Mat44[] mat44
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].affineTransform(mat44[index < mat44.size() ? index : mat44.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( mat44.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < mat44.size()) task_size = mat44.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Box3_affineTransform_task(index, result, this, mat44);
+    }
+  } else {
+    Math_Box3_affineTransform_task<<<task_size>>>(result, this, mat44);
+  }
+}
+"
+  }

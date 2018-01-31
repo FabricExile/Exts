@@ -1,0 +1,314 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Containers;
+
+/**
+  A simple struct that holds the data for the SkinningAttribute and other packed array attributes. This struct can be moved to the GPU 
+  wholesale, and its methods will also continue to work on the GPU.
+  This is a workaround until objects are supported on the GPU. currently only structs are supported,
+  so we move the data and important fucntions to the struct, and add the struct to objct as a member.
+  \internal
+*/
+struct ArrayAttributeData {
+  Size count;
+  UInt32ArrayAllocator dataAllocator;
+
+  UInt32 offsets[];
+  UInt32 counts[];//Used only if unordered (else, implicit from 'offsets')
+};
+
+// Work around to the vact that we no longer inherit from BaseAttribute.
+inline Size ArrayAttributeData.size() {
+  return this.count;
+}
+
+inline Size ArrayAttributeData.memUsage() {
+  return this.dataAllocator.memUsage() + this.offsets.size() * 4 + this.counts.size() * 4;
+}
+
+/// \dfgPresetOmit
+function  ArrayAttributeData.cloneMembersTo( io ArrayAttributeData that ) {
+  //The difference with default clone() is that new.parent.autoStat will point to 'new' (from constructor)
+  that.dataAllocator = this.dataAllocator.clone();
+  that.offsets = this.offsets.clone();
+  that.counts = this.counts.clone();
+  that.count = this.count;
+}
+
+/// \internal Internal method to defrag memory buffers
+function Boolean ArrayAttributeData._recompact!( io UInt32 oldIndexToNewIndex[] ) {
+  this.dataAllocator.recompact( oldIndexToNewIndex );
+
+  if( oldIndexToNewIndex ) {
+    //Note: this doesn't change the order of the data, so the content of this.count[] 
+    //      is not influenced by recompaction.
+    Size size = this.size();
+    for( Size i = 0; i < size; ++i )
+      this.offsets[i] = oldIndexToNewIndex[this.offsets[i]];
+
+    return true;
+  }
+  return false;
+}
+
+function Boolean ArrayAttributeData._recompact!( ) {
+  UInt32 oldIndexToNewIndex[];
+  return this._recompact( oldIndexToNewIndex );
+}
+
+/// \internal Will defrag memory buffers if more than 1/3 is free
+inline Boolean ArrayAttributeData._recompactIfRequired!( ) {
+  //Allow 25% free data
+  if( this.dataAllocator.data.size() < this.dataAllocator.freeDataCount * 3 )
+    return this._recompact();
+  else
+    return false;
+}
+
+/// \internal Returns storage offset and pairs count for a given item index
+inline ArrayAttributeData._getOffsetAndCount( UInt32 index, out UInt32 offset, out UInt32 count ) {
+  offset = this.offsets[index];
+  if( !offset )//Special case for empty items
+    count = 0;
+  else if( this.counts )
+    count = this.counts[index];
+  else {
+    //Implicit counts = nextOffset - offset
+    UInt32 nextOffset;
+    if( index != this.offsets.size()-1 )
+      nextOffset = this.offsets[index+1];
+    if( nextOffset == 0 )
+      nextOffset = this.dataAllocator.data.size();
+    count = UInt16(nextOffset - offset);
+  }
+}
+
+function ArrayAttributeData._resizeNoRecompact!( Size count ) {
+  //release entries if any
+  UInt32 currSize = this.size();
+  for( Size i = count; i < currSize; ++i ) {
+    UInt32 iOffset;
+    UInt32 iCount;
+    this._getOffsetAndCount( i, iOffset, iCount );
+    this.dataAllocator.free( iOffset, iCount );
+  }
+  this.offsets.resize( count );
+  if( this.counts )
+    this.counts.resize( count );
+
+  this.count = count;
+}
+
+function ArrayAttributeData.resize!( Size count ) {
+  this._resizeNoRecompact( count );
+  this._recompactIfRequired();
+}
+
+/// \internal Resizes the number of items and returns the offset of the resized item. If copyData, the previous data will be preserved.
+Size ArrayAttributeData._resizeItemNoRecompact!( Size index, UInt32 newCount, Boolean copyData, io UInt32 toCopyCount, io UInt32 copyFrom, io UInt32 copyTo ) {
+  toCopyCount = 0;
+  UInt32 offset;
+  UInt32 count;
+  this._getOffsetAndCount( index, offset, count );
+
+  if( newCount != count ) {
+    UInt32 prevDataSize = this.dataAllocator.data.size();
+    UInt32 newOffset = count ? this.dataAllocator.reallocate( offset, count, newCount, 0 ) : this.dataAllocator.allocate( newCount, 0 );
+    UInt32 newDataSize = this.dataAllocator.data.size();
+
+    if( !this.counts.size() ) {
+      //Check if counts are no longer implicit (unordered items)
+      //We only support 'implicit' counts if items are allocated in 0..N order.
+      //NOTE: these condtions are related closely to the specific UInt32ArrayAllocator behavior.
+      Boolean simpleAppend = 
+            newOffset == prevDataSize && //Allocated at the end
+            ( offset == 0 || //Newly allocated
+              (newOffset == offset && count >= newCount) ) && //Increasing size of last bloc
+            ( prevDataSize == 1 || //First allocated item
+              (index != 0 && this.offsets[index-1] > 0) ); //Preceding item was allocated
+      if( !simpleAppend ) {
+        //Inflate 'counts' array
+        Size size = this.size();
+        this.counts.resize( this.size() );
+        Size lastI = 0;
+        Size lastOffset = 0;
+        //Skip over 0-sized items (offset == 0)
+        for( Size i = 0; i < size; ++i ) {
+          UInt32 iOffset = this.offsets[i];
+          if( iOffset ) {
+            if( lastOffset )
+              this.counts[lastI] = UInt16(iOffset - lastOffset);
+            lastI = i;
+            lastOffset = iOffset;
+          }
+        }
+        if( lastOffset )//Last one is bound by total allocated data size
+          this.counts[lastI] = UInt16(prevDataSize - lastOffset);
+      }
+    }
+
+    if( newOffset != offset ) {
+      this.offsets[index] = newOffset;
+
+      //Synchronize ids array data
+      if( copyData ) {
+        toCopyCount = count < newCount ? count : newCount;
+        copyFrom = offset;
+        copyTo = newOffset;
+      }
+      offset = newOffset;
+    }
+    if( this.counts.size() )
+      this.counts[index] = newCount;
+  }
+  return offset;
+}
+
+/// \internal Resizes the number itens and returns the offset of the resized item. If copyData, the previous data will be preserved.
+inline Size ArrayAttributeData._resizeItem!( Size index, UInt32 newCount, Boolean copyData ) {
+  UInt32 toCopyCount, copyFrom, copyTo;
+  Size offset = this._resizeItemNoRecompact( index, newCount, copyData, toCopyCount, copyFrom, copyTo );
+  if( this._recompactIfRequired() )
+    offset = this.offsets[index];
+  return offset;
+}
+
+inline ArrayAttributeData.copyValue!( Size sourceIndex, Size targetIndex ) {
+  if( sourceIndex == targetIndex )
+    return;
+
+  UInt32 sOffset;
+  UInt32 sCount;
+  this._getOffsetAndCount( sourceIndex, sOffset, sCount );
+  UInt32 tOffset = this._resizeItem( targetIndex, sCount, false );
+  for( Size i = 0; i < sCount; ++i )
+    this.dataAllocator.data[tOffset + i] = this.dataAllocator.data[sOffset + i];
+}
+
+inline ArrayAttributeData.copyValue!( ArrayAttributeData source, Size sourceIndex, Size targetIndex ) {
+
+  UInt32 sOffset;
+  UInt32 sCount;
+  source._getOffsetAndCount( sourceIndex, sOffset, sCount );
+  UInt32 tOffset = this._resizeItem( targetIndex, sCount, false );
+  for( Size i = 0; i < sCount; ++i )
+    this.dataAllocator.data[tOffset + i] = source.dataAllocator.data[sOffset + i];
+}
+
+function ArrayAttributeData.copyFrom!( ArrayAttributeData other ) {
+
+  // Copy in place to avoid mallocs
+  this.dataAllocator.copy( other.dataAllocator );
+
+  other.offsets.copyTo(this.offsets);
+  other.counts.copyTo(this.counts);
+  this.count = other.count;
+}
+
+/// Sets the number of id-weight pairs for the item (resizes item)
+inline ArrayAttributeData.setCount!( UInt32 index, UInt32 count ) {
+  this._resizeItem( index, count, true );
+}
+
+/// Returns the number of items for a given index
+inline UInt32 ArrayAttributeData.getCount( UInt32 index ) {
+
+  if( this.counts )
+    return this.counts[index];
+  else {
+    //Implicit counts = nextOffset - offset
+    UInt32 nextOffset;
+    if( index + 1 < this.offsets.size() ) {
+      nextOffset = this.offsets[index + 1];
+    }
+    if( !nextOffset )//Next not allocated yet: end = current weight size
+      nextOffset = this.dataAllocator.data.size();
+
+    return UInt16(nextOffset - this.offsets[index]);
+  }
+}
+
+/// Returns for item 'index', sets the id-weight values for pair 'offset'
+inline ArrayAttributeData.set!( UInt32 index, UInt32 offset, UInt32 value ) {
+  UInt32 storageStart = this.offsets[index];
+  this.dataAllocator.data[storageStart + offset] = value;
+}
+
+/// Returns for item 'index', returns the id-weight values for pair 'offset'
+inline UInt32 ArrayAttributeData.get( UInt32 index, UInt32 offset ) {
+  UInt32 storageStart = this.offsets[index];
+  return this.dataAllocator.data[storageStart + offset];
+}
+
+/// For an item, returns ids and weights arrays (1 to 1 correspondence)
+inline ArrayAttributeData.get( UInt32 index, out LocalL16UInt32Array values ) {
+  UInt32 offset;
+  UInt32 count;
+  this._getOffsetAndCount( index, offset, count );
+  values.resize( count );
+  for( Size i = 0; i < count; ++i )
+    values.set( i, this.dataAllocator.data[offset + i] );
+}
+
+/// For an item, returns ids and weights arrays (1 to 1 correspondence)
+inline ArrayAttributeData.get( UInt32 index, out LocalL16SInt32Array values ) {
+  UInt32 offset;
+  UInt32 count;
+  this._getOffsetAndCount( index, offset, count );
+  values.resize( count );
+  for( Size i = 0; i < count; ++i )
+    values.set( i, this.dataAllocator.data[offset + i] );
+}
+
+/// For an item, returns ids and weights arrays (1 to 1 correspondence)
+inline ArrayAttributeData.get( UInt32 index, out LocalL16ScalarArray values ) {
+  UInt32 offset;
+  UInt32 count;
+  this._getOffsetAndCount( index, offset, count );
+  values.resize( count );
+  for( Size i = 0; i < count; ++i )
+    values.set( i, bitcastUIntToFloat( this.dataAllocator.data[offset + i] ) );
+}
+
+/// For an item, set ids and weights arrays (1 to 1 correspondence)
+inline ArrayAttributeData.set!( UInt32 index, LocalL16UInt32Array values ) {
+  UInt32 count = values.size();
+  UInt32 offset = this._resizeItem( index, count, false );
+  for( UInt32 i = 0; i < count; ++i )
+    this.dataAllocator.data[offset + i] = values.get( i );
+}
+
+/// For an item, set ids and weights arrays (1 to 1 correspondence)
+inline ArrayAttributeData.set!( UInt32 index, LocalL16SInt32Array values ) {
+  UInt32 count = values.size();
+  UInt32 offset = this._resizeItem( index, count, false );
+  for( UInt32 i = 0; i < count; ++i )
+    this.dataAllocator.data[offset + i] = values.get( i );
+}
+
+/// For an item, set ids and weights arrays (1 to 1 correspondence)
+inline ArrayAttributeData.set!( UInt32 index, LocalL16ScalarArray values ) {
+  UInt32 count = values.size();
+  UInt32 offset = this._resizeItem( index, count, false );
+  for( UInt32 i = 0; i < count; ++i )
+    this.dataAllocator.data[offset + i] = bitcastFloatToUInt( values.get( i ) );
+}
+
+/// Returns true if id-weight pair values are the same, considering it is an unordered set (it will return 'true' even if pair order differs, as long as values are the same).
+inline Boolean ArrayAttributeData.equalValues( Size index1, Size index2 ) {
+  UInt32 offset1, offset2;
+  UInt32 count1, count2;
+  this._getOffsetAndCount( index1, offset1, count1 );
+  this._getOffsetAndCount( index2, offset2, count2 );
+
+  if( count1 != count2 )
+    return false;
+
+  for( UInt32 i = 0; i < count1; ++i ) {
+    if( this.dataAllocator.data[offset1 + i] != this.dataAllocator.data[offset2 + i] )
+      return false;
+  }
+  return true;
+}

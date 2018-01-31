@@ -1,0 +1,89 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require InlineDrawing;
+
+
+/**
+\versionadded 1.12.0
+
+The :kl-ref:`BaseGizmoHandler` is the base class for the provided gizmo handlers.
+
+The BaseGizmoHandler provides management of an 'owner' InlineInstance used to display
+the visual gizmo and handling of highlighting of the geometry when required.
+
+\seealso GizmoHandler, GizmoManipulationCallback
+\dfgPresetOmit
+*/
+
+
+object BaseGizmoHandler : GizmoHandler {
+  /// The instance that owns the handler. 
+  /// \note the 'Ref<>' notation ensures that the handler does not own a
+  /// reference to the owner, which would cause a circular reference. 
+  Ref<InlineInstance> owner; 
+
+  /// The un-highlighted color of the owner
+  Color ownerColor;
+
+  /// The callback to be invoked when the gizmo is manipulated.
+  GizmoManipulationCallback callback;
+
+  /// The evaluation context provided when the handler was constructed. 
+  /// \note this is an optional value that is useful when manipulation
+  /// on the gizmo generates changes in the host DCC graph.
+  EvalContext evalContext;
+};
+
+/// Initializes the BaseGizmoHandler with an owner and callback
+/// \param owner The InlineInstance that owns the gizmo handler. 
+/// \param callback The callback that will be fired when the gizmo is manipulated. 
+function BaseGizmoHandler.init!(InlineInstance owner, GizmoManipulationCallback callback){
+  this.owner = owner;
+  // Set a reference from the owner to this gizmo handler. 
+  // this reference will mean that the gizmo handler's 
+  // lifetime will be managed by the lifetime of the owner. 
+  // If the owner is destroyed, or the 'gizmoHandler' meta data reference removed
+  // then the gizmo handler will be deleted unless another reference exists to 
+  // the handler. (normally not the case)
+  this.owner.setMetaData('gizmoHandler', this);
+  this.callback = callback;
+}
+
+/// Initializes the BaseGizmoHandler with an owner, callback and evalContext.
+/// \param owner The InlineInstance that owns the gizmo handler. 
+/// \param callback The callback that will be fired when the gizmo is manipulated. 
+/// \param evalContext The evalContext provided to the Splice operator when setting up the manipulator.
+function BaseGizmoHandler.init!(InlineInstance owner, GizmoManipulationCallback callback, EvalContext evalContext){
+  this.owner = owner;
+  this.owner.setMetaData('gizmoHandler', this);
+  this.callback = callback;
+  this.evalContext = evalContext;
+}
+
+/// Highlights the gizmo. the default implementation changes the gizmo color, 
+/// assuming that the InlineInstance is rendered with a shader using a uniform 
+/// called 'u_diffuseColor'.
+function BaseGizmoHandler.highlight!(Boolean display){
+  if(display){
+    // We highlight the owner by setting its diffuse color to white. 
+    // This is a simple solution and only works if the OGLLSurfaceColor shader
+    // applied(or similar).
+    // A better solution would be to apply an overlay material that makes the gizmo
+    // object glow, or change color. 
+    // This will be possibel in RTR2. 
+    if(this.owner.hasInstanceUniform('u_diffuseColor')){
+      this.ownerColor = this.owner.getInstanceUniform('u_diffuseColor').getColor();
+      this.owner.setInstanceUniform(InlineUniform('u_diffuseColor', Color(1.0, 1.0, 1.0)));
+    }
+  }
+  else{
+    this.owner.setInstanceUniform(InlineUniform('u_diffuseColor', this.ownerColor));
+  }
+}
+
+/// The method invoked when the gizmo is active. 
+function BaseGizmoHandler.onEvent!(io MouseEvent mouseEvent){
+  setError("Must be implemented in a derived class");
+}

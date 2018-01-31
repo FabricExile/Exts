@@ -1,0 +1,104 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "helper function to draw a lines object given a color + a single transform.\nThis method can be called several times by the same DrawingHandle\nwithout overwriting the previous content.\n\nSupported types:\n  this: DrawingHandle\n  color: Color\n  specular: Color\n  specFactor: Float32\n  transform: Xfo\n  lines: Lines\n  instance: InlineInstance\n"
+    },
+  "title" : "AccumulateDrawLines",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "DrawingHandle"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 0,\n  \"b\" : 0\n  }"
+        },
+      "name" : "color",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Color" : {
+          "r" : 0,
+          "g" : 1,
+          "b" : 0,
+          "a" : 1
+          }
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Color"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 0,\n  \"b\" : 0\n  }"
+        },
+      "name" : "specular",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Color"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiRange" : "(2, 100)",
+        "uiHardRange" : "(2, 1000)"
+        },      
+      "name" : "specFactor",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float32" : 16
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 249,\n  \"g\" : 157,\n  \"b\" : 28\n  }"
+        },
+      "name" : "transform",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Xfo"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "lines",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Lines"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "instance",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "InlineInstance"
+      }
+    ],
+  "extDeps" : {
+    "InlineDrawing" : "*"
+    },
+  "presetGUID" : "46171FE0B8075316EFC2BB5064B32B0F",
+  "code" : "require InlineDrawing;
+
+dfgEntry {
+  if( !Boolean(this) )
+    return;
+  this.accumulateDrawLines(color, specular, specFactor, transform, lines, instance);
+}
+"
+  }

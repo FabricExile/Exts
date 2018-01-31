@@ -1,0 +1,123 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Util;
+
+/**
+  The IndexPool is an helper class for the management of array data, where free indices can be reused (re-allocated). 
+  For performance applications, using contiguous (array) storage of multiple elements improves speed by both minimizing heap allocation calls
+  and by making a better use of CPU memory cache. This class helps to write such custom allocators.
+  \note IndexPool only helps to allocate/reuse data cells (indices), however it doesn't hold the stored data per say (would need C++ -like templates to do that).
+
+  \example
+    require Math, Containers;
+
+    struct Mat44Allocator {
+      Mat44 matrices[];
+      IndexPool indexPool;
+    };
+
+    inline UInt32 Mat44Allocator.allocate!() {
+      UInt32 index;
+      if( this.indexPool.getFreeIndex(index) )
+        this.matrices.resize( this.indexPool.getIndexEnd() );
+      return index;
+    }
+
+    inline Mat44Allocator.free!( UInt32 index ) {
+      this.indexPool.unusedIndex(index);
+    }
+
+    operator entry(){
+
+      Mat44Allocator mat44s;
+
+      UInt32 first = mat44s.allocate();
+      mat44s.matrices[first].setTranslation( Vec3(1,0,0) );
+
+      UInt32 second = mat44s.allocate();
+      mat44s.matrices[second].setTranslation( Vec3(2,0,0) );
+
+      //Free the 1st allocated one, we no longer need it
+      mat44s.free(first);
+
+      report( mat44s.indexPool.getNumUsed() + " used out of " + mat44s.indexPool.getIndexEnd() );
+
+      //Allocate a 3rd one, which should reuse the free 1st entry
+      UInt32 third = mat44s.allocate();
+      mat44s.matrices[third].setTranslation( Vec3(3,0,0) );
+
+      report( mat44s.indexPool.getNumUsed() + " used out of " + mat44s.indexPool.getIndexEnd() );
+    }
+  \endexample
+*/ 
+struct IndexPool {
+  /// \internal
+  /// data array size...
+  UInt32 indexEnd;
+  /// \internal
+  UInt32ArrayNoFree freeIndices;
+};
+
+/// returns true if no indices are in use
+inline Boolean IndexPool.allFree() {
+  return this.indexEnd == this.freeIndices.size();
+}
+
+/// returns true if all indices are in use
+inline Boolean IndexPool.allAllocated() {
+  return this.freeIndices.size() == 0;
+}
+
+//getIndex: returns 'true' if a new index had to be created (data container needs to be expanded by 1)
+inline Boolean IndexPool.getFreeIndex!( out UInt32 index ) {
+  if( !this.freeIndices.pop( index ) ) {
+    index = this.indexEnd++;
+    return true;
+  }
+  return false;
+}
+
+/// returns the last index
+inline UInt32 IndexPool.getIndexEnd() {
+  return this.indexEnd;
+}
+
+/// pushes an unused index on the stack
+inline IndexPool.unusedIndex!( UInt32 index ) {
+  this.freeIndices.push( index );
+}
+
+/// frees all indices, but optionally keeps the first one
+function IndexPool.setAllAsUnused!( Boolean entry0IsReserved ) {
+  if( entry0IsReserved ) {
+    if( this.freeIndices.size() + 1 < this.indexEnd ) {
+      this.freeIndices.resize( this.indexEnd - 1 );
+      for( Size i = this.indexEnd - 1; i--; )
+        this.freeIndices.set(i, i + 1);
+    }
+  } else {
+    if( this.freeIndices.size() < this.indexEnd ) {
+      this.freeIndices.resize( this.indexEnd );
+      for( Size i = this.indexEnd; i--; )
+        this.freeIndices.set( i, i );
+    }
+  }
+}
+
+/// resets the contents of the IndexPool
+inline IndexPool.reset!() {
+  this.indexEnd = 0;
+  this.freeIndices.resize(0);
+}
+
+/// returns the number of used indices
+inline Size IndexPool.getNumUsed() {
+  return this.indexEnd - this.freeIndices.size();
+}
+
+/// \internal returns the memory usage of this container
+function Size IndexPool.getMemUsage?() {
+  return this.freeIndices.size()*4 + 4;
+}

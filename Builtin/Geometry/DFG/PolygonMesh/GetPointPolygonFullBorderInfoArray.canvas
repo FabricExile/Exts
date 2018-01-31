@@ -1,0 +1,111 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/PolygonMesh.html",
+    "uiTooltip" : "For a point neighbor polygon, returns the start and end neighbor indices of its containing wing,\nand if that wing is closed (see :ref:`borderAndWings` for definitions and an example of usage)\n\n Supported by PolygonMesh"
+    },
+  "title" : "GetPointPolygonFullBorderInfo[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "PolygonMesh[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "point",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Size[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Size[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "neighborPolygonIndex",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Size[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Size[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "wingPolygonPointIndexBegin",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Size[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "wingPolygonPointIndexEnd",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Size[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "isClosedWing",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "70EA01BEDC931119B0160468AF15AA78",
+  "code" : "require Geometry;
+
+operator Geometry_PolygonMesh_getPointPolygonFullBorderInfo_task<<<index>>>(
+  in PolygonMesh[] this
+, in Size[] point
+, in Size[] neighborPolygonIndex
+, out Size[] wingPolygonPointIndexBegin
+, out Size[] wingPolygonPointIndexEnd
+, out Boolean[] isClosedWing
+) {
+  this[index < this.size() ? index : this.size() - 1].getPointPolygonFullBorderInfo(point[index < point.size() ? index : point.size() - 1], neighborPolygonIndex[index < neighborPolygonIndex.size() ? index : neighborPolygonIndex.size() - 1], wingPolygonPointIndexBegin[index < wingPolygonPointIndexBegin.size() ? index : wingPolygonPointIndexBegin.size() - 1], wingPolygonPointIndexEnd[index < wingPolygonPointIndexEnd.size() ? index : wingPolygonPointIndexEnd.size() - 1], isClosedWing[index < isClosedWing.size() ? index : isClosedWing.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( point.size() == 0) return;
+  if( neighborPolygonIndex.size() == 0) return;
+  if( wingPolygonPointIndexBegin.size() == 0) return;
+  if( wingPolygonPointIndexEnd.size() == 0) return;
+  if( isClosedWing.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < point.size()) task_size = point.size();
+  if(task_size < neighborPolygonIndex.size()) task_size = neighborPolygonIndex.size();
+  wingPolygonPointIndexBegin.resize(task_size);
+  wingPolygonPointIndexEnd.resize(task_size);
+  isClosedWing.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Geometry_PolygonMesh_getPointPolygonFullBorderInfo_task(index, this, point, neighborPolygonIndex, wingPolygonPointIndexBegin, wingPolygonPointIndexEnd, isClosedWing);
+    }
+  } else {
+    Geometry_PolygonMesh_getPointPolygonFullBorderInfo_task<<<task_size>>>(this, point, neighborPolygonIndex, wingPolygonPointIndexBegin, wingPolygonPointIndexEnd, isClosedWing);
+  }
+}
+"
+  }

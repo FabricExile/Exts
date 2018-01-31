@@ -1,0 +1,121 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Ray.html",
+    "uiTooltip" : "Overloaded inline returning the intersection point\n\n Supported by Ray"
+    },
+  "title" : "IntersectPlaneVec3[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Ray[]" : [
+          {
+            "start" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              },
+            "direction" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Ray[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "planePoint",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "planeNormal",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Vec3[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "36C10ECA16AEF4DD88872C6295F43F71",
+  "code" : "require Math;
+
+operator Math_Ray_intersectPlaneVec3_task<<<index>>>(
+  io Vec3[] result
+, in Ray[] this
+, in Vec3[] planePoint
+, in Vec3[] planeNormal
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].intersectPlaneVec3(planePoint[index < planePoint.size() ? index : planePoint.size() - 1], planeNormal[index < planeNormal.size() ? index : planeNormal.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( planePoint.size() == 0) return;
+  if( planeNormal.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < planePoint.size()) task_size = planePoint.size();
+  if(task_size < planeNormal.size()) task_size = planeNormal.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Ray_intersectPlaneVec3_task(index, result, this, planePoint, planeNormal);
+    }
+  } else {
+    Math_Ray_intersectPlaneVec3_task<<<task_size>>>(result, this, planePoint, planeNormal);
+  }
+}
+"
+  }

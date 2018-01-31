@@ -1,0 +1,96 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Quat.html",
+    "uiTooltip" : "Set the quat to represent the direction as the Z axis\nand the upvector pointing along the XY plane.\n\n Supported by Quat"
+    },
+  "title" : "SetFromDirectionAndUpvector[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "direction",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "upvector",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 0,\n  \"g\" : 191,\n  \"b\" : 232\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Quat[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "5F4BF2874FAB408441D086CD719C4C54",
+  "code" : "require Math;
+
+operator Math_Quat_setFromDirectionAndUpvector_task<<<index>>>(
+  io Quat[] result
+, in Vec3[] direction
+, in Vec3[] upvector
+) {
+  result[index].setFromDirectionAndUpvector(direction[index < direction.size() ? index : direction.size() - 1], upvector[index < upvector.size() ? index : upvector.size() - 1]);
+}
+
+dfgEntry {
+  if( direction.size() == 0) return;
+  if( upvector.size() == 0) return;
+  Size task_size = 0;
+  if(task_size < direction.size()) task_size = direction.size();
+  if(task_size < upvector.size()) task_size = upvector.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Quat_setFromDirectionAndUpvector_task(index, result, direction, upvector);
+    }
+  } else {
+    Math_Quat_setFromDirectionAndUpvector_task<<<task_size>>>(result, direction, upvector);
+  }
+}
+"
+  }

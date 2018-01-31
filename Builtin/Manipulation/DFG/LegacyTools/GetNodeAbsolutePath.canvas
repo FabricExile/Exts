@@ -1,0 +1,95 @@
+{
+  "objectType" : "Graph",
+  "metadata" : {
+    "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+    "uiNodeColor" : "{\n  \"r\" : 121,\n  \"g\" : 134,\n  \"b\" : 143\n  }",
+    "uiGraphZoom" : "{\n  \"value\" : 1.0\n  }",
+    "uiGraphPan" : "{\n  \"x\" : 1835.470581054688,\n  \"y\" : 1335.705322265625\n  }"
+    },
+  "title" : "GetNodeAbsolutePath",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Execute" : {}
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "absolutePath",
+      "nodePortType" : "In",
+      "defaultValues" : {
+        "String" : ""
+        },
+      "execPortType" : "Out"
+      }
+    ],
+  "extDeps" : {},
+  "presetGUID" : "7C3E168A804A149A3CDE78BDC7C0ECEC",
+  "nodes" : [
+    {
+      "objectType" : "Inst",
+      "metadata" : {
+        "uiGraphPos" : "{\"x\":-1169.52172852,\"y\":-1232.22143555}"
+        },
+      "name" : "inst",
+      "ports" : [
+        {
+          "objectType" : "InstPort",
+          "name" : "exec",
+          "nodePortType" : "IO"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "basePath",
+          "nodePortType" : "Out"
+          }
+        ],
+      "definition" : {
+        "objectType" : "Func",
+        "metadata" : {
+          "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+          "uiNodeColor" : "{\n  \"r\" : 121,\n  \"g\" : 134,\n  \"b\" : 143\n  }"
+          },
+        "title" : "func",
+        "ports" : [
+          {
+            "objectType" : "ExecPort",
+            "name" : "exec",
+            "nodePortType" : "IO",
+            "execPortType" : "IO",
+            "typeSpec" : "Execute"
+            },
+          {
+            "objectType" : "ExecPort",
+            "name" : "basePath",
+            "nodePortType" : "In",
+            "execPortType" : "Out",
+            "typeSpec" : "String"
+            }
+          ],
+        "extDeps" : {},
+        "code" : "dfgEntry {
+  basePath = dfgNodePath;
+  String temp[] = basePath.split(\".\");
+  if(temp.size() > 1)
+  {
+    basePath = \"\";
+    for(Index i=0; i<temp.size()-2; ++i)
+      basePath += temp[i] + \".\";
+  }
+}
+"
+        }
+      }
+    ],
+  "connections" : {
+    "inst.basePath" : [
+      "absolutePath"
+      ]
+    }
+  }

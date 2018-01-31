@@ -1,0 +1,88 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Geometry;
+
+/// \internal
+function Boolean BaseGeometry.convertAttribute!(
+  String source,
+  String target
+) {
+  GeometryAttributes attributes = this.attributes;
+  if(!attributes)
+    return false;
+
+  GeometryAttribute sourceAttr = attributes.getAttribute(source);
+  if(sourceAttr == null)
+  {
+    report('Error: Convert: Attribute "'+source+'" does not exist.');
+    return false;
+  }
+
+  GeometryAttribute targetAttr = attributes.getAttribute(target);
+  if(targetAttr == null)
+  {
+    report('Error: Convert: Attribute "'+target+'" does not exist.');
+    return false;
+  }
+
+  switch(sourceAttr.type())
+  {
+    case IntegerAttribute:
+    {
+      if(!this.convertIntegerAttribute(0, /* mode */, sourceAttr, targetAttr))
+        return false;
+      break;
+    }
+    case UInt32Attribute:
+    {
+      if(!this.convertUInt32Attribute(0 /* mode */, sourceAttr, targetAttr))
+        return false;
+      break;
+    }
+    case ScalarAttribute:
+    {
+      if(!this.convertScalarAttribute(0 /* mode */, sourceAttr, targetAttr))
+        return false;
+      break;
+    }
+    case Vec3Attribute:
+    {
+      if(!this.convertVec3Attribute(0 /* mode */, sourceAttr, targetAttr))
+        return false;
+      break;
+    }
+    case Vec4Attribute:
+    {
+      if(!this.convertVec4Attribute(0 /* mode */, sourceAttr, targetAttr))
+        return false;
+      break;
+    }
+    case QuatAttribute:
+    {
+      if(!this.convertQuatAttribute(0 /* mode */, sourceAttr, targetAttr))
+        return false;
+      break;
+    }
+    case Mat33Attribute:
+    {
+      if(!this.convertMat33Attribute(0 /* mode */, sourceAttr, targetAttr))
+        return false;
+      break;
+    }
+    case ColorAttribute:
+    {
+      if(!this.convertColorAttribute(0 /* mode */, sourceAttr, targetAttr))
+        return false;
+      break;
+    }
+    default:
+    {
+      report('Error: Convert: Unsupported source attribute type '+sourceAttr.type());
+      return false;
+    }
+  }
+
+  return true;
+}

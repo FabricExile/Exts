@@ -1,0 +1,95 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/SpatialQueryable.html",
+    "uiTooltip" : "A shortcut to :kl-ref:`SpatialQuery.raycast`, without the need to call\n:kl-ref:`SpatialQueryable.beginSpatialQuery` and :kl-ref:`SpatialQueryable.endSpatialQuery`.\nSee :kl-ref:`SpatialQuery.raycast` for more details.\n\n\n Supported by SpatialQueryable,Points,Lines,PolygonMesh"
+    },
+  "title" : "Raycast[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "PolygonMesh"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "ray",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Ray[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "doubleSided",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Boolean"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "coneThreshold",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Scalar"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "maxDistance",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Scalar"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "GeometryLocation[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "1BAE64716D6A8A9BE30A99563A900E11",
+  "code" : "
+require Geometry;
+
+operator geometry_polygonmesh_raycast_task<<<index>>>(
+  PolygonMesh this,
+  Ray ray[],
+  Boolean doubleSided,
+  Scalar coneThreshold,
+  Scalar maxDistance,
+  io GeometryLocation result[]
+) {
+  result[index] = this.raycast(ray[index], doubleSided, coneThreshold, maxDistance);
+}
+
+dfgEntry {
+  if(ray.size() == 0) return;
+  result.resize(ray.size());
+
+  GenericValueContainer options = GenericValueContainer();
+  this.prepareForSpatialQueries(result.size(), options);
+
+  if(result.size() < 128)
+  {
+    for(Size i=0;i<result.size();i++)
+      geometry_polygonmesh_raycast_task(i, this, ray, doubleSided, coneThreshold, maxDistance, result);
+  }
+  else
+  {
+    geometry_polygonmesh_raycast_task<<<result.size()>>>(this, ray, doubleSided, coneThreshold, maxDistance, result);
+  }
+}
+"
+  }

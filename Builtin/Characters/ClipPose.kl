@@ -1,0 +1,152 @@
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+
+require Math;
+require AnimX;
+
+/**
+  The ClipPose, based on the regular :kl-ref:`Pose`, computes the bone transforms by retrieving  
+  animation data from a references :kl-ref:`Clip`. The :kl-ref:`Clip` is evaluated, giving a :kl-ref:`ClipValues` data 
+  structure, that can then be queried by the pose as it lazily builds the global space transforms. 
+
+  \brief A pose driven by a clip.
+  \seealso Clip, Pose
+
+\rst
+  .. kl-fileexample:: ${FABRIC_SCENE_GRAPH_DIR}/Test/Exts/Characters/clipPose.kl
+\endrst
+
+*/
+object ClipPose : Pose {
+  AnimX::AnimClip clip;
+  Scalar timeCache;
+  Boolean initialized;
+  Float32 scaleFactor;
+
+  Xfo xfoValues[];
+  SInt32 xfoIdx[SInt32];
+};
+
+/// standard constructor taking a skeleton and a clip. 
+function ClipPose(Skeleton skeleton, AnimX::AnimClip clip, Float32 scaleFactor){
+  this.skeleton = skeleton;
+  this.clip = clip;
+  this.reset();
+  this.scaleFactor = scaleFactor;
+}
+
+/// standard constructor taking a skeleton and a clip. 
+function ClipPose(Skeleton skeleton, AnimX::AnimClip clip){
+  this.skeleton = skeleton;
+  this.clip = clip;
+  this.reset();
+  this.scaleFactor = 1.0;
+}
+
+/// Reset the pose to be recomputed. 
+function ClipPose.reset!(){
+  this.parent.reset();
+  this.timeCache = SCALAR_INFINITE;
+  this.initialized = false;
+}
+
+/// Returns the clip to used to drive the animation of this pose. 
+function AnimX::AnimClip ClipPose.getClip(){
+  return this.clip;
+}
+
+/// Returns the number of stored transform
+function UInt32 ClipPose.getNumXfos()
+{
+  return this.xfos.size();
+}
+
+/// Sets the clip to be used to drive the animation of this pose. 
+function  ClipPose.setClip!(AnimX::AnimClip clip){
+  this.reset();
+  this.clip = clip;
+  this.incrementVersion();
+}
+
+function ClipPose.init!()
+{
+  if(this.initialized)
+    return;
+
+  this.xfoValues.resize(0);
+  this.xfoIdx.clear();
+
+  for(Size i=0;i<this.skeleton.getNumBones();i++)
+  {
+    Bone bone = this.skeleton.getBone(i);
+    String name = bone.name;
+
+    Xfo xfo;
+    if(!this.clip.evaluateXfo(name, 0.0, CurveRotationInterpolationMethod_Slerp, xfo))
+      continue;
+
+    this.xfoIdx[i] = this.xfoValues.size();
+    this.xfoValues.push(xfo);
+  }
+
+  this.initialized = true;
+}
+
+/// Evaluates the stored clip at the given time.
+function ClipPose.evaluate!(Scalar time){
+  this.init();
+
+  if(this.timeCache != time){
+
+    AnimX::AnimCurve curves[] = this.clip.allCurves();
+
+    for(bone, xfoIdx in this.xfoIdx)
+    {
+      String name = this.skeleton.getBone(bone).name;
+      this.xfoValues[xfoIdx] = this.skeleton.getReferencePose(bone);
+      this.clip.evaluateXfo(name, time, CurveRotationInterpolationMethod_Slerp, this.xfoValues[xfoIdx]);
+    }
+
+    this.timeCache = time;
+    for(Index i = 0; i < this.skeleton.getNumBones(); ++i)
+      this.valid[i] = false;
+    this.incrementVersion();
+  }
+}
+
+/// Updates the internal cache for a given bone. 
+/// \internal
+function ClipPose.updateXfo!(Index index){
+
+  Xfo local;
+  Bone bone = this.skeleton.getBone(index);
+  SInt32 xfoIdx = this.xfoIdx.get(index, -1);
+  if(xfoIdx >= 0)
+    local = this.xfoValues[xfoIdx];
+
+  Integer parentIndex = bone.parentIndex;
+  if(parentIndex >= 0){
+    if(!this.valid[parentIndex])
+      this.updateXfo(parentIndex);
+    this.xfos[index] = this.xfos[parentIndex] * local;
+  }
+  else
+  {
+    this.xfos[index] = local;
+    this.xfos[index].tr *= this.scaleFactor;
+    this.xfos[index].sc *= this.scaleFactor;
+  }
+
+  this.valid[index] = true;
+}
+
+/// Get the pose of a bone in the skeleton using its index.
+/// \note Lazily computes the pose if the cache is not valid. 
+function Xfo ClipPose.getBoneXfo!(Index index){
+  if(!this.valid[index])
+    this.updateXfo(index);
+  return this.xfos[index];
+}

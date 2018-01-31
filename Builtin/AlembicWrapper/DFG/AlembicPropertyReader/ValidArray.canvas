@@ -1,0 +1,56 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "returns true if this reader wraps a valid AlembicIPoints\n\nSupported types:\n  this: AlembicPropertyReader\n  result: Boolean\n"
+    },
+  "title" : "Valid[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "AlembicPropertyReader[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "2008C3214CE0DB16668B4281DBF8ABE4",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicPropertyReader_valid_task<<<index>>>(
+  io Boolean[] result
+, in AlembicPropertyReader[] this
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].valid();
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  Size task_size = this.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      AlembicWrapper_AlembicPropertyReader_valid_task(index, result, this);
+    }
+  } else {
+    AlembicWrapper_AlembicPropertyReader_valid_task<<<task_size>>>(result, this);
+  }
+}
+"
+  }

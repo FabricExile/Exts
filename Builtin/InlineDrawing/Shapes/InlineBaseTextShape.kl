@@ -1,0 +1,51 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Text;
+
+/**
+  \versionadded 2.4.0
+
+    The InlineAttributeTextShape inherits from the InlineLinesShape object. 
+    It provides a base shape type to draw text with TextGL. 
+
+    \seealso :kl-ref:`AtlasGL`, :kl-ref:`OGLText`, :kl-ref:`InlineTextShape`, :kl-ref:`InlineAttributeTextShape`.
+
+  \dfgPresetOmit
+*/
+object InlineBaseTextShape : InlineShapeBase {
+  protected OGLText oglText;
+  InlineShapeAdaptor adaptor;
+};
+
+/// Initializes a InlineBaseTextShape.
+/// \param name The name of the InlineShape
+/// \param atlas A reference to an AtlasGL
+protected InlineBaseTextShape.init!(String name, Ref<AtlasGL> atlas) {
+  this.name = name;
+  this.oglText = OGLText(atlas, "textVertex:2f,texcoord:2f,color:4f,stringPos:3f");
+}
+
+/// Gets a reference to the OGLText.
+function Ref<OGLText> InlineBaseTextShape.getOGLText() {
+  return this.oglText;
+}
+
+/// \internal
+/// draws the instance on screen. this is used by the 
+/// material and should not be called manually.
+function Boolean InlineBaseTextShape.draw!(io DrawContext context) {
+
+  if(!this.adaptor) {
+    InlineDrawing drawing = context.getMetaData('drawing');
+    this.adaptor = drawing.getShapeAdaptor(this.type());
+  }
+  context.setMetaData('shape', Object(this));
+  Ref<InlineShape> thisShape = this;
+  if(!this.adaptor || !this.adaptor.draw(context, thisShape))
+    return false;
+
+  return true;
+}
+

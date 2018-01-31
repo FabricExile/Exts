@@ -1,0 +1,57 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// A target object that has a transform matrix.
+  ///
+  /// See :ref:`TPG.tool-targets` for more information about tool targets.
+  interface Transformed {
+    //Returns transform space: WorldSpace, NormalizedViewportSpace or WScreenCoordinatesSpace
+    String getTransformSpace();
+
+    /// Returns the local tranform (identity if none)
+    Xfo getLocalTransform();
+
+    /// Returns the "global" parent tranform (identity if none)
+    Mat44 getParentTransform();
+  };
+
+  /// A target object that has a transform matrix which can be modified by a tool.
+  /// This is a superset of Transformed.
+  ///
+  /// See :ref:`TPG.tool-targets` for more information about tool targets.
+  interface TransformTarget {
+
+    //Returns target's transform space: WorldSpace, NormalizedViewportSpace or PixelCoordinatesSpace
+    String getTransformSpace();
+
+    /// Returns the local tranform (identity if none)
+    Xfo getLocalTransform();
+
+    /// Returns the "global" parent tranform (identity if none)
+    Mat44 getParentTransform();
+
+    setLocalTransform!( Xfo transform );
+
+    /// Called at the beginning of the interaction loop
+    beginChanges!( );
+
+    /// Called at the end of the interaction loop (eg: should commit / log a command)
+    endChanges!( );
+  };
+
+  /// Simple Xfo TransformTarget.
+  /// See :ref:`TPG.tool-targets` for more information about tool targets.
+  object BasicXfoTarget : TransformTarget, Transformed{
+    Xfo xfo;
+  };
+
+  String BasicXfoTarget.getTransformSpace() { return WorldSpace; }
+  Xfo BasicXfoTarget.getLocalTransform() { return this.xfo; }
+  Mat44 BasicXfoTarget.getParentTransform() { return Mat44(); }
+  BasicXfoTarget.setLocalTransform!( Xfo transform ) { this.xfo = transform; }
+  BasicXfoTarget.beginChanges!( ) {}
+  BasicXfoTarget.endChanges!( ) {}
+}// namespace Tool

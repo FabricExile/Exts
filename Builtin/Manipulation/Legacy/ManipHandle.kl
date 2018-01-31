@@ -1,0 +1,514 @@
+ 
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require InlineDrawing;
+
+
+/**
+\versionadded 1.12.0
+
+The :kl-ref:`ManipHandle` provides a scope for manipulation. 
+The handle can be used to register manipulators to the :kl-ref:`EventDispatcher`. 
+Upon destruction the handle will clean up and un-register the manipulators again. 
+Additionally the :kl-ref:`ManipHandle` also provides access to a contained 
+:kl-ref:`DrawingHandle`, which Manipulators can use to perform custom drawing.
+
+\seealso EventDispatcherHandle, Manipulator
+*/
+object ManipHandle {
+
+  /// the name of this handle
+  String name;
+
+  /// the drawing handle used
+  DrawingHandle drawHandle;
+
+  /// the handle's dispatcher
+  EventDispatcher dispatcher;
+
+  /// The dict of registered manipulators.
+  Manipulator manipulators[String];
+
+  /// the gizmo handler used by the gizmo manip
+  BaseGizmoHandler gizmoHandlers[String];
+
+  /// the gizmo instances
+  InlineInstance gizmoInstances[String];
+
+  /// the weightmap instances
+  InlineInstance weightmapInstances[String];
+};
+
+/// default constructor
+function ManipHandle() {
+  this.name = this.uid();
+  this.drawHandle = DrawingHandle(this.name);
+  this.dispatcher = EventDispatcher_GetInstance();
+}
+
+/// constructor taking a name
+/// \dfgPresetDefault name "Manipulation"
+function ManipHandle(String name) {
+  this.name = name;
+  this.drawHandle = DrawingHandle(this.name);
+  this.dispatcher = EventDispatcher_GetInstance();
+}
+
+/// deconstructor
+function ~ManipHandle() {
+  this.clear();
+}
+
+/// clears the content of the ManipHandle
+function ManipHandle.clear!() {
+  for(name in this.manipulators)
+    this.dispatcher.unregisterManipulator(name);
+  this.manipulators.clear();
+  this.gizmoHandlers.clear();
+  this.gizmoInstances.clear();
+  this.weightmapInstances.clear();
+  this.drawHandle.clear();
+}
+
+/// returns the DrawingHandle of this ManipHandle
+function DrawingHandle ManipHandle.getDrawingHandle() {
+  return this.drawHandle;
+}
+
+/// Registers a manipulator
+function ManipHandle.registerManipulator!(String name, Manipulator manip) {
+  String uniqueName = name + this.uid();
+  if(this.manipulators.has(uniqueName))
+    return;
+  this.manipulators[uniqueName] = manip;
+  if(this.dispatcher.hasManipulator(uniqueName))
+    return;
+  this.dispatcher.registerManipulator(uniqueName, manip);
+  this.dispatcher.pushManipulator(uniqueName);
+}
+
+/// \internal
+function ManipHandle.ensureGizmoManipExists!() {
+  this.registerManipulator('GizmoManipulator', GizmoManipulator());
+}
+
+/// adds a gizmo instance to the drawing handle
+/// \internal
+function InlineInstance ManipHandle.getGizmoInstance!(String name, PolygonMesh mesh, Xfo xfo, Color color, InlineInstance parentInstance) {
+
+  String uniqueName = name + this.uid();
+  String shapeName = uniqueName;
+  PolygonMesh meshToUse = mesh;
+  if(meshToUse == null)
+  {
+    meshToUse = PolygonMesh('ManipHandleCube');
+    meshToUse.addCuboid(Xfo(), 1.0, 1.0, 1.0, true, false);
+    shapeName = this.uid() + meshToUse.getDebugName();
+  }
+  else if(meshToUse.getDebugName().length() > 0 && meshToUse.getDebugName() != 'PolygonMesh')
+    shapeName = this.uid() + meshToUse.getDebugName();
+
+  if(this.gizmoInstances.has(uniqueName))
+  {
+    InlineInstance instance = this.gizmoInstances[uniqueName];
+    instance.setInstanceUniform(InlineUniform('u_diffuseColor', color));
+    if(mesh != null)
+    {
+      InlineMeshShape shape = instance.getShape();
+      shape.setMesh(meshToUse);
+    }
+    return instance;
+  }
+
+  InlineDrawing drawing = this.drawHandle.getDrawing();
+  InlineMeshShape shape = drawing.registerShape(InlineMeshShape(shapeName, meshToUse));
+
+  InlineShader surfaceShader = drawing.registerShader(OGLSurfaceGizmoShader());
+  InlineMaterial manipMaterial = surfaceShader.getOrCreateMaterial(this.uid());
+
+  InlineTransform parentTransform = this.drawHandle.getRootTransform();
+  if(parentInstance != null)
+    parentTransform = parentInstance.getTransform();
+  InlineTransform transform = StaticInlineTransform(uniqueName, parentTransform, xfo);
+  InlineInstance instance = SimpleInlineInstance(uniqueName, transform, shape, manipMaterial);
+  instance.setInstanceUniform(InlineUniform('u_diffuseColor', color));
+
+  this.gizmoInstances[uniqueName] = instance;
+  return instance;
+}
+
+/// Registers a single intermediate parent for offsetting other gizmos
+/// \dfgPresetDefault name "offset"
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault size 0.05
+function ManipHandle.addOffsetTransform!(
+  String name,
+  PolygonMesh mesh,
+  Xfo xfo,
+  Color color,
+  Scalar size,
+  InlineInstance parentInstance,
+  out InlineInstance instance
+  ) {
+
+  if(name.length() == 0)
+  {
+    report('ManipHandle.addOffsetTransform: name cannot be empty.');
+    return;
+  }
+
+  this.ensureGizmoManipExists();
+
+  Xfo xfoToUse = xfo;
+  xfoToUse.sc *= size;
+  instance = this.getGizmoInstance(name, mesh, xfoToUse, color, parentInstance);
+}
+
+/// Registers a single position manipulator if it doesn't exist yet
+/// \dfgPresetDefault name "pos"
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault size 1.0
+function ManipHandle.addPositionManip!(
+  String name,
+  PolygonMesh mesh,
+  Vec3 pos,
+  Color color,
+  Scalar size,
+  InlineInstance parentInstance,
+  String portToDrive,
+  String hostGraphName,
+  out InlineInstance instance
+  ) {
+
+  if(name.length() == 0)
+  {
+    report('ManipHandle.addPositionManip: name cannot be empty.');
+    return;
+  }
+
+  this.ensureGizmoManipExists();
+
+  Xfo xfo;
+  xfo.tr = pos;
+  xfo.sc *= size;
+
+  instance = this.getGizmoInstance(name, mesh, xfo, color, parentInstance);
+  InlineTransform transform = instance.getTransform();
+
+  String uniqueName = name + this.uid();
+  if(this.gizmoHandlers.has(uniqueName))
+  {
+    this.gizmoHandlers[uniqueName].owner = instance;
+    return;
+  }
+
+  TransformManipulationCallback callback();
+  callback.addTarget(transform);
+  callback.setPortToDrive(portToDrive);
+  callback.setGraph(hostGraphName);
+  this.gizmoHandlers[uniqueName] = PositionGizmoHandler(instance, callback);
+}
+
+/// Registers a single position manipulator if it doesn't exist yet
+/// \dfgPresetDefault name "pos"
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault size 1.0
+/// \dfgPresetDefault axis {"x": 0.0, "y": 1.0, "z": 0.0}
+function ManipHandle.addPositionAxisManip!(
+  String name,
+  PolygonMesh mesh,
+  Vec3 pos,
+  Color color,
+  Scalar size,
+  Vec3 axis,
+  InlineInstance parentInstance,
+  String portToDrive,
+  String hostGraphName,
+  out InlineInstance instance
+  ) {
+
+  if(name.length() == 0)
+  {
+    report('ManipHandle.addPositionAxisManip: name cannot be empty.');
+    return;
+  }
+
+  this.ensureGizmoManipExists();
+
+  Xfo xfo;
+  xfo.tr = pos;
+  xfo.sc *= size;
+
+  instance = this.getGizmoInstance(name, mesh, xfo, color, parentInstance);
+  InlineTransform transform = instance.getTransform();
+
+  String uniqueName = name + this.uid();
+  if(this.gizmoHandlers.has(uniqueName))
+    return;
+
+  TransformManipulationCallback callback();
+  callback.addTarget(transform);
+  callback.setPortToDrive(portToDrive);
+  callback.setGraph(hostGraphName);
+  this.gizmoHandlers[uniqueName] = PositionAxisGizmoHandler(instance, axis, callback);
+}
+
+/// Registers a single position manipulator if it doesn't exist yet
+/// \dfgPresetDefault name "pos"
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault size 1.0
+/// \dfgPresetDefault normal {"x": 0.0, "y": 1.0, "z": 0.0}
+function ManipHandle.addPositionPlanarManip!(
+  String name,
+  PolygonMesh mesh,
+  Vec3 pos,
+  Color color,
+  Scalar size,
+  Vec3 normal,
+  InlineInstance parentInstance,
+  String portToDrive,
+  String hostGraphName,
+  out InlineInstance instance
+  ) {
+
+  if(name.length() == 0)
+  {
+    report('ManipHandle.addPositionPlanarManip: name cannot be empty.');
+    return;
+  }
+
+  this.ensureGizmoManipExists();
+
+  Xfo xfo;
+  xfo.tr = pos;
+  xfo.sc *= size;
+
+  instance = this.getGizmoInstance(name, mesh, xfo, color, parentInstance);
+  InlineTransform transform = instance.getTransform();
+
+  String uniqueName = name + this.uid();
+  if(this.gizmoHandlers.has(uniqueName))
+    return;
+
+  TransformManipulationCallback callback();
+  callback.addTarget(transform);
+  callback.setPortToDrive(portToDrive);
+  callback.setGraph(hostGraphName);
+  this.gizmoHandlers[uniqueName] = PositionPlanarGizmoHandler(instance, normal, callback);
+}
+
+/// Registers a single position manipulator if it doesn't exist yet
+/// \dfgPresetDefault name "pos"
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault size 1.0
+/// \dfgPresetDefault axis {"x": 0.0, "y": 1.0, "z": 0.0}
+/// \dfgPresetDefault limits {"x": -5.0, "y": 5.0}
+function ManipHandle.addPositionSliderManip!(
+  String name,
+  PolygonMesh mesh,
+  Vec3 pos,
+  Color color,
+  Scalar size,
+  Vec3 axis,
+  Vec2 limits,
+  InlineInstance parentInstance,
+  String portToDrive,
+  String hostGraphName,
+  out InlineInstance instance
+  ) {
+
+  if(name.length() == 0)
+  {
+    report('ManipHandle.addPositionSliderManip: name cannot be empty.');
+    return;
+  }
+
+  this.ensureGizmoManipExists();
+
+  Xfo xfo;
+  xfo.tr = pos;
+  xfo.sc *= size;
+
+  instance = this.getGizmoInstance(name, mesh, xfo, color, parentInstance);
+  InlineTransform transform = instance.getTransform();
+
+  String uniqueName = name + this.uid();
+  if(this.gizmoHandlers.has(uniqueName))
+    return;
+
+  TransformManipulationCallback callback();
+  callback.addTarget(transform);
+  callback.setPortToDrive(portToDrive);
+  callback.setGraph(hostGraphName);
+  this.gizmoHandlers[uniqueName] = SliderGizmoHandler(instance, axis, callback, limits);
+}
+
+/// Registers a single position manipulator if it doesn't exist yet
+/// \dfgPresetDefault name "rot"
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault size 1.0
+/// \dfgPresetDefault axis {"x": 0.0, "y": 1.0, "z": 0.0}
+function ManipHandle.addOrientationAxisManip!(
+  String name,
+  PolygonMesh mesh,
+  Xfo xfo,
+  Color color,
+  Scalar size,
+  Vec3 axis,
+  InlineInstance parentInstance,
+  String portToDrive,
+  String hostGraphName,
+  out InlineInstance instance
+  ) {
+
+  if(name.length() == 0)
+  {
+    report('ManipHandle.addOrientationAxisManip: name cannot be empty.');
+    return;
+  }
+
+  this.ensureGizmoManipExists();
+
+  Xfo xfoToUse = xfo;
+  xfoToUse.sc *= size;
+
+  instance = this.getGizmoInstance(name, mesh, xfoToUse, color, parentInstance);
+  InlineTransform transform = instance.getTransform();
+
+  String uniqueName = name + this.uid();
+  if(this.gizmoHandlers.has(uniqueName))
+    return;
+
+  TransformManipulationCallback callback();
+  callback.addTarget(transform);
+  callback.setPortToDrive(portToDrive);
+  callback.setGraph(hostGraphName);
+  this.gizmoHandlers[uniqueName] = OrientationAxisGizmoHandler(instance, axis, callback);
+}
+
+/// Registers a single position manipulator if it doesn't exist yet
+/// \dfgPresetDefault name "rot"
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault size 1.0
+/// \dfgPresetDefault tolerance 0.001
+function ManipHandle.addOrientationSphericalManip!(String name,
+  PolygonMesh mesh,
+  Xfo xfo,
+  Color color,
+  Scalar size,
+  Float32 tolerance,
+  InlineInstance parentInstance,
+  String portToDrive,
+  String hostGraphName,
+  out InlineInstance instance
+  ) {
+
+  if(name.length() == 0)
+  {
+    report('ManipHandle.addOrientationSphericalManip: name cannot be empty.');
+    return;
+  }
+
+  this.ensureGizmoManipExists();
+
+  Xfo xfoToUse = xfo;
+  xfoToUse.sc *= size;
+
+  instance = this.getGizmoInstance(name, mesh, xfoToUse, color, parentInstance);
+  InlineTransform transform = instance.getTransform();
+
+  String uniqueName = name + this.uid();
+  if(this.gizmoHandlers.has(uniqueName))
+    return;
+
+  TransformManipulationCallback callback();
+  callback.addTarget(transform);
+  callback.setPortToDrive(portToDrive);
+  callback.setGraph(hostGraphName);
+  this.gizmoHandlers[uniqueName] = OrientationSphericalGizmoHandler(instance, tolerance, callback);
+}
+
+/// Registers a surface paint manipulator
+/// \dfgPresetDefault name "surfacepaint"
+/// \dfgPresetDefault color {"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0}
+function ManipHandle.addSurfacePaintManip!(String name, io InlineInstance instance, io Weightmap weightmap, Xfo xfo, Color color) {
+
+  if(name.length() == 0)
+  {
+    report('ManipHandle.addSurfacePaintManip: name cannot be empty.');
+    return;
+  }
+
+  if(instance == null)
+    return;
+
+  if(weightmap == null)
+    return;
+
+  InlineMeshShape shape = instance.getShape();
+  if(!shape)
+  {
+    report('ManipHandle.addSurfacePaintManip: Instance passed in is not using an InlineMeshShape.');
+    return;
+  }
+
+  String uniqueName = name + this.uid();
+  if(!this.weightmapInstances.has(uniqueName))
+  {
+    InlineDrawing drawing = this.drawHandle.getDrawing();
+    InlineShader overlayShader = drawing.registerShader(OGLSurfaceOverlayShader(uniqueName, weightmap.name));
+    InlineMaterial mat = overlayShader.getOrCreateMaterial(weightmap.name);
+
+    InlineTransform transform = StaticInlineTransform(uniqueName, this.drawHandle.getRootTransform(), xfo);
+    InlineInstance weightmapInstance = InlineInstance(uniqueName, transform, shape, mat);
+    weightmapInstance.setInstanceUniform(InlineUniform('u_color', color));
+    this.weightmapInstances[uniqueName] = weightmapInstance;
+  }
+
+  InlineInstance weightmapInstance = this.weightmapInstances[uniqueName];
+  weightmapInstance.setInstanceUniform(InlineUniform('u_color', color));
+  weightmapInstance.getTransform().setLocalXfo(0, xfo);
+
+  // enable the weightmap
+  weightmap.connect(shape.getMesh(), Mat44());
+  weightmap.setInstance(weightmapInstance);
+
+  if(!this.manipulators.has(uniqueName))
+  {
+    SurfaceAttributePaintManipulator paintManipulator = SurfaceAttributePaintManipulator();
+    paintManipulator.attributeName = weightmap.name;
+    paintManipulator.addTargetGeometry(weightmapInstance);
+    this.registerManipulator(uniqueName, paintManipulator);
+  }
+}
+
+/// Registers a surface sculpt manipulator
+/// \dfgPresetDefault name "surfacesculpt"
+function ManipHandle.addSurfaceSculptManip!(String name, io InlineInstance instance) {
+
+  if(name.length() == 0)
+  {
+    report('ManipHandle.addSurfaceSculptManip: name cannot be empty.');
+    return;
+  }
+
+  if(instance == null)
+    return;
+
+  InlineMeshShape shape = instance.getShape();
+  if(!shape)
+  {
+    report('ManipHandle.addSurfaceSculptManip: Instance passed in is not using an InlineMeshShape.');
+    return;
+  }
+
+  String uniqueName = name + this.uid();
+  if(!this.manipulators.has(uniqueName))
+  {
+    SurfaceSculptManipulator sculptManipulator = SurfaceSculptManipulator();
+    sculptManipulator.addTargetGeometry(instance);
+    this.registerManipulator(uniqueName, sculptManipulator);
+  }
+}

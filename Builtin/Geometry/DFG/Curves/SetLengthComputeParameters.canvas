@@ -1,0 +1,67 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/Curves.html",
+    "uiTooltip" : "Sets the computation strategy for curve length related methods:\n- :kl-ref:`Curves.getCurveLength`\n- :kl-ref:`Curves.getParameterFromLength`\n- :kl-ref:`Curves.getNormalizedParameterFromLengthRatio`\n- :kl-ref:`Curves.getLengthFromParameter`\n- :kl-ref:`Curves.getLengthRatioFromNormalizedParameter`\n\nForce a minimum of samples, else precision might not be matched (and performance will actually be worse)\nFor a max precision, else it won't be reached anyway (max recursion depth -> max 16 sub-samples between original samples)\n\nSupported types:\n  this: Curves\n  preciseMode: Boolean\n  initialSamplesPerSpan: UInt32\n  preciseModeTolerance: Float32\n"
+    },
+  "title" : "SetLengthComputeParameters",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Curves"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "preciseMode",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Boolean" : true
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Boolean"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "initialSamplesPerSpan",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "UInt32" : 16
+        },
+      "execPortType" : "In",
+      "typeSpec" : "UInt32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "preciseModeTolerance",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float32" : 0.001000000047497451
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float32"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "73AC73B17E3BF7DC5F3F8738A0FCA8C3",
+  "code" : "require Geometry;
+
+dfgEntry {
+  this.setLengthComputeParameters(preciseMode, initialSamplesPerSpan, preciseModeTolerance);
+}
+"
+  }

@@ -1,0 +1,99 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/// \internal
+function BinPack2DCoord[] BinPack2DCoord_QuickSort( in BinPack2DCoord data[] )
+{
+  BinPack2DCoord result[];
+  
+  if( data.size() <= 1 )
+    return data;
+    
+  if( data.size() <= 2 )
+  {
+    if( data[0].qs_less( data[1] ) )
+    {
+      result.push( data[0] );
+      result.push( data[1] );
+    }
+    else
+    {
+      result.push( data[1] );
+      result.push( data[0] );
+    }
+  }
+  else
+  {
+    // Pick a pivot
+    BinPack2DCoord pivot;
+    pivot = (data[0] + data[data.size()/2] + data[data.size()-1] ) / 3;
+  
+    BinPack2DCoord above[];
+    BinPack2DCoord below[];
+    Size nbItems = data.size();
+    for( Size i = 0; i < nbItems; i++ )
+    {
+      if( data[i].qs_less( pivot ) )
+        below.push( data[i] );
+      else
+        above.push( data[i] );
+    }
+
+    if(above.size() == 0 && below.size() != 0)
+      result = below;
+    else if(above.size() != 0 && below.size() == 0)
+      result = above;
+    else
+      result = BinPack2DCoord_QuickSort( below ) + BinPack2DCoord_QuickSort( above );
+  }
+  return result;
+}
+
+/// \internal
+function BinPack2DPackage[] BinPack2DPackage_QuickSortBySize( in BinPack2DPackage data[] )
+{
+  BinPack2DPackage result[];
+  
+  if( data.size() <= 1 )
+    return data;
+    
+  if( data.size() <= 2 )
+  {
+    if( data[0].region.qs_less( data[1].region ) )
+    {
+      result.push( data[0] );
+      result.push( data[1] );
+    }
+    else
+    {
+      result.push( data[1] );
+      result.push( data[0] );
+    }
+  }
+  else
+  {
+    // Pick a pivot
+    SInt32 pivot;
+    pivot = (data[0].region.size.Area() + data[data.size()/2].region.size.Area() + data[data.size()-1].region.size.Area() ) / 3;
+  
+    BinPack2DPackage above[];
+    BinPack2DPackage below[];
+    Size nbItems = data.size();
+    for( Size i = 0; i < nbItems; i++ )
+    {
+      if( data[i].region.size.Area() > pivot )
+        below.push( data[i] );
+      else
+        above.push( data[i] );
+    }
+
+    if(above.size() == 0 && below.size() != 0)
+      result = below;
+    else if(above.size() != 0 && below.size() == 0)
+      result = above;
+    else
+      result = BinPack2DPackage_QuickSortBySize( below ) + BinPack2DPackage_QuickSortBySize( above );
+  }
+  return result;
+}

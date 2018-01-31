@@ -1,0 +1,90 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Mat44.html",
+    "uiTooltip" : "Get to an external array, transposing in the process\n\n Supported by Mat44,Mat44_d,Mat44_i"
+    },
+  "title" : "GetTranspose[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Mat44[]" : [
+          {
+            "row0" : {
+              "x" : 1,
+              "y" : 0,
+              "z" : 0,
+              "t" : 0
+              },
+            "row1" : {
+              "x" : 0,
+              "y" : 1,
+              "z" : 0,
+              "t" : 0
+              },
+            "row2" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 1,
+              "t" : 0
+              },
+            "row3" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0,
+              "t" : 1
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "$TYPE$[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "v",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Float64<>[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "E73D9D69CA52A4BF35EF079154B41A35",
+  "code" : "require Math;
+
+operator Math_Mat44_getTr_task<<<index>>>(
+  in $TYPE$[] this
+, io Float64<>[] v
+) {
+  this[index < this.size() ? index : this.size() - 1].getTr(v[index < v.size() ? index : v.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( v.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < v.size()) task_size = v.size();
+  v.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Mat44_getTr_task(index, this, v);
+    }
+  } else {
+    Math_Mat44_getTr_task<<<task_size>>>(this, v);
+  }
+}
+"
+  }

@@ -1,0 +1,346 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+
+require Math;
+require Bullet;
+require Geometry;
+
+/**
+  The RigidBodySimulation object provides a tool to combine Fabric Engine systems such as Geometry with Bullet Physics. 
+
+  The RigidBodySimulation is intended to be used as an example when setting up your own simulations.
+
+  \brief An object for managing rigid body simulations.
+  \seealso SoftBodySimulation
+*/
+object RigidBodySimulation
+{
+  Boolean           initialized;
+  Scalar             timeStep;
+  UInt32             subSteps;
+  Vec3               gravity;
+
+  BulletRigidBody         rigidBodies[];
+
+  BulletBroadphaseInterface  broadphase;
+
+  BulletCollisionDispatcher  dispatcher;
+
+  BulletConstraintSolver    solver;
+
+  BulletCollisionConfiguration collisionConfiguration;
+
+  BulletDynamicsWorld     dynamicsWorld;
+
+  BulletSoftRigidCollisionAlgorithm   SoftRigidCollisionAlgorithms[];
+};
+
+function RigidBodySimulation(){
+  this.initialized = false;
+  this.timeStep = 1.0/24.0;
+  this.subSteps = 2;
+  this.gravity = Vec3(0, -10, 0);
+  this.initPhysics();
+}
+
+/// \dfgPresetDefault fps 24.0
+/// \dfgPresetDefault subSteps 2
+/// \dfgPresetDefault gravity {"x": 0.0, "y": -10.0, "z": 0.0}
+function RigidBodySimulation(Scalar fps, UInt32 subSteps, Vec3 gravity){
+  this.initialized = false;
+  this.timeStep = 1.0/fps;
+  this.subSteps = subSteps;
+  this.gravity = gravity;
+  this.initPhysics();
+}
+
+/// Cleans up the simulation
+function ~RigidBodySimulation(){}
+
+/// \internal
+inline RigidBodySimulation.cloneMembersTo( io RigidBodySimulation that ) {
+  that.initialized = this.initialized;
+  that.timeStep = this.timeStep;
+  that.subSteps = this.subSteps;
+  that.rigidBodies = this.rigidBodies;
+  that.broadphase = this.broadphase;
+  that.dispatcher = this.dispatcher;
+  that.solver = this.solver;
+  that.collisionConfiguration = this.collisionConfiguration;
+  that.dynamicsWorld = this.dynamicsWorld;
+  that.SoftRigidCollisionAlgorithms = this.SoftRigidCollisionAlgorithms;
+}
+
+/// Initializes the physics simulation.
+function RigidBodySimulation.initPhysics!()
+{
+  const Integer maxProxies = 32766;
+  const Integer maxOverlap = 65535;
+
+
+  ///register some softBody collision algorithms on top of the default BulletDefaultCollisionConfiguration
+  BulletSoftBodyRigidBodyCollisionConfiguration bulletSoftBodyRigidBodyCollisionConfiguration();
+  this.collisionConfiguration = bulletSoftBodyRigidBodyCollisionConfiguration;
+
+  this.dispatcher = BulletCollisionDispatcher(bulletSoftBodyRigidBodyCollisionConfiguration);
+
+  Vec3 worldAabbMin(-1000,-1000,-1000);
+  Vec3 worldAabbMax(1000,1000,1000);
+
+  this.broadphase = BulletAxisSweep3(worldAabbMin,worldAabbMax,maxProxies);
+
+  BulletSequentialImpulseConstraintSolver solver();
+
+  this.solver = solver;
+
+  this.dynamicsWorld = BulletDiscreteDynamicsWorld(this.dispatcher, this.broadphase, this.solver, this.collisionConfiguration);
+  // this.dynamicsWorld.setInternalTickCallback(pickingPreTickCallback,this,true);
+
+  // this.dynamicsWorld.getDispatchInfo().m_enableSPU = true;
+  this.dynamicsWorld.setGravity(this.gravity);
+
+  this.initialized = true;
+}
+
+/// Creates a large box shape to be used at the ground plane. 
+function RigidBodySimulation.createGround!(){
+  //create ground object
+  
+  const Scalar CUBE_HALF_EXTENTS = 1.5;
+  Xfo xfo(Vec3(0, CUBE_HALF_EXTENTS * -1.0,0));
+  BulletCollisionShape groundShape = BulletBoxShape(Vec3(1000,CUBE_HALF_EXTENTS,1000));
+  groundShape.setMargin(0.01);
+
+  BulletCollisionObject groundObject = BulletCollisionObject();
+  groundObject.setWorldTransform(xfo);
+  groundObject.setInterpolationWorldTransform(xfo);
+  groundObject.setCollisionShape(groundShape);
+  this.dynamicsWorld.addCollisionObject(groundObject);
+}
+
+/// Resets the simulation, moving all the objects back to thier initial positions.
+function RigidBodySimulation.resetSimulation!()
+{
+  if(!this.initialized){
+    setError("Error in resetSimulation. Demo not yet initialized.");
+    return;
+  }
+
+  ///create a copy of the array, not a reference!
+  BulletICollisionObject collisionObjects[] = this.dynamicsWorld.getCollisionObjectArray();
+  
+  for (Integer i=0;i<collisionObjects.size();i++)
+  {
+    BulletICollisionObject colObj = collisionObjects[i];
+    if(colObj.type() == BulletRigidBody){
+      BulletRigidBody body = colObj;
+      if (body.getMotionState() != null && body.getInvMass() != 0.0)
+      {
+        BulletDefaultMotionState myMotionState = body.getMotionState();
+        myMotionState.setGraphicsWorldTrans(myMotionState.getStartWorldTrans());
+        body.setCenterOfMassTransform( myMotionState.getGraphicsWorldTrans() );
+        colObj.setInterpolationWorldTransform( myMotionState.getStartWorldTrans() );
+        colObj.forceActivationState(AS_ACTIVE_TAG);
+        colObj.activate(false);
+        colObj.setDeactivationTime(0);
+        //colObj.setActivationState(AS_WANTS_DEACTIVATION);
+      }
+      //removed cached contact points (this is not necessary if all objects have been removed from the dynamics world)
+      if (this.broadphase.getOverlappingPairCache()){
+        BulletOverlappingPairCache pairCache = this.broadphase.getOverlappingPairCache();
+        pairCache.cleanProxyFromPairs(colObj.getBroadphaseHandle(),this.dispatcher);
+      }
+
+      if (!body.isStaticObject())
+      {
+        body.setLinearVelocity(Vec3(0,0,0));
+        body.setAngularVelocity(Vec3(0,0,0));
+      }
+    }
+  }
+
+  ///reset some internal cached data in the broadphase
+  this.broadphase.resetPool(this.dispatcher);
+  this.solver.reset();
+}
+
+function RigidBodySimulation.removeAllRigidBodies!()
+{
+  for(SInt32 i = this.rigidBodies.size() - 1; i >= 0; i--)
+  {
+    this.dynamicsWorld.removeRigidBody(this.rigidBodies[i]);
+  }
+  this.rigidBodies.resize(0);
+}
+
+/// \dfgPresetDefault mass 1.0
+/// \dfgPresetDefault friction 0.5
+/// \dfgPresetDefault restitution 0.0
+/// \dfgPresetDefault linearVelocity {"x": 0.0, "y": 0.0, "z": 0.0}
+/// \dfgPresetDefault angularVelocity {"x": 0.0, "y": 0.0, "z": 0.0}
+function BulletRigidBody RigidBodySimulation.addRigidBody!(
+  Float32  mass, 
+  Float32 friction,
+  Float32 restitution,
+  Xfo xfo,
+  Vec3 linearVelocity,
+  Vec3 angularVelocity,
+  BulletCollisionShape shape
+  )
+{
+  //rigidbody is dynamic if and only if mass is non zero, otherwise static
+  Boolean isDynamic = (mass != 0.0);
+
+  Vec3 localInertia(0,0,0);
+  if (isDynamic)
+    shape.calculateLocalInertia(mass, localInertia);
+
+  //using motionstate is recommended, it provides Integererpolation capabilities, and only synchronizes 'active' objects
+  BulletDefaultMotionState myMotionState = BulletDefaultMotionState(xfo);
+  BulletRigidBodyConstructionInfo rbInfo(mass, myMotionState, shape, localInertia);
+  rbInfo.friction = friction;
+  rbInfo.restitution = restitution;
+  BulletRigidBody body = BulletRigidBody(rbInfo);
+  body.setLinearVelocity(linearVelocity);
+  body.setAngularVelocity(angularVelocity);
+
+  this.dynamicsWorld.addRigidBody(body);
+
+  this.rigidBodies.push(body);
+  return body;
+}
+
+/// \dfgPresetDefault mass [1.0]
+/// \dfgPresetDefault friction [0.5]
+/// \dfgPresetDefault restitution [0.0]
+/// \dfgPresetDefault linearVelocity [{"x": 0.0, "y": 0.0, "z": 0.0}]
+/// \dfgPresetDefault angularVelocity [{"x": 0.0, "y": 0.0, "z": 0.0}]
+function BulletRigidBody[] RigidBodySimulation.addRigidBodies!(
+  Float32 mass[],
+  Float32 friction[],
+  Float32 restitution[],
+  Xfo xfo[],
+  Vec3 linearVelocity[],
+  Vec3 angularVelocity[],
+  BulletCollisionShape shape[]
+  )
+{
+  BulletRigidBody result[];
+  if(mass.size() == 0) return result;
+  if(friction.size() == 0) return result;
+  if(restitution.size() == 0) return result;
+  if(xfo.size() == 0) return result;
+  if(linearVelocity.size() == 0) return result;
+  if(angularVelocity.size() == 0) return result;
+  if(shape.size() == 0) return result;
+
+  Size size = mass.size();
+  if(size < friction.size()) size = friction.size();
+  if(size < restitution.size()) size = restitution.size();
+  if(size < xfo.size()) size = xfo.size();
+  if(size < linearVelocity.size()) size = linearVelocity.size();
+  if(size < angularVelocity.size()) size = angularVelocity.size();
+  if(size < shape.size()) size = shape.size();
+
+  result.resize(size);
+
+  for(Size i=0;i<size;i++) {
+    result[i] = this.addRigidBody(
+      mass[i < mass.size() ? i : mass.size() - 1],
+      friction[i < friction.size() ? i : friction.size() - 1],
+      restitution[i < restitution.size() ? i : restitution.size() - 1],
+      xfo[i < xfo.size() ? i : xfo.size() - 1],
+      linearVelocity[i < linearVelocity.size() ? i : linearVelocity.size() - 1],
+      angularVelocity[i < angularVelocity.size() ? i : angularVelocity.size() - 1],
+      shape[i < shape.size() ? i : shape.size() - 1]
+      );
+  }
+
+  return result;
+}
+
+/// returns a given rigidbody's transform
+function BulletRigidBody RigidBodySimulation.getRigidBody(Index index)
+{
+  if(index >= this.rigidBodies.size())
+    return null;
+
+  return this.rigidBodies[index];
+}
+
+/// returns the transforms of all rigid rigidBodies
+function BulletRigidBody[] RigidBodySimulation.getAllRigidBodies()
+{
+  BulletRigidBody result[];
+  result += this.rigidBodies;
+  return result;
+}
+
+/// doesn't do anything, just ensures to build nice graphs
+function RigidBodySimulation.updateRigidBody!(BulletRigidBody body)
+{
+}
+
+/// doesn't do anything, just ensures to build nice graphs
+function RigidBodySimulation.updateRigidBodies!(BulletRigidBody bodies[])
+{
+}
+
+/// doesn't do anything, just ensures to build nice graphs
+function RigidBodySimulation.updateCollisionShape!(BulletCollisionShape shape)
+{
+}
+
+/// doesn't do anything, just ensures to build nice graphs
+function RigidBodySimulation.updateCollisionShapes!(BulletCollisionShape shapes[])
+{
+}
+
+/// Updates the simulation
+function RigidBodySimulation.stepSimulation()
+{
+  if(!this.initialized){
+    setError("Error: Rigid body sim not initialized.");
+    return;
+  }
+  RigidBodySimulation self = this;
+  self.dynamicsWorld.stepSimulation(this.timeStep, this.subSteps);
+}
+
+/// returns a given rigidbody's transform
+function Xfo RigidBodySimulation.getRigidBodyXfo(Index index)
+{
+  if(index >= this.rigidBodies.size())
+    return Xfo();
+
+  return this.rigidBodies[index].getWorldTransform();
+}
+
+/// returns the transforms of all rigid rigidBodies
+function Xfo[] RigidBodySimulation.getAllRigidBodyXfos()
+{
+  Xfo result[];
+  result.resize(this.rigidBodies.size());
+  for(Size i=0;i<this.rigidBodies.size();i++)
+    result[i] = this.rigidBodies[i].getWorldTransform();
+  return result;
+}
+
+/// sets a given rigidbody's transform
+function RigidBodySimulation.setRigidBodyXfo!(Index index, Xfo xfo)
+{
+  if(index >= this.rigidBodies.size())
+    return;
+  this.rigidBodies[index].setWorldTransform(xfo);
+}
+
+/// sets the transforms of all rigid rigidBodies
+function RigidBodySimulation.setAllRigidBodyXfos!(Xfo xfos[])
+{
+  if(xfos.size() < this.rigidBodies.size())
+    return;
+  for(Size i=0;i<this.rigidBodies.size();i++)
+    this.rigidBodies[i].setWorldTransform(xfos[i]);
+}

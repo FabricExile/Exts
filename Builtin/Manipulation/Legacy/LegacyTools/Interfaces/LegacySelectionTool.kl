@@ -1,0 +1,51 @@
+/*
+*  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+*/
+
+/**
+  \versionadded 2.0
+
+  :kl-ref:`LegacySelectionTool` declares the methods needed to manages the Highlight/selection in the scene. 
+  The selection tool has to be specialized over the different renderers/viewports.
+  Only one Selection tool is needed in the application. 
+  
+  The LegacySelectionTool references all the LegacyToolDispatcher and each LegacyToolDispatcher has a weak reference to the LegacySelectionTool, 
+  It's used to to update the tools' target when the selection changes.
+
+  \seealso :kl-ref:`LegacyToolDispatcher`
+
+  \dfgPresetOmit
+*/
+interface LegacySelectionTool {
+  /// Registers a LegacyToolDispatcher.
+  /// \param toolDispatcher Reference to a tool dispatcher.
+  registerToolDispatcher!(Ref<LegacyToolDispatcher> toolDispatcher);
+
+  /// Unregisters a LegacyToolDispatcher.
+  /// \param toolDispatcher Reference to a tool dispatcher.
+  unregisterToolDispatcher!(Ref<LegacyToolDispatcher> toolDispatcher);
+
+  /// Tells that it is a drag event. 
+  /// TODO: have a drag event type.
+  setDragging!(Boolean dragging);
+ 
+  /// Tells that it is a drag event. 
+  /// TODO: have a drag event type.
+  Boolean isDragging();
+
+  /// Resets the higlight set, needed to not poluate the view.
+  clearHighlightSet!();
+
+  /// Updates the higlight set with the raycast result at mouse event position.
+  /// \param event The mouse's events
+  updateHighlightSet!(io MouseEvent event);
+
+  /// Updates the selection set with the raycast result at mouse event position.
+  /// \param event The mouse's event.
+  /// \param multiSelection If true, multi-selection (Ctrl).
+  /// \param keepAdding If true, multi-selection + Kepp adding (Shift).
+  updateSelectionSet!(
+    io MouseEvent event,
+    Boolean multiSelection, 
+    Boolean keepAdding);
+};

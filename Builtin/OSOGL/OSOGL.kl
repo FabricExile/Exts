@@ -1,0 +1,40 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+object OSOGLContext {
+  Data data;
+};
+
+object GLPixelBuffer {
+  Integer width;
+  Integer height;
+  Data data;
+};
+
+function OSOGLContext.create!(Integer width, Integer height) = "FabricOSOGLCreateContext";
+function OSOGLContext.createShared!(Integer width, Integer height, OSOGLContext sharedContext) = "FabricOSOGLCreateSharedContext";
+function OSOGLContext.makeCurrent() = "FabricOSOGLMakeCurrentContext";
+function OSOGLContext.setFromCurrent!() = "FabricOSOGLSetFromCurrentContext";
+function Boolean OSOGLContext.isSameContext( OSOGLContext other ) = "FabricOSOGLIsSameContext";
+function UInt64 OSOGLContext.getID() = "FabricOSOGLGetID";
+
+function String OSOGLContext.getIDString() {
+  UInt64 ID = this.getID();
+  if( ID <= UInt32Max )
+    return '0x'+hex(UInt32(ID));
+  else
+    return '0x'+hex(ID);
+}
+
+function OSOGLContext.destroy!() = "FabricOSOGLDestroyContext";
+function ~OSOGLContext() = "FabricOSOGLDestroyContext";
+function Boolean OSOGLContext.isValid() {
+  return Boolean(this.data);
+}
+
+function GLPixelBuffer.create!(Integer height, Integer width) = "FabricOSOGLPixelBuffer_Create";
+function GLPixelBuffer() = "FabricOSOGLPixelBuffer_Constructor";
+function ~GLPixelBuffer() = "FabricOSOGLPixelBuffer_Reset";
+function GLPixelBuffer.reset!() = "FabricOSOGLPixelBuffer_Reset";
+

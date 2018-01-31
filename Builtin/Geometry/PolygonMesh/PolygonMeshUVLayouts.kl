@@ -1,0 +1,699 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require BinPacking;
+
+/// Returns the surface area of a single polygon
+function Float32 PolygonMesh.getPolygonArea(Index polygon) {
+  GeometryAttributes attributes = this.getAttributes();
+  Vec3Attribute positions = attributes.getAttribute('positions');
+  if(!positions)
+    return 0.0;
+
+  Float32 result = 0.0;
+  for(Size i=0;i<this.getPolygonSubTriangleCount(polygon);i++) {
+    UInt32 triangleVerts[3] = this.getPolygonSubTrianglePolygonPoints(polygon, i);
+
+    Index idxA = this.getPolygonPoint(polygon, triangleVerts[0]);
+    Index idxB = this.getPolygonPoint(polygon, triangleVerts[1]);
+    Index idxC = this.getPolygonPoint(polygon, triangleVerts[2]);
+
+    Vec3 a = positions.values[idxA] - positions.values[idxB];
+    Vec3 b = positions.values[idxA] - positions.values[idxC];
+    Vec3 c = a.cross(b);
+    result += c.length() * 0.5;
+  }
+
+  return result;
+}
+
+/// Returns the 2D area covered by a single polygon using the UV space given by attributeName
+function Float32 PolygonMesh.getPolygonUVArea(Index polygon, String attributeName) {
+  GeometryAttributes attributes = this.getAttributes();
+  Vec2Attribute uvs = attributes.getAttribute(attributeName);
+  if(!uvs)
+    return 0.0;
+
+  Float32 result = 0.0;
+  for(Size i=0;i<this.getPolygonSubTriangleCount(polygon);i++) {
+    UInt32 triangleVerts[3] = this.getPolygonSubTrianglePolygonPoints(polygon, i);
+
+    Index idxA = this.getPolygonPoint(polygon, triangleVerts[0]);
+    Index idxB = this.getPolygonPoint(polygon, triangleVerts[1]);
+    Index idxC = this.getPolygonPoint(polygon, triangleVerts[2]);
+
+    // use heron's formula
+    Vec2 a = uvs.values[idxA] - uvs.values[idxB];
+    Vec2 b = uvs.values[idxA] - uvs.values[idxC];
+    Vec2 c = a.cross(b);
+    result += c.length() * 0.5;
+  }
+
+  return result;
+}
+
+/// Returns the 2D area covered by a single polygon using the UV space 'uvs0'
+function Float32 PolygonMesh.getPolygonUVArea(Index polygon) {
+  return this.getPolygonUVArea(polygon, 'uvs0');
+}
+
+/// Clones the UV (Vec2) attribute source to target and returns true if successful
+function Boolean PolygonMesh.cloneUVs(String source, String target) {
+  GeometryAttributes attributes = this.getAttributes();
+  Ref<Vec2Attribute> sourceAttr = attributes.getAttribute(source);
+  if(!sourceAttr)
+    return false;
+  Ref<Vec2Attribute> targetAttr = attributes.getOrCreateVec2Attribute(target);
+  targetAttr.values = sourceAttr.values.clone();
+  targetAttr.incrementVersion();
+  return true;
+}
+
+/// Creates a new Vec2Attribute attributeName and stores a unique UV space in it. Each polygon
+/// in that UV space will be packed individually and scaled based on its surface area.
+/// fixedResolution specifies if the resolution is to be used. If fixedResolution is false:
+///   pixelsPerSquare defines how many pixels should be used per square unit of the surface area of the mesh,
+///   in that case resolution is used as the minimum resolution
+function UInt32 PolygonMesh.addUniqueUVAttribute!(String attributeName, Boolean fixedResolution, UInt32 resolution, Float32 pixelsPerSquare, UInt32 maxResolution) {
+
+  GeometryAttributes attributes = this.getAttributes();
+  Ref<Vec2Attribute> uvsAttribute = attributes.getOrCreateVec2Attribute(attributeName);
+  Vec3Attribute positions = attributes.getOrCreateVec3Attribute('positions');
+
+  // compute the area size of each polygon
+  Float32 polygonArea[](this.polygonCount());
+  Box2 polygonBoxes[](this.polygonCount());
+
+  Float32 totalArea = 0.0;
+  for(Size i=0;i<polygonArea.size();i++) {
+    polygonArea[i] = this.getPolygonArea(i);
+
+    Index idxA = this.getPolygonPoint(i, 0);
+    Index idxB = this.getPolygonPoint(i, 1);
+    Index idxC = this.getPolygonPoint(i, 2);
+
+    Float32 a = (positions.values[idxA] - positions.values[idxB]).length();
+    Float32 b = (positions.values[idxA] - positions.values[idxC]).length();
+    polygonBoxes[i] = Box2(Vec2(0.0, 0.0), Vec2(a, b));
+
+    // triangles still need a rectangle, so let's double up
+    if(this.getPolygonSubTriangleCount(i) == 1)
+      polygonArea[i] *= 2.0;
+
+    totalArea += polygonArea[i];
+  }
+
+  // determine the texture resolution
+  Size textureRes = resolution; // min resolution
+  if(textureRes == 0)
+    textureRes = 32;
+
+  Boolean useFixedResolution = fixedResolution;
+
+  Size totalPixels;
+  if(fixedResolution) {
+    totalPixels = textureRes * textureRes;
+  } else {
+    totalPixels = Size(floor(1.0 * pixelsPerSquare * totalArea + 0.5));
+    while(totalPixels > textureRes * textureRes) {
+      textureRes *= 2;
+      if(textureRes >= maxResolution) {
+        textureRes = maxResolution;
+        totalPixels = textureRes * textureRes;
+        useFixedResolution = true;
+      }
+    }
+  }
+
+  Float32 areaRatio = Float32(totalPixels) / Float32(textureRes * textureRes);
+
+  // increase the ratio by 20%. we need some extra space
+  // because we are introducing spaces between the polys for pixel precision
+  areaRatio *= 1.1;
+
+  for(Size i=0;i<polygonArea.size();i++) {
+    Float32 area = sqrt(polygonArea[i] / totalArea);
+    if(useFixedResolution)
+      area *= Float32(sqrt(1.95));
+    else
+      area = area / sqrt(areaRatio);
+
+    // remap the box to area size of 1.0
+    polygonBoxes[i].max.setUnit();
+    polygonBoxes[i].max.x = floor(area * polygonBoxes[i].max.x * textureRes + 0.5);
+    polygonBoxes[i].max.y = floor(area * polygonBoxes[i].max.y * textureRes + 0.5);
+  }
+
+  BinPack2DPackage packages[](polygonBoxes.size());
+  for(Size i=0;i<polygonBoxes.size();i++) {
+    BinPack2DSize size(polygonBoxes[i].max.x, polygonBoxes[i].max.y);
+    if(size.w < 2.0)
+      size.w = 2.0;
+    if(size.h < 2.0)
+      size.h = 2.0;
+    packages[i] = BinPack2DPackage(i, BinPack2DRegion(BinPack2DCoord(0, 0), size), false);
+  }
+
+  BinPack2DContainer container(textureRes, textureRes);
+  container.Place(packages);
+
+  for(Size i=0;i<uvsAttribute.values.size();i++)
+    uvsAttribute.values[i] = Vec2();
+
+  packages = container.GetPackages();
+
+  for(Size i=0;i<packages.size();i++) {
+    UInt32 poly = packages[i].index;
+    UInt32 polySize = this.getPolygonSize(poly);
+
+    Vec2 a, b, c, d;
+    a.x = packages[i].region.coord.x;
+    a.y = packages[i].region.coord.y;
+    b.x = packages[i].region.coord.x + packages[i].region.size.w - 1;
+    b.y = packages[i].region.coord.y;
+    c.x = packages[i].region.coord.x + packages[i].region.size.w - 1;
+    c.y = packages[i].region.coord.y + packages[i].region.size.h - 1;
+    d.x = packages[i].region.coord.x;
+    d.y = packages[i].region.coord.y + packages[i].region.size.h - 1;
+
+    if(packages[i].rotated) {
+      Vec2 e = a;
+      a = b; 
+      b = c;
+      c = d;
+      d = e;
+    }
+
+    a = a / Float32(textureRes);
+    b = b / Float32(textureRes);
+    c = c / Float32(textureRes);
+    d = d / Float32(textureRes);
+
+    this.setPolygonAttribute(poly, 0, uvsAttribute, a);
+    this.setPolygonAttribute(poly, 1, uvsAttribute, b);
+    this.setPolygonAttribute(poly, 2, uvsAttribute, c);
+    if(polySize > 3)
+      this.setPolygonAttribute(poly, 3, uvsAttribute, d);
+  }
+
+  uvsAttribute.incrementVersion();
+
+  return textureRes;
+}
+
+/// Updates an existing UV space stored in a Vec2Attribute attributeName.
+/// It will
+///   * use a fixed texture resolution or one based on the overall surface area and the pixelsPerSquare setting
+///   * ensure that there are no overlapping UVs
+///   * re-package all resulting UV islands based on their surface area scale
+///   * ensure a margin of pixels between islands to avoid artifacts
+///   * smooth the islands using laplacian smoothing based on strength + iterations
+function UInt32 PolygonMesh.addNoneOverlappingUVLayout!(
+  String attributeName,
+  Boolean fixedResolution,
+  UInt32 resolution,
+  Float32 pixelsPerSquare,
+  UInt32 maxResolution,
+  UInt32 margin,
+  Float32 smoothStrength,
+  UInt32 smoothIterations
+) {
+
+  GeometryAttributes attributes = this.getAttributes();
+  Vec3Attribute positions = attributes.getAttribute('positions');
+  if(!positions)
+    return 0;
+  Ref<Vec2Attribute> uvsAttribute = attributes.getAttribute(attributeName);
+  if(!uvsAttribute)
+    return 0;
+  Vec2 uvs[] = uvsAttribute.values;
+
+  Boolean containsUvs = false;
+  for(Size i=1;i<uvs.size();i++) {
+    if(uvs[i].almostEqual(uvs[0]))
+      continue;
+    containsUvs = true;
+    break;
+  }
+
+  if(!containsUvs)
+    return this.addUniqueUVAttribute(attributeName, fixedResolution, resolution, pixelsPerSquare, maxResolution);
+
+  Size numPolies = this.polygonCount();
+  if(numPolies == 0)
+    return 0;
+
+  Float32 polygonArea[](numPolies);
+  Float32 overAllPolygonArea = 0.0;
+  for(Size i=0;i<numPolies;i++) {
+    polygonArea[i] = this.getPolygonArea(i);
+    overAllPolygonArea += polygonArea[i];
+  }
+
+  // determine the texture resolution
+  Size textureRes = resolution; // min resolution
+  if(textureRes == 0)
+    textureRes = 32;
+
+  Boolean useFixedResolution = fixedResolution;
+
+  Size totalPixels;
+  if(fixedResolution) {
+    totalPixels = textureRes * textureRes;
+  } else {
+    totalPixels = Size(floor(1.0 * pixelsPerSquare * overAllPolygonArea + 0.5));
+    while(totalPixels > textureRes * textureRes) {
+      textureRes *= 2;
+      if(textureRes >= maxResolution) {
+        textureRes = maxResolution;
+        totalPixels = textureRes * textureRes;
+        useFixedResolution = true;
+      }
+    }
+  }
+
+  Float32 areaRatio = Float32(totalPixels) / Float32(textureRes * textureRes);  
+
+  SInt32 maxIslandID = -1;
+  SInt32 islandID[](numPolies);
+  Size numPoliesLeft = numPolies;
+  Size poliesLeft[](numPolies);
+  for(Size i=0;i<numPolies;i++) {
+    islandID[i] = maxIslandID;
+    poliesLeft[i] = i;
+  }
+
+  Index islands[][];
+  Index island[];
+  SparseGrid grid = null;
+
+  while(numPoliesLeft > 0) {
+
+    // if the island is empty then look
+    // for the first non visited polygon
+    if(island.size() == 0) {
+      for(Size j=0;j<numPoliesLeft;) {
+
+        Index poly = poliesLeft[j];
+        poliesLeft[j] = poliesLeft[--numPoliesLeft];
+
+        if(islandID[poly] < 0) {
+          islandID[poly] = ++maxIslandID;
+          island.push(poly);
+          grid = SparseGrid();
+          grid.updateGrid();
+          break;
+        }
+      }
+    }
+
+    for(Size i=0;i<island.size();i++) {
+
+      Index polygon = island[i];
+      Size size = this.getPolygonSize(polygon);
+
+      Box3 polygonBox;
+      for(Size j=0;j<size;j++) {
+        Index uvA0 = this.getPolygonAttributeIndex(polygon, j);
+        polygonBox.merge(Vec3(uvs[uvA0].x, uvs[uvA0].y, j));
+      }
+      grid.updateBBoxObject(polygon, polygonBox.min, polygonBox.max);
+      grid.updateGrid();
+
+      for(Size j=0;j<size;j++) {
+
+        Index uvA0 = this.getPolygonAttributeIndex(polygon, j);
+        Index uvA1 = this.getPolygonAttributeIndex(polygon, NextOff(j, size));
+
+        Size adjacentPolygon;
+        Size adjacentPolygonPointIndex;
+        this.getPolygonAdjacentPolygonAndIndex(polygon, j, adjacentPolygon, adjacentPolygonPointIndex);
+        if(adjacentPolygon == InvalidIndex)
+          continue;
+        if(islandID[adjacentPolygon] >= 0)
+          continue;
+
+        Size adjacentPolygonSize = this.getPolygonSize(adjacentPolygon);
+
+        // if the UVs are not adjacent
+        {
+          Index uvB0 = this.getPolygonAttributeIndex(adjacentPolygon, adjacentPolygonPointIndex);
+          Index uvB1 = this.getPolygonAttributeIndex(adjacentPolygon, NextOff(adjacentPolygonPointIndex, adjacentPolygonSize));
+          if(!uvs[uvA0].almostEqual(uvs[uvB1]) || !uvs[uvA1].almostEqual(uvs[uvB0]))
+            continue;
+        }
+
+        Box3 adjacentBox;
+        for(Size k=0;k<adjacentPolygonSize;k++) {
+          Index adjUV = this.getPolygonAttributeIndex(adjacentPolygon, k);
+          adjacentBox.merge(Vec3(uvs[adjUV].x, uvs[adjUV].y, k));
+        }
+
+        IndexSet overlaps;
+        grid.bBoxQuery(adjacentBox.min, adjacentBox.max, overlaps);
+
+        // for each triangle check if the pixelToIsland was already used
+        // maybe use an octree instead?
+        Boolean overlap = false;
+        for(Size m=0;m<this.getPolygonSubTriangleCount(adjacentPolygon);m++) {
+
+          UInt32 triangleVerts[3] = this.getPolygonSubTrianglePolygonPoints(adjacentPolygon, m);
+          Index uvB0 = this.getPolygonAttributeIndex(adjacentPolygon, triangleVerts[0]);
+          Index uvB1 = this.getPolygonAttributeIndex(adjacentPolygon, triangleVerts[1]);
+          Index uvB2 = this.getPolygonAttributeIndex(adjacentPolygon, triangleVerts[2]);
+
+          for(Size k=0;k<overlaps.size();k++) {
+            Index overlappingPolygon = overlaps.get(k);
+
+            for(Size l=0;l<this.getPolygonSubTriangleCount(overlappingPolygon);l++) {
+              
+              triangleVerts = this.getPolygonSubTrianglePolygonPoints(overlappingPolygon, l);
+              Index uvC0 = this.getPolygonAttributeIndex(overlappingPolygon, triangleVerts[0]);
+              Index uvC1 = this.getPolygonAttributeIndex(overlappingPolygon, triangleVerts[1]);
+              Index uvC2 = this.getPolygonAttributeIndex(overlappingPolygon, triangleVerts[2]);
+
+              if(checkTriangleOverlap(uvs[uvC0], uvs[uvC1], uvs[uvC2], uvs[uvB0], uvs[uvB1], uvs[uvB2], 0.001)) {
+                overlap = true;
+                break;
+              }
+            }
+            if(overlap)
+              break;
+          }
+          if(overlap)
+            break;
+        }
+
+        if(overlap)
+          continue;
+
+        islandID[adjacentPolygon] = maxIslandID;
+        island.push(adjacentPolygon);
+
+      }
+    }
+
+    if(island.size() > 0)
+      islands.push(island.clone());
+    island.resize(0);
+  }
+
+  // smooth the islands
+  if(smoothStrength > 0.0 && smoothIterations > 0) {
+    for(Size i=0;i<islands.size();i++) {
+
+      SInt32 vertexUsed[](this.pointCount());
+      UInt32 islandUVToVertex[];
+      Vec2 vertexUVs[];
+      UInt32 vertexIndex[];
+      Boolean vertexIsBoundary[];
+      UInt32 vertexNeighbors[];
+      UInt32 vertexNeighborIn[];
+      UInt32 vertexNeighborNum[];
+
+      // visit all vertices inside the island and get their UVs
+      for(Size j=0;j<islands[i].size();j++) {
+        Index polygon = islands[i][j];
+        Size size = this.getPolygonSize(polygon);
+        for(Size k=0;k<size;k++) {
+
+          UInt32 vertex = this.getPolygonPoint(polygon, k);
+          Index uvId = this.getPolygonAttributeIndex(polygon, k);
+
+          if(vertexUsed[vertex] > 0) {
+
+            UInt32 vertexID = vertexUsed[vertex]-1;
+            islandUVToVertex.push(vertexID);
+
+            // if we've seen this vertex before but it does not share
+            // the same UV, it's also on a boundary!
+            if(!vertexIsBoundary[vertexID]) {
+              if(!vertexUVs[vertexID].almostEqual(uvs[uvId]))
+                vertexIsBoundary[vertexID] = true;
+            }
+
+            continue;
+          }
+
+          vertexIndex.push(vertex);
+          vertexUVs.push(uvs[uvId]);
+
+          vertexIsBoundary.push(false);
+          for(Size l=0;l<this.getPointPolygonCount(vertex);l++) {
+            if(islandID[this.getPointPolygon(vertex, l)] != i) {
+              vertexIsBoundary[vertexIsBoundary.size()-1] = true;
+              break;
+            }
+          }
+          vertexUsed[vertex] = vertexUVs.size();
+          islandUVToVertex.push(vertexUsed[vertex]-1);
+        }
+      }
+
+      // visit them again and collect all of their neighbors
+      for(Size j=0;j<vertexIndex.size();j++) {
+        UInt32 vertex = vertexIndex[j];
+        UInt32 vertexID = vertexUsed[vertex]-1;
+
+        vertexNeighborIn.push(vertexNeighbors.size());
+        UInt32 neighborNum = 0;
+
+        LocalL16UInt32Array neighbors;
+        this.getPointSurroundingPoints(vertex, false, neighbors);
+
+        // either the point is on a boundary
+        if(!vertexIsBoundary[vertexID])
+          vertexIsBoundary[vertexID] = neighbors.size() > this.getPointPolygonCount(vertex);
+
+        // if it is a boundary we don't care about neighbors
+        if(vertexIsBoundary[vertexID]) {
+          vertexNeighborNum.push(0);
+          continue;
+        }
+
+        for(Size l=0;l<neighbors.size();l++) {
+          
+          UInt32 neighbor = neighbors.get(l);
+
+          if(vertexUsed[neighbor] == 0) {
+
+
+            // the vertex is also on a bounday if it is at
+            // the edge of the uv island
+            vertexIsBoundary[vertexID] = true;
+            vertexNeighbors.resize(vertexNeighbors.size()-neighborNum);
+            neighborNum = 0;
+            break;
+          }
+
+          neighbor = vertexUsed[neighbor] - 1;
+          vertexNeighbors.push(neighbor);
+          neighborNum++;
+        }
+
+        vertexNeighborNum.push(neighborNum);
+      }
+
+
+      // smooth the vertices several times
+      for(Size iteration=0;iteration<smoothIterations;iteration++) {
+        Vec2 prevUvs[] = vertexUVs.clone();
+        for(Size j=0;j<vertexUVs.size();j++) {
+          if(vertexIsBoundary[j] || vertexNeighborNum[j] == 0)
+            continue;
+          Vec2 center;
+          for(Size k=0;k<vertexNeighborNum[j];k++)
+            center += prevUvs[vertexNeighbors[vertexNeighborIn[j]+k]];
+          center /= Float32(vertexNeighborNum[j]);
+
+          vertexUVs[j] = vertexUVs[j].linearInterpolate(center, smoothStrength);
+        }
+      }
+
+      // copy the results back
+      UInt32 vertexOffset = 0;
+      for(Size j=0;j<islands[i].size();j++) {
+        Index polygon = islands[i][j];
+        Size size = this.getPolygonSize(polygon);
+        for(Size k=0;k<size;k++) {
+          UInt32 vertex = islandUVToVertex[vertexOffset++];
+          this.setPolygonAttribute(polygon, k, uvsAttribute, vertexUVs[vertex]);
+        }
+      }
+
+    }
+  }
+
+  Float32 islandArea[](islands.size());
+  Xfo islandOriXfos[](islands.size());
+  Vec2 allIslandUVs[][];
+  for(Size i=0;i<islands.size();i++) {
+
+    Vec2 islandUVs[];
+    for(Size j=0;j<islands[i].size();j++) {
+      Size size = this.getPolygonSize(islands[i][j]);
+      for(Size k=0;k<size;k++) {
+        Index uvId = this.getPolygonAttributeIndex(islands[i][j], k);
+        islandUVs.push(uvs[uvId]);
+      }
+    }
+
+    Vec2 center, dimensions;
+    Float32 rotation;
+    getMinimumBoundingRectangle(islandUVs, center, dimensions, rotation);
+
+    islandOriXfos[i].tr.x = center.x;
+    islandOriXfos[i].tr.y = center.y;
+    islandOriXfos[i].tr.z = 0.0;
+    islandOriXfos[i].sc.x = dimensions.x;
+    islandOriXfos[i].sc.y = dimensions.y;
+    islandOriXfos[i].sc.z = 0.0;
+    islandOriXfos[i].ori.w = rotation;
+
+    islandArea[i] = 0.0;
+    for(Size j=0;j<islands[i].size();j++)
+      islandArea[i] += polygonArea[islands[i][j]];
+
+    allIslandUVs.push(islandUVs);
+  }
+
+
+  Xfo islandNewXfos[](islands.size());
+  Float32 packageScale = 1.75;
+
+  BinPack2DPackage packages[];
+  while(packages.size() != islandNewXfos.size()) {
+
+    packages.resize(islandNewXfos.size());
+    for(Size i=0;i<islandNewXfos.size();i++) {
+
+      // Float32 area = sqrt(polygonArea[i] / totalArea);
+      // if(useFixedResolution)
+      //   area *= Float32(sqrt(1.95));
+      // else
+      //   area = area / sqrt(areaRatio);
+      Float32 areaScale = sqrt(islandArea[i] / overAllPolygonArea);
+ 
+      islandNewXfos[i].tr = islandOriXfos[i].tr;
+      islandNewXfos[i].sc = packageScale * areaScale * islandOriXfos[i].sc.unit();
+
+      Float32 w = floor(islandNewXfos[i].sc.x * textureRes + 0.5);
+      Float32 h = floor(islandNewXfos[i].sc.y * textureRes + 0.5);
+      BinPack2DSize size(w, h);
+      if(size.w < Float32(1))
+        size.w = Float32(1);
+      if(size.h < Float32(1))
+        size.h = Float32(1);
+      if(size.w < textureRes - margin)
+        size.w += margin;
+      if(size.h < textureRes - margin)
+        size.h += margin;
+      packages[i] = BinPack2DPackage(i, BinPack2DRegion(BinPack2DCoord(0, 0), size), false);
+    }
+
+    BinPack2DContainer container(textureRes, textureRes);
+    container.Place(packages);
+    packages = container.GetPackages();
+    packageScale -= 0.05;
+    if(packageScale <= 0.0) {
+      setError("fixOverlappingUVsLayout unexpected failure.");
+      return 0;
+    }
+  }
+
+  for(Size i=0;i<packages.size();i++) {
+    islandNewXfos[packages[i].index].tr.x = Float32(packages[i].region.coord.x) / Float32(textureRes);
+    islandNewXfos[packages[i].index].tr.y = Float32(packages[i].region.coord.y) / Float32(textureRes);
+    islandNewXfos[packages[i].index].sc.x = Float32(packages[i].region.size.w - margin) / Float32(textureRes);
+    islandNewXfos[packages[i].index].sc.y = Float32(packages[i].region.size.h - margin) / Float32(textureRes);
+  }
+
+  for(Size i=0;i<islands.size();i++) {
+
+    Index offset = 0;
+    Vec2 islandUVs[] = allIslandUVs[i];
+
+    for(Size j=0;j<islands[i].size();j++) {
+      Size size = this.getPolygonSize(islands[i][j]); 
+      for(Size k=0;k<size;k++) {
+        Vec2 uv = islandUVs[offset++];
+        uv.x -= islandOriXfos[i].tr.x;
+        uv.y -= islandOriXfos[i].tr.y;
+        uv = uv.rotate(-islandOriXfos[i].ori.w);
+
+        Float32 f = islandOriXfos[i].sc.x * islandOriXfos[i].sc.y;
+        if(f != 0.0) {
+          uv.x /= islandOriXfos[i].sc.x;
+          uv.y /= islandOriXfos[i].sc.y;
+        } else {
+          uv *= 0.0;
+        }
+
+        uv.x *= islandNewXfos[i].sc.x;
+        uv.y *= islandNewXfos[i].sc.y;
+        uv.x += islandNewXfos[i].tr.x;
+        uv.y += islandNewXfos[i].tr.y;
+        uv.x += islandNewXfos[i].sc.x * 0.5;
+        uv.y += islandNewXfos[i].sc.y * 0.5;
+
+        this.setPolygonAttribute(islands[i][j], k, uvsAttribute, uv);
+      }
+    }
+  }
+
+  // report(islands);
+  // report(islandArea);
+  // report(islands.size()+' islands');
+
+  return textureRes;
+}
+
+function PolygonMesh.setMaterialIDOnAllPolygons!(SInt32 id) {
+  Ref<GeometryAttributes> attributes = this.getAttributes();
+  Ref<IntegerAttribute> attr = attributes.getOrCreateIntegerAttribute('materialID');
+  for(Size i=0;i<attr.values.size();i++)
+    attr.values[i] = id;
+  attr.incrementVersion();
+}
+
+/// updates the localized material ids with a list of global IDs
+/// returns true if successful
+function Boolean PolygonMesh.mapMaterialIDs!(SInt32 newIDs<>) {
+  Ref<GeometryAttributes> attributes = this.getAttributes();
+  Ref<IntegerAttribute> attr = attributes.getOrCreateIntegerAttribute('materialID');
+
+  Ref<IntegerAttribute> backup = attributes.getAttribute('materialID_backup');
+  if(backup) {
+    attr.values = backup.values.clone();
+  } else {
+
+    SInt32 minID = attr.values.size();
+    for(Size i=0;i<attr.values.size();i++) {
+      if(attr.values[i] < minID)
+        minID = attr.values[i];
+    }
+
+    for(Size i=0;i<attr.values.size();i++)
+      attr.values[i] -= minID;
+
+    backup = attributes.getOrCreateIntegerAttribute('materialID_backup');
+    backup.values = attr.values.clone();
+  }
+
+  for(Size i=0;i<attr.values.size();i++) {
+    if(attr.values[i] < 0)
+      continue;
+    if(attr.values[i] >= newIDs.size())
+      return false;
+  }
+
+  for(Size i=0;i<attr.values.size();i++) {
+    if(attr.values[i] < 0)
+      continue;
+    attr.values[i] = newIDs[attr.values[i]];
+  }
+  attr.incrementVersion();
+
+  return true;
+}

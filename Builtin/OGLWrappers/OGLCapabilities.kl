@@ -1,0 +1,96 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+require FabricOGL, Containers;
+
+object OGLCapabilities {
+  Integer GLMajorVersion;
+  Integer GLMinorVersion;
+  String glVersion;
+  Integer glslVersion;
+  Boolean compatibilityBit;
+
+  Integer maxDrawBuffers;
+  Integer maxCombinedTextureUnits;
+  Integer maxTextureSize;
+  Integer maxVertexAttribs;
+  Integer maxVaryingFloats;
+  Integer maxVertexUniformComponents;
+  Integer maxFragmentUniformComponents;
+
+  Integer maxSamples;//For multisample antialiasing
+  Boolean tracingEnabled;
+
+  Boolean useVertexArrays;//Preferrence: false by default since they slow down rendering for older hardware (GL3 generation)
+};
+
+function OGLCapabilities() {}
+
+inline OGLCapabilities.initialize!() {
+  glGetVersion( this.glVersion );
+  //report("Using OpenGL version "+this.glVersion);
+
+  SInt32 tempIDs[1];
+  SInt32 tempIDsExt<> = tempIDs;
+
+  //glGet(GL_MAJOR_VERSION) requires v3.0+, so we'll extract it ourselves
+  UInt8 bytes<> = this.glVersion;
+  this.GLMajorVersion = bytes[0] - 48;
+  this.GLMinorVersion = bytes[2] - 48;
+
+  this.compatibilityBit = false;
+  if( this.GLMajorVersion < 3 || ( this.GLMajorVersion == 3 && this.GLMinorVersion < 2 ) ) {
+    this.compatibilityBit = true;
+  } else {
+    // Check if it is a core profile
+    glGetIntegerv( GL_CONTEXT_PROFILE_MASK, tempIDsExt );
+    if( tempIDsExt[0] & GL_CONTEXT_COMPATIBILITY_PROFILE_BIT )
+      this.compatibilityBit = true;
+  }
+
+  if( this.tracingEnabled )
+    report("OGLCapabilities.initialize: GL version: "+ this.GLMajorVersion + "." + this.GLMinorVersion + (!this.compatibilityBit ? " (core profile)" : "" ));
+  if( this.GLMajorVersion == 2 && this.GLMinorVersion == 1 )
+    this.glslVersion = 120;
+  else if( this.GLMajorVersion == 3 && this.GLMinorVersion == 0 )
+    this.glslVersion = 130;
+  else if( this.GLMajorVersion == 3 && this.GLMinorVersion == 1 )
+    this.glslVersion = 140;
+  else if( this.GLMajorVersion == 3 && this.GLMinorVersion == 2 )
+    this.glslVersion = 150;
+  else if( this.GLMajorVersion >= 3 )
+    this.glslVersion = this.GLMajorVersion * 100 + this.GLMinorVersion * 10;
+
+  glGetIntegerv(GL_MAX_DRAW_BUFFERS, tempIDsExt);
+  this.maxDrawBuffers = tempIDs[0];
+
+  glGetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, tempIDsExt);
+  this.maxCombinedTextureUnits = tempIDs[0];
+
+  glGetIntegerv(GL_MAX_TEXTURE_SIZE, tempIDsExt);
+  this.maxTextureSize = tempIDs[0];
+
+  glGetIntegerv(GL_MAX_VERTEX_ATTRIBS, tempIDsExt);
+  this.maxVertexAttribs = tempIDs[0];
+      
+  glGetIntegerv(GL_MAX_VARYING_FLOATS, tempIDsExt);
+  this.maxVaryingFloats = tempIDs[0];
+
+  glGetIntegerv(GL_MAX_VERTEX_UNIFORM_COMPONENTS, tempIDsExt);
+  this.maxVertexUniformComponents = tempIDs[0];
+
+  glGetIntegerv(GL_MAX_FRAGMENT_UNIFORM_COMPONENTS, tempIDsExt);
+  this.maxFragmentUniformComponents = tempIDs[0];
+
+  glGetIntegerv(GL_MAX_SAMPLES, tempIDsExt);
+  this.maxSamples = tempIDs[0];
+}
+
+inline Boolean OGLCapabilities.vertexArrayObjectsSupported() {
+  return this.GLMajorVersion >= 3 && this.useVertexArrays;
+}
+
+inline Boolean OGLCapabilities.instancingSupported() {
+  return this.GLMajorVersion >= 3 && this.GLMinorVersion >= 1;
+}

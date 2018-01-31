@@ -1,0 +1,91 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/SpatialQueryable.html",
+    "uiTooltip" : "For a GeometryLocation returned by this SpatialQueryable, returns the attribute indices and weights\nrequired to linearly interpolate attribute values. The GeometryLocation must be valid.\nSee :ref:`geometrylocationstructure` for more details.\n\n Supported by SpatialQueryable,Points"
+    },
+  "title" : "GetLocationAttributeIndicesAndWeights[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "$TYPE$[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "location",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "GeometryLocation[]" : [
+          {
+            "index" : -1,
+            "subIndex" : 0,
+            "barycentric" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "GeometryLocation[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "attributeIndices",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "LocalL16UInt32Array[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "weights",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "LocalL16ScalarArray[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "2F689E4223A2345AD8F42DCA750C405C",
+  "code" : "require Geometry;
+
+operator Geometry_SpatialQueryable_getLocationAttributeIndicesAndWeights_task<<<index>>>(
+  in $TYPE$[] this
+, in GeometryLocation[] location
+, io LocalL16UInt32Array[] attributeIndices
+, io LocalL16ScalarArray[] weights
+) {
+  this[index < this.size() ? index : this.size() - 1].getLocationAttributeIndicesAndWeights(location[index < location.size() ? index : location.size() - 1], attributeIndices[index < attributeIndices.size() ? index : attributeIndices.size() - 1], weights[index < weights.size() ? index : weights.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( location.size() == 0) return;
+  if( attributeIndices.size() == 0) return;
+  if( weights.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < location.size()) task_size = location.size();
+  attributeIndices.resize(task_size);
+  weights.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Geometry_SpatialQueryable_getLocationAttributeIndicesAndWeights_task(index, this, location, attributeIndices, weights);
+    }
+  } else {
+    Geometry_SpatialQueryable_getLocationAttributeIndicesAndWeights_task<<<task_size>>>(this, location, attributeIndices, weights);
+  }
+}
+"
+  }

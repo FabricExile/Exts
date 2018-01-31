@@ -1,0 +1,155 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// \internal
+  struct BasePropertyContainerData {
+    RTVal value;
+    String name;
+    Boolean localOnly;
+  };
+
+  /// Implements base functionality for the PropertyContainer interface.
+  /// See:ref:`TPG.hierarchy - properties` for more information about tool hierarchy and components.
+  object BasePropertyContainer : BaseComponent, PropertyContainer{
+    private FewObjectsStableList parentContainers;//Default properties to parent
+    private BasePropertyContainerData properties[];
+    private UInt32 nameToIndex[String];// Todo: add meta-data
+  };
+
+  BasePropertyContainer() {
+    this.parentContainers = FewObjectsStableList();
+    this.setName( "properties" );
+  }
+
+  Boolean BasePropertyContainer.hasProperty( String name ) {
+    if( this.nameToIndex.has( name ) )
+      return true;
+    return this.hasInheritedProperty( name );
+  }
+
+  Boolean BasePropertyContainer.hasPropagatedProperty( String name ) {
+    UInt32 index = this.nameToIndex.get( name, InvalidIndex );
+    return ( index == InvalidIndex || this.properties[index].localOnly ) ? this.hasInheritedProperty( name ) : true;
+  }
+
+  RTVal BasePropertyContainer.getProperty( String name ) {
+    UInt32 index = this.nameToIndex.get( name, InvalidIndex );
+    return index == InvalidIndex ? this.getInheritedProperty( name ) : this.properties[index].value;
+  }
+
+  RTVal BasePropertyContainer.getPropagatedProperty( String name ) {
+    UInt32 index = this.nameToIndex.get( name, InvalidIndex );
+    return ( index == InvalidIndex || this.properties[index].localOnly ) ? this.getInheritedProperty( name ) : this.properties[index].value;
+  }
+
+  Size BasePropertyContainer.localPropertyCount() {
+    return this.properties.size();
+  }
+
+  String BasePropertyContainer.getLocalPropertyName( Size index ) {
+    return this.properties[index].name;
+  }
+
+  Boolean BasePropertyContainer.hasLocalProperty( String name ) {
+    return this.nameToIndex.has( name );
+  }
+
+  BasePropertyContainer.setProperty!( String name, RTVal value ) {
+    if( !value.type() )
+      setError( "BasePropertyContainer.setProperty: " + this.getPath() + ": error: type is None for attribute " + name );
+
+    UInt32 index = this.nameToIndex.get( name, InvalidIndex );
+    if( index == InvalidIndex ) {
+      index = this.properties.size();
+      this.properties.resize( index + 1 );
+      this.nameToIndex[name] = index;
+      this.properties[index].name = name;
+    }
+    this.properties[index].value = value;
+
+    if( SetPropertyDebugTrace ) {
+      if( value.type().isA( Object ) ) {
+        Object obj = value;
+        report( "SetProperty " + this.getPath() + "." + name + " = <" + obj.type() + ">" );
+      } else
+        report( "SetProperty " + this.getPath() + "." + name + " = " + value );
+    }
+    ToolChanged();
+  }
+
+  Boolean BasePropertyContainer.isPropertyLocalOnly( String name ) {
+    UInt32 index = this.nameToIndex.get( name, InvalidIndex );
+    return index != InvalidIndex && this.properties[index].localOnly;
+  }
+
+  /// If localOnly, the property will not be inherited by children containers.
+  BasePropertyContainer.setPropertyAsLocalOnly!( String name, Boolean localOnly ) {
+    UInt32 index = this.nameToIndex.get( name, InvalidIndex );
+    if( index != InvalidIndex )
+      this.properties[index].localOnly = localOnly;
+    else
+      setError( "BasePropertyContainer.setPropertyAsLocalOnly: property '" + name + "' not found" );
+    ToolChanged();
+  }
+
+  BasePropertyContainer.removeProperty!( String name ) {
+    UInt32 index = this.nameToIndex.get( name, InvalidIndex );
+    if( index != InvalidIndex ) {
+      // Shuffle last
+      Size last = this.properties.size() - 1;
+      if( index != last ) {
+        this.properties[index] = this.properties[last];
+        this.nameToIndex.delete( this.properties[last].name );
+        this.nameToIndex[this.properties[last].name] = index;
+      }
+      this.properties.resize( last );
+      this.nameToIndex.delete( name );
+    }
+    ToolChanged();
+  }
+
+  /// Adds a parent container, from which properties will be inherited.
+  /// \param pushFront Adds the parent at the beginning of the list, so it has precedence over the existing ones.
+  /// \note We won't hold an owner reference to the parent container, must be cleaned explicitly if the parent is no longer valid.
+  BasePropertyContainer.addParentContainer!( Ref<PropertyContainer> parentContainer, Boolean pushFront ) {
+    if( pushFront )
+      this.parentContainers.pushFront( parentContainer, false );
+    else
+      this.parentContainers.pushBack( parentContainer, false );
+    ToolChanged();
+  }
+
+  BasePropertyContainer.removeParentContainer!( Ref<PropertyContainer> parentContainer ) {
+    this.parentContainers.remove( parentContainer );
+    ToolChanged();
+  }
+
+  FewObjectsStableListIterator BasePropertyContainer.getParentContainersIterator() {
+    return FewObjectsStableListIterator( this.parentContainers );
+  }
+
+  Boolean BasePropertyContainer.hasInheritedProperty( String name ) {
+    FewObjectsStableListIterator it( this.parentContainers );
+    Ref<PropertyContainer> parentContainer = null;
+    while( parentContainer = it.next() ) {
+      if( parentContainer.hasPropagatedProperty( name ) )
+        return true;
+    }
+    return false;
+  }
+
+  RTVal BasePropertyContainer.getInheritedProperty( String name ) {
+    RTVal value;
+    FewObjectsStableListIterator it( this.parentContainers );
+    Ref<PropertyContainer> parentContainer = null;
+    while( parentContainer = it.next() ) {
+      value = parentContainer.getPropagatedProperty( name );
+      if( value.type() != None )
+        return value;
+    }
+    return value;
+  }
+}// namespace Tool

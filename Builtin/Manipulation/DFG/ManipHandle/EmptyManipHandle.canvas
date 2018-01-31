@@ -1,0 +1,171 @@
+{
+  "objectType" : "Graph",
+  "title" : "Empty ManipHandle",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "value",
+      "nodePortType" : "In",
+      "execPortType" : "Out"
+      }
+    ],
+  "extDeps" : {},
+  "presetGUID" : "55DA0D5962E79ACD27363B59D84F94C0",
+  "nodes" : [
+    {
+      "objectType" : "Inst",
+      "name" : "ManipHandle",
+      "ports" : [
+        {
+          "objectType" : "InstPort",
+          "name" : "exec",
+          "nodePortType" : "IO"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "name",
+          "nodePortType" : "In"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "result",
+          "nodePortType" : "Out"
+          }
+        ],
+      "executable" : "Fabric.Exts.Manipulation.ManipHandle.ManipHandle",
+      "presetGUID" : "1CEFFB4634DAD0A4AAFA9AB4BAEA908C"
+      },
+    {
+      "objectType" : "Var",
+      "name" : "handle",
+      "ports" : [
+        {
+          "objectType" : "VarPort",
+          "name" : "value",
+          "nodePortType" : "IO"
+          }
+        ],
+      "dataType" : "ManipHandle",
+      "extDep" : "Manipulation:*"
+      },
+    {
+      "objectType" : "Inst",
+      "metadata" : {
+        "uiGraphPos" : "{\"x\": 657, \"y\": 180}"
+        },
+      "name" : "Clear",
+      "ports" : [
+        {
+          "objectType" : "InstPort",
+          "name" : "exec",
+          "nodePortType" : "IO"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "this",
+          "nodePortType" : "IO"
+          }
+        ],
+      "executable" : "Fabric.Exts.Manipulation.ManipHandle.Clear",
+      "presetGUID" : "AE7BCC3342A7E192E9C40F7E9D086652"
+      }
+    ],
+  "connections" : {
+    "ManipHandle.result" : [
+      "handle.value"
+      ],
+    "handle.value" : [
+      "Clear.this"
+      ],
+    "Clear.this" : [
+      "value"
+      ]
+    },
+  "requiredPresets" : {
+    "Fabric.Exts.Manipulation.ManipHandle.ManipHandle" : {
+      "objectType" : "Func",
+      "metadata" : {
+        "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Manipulation/ManipHandle.html",
+        "uiTooltip" : "constructor taking a name\n\nSupported types:\n  name: String\n  result: ManipHandle\n"
+        },
+      "title" : "ManipHandle",
+      "ports" : [
+        {
+          "objectType" : "ExecPort",
+          "name" : "exec",
+          "nodePortType" : "IO",
+          "execPortType" : "IO",
+          "typeSpec" : "Execute"
+          },
+        {
+          "objectType" : "ExecPort",
+          "name" : "name",
+          "nodePortType" : "Out",
+          "defaultValues" : {
+            "String" : "Manipulation"
+            },
+          "execPortType" : "In",
+          "typeSpec" : "String"
+          },
+        {
+          "objectType" : "ExecPort",
+          "name" : "result",
+          "nodePortType" : "In",
+          "execPortType" : "Out",
+          "typeSpec" : "ManipHandle"
+          }
+        ],
+      "extDeps" : {
+        "Manipulation" : "*"
+        },
+      "presetGUID" : "1CEFFB4634DAD0A4AAFA9AB4BAEA908C",
+      "code" : "require Manipulation;
+
+dfgEntry {
+  result = ManipHandle(name);
+}
+"
+      },
+    "Fabric.Exts.Manipulation.ManipHandle.Clear" : {
+      "objectType" : "Func",
+      "metadata" : {
+        "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Manipulation/ManipHandle.html",
+        "uiTooltip" : "clears the content of the ManipHandle\n\nSupported types:\n  this: ManipHandle\n"
+        },
+      "title" : "Clear",
+      "ports" : [
+        {
+          "objectType" : "ExecPort",
+          "name" : "exec",
+          "nodePortType" : "IO",
+          "execPortType" : "IO",
+          "typeSpec" : "Execute"
+          },
+        {
+          "objectType" : "ExecPort",
+          "name" : "this",
+          "nodePortType" : "IO",
+          "execPortType" : "IO",
+          "typeSpec" : "ManipHandle"
+          }
+        ],
+      "extDeps" : {
+        "Manipulation" : "*"
+        },
+      "presetGUID" : "AE7BCC3342A7E192E9C40F7E9D086652",
+      "code" : "require Manipulation;
+
+dfgEntry {
+  this.clear();
+}
+"
+      }
+    }
+  }

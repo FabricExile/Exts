@@ -1,0 +1,58 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/PolygonMesh.html",
+    "uiTooltip" : "Returns points's previous `neighborPolygonIndex` in the wing. This follows polygon adjacency around the point:\n- closed wings will be treated as a circular array (previous of wing's start index is wing's end index)\n- at open wing's start (border), returned value will be InvalidIndex\nThe returned `neighborPolygonIndex` is in the [0 .. :kl-ref:`PolygonMesh.getPointPolygonCount` -1] range,\nor `InvalidIndex` if `neighborPolygonIndex` is after a border.\nSee :ref:`borderAndWings` for definitions and an example of usage.\n\n\n Supported by PolygonMesh"
+    },
+  "title" : "GetPointPrevNeighborPolygonIndexInWing",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "PolygonMesh"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "point",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Size"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "neighborPolygonIndex",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Size"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Size"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "7FF2043C22BEBCE6837A011E775AA8C6",
+  "code" : "require Geometry;
+
+dfgEntry {
+  result = this.getPointPrevNeighborPolygonIndexInWing(point, neighborPolygonIndex);
+}
+"
+  }

@@ -1,0 +1,121 @@
+//
+// Copyright 2010-2015 Fabric Software Inc. All rights reserved.
+//
+
+const UInt32 LightReadersWriterLock_writersIncrement = 0x10000;
+const UInt32 LightReadersWriterLock_writersMask = 0xFFFF0000;
+const UInt32 LightReadersWriterLock_readersMask = 0xFFFF;
+
+/// Simple readers writer lock. Readers cannot "upgrade to write" (would cause a deadlock).
+/// To have the "upgrade to write" functionality, use FastReadersWriterLock
+struct LightReadersWriterLock {
+  UInt32 lockVariable;
+  UInt32 writerThreadIndex;
+  UInt32 writerBracketCount;
+};
+
+LightReadersWriterLock() {
+  this.writerThreadIndex = -1;
+}
+
+// for debugging purposes
+inline Boolean LightReadersWriterLock.readLocked() {
+  return this.lockVariable & LightReadersWriterLock_readersMask;
+}
+
+// for debugging purposes
+inline Boolean LightReadersWriterLock.writeLocked() {
+  return this.lockVariable & LightReadersWriterLock_writersMask;
+}
+
+// for debugging purposes
+inline Boolean LightReadersWriterLock.writeLockedByCurrentThread!() {
+  return this.writerThreadIndex.atomicGet() == getThreadIndex();
+}
+
+LightReadersWriterLock.acquireRead!() {
+
+  ActiveWaitLoopControl waitControl();
+
+  while( true ) {
+    UInt32 result = this.lockVariable.atomicInc();
+    if( !(result & LightReadersWriterLock_writersMask) )
+      break;
+    else {
+      // Maybe we have the write lock; allow to go from write to read
+      if( this.writerThreadIndex == getThreadIndex() )
+        break;
+    }
+    this.lockVariable.atomicDec();//Yield
+    waitControl.wait();
+  }
+}
+
+inline LightReadersWriterLock.releaseRead!() {
+  if( !this.lockVariable.atomicDec() )
+    setError("LightReadersWriterLock.releaseRead: unbalanced brackets");
+}
+
+LightReadersWriterLock.acquireWrite!() {
+
+  UInt32 threadIndex = getThreadIndex();
+
+  if( threadIndex == this.writerThreadIndex ) {
+    ++this.writerBracketCount;
+    return;
+  }
+
+  ActiveWaitLoopControl waitControl();
+
+  while( true ) {
+    UInt32 result = this.lockVariable.atomicAdd(LightReadersWriterLock_writersIncrement);
+    if( result == 0 )
+      break;
+    this.lockVariable.atomicSub(LightReadersWriterLock_writersIncrement);//Yield
+
+    waitControl.wait();
+  }
+  // Ensure we overwrite all other potential writes
+  AtomicSet( this.writerThreadIndex, threadIndex );
+  atomicMemoryBarrier_Acquire();
+}
+
+LightReadersWriterLock.releaseWrite!() {
+  if( this.writerBracketCount ) {
+    --this.writerBracketCount;
+    return;
+  }
+  this.writerThreadIndex = -1;
+  this.writerBracketCount = 0;
+  atomicMemoryBarrier_Release();
+  if( !this.lockVariable.atomicSub( LightReadersWriterLock_writersIncrement ) )
+    setError("LightReadersWriterLock.releaseWrite: unbalanced brackets");
+}
+
+/// Bracket for a LightReadersWriterLock
+struct LightWriteBracket {
+  Data data;
+};
+
+inline LightWriteBracket( io LightReadersWriterLock rwLock ) {
+  this.data = rwLock.data();
+  rwLock.acquireWrite();
+}
+
+inline ~LightWriteBracket() {
+  this.data->{LightReadersWriterLock}.releaseWrite();
+}
+
+/// Bracket for a LightReadersWriterLock
+struct LightReadBracket {
+  Data data;
+};
+
+inline LightReadBracket( io LightReadersWriterLock rwLock ) {
+  this.data = rwLock.data();
+  rwLock.acquireRead();
+}
+
+inline ~LightReadBracket() {
+  this.data->{LightReadersWriterLock}.releaseRead();
+}

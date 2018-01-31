@@ -1,0 +1,160 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+using namespace Tool;
+require Geometry;
+
+object AddPointsExampleCommand : BaseScriptableCommand{};
+
+AddPointsExampleCommand() {
+  this.declareArg( "pos", // name
+                   Vec3, // arg data type
+                   CommandArgFlag_IN, // input arg
+                   RTVal(Vec3()) ); // default
+
+  this.declareArg( "pointCloud", // name
+                   Points, // arg data type
+                     CommandArgFlag_IO // input and output arg
+                   | CommandArgFlag_CREATE_IF_NULL ); // create a new Point geometry if none
+}
+
+Boolean AddPointsExampleCommand.canUndo() { return true; }
+
+Boolean AddPointsExampleCommand.doIt!( io String error ) {
+  if( !this.parent.doIt( error ) )// Call parent first
+    return false;
+
+  return this.redoIt();
+}
+
+Boolean AddPointsExampleCommand.redoIt!( ) {
+  if( !this.parent.redoIt() )// Call parent first
+    return false;
+
+  // fetch agr values
+  Vec3 pos = this.getArgValue( "pos" );
+  Points pointCloud = this.getArgValue( "pointCloud" );
+
+  // do the modification
+  Size index = pointCloud.addPoints( 1 );
+  pointCloud.setPointPosition( index, pos );
+
+  // set back results (actually not required here since
+  // KL objects are referenced/shared)
+  this.setArgValue( "pointCloud", RTVal( pointCloud ) );
+
+  return true;
+}
+
+Boolean AddPointsExampleCommand.undoIt!( ) {
+  // fetch agr values
+  Points pointCloud = this.getArgValue( "pointCloud" );
+
+  // undo the modification: remove last point
+  pointCloud.resize( pointCloud.size() - 1 );
+
+  // set back results (actually not required here since
+  // KL objects are referenced/shared)
+  this.setArgValue( "pointCloud", RTVal( pointCloud ) );
+
+  return this.parent.undoIt();// Call parent last
+}
+
+require FTL;//JSON services
+
+/// We define a simple specialized Points object that persists
+/// its positions (geometries currently don't support
+/// persistance).
+object PersistablePoints : Points, RTValToJSONEncoder, RTValFromJSONDecoder{
+};
+
+String PersistablePoints.convertToString() {
+  // Simple version: persist only the positions array
+  FTL_JSONEncoder encoder;
+  {
+    FTL_JSONObjectEncoder obj = encoder.getObject();
+    this.convertToJSON(obj);
+  }
+  return encoder.encode();
+}
+
+Boolean PersistablePoints.convertFromString!( String data ) {
+  // Decode the positions array (inverse of convertToString())
+  FTL_JSONDecoder decoder(data);
+  FTL_JSONObject value = decoder.decode();
+  return this.convertFromJSON(value);
+}
+
+/// \dfgPresetOmit
+PersistablePoints.convertToJSON?(io FTL_JSONObjectEncoder encoder)
+{
+  {
+    FTL_JSONArrayEncoder points = encoder.setArray( 'points' );
+    {
+      for( Size i = 0; i < this.size(); ++i )
+        points.pushVec3( this.getPointPosition( i ) );
+    }
+  }
+
+  // Extra: for example 13_SimpleDrawColoredPointsTool,
+  // also load size and color if any
+  Ref<ScalarAttribute> sizesAttr = this.getAttributes().getAttribute( "pointSizes" );
+  if( sizesAttr ) {
+    FTL_JSONArrayEncoder sizes = encoder.setArray( 'sizes' );
+    for( Size i = 0; i < this.size(); ++i )
+      sizes.pushFloat64( sizesAttr.values[ i ] );
+  }
+
+  Ref<ColorAttribute> colorAttr = this.getAttributes().getAttribute( "vertexColors" );
+  if( colorAttr ) {
+    FTL_JSONArrayEncoder colors = encoder.setArray( 'colors' );
+    for( Size i = 0; i < this.size(); ++i ) {
+      Color c = colorAttr.values[i];
+      colors.pushVec4( Vec4(c.r, c.g, c.b, c.a) );
+    }
+  }
+}
+
+/// \dfgPresetOmit
+Boolean PersistablePoints.convertFromJSON!(FTL_JSONObject decoder)
+{
+  FTL_JSONArray points = decoder.getArray( 'points' );
+  Size size = Size(points.size());
+  this.resize( size );
+  for( Size i = 0; i < size; ++i )
+    this.setPointPosition( i, points.getVec3( i ) );
+
+  // Extra: for example 13_SimpleDrawColoredPointsTool,
+  // also check for colors and sizes
+  if( decoder.has( 'sizes' ) ) {
+    FTL_JSONArray sizes = decoder.getArray( 'sizes' );
+    Ref<ScalarAttribute> sizesAttr = this.getOrCreateSizesAttribute();
+    for( Size i = 0; i < size; ++i )
+      sizesAttr.values[i] = Float32(sizes.getFloat64( i ));
+  }
+
+  if( decoder.has( 'colors' ) ) {
+    FTL_JSONArray colors = decoder.getArray( 'colors' );
+    Ref<ColorAttribute> colorAttr = this.attributes.getOrCreateColorAttribute( "vertexColors" );
+    for( Size i = 0; i < size; ++i ) {
+      Vec4 vec = colors.getVec4( i );
+      colorAttr.values[i] = Color( vec.x, vec.y, vec.z, vec.t);
+    }
+  }
+
+  return true;
+}
+
+/// AddPersistablePointsExampleCommand: same as AddPointsExampleCommand
+/// but working on a PersistablePoints object.
+object AddPersistablePointsExampleCommand : AddPointsExampleCommand{};
+
+AddPersistablePointsExampleCommand() {
+  // Redeclare the pointCloud arg (defined by parent) as PersistablePoints
+  this.removeDeclaredArg( "pointCloud" );
+  this.declareArg( "pointCloud", // name
+                   PersistablePoints, // arg data type
+                   CommandArgFlag_IO // input and output arg
+                   | CommandArgFlag_CREATE_IF_NULL ); // create a new Point geometry if none
+}

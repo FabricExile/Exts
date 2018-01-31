@@ -1,0 +1,202 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+require FabricOGL, Containers;
+
+object OGLHostState {
+
+  Boolean compatibilityBit;
+  Boolean supportsGL3;
+  Integer CONTEXT_PROFILE_MASK[];
+
+  Integer BLEND[];                    
+  Integer CULL_FACE[];   
+  Integer CULL_FACE_MODE[];   
+  Integer RENDER_MODE[];                    
+  Integer CURRENT_PROGRAM[];          
+
+  Integer DEPTH_TEST[];               
+  Integer DEPTH_FUNC[];               
+  Integer DEPTH_WRITEMASK[];          
+
+  Integer POINT_SIZE[];
+  Integer LINE_WIDTH[];
+
+  Integer POLYGON_OFFSET_FACTOR[];    
+  Integer POLYGON_OFFSET_UNITS[];    
+  Integer POLYGON_OFFSET_LINE[];    
+  Integer POLYGON_OFFSET_FILL[];    
+  Integer POLYGON_OFFSET_POINT[];    
+
+  Integer DRAW_FRAMEBUFFER_BINDING[]; 
+  Integer READ_FRAMEBUFFER_BINDING[]; 
+  Integer VERTEX_ARRAY_BINDING[];     
+  
+  Integer TEXTURE_BINDING_2D[];    
+  Integer TEXTURE_BINDING_2D_ARRAY[];    
+  Integer TEXTURE_BINDING_3D[];    
+  Integer TEXTURE_BINDING_CUBE_MAP[];    
+
+  Integer DRAW_BUFFER[];              
+  Integer READ_BUFFER[];                     
+  Integer RENDER_BUFFER[];    
+};
+
+OGLHostState() {
+
+  this.CONTEXT_PROFILE_MASK.resize(1);
+  this.BLEND.resize(1);                    
+  this.DEPTH_WRITEMASK.resize(1); 
+  this.CULL_FACE.resize(1);                      
+  this.CULL_FACE_MODE.resize(1);                      
+  this.RENDER_MODE.resize(1);                    
+  this.CURRENT_PROGRAM.resize(1);          
+  
+  this.DEPTH_TEST.resize(1);               
+  this.DEPTH_FUNC.resize(1);               
+
+  this.LINE_WIDTH.resize(1);
+  this.POINT_SIZE.resize(1);
+
+  this.POLYGON_OFFSET_FACTOR.resize(1);   
+  this.POLYGON_OFFSET_UNITS.resize(1);    
+  this.POLYGON_OFFSET_LINE.resize(1);    
+  this.POLYGON_OFFSET_FILL.resize(1);    
+  this.POLYGON_OFFSET_POINT.resize(1);    
+
+  this.DRAW_FRAMEBUFFER_BINDING.resize(1); 
+  this.READ_FRAMEBUFFER_BINDING.resize(1); 
+  this.VERTEX_ARRAY_BINDING.resize(1);    
+
+  this.TEXTURE_BINDING_2D.resize(1);     
+  this.TEXTURE_BINDING_2D_ARRAY.resize(1);     
+  this.TEXTURE_BINDING_3D.resize(1);     
+  this.TEXTURE_BINDING_CUBE_MAP.resize(1);  
+
+  this.RENDER_BUFFER.resize(1);     
+  this.DRAW_BUFFER.resize(1);              
+  this.READ_BUFFER.resize(1);           
+}
+
+Boolean OGLHostState.isSelectionState!() {
+  glGetIntegerv(GL_RENDER_MODE, this.RENDER_MODE);
+  return (this.RENDER_MODE[0] == GL_SELECT);
+}
+
+OGLHostState.saveStates!() {
+
+  this.compatibilityBit = false;
+  String glVersion;
+  glGetVersion( glVersion );
+  UInt8 bytes<> = glVersion;
+  UInt8 GLMajorVersion = bytes[0] - 48;
+  UInt8 GLMinorVersion = bytes[2] - 48;
+
+  this.supportsGL3 = GLMajorVersion >= 3;
+
+  if( GLMajorVersion < 3 || ( GLMajorVersion == 3 && GLMinorVersion < 2 ) ) {
+    this.compatibilityBit = true;
+  } else {
+    // Check if it is a core profile
+    glGetIntegerv( GL_CONTEXT_PROFILE_MASK, this.CONTEXT_PROFILE_MASK );
+    if( GL_CONTEXT_PROFILE_MASK & GL_CONTEXT_COMPATIBILITY_PROFILE_BIT )
+      this.compatibilityBit = true;
+  }
+
+  glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
+  if( this.compatibilityBit )
+    glPushAttrib( GL_ALL_ATTRIB_BITS );
+
+  glGetIntegerv(GL_BLEND, this.BLEND);
+  glGetIntegerv(GL_DEPTH_WRITEMASK, this.DEPTH_WRITEMASK);
+  glGetIntegerv(GL_CULL_FACE, this.CULL_FACE);
+  if(this.CULL_FACE[0] != GL_FALSE )
+    glGetIntegerv(GL_CULL_FACE_MODE, this.CULL_FACE_MODE);
+  glGetIntegerv(GL_CURRENT_PROGRAM, this.CURRENT_PROGRAM);
+ 
+  glGetIntegerv(GL_DEPTH_TEST, this.DEPTH_TEST);
+  glGetIntegerv(GL_DEPTH_FUNC, this.DEPTH_FUNC);
+
+  glGetIntegerv( GL_LINE_WIDTH, this.LINE_WIDTH );
+  glGetIntegerv( GL_POINT_SIZE, this.POINT_SIZE );
+
+  glGetIntegerv(GL_POLYGON_OFFSET_FACTOR, this.POLYGON_OFFSET_FACTOR);  
+  glGetIntegerv(GL_POLYGON_OFFSET_UNITS, this.POLYGON_OFFSET_UNITS);    
+  glGetIntegerv(GL_POLYGON_OFFSET_LINE, this.POLYGON_OFFSET_LINE);     
+  glGetIntegerv(GL_POLYGON_OFFSET_FILL, this.POLYGON_OFFSET_FILL);     
+  glGetIntegerv(GL_POLYGON_OFFSET_POINT, this.POLYGON_OFFSET_POINT);  
+
+  glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, this.DRAW_FRAMEBUFFER_BINDING);
+  glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, this.READ_FRAMEBUFFER_BINDING);
+
+  if( this.supportsGL3 )
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, this.VERTEX_ARRAY_BINDING);
+  
+  glGetIntegerv(GL_TEXTURE_BINDING_2D, this.TEXTURE_BINDING_2D);          
+  glGetIntegerv(GL_TEXTURE_BINDING_2D_ARRAY, this.TEXTURE_BINDING_2D_ARRAY);      
+  glGetIntegerv(GL_TEXTURE_BINDING_3D, this.TEXTURE_BINDING_3D);          
+  glGetIntegerv(GL_TEXTURE_BINDING_CUBE_MAP, this.TEXTURE_BINDING_CUBE_MAP);  
+
+  glGetIntegerv(GL_RENDERBUFFER_BINDING, this.RENDER_BUFFER);          
+  glGetIntegerv(GL_DRAW_BUFFER, this.DRAW_BUFFER);
+  glGetIntegerv(GL_READ_BUFFER, this.READ_BUFFER);
+
+  glMatrixMode(GL_MODELVIEW);
+  glPushMatrix();
+}
+
+OGLHostState.restoreStates!() {
+
+  glPopMatrix();
+ 
+  if(this.BLEND[0] == GL_FALSE) glDisable(GL_BLEND);
+  else glEnable(GL_BLEND);
+
+  if(this.CULL_FACE[0] == GL_FALSE )
+    glDisable( GL_CULL_FACE );
+  else {
+    glEnable( GL_CULL_FACE );
+    glCullFace( this.CULL_FACE_MODE[0] );
+  }
+  glUseProgram(this.CURRENT_PROGRAM[0]);
+
+  glLineWidth( this.LINE_WIDTH[0] );
+  glPointSize( this.POINT_SIZE[0] );
+
+  glDepthMask(this.DEPTH_WRITEMASK[0]);
+  if(this.DEPTH_TEST[0] == GL_FALSE) 
+    glDisable(GL_DEPTH_TEST);
+  else {
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(this.DEPTH_FUNC[0]);
+  }
+
+  glPolygonOffset(this.POLYGON_OFFSET_FACTOR[0], this.POLYGON_OFFSET_UNITS[0]);
+  if(this.POLYGON_OFFSET_LINE[0] == GL_FALSE) glDisable(GL_POLYGON_OFFSET_LINE);
+  else glEnable(GL_POLYGON_OFFSET_LINE); 
+  if(this.POLYGON_OFFSET_FILL[0] == GL_FALSE) glDisable(GL_POLYGON_OFFSET_FILL);
+  else glEnable(GL_POLYGON_OFFSET_FILL); 
+  if(this.POLYGON_OFFSET_POINT[0] == GL_FALSE) glDisable(GL_POLYGON_OFFSET_POINT);
+  else glEnable(GL_POLYGON_OFFSET_POINT);
+
+  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, this.DRAW_FRAMEBUFFER_BINDING[0]);
+  glBindFramebuffer(GL_READ_FRAMEBUFFER, this.READ_FRAMEBUFFER_BINDING[0]);
+
+  if( this.supportsGL3 )
+    glBindVertexArray(this.VERTEX_ARRAY_BINDING[0]);
+
+  glBindTexture(GL_TEXTURE_2D, this.TEXTURE_BINDING_2D[0]);
+  glBindTexture(GL_TEXTURE_2D_ARRAY, this.TEXTURE_BINDING_2D_ARRAY[0]);
+  glBindTexture(GL_TEXTURE_3D, this.TEXTURE_BINDING_3D[0]);
+  glBindTexture(GL_TEXTURE_CUBE_MAP, this.TEXTURE_BINDING_CUBE_MAP[0]);
+
+  glDrawBuffer(this.DRAW_BUFFER[0]);
+  glReadBuffer(this.READ_BUFFER[0]);
+  glBindRenderbuffer(GL_RENDERBUFFER, this.RENDER_BUFFER[0]);
+
+  if( this.compatibilityBit )
+    glPopAttrib();
+
+  glPopClientAttrib();
+}

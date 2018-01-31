@@ -1,0 +1,342 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 2.0
+
+  :kl-ref:`LegacyBasePaintTool` is a based class for any painting/sculting tools.
+
+  \note This is a work in progress, needs to be generalized to abstract the type of attribute being painted.
+  
+  \seealso LegacyBasePaintTool
+ 
+  \dfgPresetOmit
+*/
+object LegacyBasePaintTarget;
+
+object LegacyBasePaintTool : LegacyBaseTool, LegacyPaintTool{
+  /// Paint mode, see ToolConstants.kl.
+  protected ManipulationMode mode;
+  /// Transform (SRT).
+  protected Mat44 transform;
+  /// Since we paint in local space, the brush should be drawn in local geometry scaling space.
+  protected Mat44 currentGeometryTransform;
+  /// Slider radius.
+  protected Float32 radius;
+  /// Color blend geometry attributes.
+  protected String attributeName;
+  /// Stack attributes, for undo-redo.
+  protected LegacyPaintToolAttributeStrokeData attributeStack;
+  /// Temporary buffer for holding the filtered point set.
+  protected IndexSet tempPointSet;
+  /// Temporary buffer for smoothing.
+  protected GeometryAttribute tempAttribute;
+  /// Reset the painting, i.e the geometry attributes.
+  protected Key resetKey;
+  /// Tool initial direction.
+  protected Vec3 initialAxis;
+};
+
+/// Initializes a LegacyBasePaintTool.
+/// \param target Tool target.
+/// \param enableKey Key to enable to tool.
+/// \param resetKey Key to reset the painting.
+/// \param attributeName The name of the color geometry attribute (color).
+/// \param initialRadius Initial paint-tool radius.
+protected LegacyBasePaintTool.init!(
+  LegacyBasePaintTarget target,
+  Key enableKey, 
+  Key resetKey,
+  String attributeName,
+  Float32 initialRadius) 
+{
+  this.parent.init(
+    target, 
+    enableKey, 
+    LegacyHandlerDisableAll,
+    false,
+    true,
+    true);
+  this.attributeName = attributeName;
+  this.radius = initialRadius;
+  this.resetKey = resetKey;
+  this.initialAxis = Vec3(0.0f, 1.0f, 0.0f);
+  this.mode = PaintMode_Move;
+}
+
+/// Implementation of :kl-ref:`Tool`.
+Boolean LegacyBasePaintTool.hasKey(Key key) {
+  return this.parent.hasKey(key) || key == this.resetKey;
+}
+
+/// Implementation of :kl-ref:`Tool`.
+/// To override.
+protected LegacyBasePaintTool.updateFromTarget!() {
+  if(this.enabled) this.show();
+  else this.hide(); 
+}
+
+/// Implementation of :kl-ref:`LegacyPaintTool`.
+/// To override.
+protected LegacyBasePaintTool.toolTransformChanged!(Mat44 transform) {
+  this.transform = transform;
+}
+
+/// Filters points that are present in many polygons.
+/// \param mesh A reference to the PolygonMesh.
+/// \param polygonIndex the index of the points to filer.
+/// \param points The list of non-duplicate points.
+protected LegacyBasePaintTool.polygonsToPoints(
+  Ref<PolygonMesh> mesh, 
+  Index polygonIndex[], 
+  io IndexSet points) 
+{
+  points.clear();
+  for(Index i=0; i<polygonIndex.size(); ++i) 
+  {
+    Size polygonSize = mesh.getPolygonSize(polygonIndex[i]);
+    for(Index j=0; j<polygonSize; ++j)
+      points.add(mesh.getPolygonPoint(polygonIndex[i], j));
+  }
+}
+
+/// Implementation of :kl-ref:`LegacyPaintTool`.
+/// To override.
+protected Ref<Geometry> LegacyBasePaintTool.rayCast!(
+  io MouseEvent mouseEvent, 
+  io GeometryLocation location, 
+  io Mat44 transform, 
+  io Vec3 position) {
+  return null;
+}
+
+/// Implementation of :kl-ref:`LegacyPaintTool`.
+/// To override.
+protected LegacyBasePaintTool.setPointAttribute!(
+  Index i, 
+  Float32 weight, 
+  Vec3 displacementDir, 
+  io Ref<PolygonMesh> mesh) {
+}
+
+/// Implementation of :kl-ref:`LegacyPaintTool`.
+/// To override.
+protected LegacyBasePaintTool.smoothPointAttribute!(
+  Index i, 
+  Float32 weight,
+  Vec3 displacementDir, 
+  io Ref<PolygonMesh> mesh) {
+}
+ 
+/// Implementation of :kl-ref:`LegacyPaintTool`.
+protected Vec3 LegacyBasePaintTool.computeDisplacementDir(Ref<PolygonMesh> mesh) {
+  return Vec3();
+}
+
+/// Implementation of :kl-ref:`LegacyPaintTool`.
+protected LegacyBasePaintTool.paintPolygons!(io Ref<PolygonMesh> mesh, GeometryLocation location) {
+
+  // Gets the polygon index
+  Index polygonIndex[];    
+  polygonIndex.push(mesh.getLocationPolygon(location));
+  Vec3 hitPoint = mesh.getPositionAtLocation(location);
+  
+  Xfo geomXfo(); geomXfo.setFromMat44(this.currentGeometryTransform);
+  //TODO: have radius drawn and defined in mesh local space... this won't work with uniform scaling
+  Float32 radius = this.radius / geomXfo.sc.x;
+
+  // Bounding sphere
+  Ref<SpatialQueryable> spatialQueryable = mesh;
+  spatialQueryable.prepareForSpatialQueries(1, null);
+
+  Ref<SpatialQuery> query = spatialQueryable.beginSpatialQuery();
+  Size elementCount = query.getElementsInBSphere(hitPoint, radius);
+  for(Index i=0; i<elementCount; ++i) 
+    polygonIndex.push(query.getQueriedElement(i));
+
+  spatialQueryable.endSpatialQuery(query);
+
+  // Process
+  this.polygonsToPoints(mesh, polygonIndex, this.tempPointSet);
+
+  Vec3 displacementDir = this.computeDisplacementDir(mesh);
+
+  if(this.mode == PaintMode_Smooth) 
+  {
+    if(this.tempAttribute.size() < this.tempPointSet.size())
+      this.tempAttribute.resize(this.tempPointSet.size());
+  }
+
+  for(Index i=0; i<this.tempPointSet.size(); ++i)
+  {
+    Index index = this.tempPointSet.get(i);
+
+    this.attributeStack.savePreValue(index);
+
+    Float32 length = (hitPoint - mesh.getPointPosition(index)).length();
+    if(length < radius) 
+    { 
+      Float32 weight = length/radius; 
+      Float32 sigma = 1.0f/3.0f;
+      weight = exp(-0.5 * pow(weight/sigma, 2)) / (sigma*sqrt(2*PI));
+
+      if(this.mode == PaintMode_Paint || this.mode == PaintMode_Erase)
+        this.setPointAttribute(i, weight, displacementDir, mesh);
+      
+      else if(this.mode == PaintMode_Smooth) 
+        this.smoothPointAttribute(i, length/radius, displacementDir, mesh);
+    }
+
+    this.attributeStack.saveNewValue(index);
+  }
+
+  if(this.mode == PaintMode_Smooth) 
+  {
+    Ref<GeometryAttribute> attribute = mesh.getAttributes().getAttribute(this.attributeName);
+    Ref<GeometryAttribute> tempAttribute = this.tempAttribute;
+    for(Index i=0; i<this.tempPointSet.size(); ++i)
+    {
+      Index index = this.tempPointSet.get(i);
+      Float32 length = (hitPoint - mesh.getPointPosition(index)).length();
+      if(length < radius) attribute.copyValue(this.tempAttribute, i, index);
+    }
+  }
+
+  mesh.getAttributes().getAttribute(this.attributeName).incrementVersion();
+}
+
+/// Paints/deforms the mesh at this mouse-position.
+/// \param mouseEvent The mouse event.
+protected Ref<Geometry> LegacyBasePaintTool.paint!(io MouseEvent mouseEvent) {
+  
+  Vec3 position;
+  Mat44 transform;
+  GeometryLocation location();
+      
+  // For the moment, just PolygonMesh can be painted, points and lines: to be done
+  Ref<Geometry> geometry = this.rayCast(mouseEvent, location, transform, position);
+  
+  Ref<PolygonMesh> mesh = geometry;
+  if(mesh)
+  {
+    this.currentGeometryTransform = transform;
+    Xfo xfo(); xfo.setFromMat44(transform);  
+    // Transforming a normal, if non-uniform scaling, needs "inverse transpose"
+    Vec3 normal = xfo.ori.toMat33().inverse().transpose()*mesh.getNormalAtLocation(location);
+    if(this.performing) this.paintPolygons(mesh, location);
+    //TODO: have radius drawn and defined in mesh local space... else this won't work with uniform scaling
+    xfo.sc = Vec3(this.radius);
+    xfo.ori.setFrom2Vectors(this.initialAxis, Vec3(normal.x, normal.y, normal.z));
+    xfo.tr = position;
+    this.toolTransformChanged(xfo.toMat44());
+    mouseEvent.accept();
+  }
+  return geometry;
+}
+
+/// Implementation of :kl-ref:`Tool`.
+protected LegacyBasePaintTool.press!(io MouseEvent mouseEvent) {
+
+  if(mouseEvent.button == MouseButton_LeftButton)
+  {
+    this.mode = PaintMode_Paint;
+    this.performing = true;
+    this.paint(mouseEvent);
+    mouseEvent.accept();
+  }
+
+  else if(mouseEvent.button == MouseButton_RightButton)
+  {
+    this.mode = PaintMode_Erase;
+    this.performing = true;
+    this.paint(mouseEvent);
+    mouseEvent.accept();
+  }
+
+  else if(mouseEvent.button == MouseButton_MiddleButton)
+  {
+    this.mode = PaintMode_Smooth;
+    this.performing = true;
+    this.paint(mouseEvent);
+    mouseEvent.accept();
+  }
+}
+
+/// Implementation of :kl-ref:`Tool`.
+protected LegacyBasePaintTool.move!(io MouseEvent mouseEvent) {
+  this.paint(mouseEvent);
+} 
+
+/// Implementation of :kl-ref:`Tool`.
+protected LegacyBasePaintTool.release!(io MouseEvent mouseEvent) {
+  if(this.performing)
+  {    
+    this.performing = false;
+    this.mode = PaintMode_Move;
+    mouseEvent.accept();
+  }
+}
+
+/// Resizes the tool (brush).
+/// \param mouseEvent The mouse event.
+protected LegacyBasePaintTool.resize!(io MouseWheelEvent mouseWheelEvent) {
+  
+  Float32 minRadius = 0.01f;
+  Float32 maxRadius = 1000.0f;
+
+  Float32 delta = mouseWheelEvent.delta * Scalar(0.001); 
+  this.radius += 1.5f*delta;
+  if(this.radius < minRadius)
+    this.radius = minRadius;
+  if(this.radius > maxRadius)
+    this.radius = maxRadius;
+
+  Xfo xfo(); xfo.setFromMat44(this.transform);
+  //TODO: have radius drawn and defined in mesh local space... else this won't work with uniform scaling
+  xfo.sc = Vec3(this.radius);
+  this.toolTransformChanged(xfo.toMat44());
+
+  mouseWheelEvent.accept();
+}
+
+/// Implementation of :kl-ref:`LegacyPaintTool`.
+/// To override.
+LegacyBasePaintTool.ensureAttributeExists!(io Ref<Geometry> geometry, Boolean resetValues) {
+  if(!Boolean(this.tempAttribute) || (Boolean(this.tempAttribute) && resetValues))
+    this.tempAttribute = geometry.getAttributes().getAttribute(this.attributeName).type().createNew();
+}
+
+/// Gets the attribute-stack, uses for undo-redo.
+LegacyPaintToolAttributeStrokeData LegacyBasePaintTool.getAttributeStack() {
+  return this.attributeStack;
+}
+
+/// Implementation of :kl-ref:`LegacyPaintTool`.
+/// To override.
+protected LegacyBasePaintTool.reset!() {}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyBasePaintTool.onEvent!(io Event event) {
+
+  this.parent.onEvent(event);
+
+  if(this.isEnabled() && event.eventType() == Event_Wheel)
+  {
+    MouseWheelEvent wheelEvent = event;
+    this.resize(wheelEvent);
+  }
+  
+  if(event.eventType() == Event_KeyPress)
+  {
+    KeyEvent keyEvent = event;
+    if(!keyEvent.isAutoRepeat) 
+    {
+      if(this.isEnabled() && keyEvent.key == this.resetKey) 
+      {
+        this.reset();
+        event.setAccepted(true);
+      }
+    }
+  } 
+}

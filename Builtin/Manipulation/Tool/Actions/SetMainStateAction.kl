@@ -1,0 +1,97 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /**
+  \versionadded 2.6.0
+
+  The SetMainStateAction will add a state (:kl-ref:`Tool::BaseTool.setMainState` ) to a BaseTool, and
+  optionally restore the previous one upon destruction (~SetMainStateAction).
+
+  The target is the first BaseTool parent of the SetMainStateAction.
+
+  The action can also be triggered (do + undo) by connected events; see :kl-ref:`Tool::BaseAction.connectToDo` and :kl-ref:`Tool::BaseAction.connectToUndo` .
+  See :ref:`TPG.state-actions` for more details and examples related to states and actions.
+  */
+  object SetMainStateAction : SendEventAction{
+    Boolean restoreParentStateOnDestroyEnabled;
+
+    EventSource undoEventSource;
+    EventName undoSourceEventName;
+  };
+
+  /// Connects and attaches a source event to the state change action.
+  /// \eventSource Source of the for doing the state change
+  /// \sourceEventName Name of the source for doing the state change
+  /// \restoreParentStateOnDestroy Restore previous parent state on destroy or undo
+  SetMainStateAction( Ref<EventSource> eventSource, EventName sourceEventName, String stateName, Boolean restoreParentStateOnDestroy ) {
+    this.connectAndAttach( eventSource, sourceEventName, stateName );
+    this.restoreParentStateOnDestroy( restoreParentStateOnDestroy );
+  }
+
+  /// Connects and attaches a source event to the state change action.
+  /// \eventSource Source of the for doing the state change
+  /// \sourceEventName Name of the source for doing the state change
+  /// \restoreParentStateOnDestroy Restore parent state on destroy or undo
+  SetMainStateAction( Ref<EventSource> eventSource, EventName sourceEventName, String stateName ) {
+    this.connectAndAttach( eventSource, sourceEventName, stateName );
+  }
+
+  /// Connects and attaches a source event and undo event to the state change action.
+  /// \eventSource Source of the for doing the state change
+  /// \sourceEventName Name of the source for doing the state change
+  /// \undoEventSource Source of the event for undoing the state change
+  /// \undoSourceEventName Name of the source event for undoing the state change
+  SetMainStateAction( Ref<EventSource> eventSource, EventName sourceEventName, Ref<EventSource> undoEventSource, EventName undoSourceEventName, String stateName ) {
+    this.connectAndAttach( eventSource, sourceEventName, undoEventSource, undoSourceEventName, stateName );
+  }
+
+  /// Enable undo on delete
+  SetMainStateAction.restoreParentStateOnDestroy!( Boolean enable ) {
+    this.restoreParentStateOnDestroyEnabled = enable;
+  }
+
+  SetMainStateAction.connectAndAttach!( Ref<EventSource> eventSource, EventName sourceEventName, String stateName ) {
+    this.setState( stateName );
+    this.parent.connectAndAttach( eventSource, sourceEventName, Event_ChangeMainState, stateName );
+  }
+
+  SetMainStateAction.connectAndAttach!( Ref<EventSource> eventSource, EventName sourceEventName, Ref<EventSource> undoEventSource, EventName undoSourceEventName, String stateName ) {
+    this.setState( stateName );
+    this.parent.connectAndAttach( eventSource, sourceEventName, Event_ChangeMainState, stateName );
+    this.undoEventSource = undoEventSource;
+    this.undoSourceEventName = undoSourceEventName;
+  }
+
+  String SetMainStateAction.getState() {
+    return this.doEvent.tag;
+  }
+
+  SetMainStateAction.setState!( String state ) {
+    // Auto-rename the action
+    if( this.name == this.type() || this.name == "SetMainStateAction_" + this.doEvent.tag )
+      this.setName( "SetMainStateAction_" + state );
+
+    this.doEvent.tag = state;
+  }
+
+  /// \internal
+  SetMainStateAction.doAction!( ) {
+    if( !this.sentEvent && ( this.restoreParentStateOnDestroyEnabled || Boolean( this.undoEventSource ) ) ) {
+      // Get parent main state, set it for undo.
+      Ref<BaseTool> parentTool = GetParentTool( this );
+      if( parentTool ) {
+        String mainState = parentTool.getMainState();
+        if( mainState != this.getState() ) {
+          if( this.undoEventSource )
+            this.connectUndoAndAttach( this.undoEventSource, this.undoSourceEventName, Event_ChangeMainState, mainState );
+          else
+            this.setUndoEvent( Event_ChangeMainState, mainState );
+        }
+      }
+    }
+    this.parent.doAction();
+  }
+}// namespace Tool

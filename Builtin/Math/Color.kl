@@ -1,0 +1,710 @@
+
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/**
+The :kl-ref:`color` type represents a 32 bit float 4 channel color value, storing the components ordered as red, green, blue and alpha.
+
+\rst
+  .. kl-example:: Construct Color
+
+    Color colorFromByte(255, 0, 0);
+    Color colorFromScalar(0.0, 1.0, 0.0);
+
+    Color blendColor = colorFromByte.linearInterpolate(colorFromScalar, 0.6);
+
+\endrst
+\seealso RGBA, ARGB
+\dfgTypeColor Color(255, 0, 0)
+\dfgPresetColor Color(99, 129, 92)
+*/
+struct Color
+{
+  Scalar r;
+  Scalar g;
+  Scalar b;
+  Scalar a;
+};
+
+
+/// Default constructor, red = 0.0, green = 0.0, blue = 0.0, alpha = 1.0
+/// \dfgPresetOmit
+inline Color() {
+  this.set(0.0, 0.0, 0.0, 1.0);
+}
+
+/// Constructor from rgba Scalar components
+/// \dfgPresetDefault a 1.0
+inline Color(Scalar r, Scalar g, Scalar b, Scalar a) {
+  this.set(r, g, b, a);
+}
+
+/// Constructor from rgb Scalar components, alpha = 1.0
+inline Color(Scalar r, Scalar g, Scalar b) {
+  this.set(r, g, b, 1.0);
+}
+
+/// Constructor from a single Scalar component, alpha = 1.0
+inline Color(Scalar v) {
+  this.set(v, v, v, 1.0);
+}
+
+/// Constructor from a single Float64 component, alpha = 1.0
+inline Color(Float64 v) {
+  this.set(
+    Scalar(v),
+    Scalar(v),
+    Scalar(v),
+    1.0f);
+}
+
+/// Constructor from a single UInt8 component, alpha = 1.0
+inline Color(UInt8 v) {
+  this.set(
+    Scalar(v) / 255.0,
+    Scalar(v) / 255.0,
+    Scalar(v) / 255.0,
+    1.0f);
+}
+
+/// Constructor from a single UInt16 component, alpha = 1.0
+inline Color(UInt16 v) {
+  this.set(
+    Scalar(v) / 255.0,
+    Scalar(v) / 255.0,
+    Scalar(v) / 255.0,
+    1.0f);
+}
+
+/// Constructor from a single UInt32, alpha = 1.0
+inline Color(UInt32 v) {
+  this.set(
+    Scalar(v) / 255.0,
+    Scalar(v) / 255.0,
+    Scalar(v) / 255.0,
+    1.0f);
+}
+
+/// Constructor from a single SInt16 component, alpha = 1.0
+inline Color(SInt16 v) {
+  this.set(
+    Scalar(v) / 255.0,
+    Scalar(v) / 255.0,
+    Scalar(v) / 255.0,
+    1.0f);
+}
+
+/// Constructor from a single SInt32, alpha = 1.0
+inline Color(SInt32 v) {
+  this.set(
+    Scalar(v) / 255.0,
+    Scalar(v) / 255.0,
+    Scalar(v) / 255.0,
+    1.0f);
+}
+
+/// Constructor from a single SInt64, alpha = 1.0
+inline Color(SInt64 v) {
+  this.set(
+    Scalar(v) / 255.0,
+    Scalar(v) / 255.0,
+    Scalar(v) / 255.0,
+    1.0f);
+}
+
+/// Constructor from a single UInt64, alpha = 1.0
+inline Color(UInt64 v) {
+  this.set(
+    Scalar(v) / 255.0,
+    Scalar(v) / 255.0,
+    Scalar(v) / 255.0,
+    1.0f);
+}
+
+
+/// Constructor from a Vec3, alpha = 1.0
+inline Color(Vec3 v) {
+  this.set(v.x, v.y, v.z, 1.0);
+}
+
+/// Constructor from a Vec4
+inline Color(Vec4 v) {
+  this.set(v.x, v.y, v.z, v.t);
+}
+
+/// Constructor from rgba UInt8 components
+/// \dfgPresetOmit
+inline Color(UInt8 r, UInt8 g, UInt8 b, UInt8 a) {
+  this.set(Scalar(r) / 255.0,
+           Scalar(g) / 255.0,
+           Scalar(b) / 255.0,
+           Scalar(a) / 255.0);
+}
+
+/// Constructor from rgb UInt8 components, alpha = 255
+inline Color(UInt8 r, UInt8 g, UInt8 b) {
+  this.set(Scalar(r) / 255.0,
+           Scalar(g) / 255.0,
+           Scalar(b) / 255.0,
+           1.0);
+}
+
+/// Constructor from rgba UInt16 components
+/// \dfgPresetOmit
+inline Color(UInt16 r, UInt16 g, UInt16 b, UInt16 a) {
+  this.set(Scalar(r) / 255.0,
+           Scalar(g) / 255.0,
+           Scalar(b) / 255.0,
+           Scalar(a) / 255.0);
+}
+
+/// Constructor from rgb UInt16 components, alpha = 255
+inline Color(UInt16 r, UInt16 g, UInt16 b) {
+  this.set(Scalar(r) / 255.0,
+           Scalar(g) / 255.0,
+           Scalar(b) / 255.0,
+           1.0);
+}
+
+/// Constructor from rgba Integer components
+/// \dfgPresetOmit
+inline Color(Integer r, Integer g, Integer b, Integer a) {
+  this.set(Scalar(r) / 255.0,
+           Scalar(g) / 255.0,
+           Scalar(b) / 255.0,
+           Scalar(a) / 255.0);
+}
+
+/// Constructor from rgb Integer components, alpha = 255
+inline Color(Integer r, Integer g, Integer b) {
+  this.set(Scalar(r) / 255.0,
+           Scalar(g) / 255.0,
+           Scalar(b) / 255.0,
+           1.0);
+}
+
+/// Constructor from a RGB color, alpha = 255
+inline Color(RGB r) {
+  this.set( Scalar(r.r) / 255.0, Scalar(r.g) / 255.0, Scalar(r.b) / 255.0, 1.0);
+}
+
+/// Constructor from a RGBA color
+inline Color(RGBA r) {
+  this.set(Scalar(r.r), Scalar(r.g) / 255.0, Scalar(r.b) / 255.0, Scalar(r.a) / 255.0);
+}
+
+/// Setter using rgba Scalar components
+inline Color.set!(Scalar r, Scalar g, Scalar b, Scalar a) {
+  this.r = r;
+  this.g = g;
+  this.b = b;
+  this.a = a;
+}
+
+/// Setter from (standard/external) float32 array and an offset
+inline Color.set!(Float32 v<>, UInt32 o) {
+  if(v.size() >= 4 + o) {
+    this.r = v[o + 0];
+    this.g = v[o + 1];
+    this.b = v[o + 2];
+    this.a = v[o + 3];
+  }
+}
+
+/// Getter as external float32 array and an offset
+inline Color.get(io Float32 v<>, UInt32 o) {
+  if(v.size() >= 4 + o) {
+    v[o + 0] = this.r;
+    v[o + 1] = this.g;
+    v[o + 2] = this.b;
+    v[o + 3] = this.a;
+  }
+}
+
+/// Getter as float32 array and an offset
+inline Color.get(io Float32 v[], UInt32 o) {
+  if(v.size() < 4 + o)
+    v.resize(4 + o);
+  v[o + 0] = this.r;
+  v[o + 1] = this.g;
+  v[o + 2] = this.b;
+  v[o + 3] = this.a;
+}
+
+/// Setter from (standard/external) float64 array and an offset
+inline Color.set!(Float64 v<>, UInt32 o) {
+  if(v.size() >= 4 + o) {
+    this.r = Float32(v[o + 0]);
+    this.g = Float32(v[o + 1]);
+    this.b = Float32(v[o + 2]);
+    this.a = Float32(v[o + 3]);
+  }
+}
+
+/// Getter as external float64 array and an offset
+inline Color.get(io Float64 v<>, UInt32 o) {
+  if(v.size() >= 4 + o) {
+    v[o + 0] = this.r;
+    v[o + 1] = this.g;
+    v[o + 2] = this.b;
+    v[o + 3] = this.a;
+  }
+}
+
+/// Getter as external float64 array and an offset
+inline Color.get(io Float64 v[], UInt32 o) {
+  if(v.size() < 4 + o)
+    v.resize(4 + o);
+  v[o + 0] = this.r;
+  v[o + 1] = this.g;
+  v[o + 2] = this.b;
+  v[o + 3] = this.a;
+}
+
+/// Setter from (standard/external) float32 array
+inline Color.set!(Float32 v<>) {
+  this.set(v, 0);
+}
+
+/// Getter as external float32 array
+inline Color.get(io Float32 v<>) {
+  this.get(v, 0);
+}
+
+/// Getter as float32 array
+inline Color.get(io Float32 v[]) {
+  this.get(v, 0);
+}
+
+/// Setter from (standard/external) float64 array
+inline Color.set!(Float64 v<>) {
+  this.set(v, 0);
+}
+
+/// Getter as external float64 array
+inline Color.get(io Float64 v<>) {
+  this.get(v, 0);
+}
+
+/// Getter as float64 array
+inline Color.get(io Float64 v[]) {
+  this.get(v, 0);
+}
+
+/// Sets from Vec.
+inline Color(Vec vec) {
+  this.set(vec);
+}
+
+/// Sets from Vec.
+inline Color.set!(Vec vec) {
+  this.r = vec.get(0);
+  this.g = vec.get(1);
+  this.b = vec.get(2);
+  this.a = vec.get(3);
+}
+
+/// Converts to Vec.
+inline Vec Color.toVec() {
+  Vec vec(4);
+  vec.set(0, this.r);
+  vec.set(1, this.g);
+  vec.set(2, this.b);
+  vec.set(3, this.a);
+  return vec;
+}
+
+/// Returns true if both Colors match exactly
+inline Boolean Color.equal(in Color other) {
+  return this.r == other.r && this.g == other.g && this.b == other.b && this.a == other.a;
+}
+
+/// Returns true if both colors match to a given precision
+inline Boolean Color.almostEqual(in Color other, in Scalar precision) {
+  return
+      (abs(this.r - other.r) < precision) &&
+      (abs(this.g - other.g) < precision) &&
+      (abs(this.b - other.b) < precision) &&
+      (abs(this.a - other.a) < precision);
+}
+
+/// Returns true if both colors match almost (using the PRECISION constant)
+inline Boolean Color.almostEqual(in Color other) {
+  return this.almostEqual(other, PRECISION);
+}
+
+/// Returns the Color's component given an index (0 to 3)
+inline Scalar Color.component( Size i ) {
+  if(i == 0)
+    return this.r;
+  else if(i == 1)
+    return this.g;
+  else if(i == 2)
+    return this.b;
+  else
+    return this.a;
+}
+
+/// Sets the Color's component given an index (0 to 3)
+inline Color.setComponent!( Size i, Scalar v ) {
+  if(i == 0)
+    this.r = v;
+  else if(i == 1)
+    this.g = v;
+  else if(i == 2)
+    this.b = v;
+  else
+    this.a = v;
+}
+
+/// Equal operator
+inline Boolean == (Color a, Color b) {
+  return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
+}
+
+/// Not equal operator
+inline Boolean != (Color a, Color b) {
+  return a.r != b.r || a.g != b.g || a.b != b.b || a.a != b.a;
+}
+
+/// Hash for this value
+inline UInt32 Color.hash() {
+  return this.r.hash() ^ this.g.hash() ^ this.b.hash() ^ this.a.hash();
+}
+
+/// Add operator, adds two Colors component wise
+inline Color + (Color a, Color b) {
+  return vecAdd(a, b);
+}
+
+/// Add-assign operator, adds another Color to this one
+inline Color. += (Color other) {
+  this = this + other;
+}
+
+/// Subtract operator, subtracts two Colors component wise
+inline Color - (Color a, Color b) {
+  return vecSub(a, b);
+}
+
+/// Subtract-assign operator, subtracts another Color from this one
+inline Color. -= (Color other) {
+  this = this - other;
+}
+
+/// Multiply operator, multiplies a Scalar and a Color
+/// \dfgPresetDefault a 1.0
+inline Color * (Scalar a, Color b) {
+  return vecMul(a, b);
+}
+
+/// Multiply operator, multiplies a Color and a Scalar
+/// \dfgPresetDefault b 1.0
+inline Color * (Color a, Scalar b) {
+  return vecMul(a, b);
+}
+
+/// Multiply operator, multiplies two Colors component wise
+/// \dfgPresetDefault b {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}
+inline Color * (Color a, Color b) {
+  return vecMul(a, b);
+}
+
+/// Multiply-assign operator, multiplies a Scalar with this Color
+/// \dfgPresetDefault other 1.0
+inline Color. *= (Scalar other) {
+  this = this * other;
+}
+
+/// Multiply-assign operator, multiplies another Color to this one
+/// \dfgPresetDefault other {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}
+inline Color. *= (Color other) {
+  this = this * other;
+}
+
+/// Division operator, divides a Color by another one
+/// \dfgPresetDefault b {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}
+inline Color / (Color a, Color b) {
+  return vecDiv(a, b);
+}
+
+/// Division operator, divides a Color by a Scalar
+/// \dfgPresetDefault a 1.0
+inline Color / (Scalar a, Color b) {
+  return vecDiv(a, b);
+}
+
+/// Division operator, divides a Color by a Scalar
+/// \dfgPresetDefault b 1.0
+inline Color / (Color a, Scalar b) {
+  return vecDiv(a, b);
+}
+
+/// Division-assign operator, divides this Color by a Scalar
+/// \dfgPresetDefault other 1.0
+inline Color. /= (Scalar other) {
+  this = this / other;
+}
+
+/// Division-assign operator, divides this Color by another one
+/// \dfgPresetDefault other {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}
+inline Color. /= (Color other) {
+  this = this / other;
+}
+
+
+/// Overload method for the add operator.
+inline Color Color.add(Color other) {
+  return this + other;
+}
+
+/// Overload method for the subtract operator.
+inline Color Color.subtract(Color other) {
+  return this - other;
+}
+
+/// Overload method for the multiply operator.
+/// \dfgPresetDefault other {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}
+inline Color Color.multiply(Color other) {
+  return this * other;
+}
+
+/// Overload method for the divide operator.
+/// \dfgPresetDefault other {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}
+inline Color Color.divide(Color other) {
+  return this / other;
+}
+
+/// Overload method for the multiply Scalar operator
+/// \dfgPresetDefault other 1.0
+inline Color Color.multiplyScalar(Scalar other) {
+  return this * other;
+}
+
+/// Overload method for the divide Scalar operator
+/// \dfgPresetDefault other 1.0
+inline Color Color.divideScalar(Scalar other) {
+  return this / other;
+}
+
+/// Linearly interpolates this Color with another one based on 
+/// the blend value t (0.0 to 1.0)
+inline Color Color.linearInterpolate(in Color other, in Scalar t) {
+  return this + ((other - this) * t);
+}
+
+
+/// Returns this Color as a RGBA byte color.
+inline RGBA Color.toRGBA() {
+  return RGBA(Integer(this.r * 255), Integer(this.g * 255), Integer(this.b * 255), Integer(this.a * 255) );
+}
+
+/// Returns this Color as a RGB byte color.
+inline RGB Color.toRGB() {
+  return RGB(Integer(this.r * 255), Integer(this.g * 255), Integer(this.b * 255) );
+}
+
+/// Converts a color to HSV representation (hue is in radians).
+/// When unknown (white, gray, black), 's' and 'v' will be 0 (some implementation return NAN).
+function Color.toHSV(out Scalar hue, out Scalar saturation, out Scalar value) {
+  // The code comes from http://stackoverflow.com/questions/3018313/algorithm-to-convert-rgb-to-hsv-and-hsv-to-rgb-in-range-0-255-for-both
+  // but was modified to be in 'radians'.
+  Scalar min = this.r < this.g ? this.r : this.g;
+  min = min  < this.b ? min  : this.b;
+
+  Scalar max = this.r > this.g ? this.r : this.g;
+  max = max  > this.b ? max  : this.b;
+
+  value = max;
+  Scalar delta = max - min;
+  if( max > DIVIDEPRECISION && delta > DIVIDEPRECISION ) { // NOTE: if Max is == 0, this divide would cause an error
+    saturation = (delta / max);
+  } else {
+    // if max is 0, then r = g = b = 0
+    // s = 0, v is undefined
+    saturation = 0.0;
+    hue = 0.0;// its now undefined. Some implementation return NAN, we'll just return 0 to make handling easier.
+    return;
+  }
+  if( this.r >= max )
+    hue = ( this.g - this.b ) / delta;        // between yellow & magenta
+  else if( this.g >= max )
+    hue = 2.0 + ( this.b - this.r ) / delta;  // between cyan & yellow
+  else
+    hue = 4.0 + ( this.r - this.g ) / delta;  // between magenta & cyan
+
+  hue *= Scalar(PI/3.0);                              // radians
+
+  if( hue < 0.0 )
+    hue += TWO_PI;
+}
+
+/// Converts HSV to color representation (hue is in radians).
+function Color.setFromHSV!(Scalar hue, Scalar saturation, Scalar value) {
+  // The code comes from http://stackoverflow.com/questions/3018313/algorithm-to-convert-rgb-to-hsv-and-hsv-to-rgb-in-range-0-255-for-both
+  // but was modified to be in 'radians'
+  this.a = 1.0;
+  if(saturation <= 0.0) {       // < is bogus, just shuts up warnings
+    this.r = value;
+    this.g = value;
+    this.b = value;
+    return;
+  }
+  Scalar hh = hue;
+  if(hh >= TWO_PI) hh = 0.0;
+  hh *= Scalar(3.0/PI);
+  Integer i = Integer(hh);
+  Scalar ff = hh - i;
+  Scalar p = value * (1.0 - saturation);
+  Scalar q = value * (1.0 - (saturation * ff));
+  Scalar t = value * (1.0 - (saturation * (1.0 - ff)));
+
+  switch(i) {
+    case 0:
+      this.r = value;
+      this.g = t;
+      this.b = p;
+      break;
+    case 1:
+      this.r = q;
+      this.g = value;
+      this.b = p;
+      break;
+    case 2:
+      this.r = p;
+      this.g = value;
+      this.b = t;
+      break;
+    case 3:
+      this.r = p;
+      this.g = q;
+      this.b = value;
+      break;
+    case 4:
+      this.r = t;
+      this.g = p;
+      this.b = value;
+      break;
+    case 5:
+    default:
+      this.r = value;
+      this.g = p;
+      this.b = q;
+      break;
+  }
+}
+
+/// Generates a random color based on a seed and offset with gamma adjustment.
+/// \param seed The seed to base the random number geration on.
+/// \param offset The offset to use in the random number sequence.
+/// \param gammaAdjustment A gamma adjustment to offset the range of the generated color.
+/// \rst
+///   .. kl-example:: Construct Color
+///   
+///     UInt32 seed = 8765;
+///     UInt32 offset = 0;
+///     // Generate a regular random color
+///     Color color = randomColor(seed, ++offset);
+/// 
+///     // Generate a light random color
+///     Color color = randomColor(seed, ++offset, 0.5);
+/// 
+///     // Generate a dark random color
+///     Color color = randomColor(seed, ++offset, -0.5);
+/// 
+/// \endrst
+function Color randomColor(UInt32 seed, UInt32 offset, Scalar gammaAdjustment)
+{
+  if(gammaAdjustment > 0.0001){
+    // Generate a light color with values between gammaAdjustment and 1.0
+    return Color(
+      Math_linearInterpolate(gammaAdjustment, 1.0, mathRandomFloat32(seed, offset+14132)),
+      Math_linearInterpolate(gammaAdjustment, 1.0, mathRandomFloat32(seed, offset+32523)),
+      Math_linearInterpolate(gammaAdjustment, 1.0, mathRandomFloat32(seed, offset+54775))
+      );
+  }
+  else if(gammaAdjustment < -0.0001){
+    // Generate a dark color with values between 0.0 and 1.0-gammaAdjustment
+    return Color(
+      Math_linearInterpolate(0.0, 1.0+gammaAdjustment, mathRandomFloat32(seed, offset+14132)),
+      Math_linearInterpolate(0.0, 1.0+gammaAdjustment, mathRandomFloat32(seed, offset+32523)),
+      Math_linearInterpolate(0.0, 1.0+gammaAdjustment, mathRandomFloat32(seed, offset+54775))
+      );
+  }
+  else{
+    // We add an arbitrary offset to the provided offset so that each color
+    // generated based on the seed and offset is unique.
+    return Color(
+      mathRandomFloat32(seed, offset+14132),
+      mathRandomFloat32(seed, offset+32523),
+      mathRandomFloat32(seed, offset+54775)
+      );
+  }
+}
+
+/// Generates a random color based on a seed and offset
+/// \param seed The seed to base the random number geration on.
+/// \param offset The offset to use in the random number sequence.
+function Color randomColor(UInt32 seed, UInt32 offset)
+{
+  return randomColor(seed, offset, 0.0);
+}
+
+/// \internal
+/// Smooth Hermite interpolation of a Color components between 0 and 1 when edge0 < x < edge1.
+inline Color Math_smoothstep(in Color edge0, in Color edge1, in Color x){
+  Color result;
+  result.r = Math_smoothstep(edge0.r, edge1.r, x.r);
+  result.g = Math_smoothstep(edge0.g, edge1.g, x.g);
+  result.b = Math_smoothstep(edge0.b, edge1.b, x.b);
+  result.a = Math_smoothstep(edge0.a, edge1.a, x.a);
+  return result;  
+}
+
+/// Returns the minimum of two Color values
+/// \dfgPresetColor Color(99, 129, 92)
+inline Color Math_min(in Color val1, in Color val2){
+  Color result;
+  result.r = Math_min(val1.r, val2.r);
+  result.g = Math_min(val1.g, val2.g);
+  result.b = Math_min(val1.b, val2.b);
+  result.a = Math_min(val1.a, val2.a);
+  return result;
+}
+
+/// Returns the minimum of two Color values
+/// \dfgPresetColor Color(99, 129, 92)
+inline Color Math_max(in Color val1, in Color val2){
+  Color result;
+  result.r = Math_max(val1.r, val2.r);
+  result.g = Math_max(val1.g, val2.g);
+  result.b = Math_max(val1.b, val2.b);
+  result.a = Math_max(val1.a, val2.a);
+  return result;
+}
+
+/// Clamps a Color value by min and max
+/// \dfgPresetColor Color(99, 129, 92)
+inline Color Math_clamp(in Color val, in Scalar minval, in Scalar maxval){
+  Color result;
+  result.r = Math_clamp(val.r, minval, maxval);
+  result.g = Math_clamp(val.g, minval, maxval);
+  result.b = Math_clamp(val.b, minval, maxval);
+  result.a = Math_clamp(val.a, minval, maxval);
+  return result;
+}
+
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgPresetFolder Random
+/// \dfgCreateArrayPreset false
+/// \dfgPresetDefault min 0.0
+/// \dfgPresetDefault min 1.0
+inline Color mathRandomColor(Size seed, Size index, Float32 min, Float32 max) {
+  Color result;
+  result.r = mathRandomScalar(seed, index+0, min, max);
+  result.g = mathRandomScalar(seed, index+1, min, max);
+  result.b = mathRandomScalar(seed, index+2, min, max);
+  result.a = 1.0;
+  return result;
+}

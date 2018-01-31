@@ -1,0 +1,157 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+require Math;
+require FabricOGL;
+
+/// \internal
+object OGLRenderbuffer : OGLBaseObject, OGLImageObject {
+  UInt32 glInternalFormat;
+  UInt32 samples;//for multisample buffers
+
+  UInt32 width;
+  UInt32 height;
+};
+
+inline OGLRenderbuffer() {
+  this.samples = 1;
+}
+
+inline ~OGLRenderbuffer() {
+  this.releaseGL();
+}
+
+inline OGLRenderbuffer.releaseGL_contextValidated!( UInt32 bufferID ) {
+  UInt32 buffers[1];
+  buffers[0] = bufferID;
+  glDeleteRenderbuffers(1, buffers);
+}
+
+inline Boolean OGLRenderbuffer.hasSameType( OGLRenderbuffer other ) {
+  return this.glInternalFormat == other.glInternalFormat;
+}
+
+inline OGLRenderbuffer.setType!( UInt32 glInternalFormat, UInt32 samples ) {
+  Boolean changed;
+  updateValue( glInternalFormat, this.glInternalFormat, changed );
+  updateValue( samples, this.samples, changed );
+  if( changed ) {
+    this.deactivate();
+    this.parent.incrementStructureVersion();
+  }
+}
+
+inline OGLRenderbuffer.setSize!( Size width, Size height ) {
+  Boolean changed;
+  updateValue( width, this.width, changed );
+  updateValue( height, this.height, changed );
+  if( changed ) {
+    this.deactivate();
+    this.parent.incrementStructureVersion();
+  }
+}
+
+inline OGLRenderbuffer.setSize!(Size width, Size height, Size depth) {
+  if( depth != 1 )
+    setError("Error: OGLRenderbuffer can only have depth == 1");
+  this.setSize( width, height );
+}
+
+inline OGLRenderbuffer.getSize( io Size width, io Size height, io Size depth, io Size samples ) {
+  width = this.width;
+  height = this.height;
+  depth = 1;
+  samples = this.samples;
+}
+
+inline OGLRenderbuffer.getType(io UInt32 componentType, io UInt32 redBits, io UInt32 greenBits, io UInt32 blueBits, io UInt32 alphaBits, io UInt32 depthBits, io UInt32 stencilBits ) {
+  _getTextureTypeBits(this.glInternalFormat, componentType, redBits, greenBits, blueBits, alphaBits, depthBits, stencilBits );
+}
+
+inline UInt32 OGLRenderbuffer.getInternalFormat() {
+  return this.glInternalFormat;
+}
+
+inline UInt32 OGLRenderbuffer.getTextureType() {
+  return GL_RENDERBUFFER;
+}
+
+inline Boolean OGLRenderbuffer.isShadow() {
+  return false;
+}
+
+inline OGLRenderbuffer.setSamples!( Size samples ) {
+  this.setType( this.glInternalFormat, samples );
+}
+
+function OGLRenderbuffer.create!(
+  Size width,
+  Size height,
+  io Ref<OGLContext> context
+) {
+  if( !CheckOGLContextValidity( context ) ) {
+    setError("OGLRenderbuffer.create: OpenGL context not bound");
+    return;
+  }
+  Boolean typeChanged = this.activate();
+  if(this.bufferID == 0) {
+    UInt32 buffers[1];
+    UInt32 buffersExt<> = buffers;
+    glGenRenderbuffers(1, buffersExt);
+    this.bufferID = buffers[0];
+    typeChanged = true;
+  } 
+  if( !typeChanged && this.width == width && this.height == height )
+    return;
+
+  Size nbPixels = width * height;
+  context.stateCache.bindRenderbuffer(this.bufferID);
+  if( this.tracingEnabled() )
+    report( "OGLRenderbuffer.create " + this.getTraceName() + ": width=" + width + ": height=" + height );
+
+  if( this.samples <= 1 )
+    glRenderbufferStorage(GL_RENDERBUFFER, this.glInternalFormat, width, height);
+  else
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, this.samples, this.glInternalFormat, width, height);
+
+  this.width = width;
+  this.height = height;
+}
+
+function Boolean OGLRenderbuffer.create!(io Ref<OGLContext> context) {
+  if( this.bufferID )
+    return true;
+
+  if( this.glInternalFormat != 0 && this.width != 0 && this.height != 0 ) {
+    //This texture is probably a framebuffer target; create container
+    this.create( this.width, this.height, context );
+  }
+  return true;
+}
+
+/// \internal
+function UInt64 OGLRenderbuffer._getApproximateGPUMemoryUsage() {
+  if( !this.bufferID )
+    return 0;
+
+  SInt64 size = this.width * this.height * this.samples * this.samples;
+  return _getTextureApproximateGPUMemoryUsage(size, this.glInternalFormat);
+}
+
+///Implementation of StatisticSource interface's 'getStatistics()'.
+/// \internal
+function StatisticRecord[] OGLRenderbuffer.getStatistics() {
+  StatisticRecord stats[];
+  stats.push( StatisticRecord( Statistic_Name, this.getTraceName() ) );
+  stats.push( StatisticRecord( Statistic_Category, "OGL" ) );
+  SInt64 size = this.width * this.height * (this.samples ? this.samples*this.samples : 1);
+  stats.push( StatisticRecord( "Size", size ) );
+  stats.push( StatisticRecord( "PixWidth", this.width ) );
+  stats.push( StatisticRecord( "PixHeight", this.height ) );
+  if(this.samples > 1)
+    stats.push( StatisticRecord( "Samples", this.samples ) );
+  stats.push( StatisticRecord( Statistic_MemoryUsage, 20*4 ) );
+  stats.push( StatisticRecord( Statistic_GPUMemoryUsage, this._getApproximateGPUMemoryUsage() ) );
+  return stats;
+}

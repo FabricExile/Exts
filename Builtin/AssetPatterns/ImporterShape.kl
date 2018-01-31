@@ -1,0 +1,311 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+require Geometry;
+
+const Integer ImporterShape_Mesh = 0;
+const Integer ImporterShape_Curves = 1;
+const Integer ImporterShape_Points = 2;
+
+/**
+The ImporterShape represents an imported shape. The ImporterShape provides
+access to the underlying Geometry, the bounds as well as to the ImporterMaterial
+array used for the shape.
+\dfgPresetOmit
+*/
+object ImporterShape : ImporterTransform permits Importer
+{
+  private Mat44 mergeInvMat;
+  private Ref<ImporterObject> mergedShapes[];
+};
+
+/// \dfgPresetOmit
+function ImporterShape(String id, String path) {
+  this.initialize(id, path, 'Shape');
+}
+
+/// \dfgPresetOmit
+function ImporterShape.cloneMembersTo(io ImporterShape other) {
+  this.parent.cloneMembersTo(other);
+  other.mergeInvMat = this.mergeInvMat;
+  other.mergedShapes = this.mergedShapes;
+}
+
+/**
+  Returns all of the nested objects
+  \dfgPresetCreate
+  \dfgPresetTitle children
+  \dfgPresetFolder Object
+  \dfgPresetTooltip
+    Returns all of the children
+  \enddfgPresetTooltip
+*/
+function Ref<ImporterObject>[] ImporterShape.getNestedObjects(ImporterContext ctxt) {
+  Ref<ImporterObject> nested[] = this.parent.getNestedObjects(ctxt);
+  return nested + this.getMaterials(ctxt);
+}
+
+/// \dfgPresetOmit
+protected function ImporterShape.initialize!(String id, String path, String type) {
+  this.parent.initialize(id, path, type);
+  this.initProperty('bounds', ImporterBox3(Box3()));
+  this.initProperty('geometry', ImporterGeometry());
+  this.initProperty('materials', ImporterStringArray());
+  this.initProperty('collisionEnabled', ImporterBoolean(false));
+  this.initProperty('lodGroup', ImporterString(''));
+}
+
+/// \dfgPresetOmit
+function Integer ImporterShape.getGeometryType(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('geoType', context);
+  return mutableThis.getIntegerProperty('geoType');
+}
+
+/// \dfgPresetOmit
+function ImporterShape.setGeometryType!(Integer geoType) {
+  this.setProperty('geoType', geoType);
+}
+
+/// \dfgPresetOmit
+function Box3 ImporterShape.getBounds(ImporterContext context) {
+  Box3 bounds = this.getBox3Property('bounds');
+  if(!bounds.isEmpty() && this.isPropertyConstant('bounds'))
+    return bounds;
+
+  Ref<ImporterShape> mutableThis = this;
+  mutableThis.updateProperty('bounds', context);
+  bounds = mutableThis.getBox3Property('bounds');
+  if(bounds.isEmpty()) {
+    // fall back to ask the geometry
+    Geometry geo = mutableThis.getGeometry(context);
+    if(geo)
+    {
+      LocalBoundingVolume volume = geo.getBoundingVolume();
+      if(volume.type == LocalBoundingVolume_bBox) {
+        bounds.min = volume.bBoxGetMin();
+        bounds.max = volume.bBoxGetMax();
+      }
+    }
+  }
+  return bounds;
+}
+
+/// \dfgPresetOmit
+function ImporterShape.setBounds!(Box3 bounds) {
+  this.setProperty('bounds', bounds);
+}
+
+/// \dfgPresetOmit
+function Geometry ImporterShape.getGeometry(ImporterContext context) {
+  Geometry geometry = this.getGeometryProperty('geometry');
+  if(geometry != null && this.isPropertyConstant('geometry'))
+    return geometry;
+
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('geometry', context);
+  return mutableThis.getGeometryProperty('geometry');
+}
+
+/// \dfgPresetOmit
+function ImporterShape.setGeometry!(Geometry geometry) {
+  this.setProperty('geometry', geometry);
+}
+
+/// \dfgPresetOmit
+function UInt32 ImporterShape.getMaterialCount(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('materials', context);
+  return mutableThis.getStringArrayProperty('materials').size();
+}
+
+/// \dfgPresetOmit
+function Ref<ImporterObject>[] ImporterShape.getMaterials(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('materials', context);
+  String materialIDs[] = mutableThis.getStringArrayProperty('materials');
+  Ref<ImporterObject> materials[](materialIDs.size());
+  for(Size i=0;i<materials.size();i++)
+    materials[i] = mutableThis.importer.getObjectFromID(materialIDs[i]);
+  return materials;
+}
+
+/// \dfgPresetOmit
+function ImporterShape.addMaterial!(String material) {
+  String materials[] = this.getStringArrayProperty('materials');
+  materials.push(material);
+  this.setMaterials(materials);
+} 
+
+/// \dfgPresetOmit
+function ImporterShape.setMaterials!(String materials[]) {
+  this.setProperty('materials', materials);
+} 
+
+/// Sets this shape to be the union of a series of other shapes.
+/// This is useful if you want to reduce the number of meshes within
+/// an import.
+/// \dfgPresetOmit
+Boolean ImporterShape.setAsMerged!(Ref<ImporterObject> shapes[]) {
+  this.mergedShapes.resize(0);
+  SInt32 geoType = -1;
+  String materials[];
+  UInt32 materialToId[String];
+  for(Size i=0;i<shapes.size();i++) {
+    if(shapes[i].getType() != 'Shape')
+      continue;
+    Ref<ImporterShape> shape = shapes[i];
+
+    if(i == 0) {
+      geoType = shape.getGeometryType(this.defaultContext);
+      if(geoType != ImporterShape_Mesh)
+        throw('Merging is currently only supported for Meshes.');
+    } else {
+      if(geoType != shape.getGeometryType(this.defaultContext)) {
+        throw('All geometries need to have the same geometry type!');
+      }
+    }
+
+    Ref<ImporterObject> mats[] = shape.getMaterials(this.defaultContext);
+    for(Size j=0;j<mats.size();j++) {
+      if(!mats[j])
+        continue;
+      String id = mats[j].getID();
+      if(materialToId.has(id))
+        continue;
+      materialToId[id] = materials.size();
+      materials.push(id);
+    }
+
+    if(i == 0) {
+      Mat44 mat = shape.computeGlobalTransform();
+      this.mergeInvMat = mat.inverse();
+
+      Ref<ImporterTransform> parentTransform = this.getParent();
+      if(parentTransform)
+        mat = parentTransform.computeGlobalTransform().inverse() * mat;
+
+      this.setLocalTransform(mat);
+      this.setColor(shape.getColor(shape.defaultContext));
+    }
+    this.mergedShapes.push(shape);
+  }
+
+
+  this.setMaterials(materials);
+
+  return this.mergedShapes.size() > 0;
+}
+
+/// \dfgPresetOmit
+Boolean ImporterShape.updateProperty!(String value, ImporterContext context) {
+  if(value == 'geoType' || value == 'bounds' || value == 'geometry') {
+    this.updateProperty('mergedShapes', context);
+    if(this.mergedShapes.size() > 0) {
+
+      switch(value)
+      {
+        case 'geoType':
+        {
+          Ref<ImporterShape> shape = this.mergedShapes[0];
+          this.setGeometryType(shape.getGeometryType(context));
+          return true;
+        }
+        case 'bounds':
+        {
+          Box3 bounds;
+          for(Size i=0;i<this.mergedShapes.size();i++) {
+            Ref<ImporterShape> shape = this.mergedShapes[i];
+            Mat44 mat = this.mergeInvMat * shape.computeGlobalTransform();
+            bounds += mat * shape.getBounds(context);
+          }
+          this.setBounds(bounds);
+          return true;
+        }
+        case 'geometry':
+        {
+          PolygonMesh mesh();
+          PolygonMesh sources[];
+          Xfo xfos[];
+
+          SInt32 allMaterials[String];
+          for(Size i=0;i<this.mergedShapes.size();i++) {
+
+            Ref<ImporterShape> shape = this.mergedShapes[i];
+            Ref<ImporterObject> materials[] = shape.getMaterials(shape.defaultContext);
+            for(Size j=0;j<materials.size();j++) {
+              if(!materials[j])
+                continue;
+              String id = materials[j].getID();
+              if(allMaterials.has(id))
+                continue;
+              SInt32 index = allMaterials.size();
+              allMaterials[id] = index;
+            }
+          }
+
+          for(Size i=0;i<this.mergedShapes.size();i++) {
+
+            Ref<ImporterShape> shape = this.mergedShapes[i];
+
+            SInt32 currentMaterials[];
+            Ref<ImporterObject> materials[] = shape.getMaterials(shape.defaultContext);
+            for(Size j=0;j<materials.size();j++) {
+              if(!materials[j])
+                continue;
+              String id = materials[j].getID();
+              currentMaterials.push(allMaterials[id]);
+            }
+
+            Mat44 mat = this.mergeInvMat * shape.computeGlobalTransform();
+
+            PolygonMesh source = shape.getGeometry(context);
+            GeometryAttributes attributes = source.getAttributes();
+            if(currentMaterials.size() == 0) {
+              // if there are no materials - let's just assume 0
+              source.setMaterialIDOnAllPolygons(0);
+            } else if(attributes.has('materialID')) {
+              source.mapMaterialIDs(currentMaterials);
+            } else {
+              // use the last material by default
+              source.setMaterialIDOnAllPolygons(currentMaterials[0]);
+            }
+
+            sources.push(source);
+            xfos.push(mat);
+
+          }
+          mesh.mergeMeshes(sources, xfos, true, false);
+          this.setGeometry(mesh);
+          return true;
+        }
+      }
+    }
+  }
+  return this.parent.updateProperty(value, context);
+}
+
+/// \dfgPresetOmit
+function Boolean ImporterShape.getCollisionEnabled(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('collisionEnabled', context);
+  return mutableThis.getBooleanProperty('collisionEnabled');
+}
+
+/// \dfgPresetOmit
+function ImporterShape.setCollisionEnabled!(Boolean collisionEnabled) {
+  this.setProperty('collisionEnabled', collisionEnabled);
+}
+
+/// \dfgPresetOmit
+function String ImporterShape.getLodGroup(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('lodGroup', context);
+  return mutableThis.getStringProperty('lodGroup');
+}
+
+/// \dfgPresetOmit
+function ImporterShape.setLodGroup!(String lodGroup) {
+  this.setProperty('lodGroup', lodGroup);
+}

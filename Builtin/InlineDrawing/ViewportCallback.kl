@@ -1,0 +1,31 @@
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+alias Integer ViewportDrawPhase;
+
+/// fired during setup of the GL window
+/// \dfgPresetOmit
+const ViewportDrawPhase ViewportDrawPhase_Setup = 0;
+
+/// fired during resize of the GL window
+const ViewportDrawPhase ViewportDrawPhase_Resize = 1;
+
+/// fired before painting is performed
+const ViewportDrawPhase ViewportDrawPhase_PreDraw = 2;
+
+/// fired during painting
+const ViewportDrawPhase ViewportDrawPhase_Draw = 3;
+
+/// fired once painting is completed
+const ViewportDrawPhase ViewportDrawPhase_PostDraw = 4;
+
+/// The ViewportCallback interface is used to implement callback which can be invoked during the drawing of an InlineViewport. 
+/// These callbacks can be registered using the InlineViewport's registerCallback method. The callback needs to return true if
+/// the default behaviour for the specified draw phase should be skipped.
+/// \dfgPresetOmit
+interface ViewportCallback
+{
+  Boolean invoke!(ViewportDrawPhase phase, io Viewport viewport, io DrawContext context);
+};

@@ -1,0 +1,1610 @@
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+operator _MathBasic_Quat_Mul_Quat<<<i>>>(
+  io Quat result[],
+  Quat a[],
+  Quat b[],
+  Float32 t,
+  Quat typedValue,
+  Boolean useSingleValue
+  ) {
+  Quat bb = useSingleValue ? typedValue : Quat(b[i]);
+  result[i] = a[i] * bb;
+}
+
+operator _MathBasic_Quat_Interpolate_Quat<<<i>>>(
+  io Quat result[],
+  Quat a[],
+  Quat b[],
+  Float32 t,
+  Quat typedValue,
+  Boolean useSingleValue
+  ) {
+  Quat bb = useSingleValue ? typedValue : Quat(b[i]);
+  result[i] = a[i].sphericalLinearInterpolate(bb, t);
+}
+
+operator _MathBasic_Quat_InvMul_Quat<<<i>>>(
+  io Quat result[],
+  Quat a[],
+  Quat b[],
+  Float32 t,
+  Quat typedValue,
+  Boolean useSingleValue
+  ) {
+  Quat bb = useSingleValue ? typedValue : Quat(b[i]);
+  result[i] = a[i].inverse() * bb;
+}
+
+operator _MathBasic_Quat_MulInv_Quat<<<i>>>(
+  io Quat result[],
+  Quat a[],
+  Quat b[],
+  Float32 t,
+  Quat typedValue,
+  Boolean useSingleValue
+  ) {
+  Quat bb = useSingleValue ? typedValue : Quat(b[i]);
+  result[i] = a[i] * bb.inverse();
+}
+
+operator _MathBasic_Quat_Mul_Mat33<<<i>>>(
+  io Quat result[],
+  Quat a[],
+  Mat33 b[],
+  Float32 t,
+  Quat typedValue,
+  Boolean useSingleValue
+  ) {
+  Quat bb = useSingleValue ? typedValue : Quat(b[i]);
+  result[i] = a[i] * bb;
+}
+
+operator _MathBasic_Quat_Interpolate_Mat33<<<i>>>(
+  io Quat result[],
+  Quat a[],
+  Mat33 b[],
+  Float32 t,
+  Quat typedValue,
+  Boolean useSingleValue
+  ) {
+  Quat bb = useSingleValue ? typedValue : Quat(b[i]);
+  result[i] = a[i].sphericalLinearInterpolate(bb, t);
+}
+
+operator _MathBasic_Quat_InvMul_Mat33<<<i>>>(
+  io Quat result[],
+  Quat a[],
+  Mat33 b[],
+  Float32 t,
+  Quat typedValue,
+  Boolean useSingleValue
+  ) {
+  Quat bb = useSingleValue ? typedValue : Quat(b[i]);
+  result[i] = a[i].inverse() * bb;
+}
+
+operator _MathBasic_Quat_MulInv_Mat33<<<i>>>(
+  io Quat result[],
+  Quat a[],
+  Mat33 b[],
+  Float32 t,
+  Quat typedValue,
+  Boolean useSingleValue
+  ) {
+  Quat bb = useSingleValue ? typedValue : Quat(b[i]);
+  result[i] = a[i] * bb.inverse();
+}
+
+/// \internal
+private function Boolean BaseGeometry.performMathBasicQuatAttribute!(
+  SInt32 mode,
+  io GeometryAttributes attributes,
+  GeometryAttribute attrA,
+  GeometryAttribute attrB,
+  String result,
+  Float32 t,
+  Boolean useSingleValue,
+  Quat typedValue
+) {
+  QuatAttribute castA = attrA;
+  if(castA == null)
+    return false;
+  Quat aValues[] = castA.values;
+
+  GeometryAttribute resultAttr = attributes.getAttribute(result);
+  if(resultAttr != null)
+  {
+    if(resultAttr.type() != QuatAttribute)
+    {
+      report('Error: MathBasic: Result attribute "'+result+'" already exists, but of wrong type.');
+      return false;
+    }
+  }
+  QuatAttribute castResult = attributes.getOrCreateQuatAttribute(result);
+  if(castResult == null)
+    return false;
+  Quat resultValues[] = castResult.values;
+
+  switch(mode)
+  {
+    case 2: // Mul
+    {
+      if(useSingleValue)
+      {
+        if(aValues.size() < Attribute_Pex_Margin)
+        {
+          for(Index index=0;index<aValues.size();index++)
+          {
+            _MathBasic_Quat_Mul_Quat(
+              index, 
+              resultValues,
+              aValues,
+              aValues, // ignore b
+              t,
+              typedValue,
+              true
+            );
+          }
+        }
+        else
+        {
+          _MathBasic_Quat_Mul_Quat<<<aValues.size()>>>(
+            resultValues,
+            aValues,
+            aValues, // ignore b
+            t,
+            typedValue,
+            true
+          );
+        }
+      }
+      else
+      {
+        switch(attrB.type())
+        {
+          case QuatAttribute:
+          {
+            QuatAttribute castB = attrB;
+            if(castB == null)
+              return false;
+
+            Quat bValues[] = castB.values;
+            if(aValues.size() < Attribute_Pex_Margin)
+            {
+              for(Index index=0;index<aValues.size();index++)
+              {
+                _MathBasic_Quat_Mul_Quat(
+                  index, 
+                  resultValues,
+                  aValues,
+                  bValues,
+                  t,
+                  typedValue,
+                  false
+                );
+              }
+            }
+            else
+            {
+              _MathBasic_Quat_Mul_Quat<<<aValues.size()>>>(
+                resultValues,
+                aValues,
+                bValues,
+                t,
+                typedValue,
+                false
+              );
+            }
+            break;
+          }
+          case Mat33Attribute:
+          {
+            Mat33Attribute castB = attrB;
+            if(castB == null)
+              return false;
+
+            Mat33 bValues[] = castB.values;
+            if(aValues.size() < Attribute_Pex_Margin)
+            {
+              for(Index index=0;index<aValues.size();index++)
+              {
+                _MathBasic_Quat_Mul_Mat33(
+                  index, 
+                  resultValues,
+                  aValues,
+                  bValues,
+                  t,
+                  typedValue,
+                  false
+                );
+              }
+            }
+            else
+            {
+              _MathBasic_Quat_Mul_Mat33<<<aValues.size()>>>(
+                resultValues,
+                aValues,
+                bValues,
+                t,
+                typedValue,
+                false
+              );
+            }
+            break;
+          }
+
+          default:
+          {
+            report('Error: MathBasic: B attribute of type '+attrB.type()+' not supported for this mode.');
+            return false;
+          }
+        }
+      }
+
+      break;
+    }
+    case 6: // Interpolate
+    {
+      if(useSingleValue)
+      {
+        if(aValues.size() < Attribute_Pex_Margin)
+        {
+          for(Index index=0;index<aValues.size();index++)
+          {
+            _MathBasic_Quat_Interpolate_Quat(
+              index, 
+              resultValues,
+              aValues,
+              aValues, // ignore b
+              t,
+              typedValue,
+              true
+            );
+          }
+        }
+        else
+        {
+          _MathBasic_Quat_Interpolate_Quat<<<aValues.size()>>>(
+            resultValues,
+            aValues,
+            aValues, // ignore b
+            t,
+            typedValue,
+            true
+          );
+        }
+      }
+      else
+      {
+        switch(attrB.type())
+        {
+          case QuatAttribute:
+          {
+            QuatAttribute castB = attrB;
+            if(castB == null)
+              return false;
+
+            Quat bValues[] = castB.values;
+            if(aValues.size() < Attribute_Pex_Margin)
+            {
+              for(Index index=0;index<aValues.size();index++)
+              {
+                _MathBasic_Quat_Interpolate_Quat(
+                  index, 
+                  resultValues,
+                  aValues,
+                  bValues,
+                  t,
+                  typedValue,
+                  false
+                );
+              }
+            }
+            else
+            {
+              _MathBasic_Quat_Interpolate_Quat<<<aValues.size()>>>(
+                resultValues,
+                aValues,
+                bValues,
+                t,
+                typedValue,
+                false
+              );
+            }
+            break;
+          }
+          case Mat33Attribute:
+          {
+            Mat33Attribute castB = attrB;
+            if(castB == null)
+              return false;
+
+            Mat33 bValues[] = castB.values;
+            if(aValues.size() < Attribute_Pex_Margin)
+            {
+              for(Index index=0;index<aValues.size();index++)
+              {
+                _MathBasic_Quat_Interpolate_Mat33(
+                  index, 
+                  resultValues,
+                  aValues,
+                  bValues,
+                  t,
+                  typedValue,
+                  false
+                );
+              }
+            }
+            else
+            {
+              _MathBasic_Quat_Interpolate_Mat33<<<aValues.size()>>>(
+                resultValues,
+                aValues,
+                bValues,
+                t,
+                typedValue,
+                false
+              );
+            }
+            break;
+          }
+
+          default:
+          {
+            report('Error: MathBasic: B attribute of type '+attrB.type()+' not supported for this mode.');
+            return false;
+          }
+        }
+      }
+
+      break;
+    }
+    case 8: // InvMul
+    {
+      if(useSingleValue)
+      {
+        if(aValues.size() < Attribute_Pex_Margin)
+        {
+          for(Index index=0;index<aValues.size();index++)
+          {
+            _MathBasic_Quat_InvMul_Quat(
+              index, 
+              resultValues,
+              aValues,
+              aValues, // ignore b
+              t,
+              typedValue,
+              true
+            );
+          }
+        }
+        else
+        {
+          _MathBasic_Quat_InvMul_Quat<<<aValues.size()>>>(
+            resultValues,
+            aValues,
+            aValues, // ignore b
+            t,
+            typedValue,
+            true
+          );
+        }
+      }
+      else
+      {
+        switch(attrB.type())
+        {
+          case QuatAttribute:
+          {
+            QuatAttribute castB = attrB;
+            if(castB == null)
+              return false;
+
+            Quat bValues[] = castB.values;
+            if(aValues.size() < Attribute_Pex_Margin)
+            {
+              for(Index index=0;index<aValues.size();index++)
+              {
+                _MathBasic_Quat_InvMul_Quat(
+                  index, 
+                  resultValues,
+                  aValues,
+                  bValues,
+                  t,
+                  typedValue,
+                  false
+                );
+              }
+            }
+            else
+            {
+              _MathBasic_Quat_InvMul_Quat<<<aValues.size()>>>(
+                resultValues,
+                aValues,
+                bValues,
+                t,
+                typedValue,
+                false
+              );
+            }
+            break;
+          }
+          case Mat33Attribute:
+          {
+            Mat33Attribute castB = attrB;
+            if(castB == null)
+              return false;
+
+            Mat33 bValues[] = castB.values;
+            if(aValues.size() < Attribute_Pex_Margin)
+            {
+              for(Index index=0;index<aValues.size();index++)
+              {
+                _MathBasic_Quat_InvMul_Mat33(
+                  index, 
+                  resultValues,
+                  aValues,
+                  bValues,
+                  t,
+                  typedValue,
+                  false
+                );
+              }
+            }
+            else
+            {
+              _MathBasic_Quat_InvMul_Mat33<<<aValues.size()>>>(
+                resultValues,
+                aValues,
+                bValues,
+                t,
+                typedValue,
+                false
+              );
+            }
+            break;
+          }
+
+          default:
+          {
+            report('Error: MathBasic: B attribute of type '+attrB.type()+' not supported for this mode.');
+            return false;
+          }
+        }
+      }
+
+      break;
+    }
+    case 9: // MulInv
+    {
+      if(useSingleValue)
+      {
+        if(aValues.size() < Attribute_Pex_Margin)
+        {
+          for(Index index=0;index<aValues.size();index++)
+          {
+            _MathBasic_Quat_MulInv_Quat(
+              index, 
+              resultValues,
+              aValues,
+              aValues, // ignore b
+              t,
+              typedValue,
+              true
+            );
+          }
+        }
+        else
+        {
+          _MathBasic_Quat_MulInv_Quat<<<aValues.size()>>>(
+            resultValues,
+            aValues,
+            aValues, // ignore b
+            t,
+            typedValue,
+            true
+          );
+        }
+      }
+      else
+      {
+        switch(attrB.type())
+        {
+          case QuatAttribute:
+          {
+            QuatAttribute castB = attrB;
+            if(castB == null)
+              return false;
+
+            Quat bValues[] = castB.values;
+            if(aValues.size() < Attribute_Pex_Margin)
+            {
+              for(Index index=0;index<aValues.size();index++)
+              {
+                _MathBasic_Quat_MulInv_Quat(
+                  index, 
+                  resultValues,
+                  aValues,
+                  bValues,
+                  t,
+                  typedValue,
+                  false
+                );
+              }
+            }
+            else
+            {
+              _MathBasic_Quat_MulInv_Quat<<<aValues.size()>>>(
+                resultValues,
+                aValues,
+                bValues,
+                t,
+                typedValue,
+                false
+              );
+            }
+            break;
+          }
+          case Mat33Attribute:
+          {
+            Mat33Attribute castB = attrB;
+            if(castB == null)
+              return false;
+
+            Mat33 bValues[] = castB.values;
+            if(aValues.size() < Attribute_Pex_Margin)
+            {
+              for(Index index=0;index<aValues.size();index++)
+              {
+                _MathBasic_Quat_MulInv_Mat33(
+                  index, 
+                  resultValues,
+                  aValues,
+                  bValues,
+                  t,
+                  typedValue,
+                  false
+                );
+              }
+            }
+            else
+            {
+              _MathBasic_Quat_MulInv_Mat33<<<aValues.size()>>>(
+                resultValues,
+                aValues,
+                bValues,
+                t,
+                typedValue,
+                false
+              );
+            }
+            break;
+          }
+
+          default:
+          {
+            report('Error: MathBasic: B attribute of type '+attrB.type()+' not supported for this mode.');
+            return false;
+          }
+        }
+      }
+
+      break;
+    }
+  }
+
+
+  return false;
+}
+
+operator _MathBasic_Mat33_Mul_Mat33<<<i>>>(
+  io Mat33 result[],
+  Mat33 a[],
+  Mat33 b[],
+  Float32 t,
+  Mat33 typedValue,
+  Boolean useSingleValue
+  ) {
+  Mat33 bb = useSingleValue ? typedValue : Mat33(b[i]);
+  result[i] = a[i] * bb;
+}
+
+operator _MathBasic_Mat33_Interpolate_Mat33<<<i>>>(
+  io Mat33 result[],
+  Mat33 a[],
+  Mat33 b[],
+  Float32 t,
+  Mat33 typedValue,
+  Boolean useSingleValue
+  ) {
+  Mat33 bb = useSingleValue ? typedValue : Mat33(b[i]);
+  result[i] = a[i].sphericalLinearInterpolate(bb, t);
+}
+
+operator _MathBasic_Mat33_InvMul_Mat33<<<i>>>(
+  io Mat33 result[],
+  Mat33 a[],
+  Mat33 b[],
+  Float32 t,
+  Mat33 typedValue,
+  Boolean useSingleValue
+  ) {
+  Mat33 bb = useSingleValue ? typedValue : Mat33(b[i]);
+  result[i] = a[i].inverse() * bb;
+}
+
+operator _MathBasic_Mat33_MulInv_Mat33<<<i>>>(
+  io Mat33 result[],
+  Mat33 a[],
+  Mat33 b[],
+  Float32 t,
+  Mat33 typedValue,
+  Boolean useSingleValue
+  ) {
+  Mat33 bb = useSingleValue ? typedValue : Mat33(b[i]);
+  result[i] = a[i] * bb.inverse();
+}
+
+operator _MathBasic_Mat33_Mul_Quat<<<i>>>(
+  io Mat33 result[],
+  Mat33 a[],
+  Quat b[],
+  Float32 t,
+  Mat33 typedValue,
+  Boolean useSingleValue
+  ) {
+  Mat33 bb = useSingleValue ? typedValue : Mat33(b[i]);
+  result[i] = a[i] * bb;
+}
+
+operator _MathBasic_Mat33_Interpolate_Quat<<<i>>>(
+  io Mat33 result[],
+  Mat33 a[],
+  Quat b[],
+  Float32 t,
+  Mat33 typedValue,
+  Boolean useSingleValue
+  ) {
+  Mat33 bb = useSingleValue ? typedValue : Mat33(b[i]);
+  result[i] = a[i].sphericalLinearInterpolate(bb, t);
+}
+
+operator _MathBasic_Mat33_InvMul_Quat<<<i>>>(
+  io Mat33 result[],
+  Mat33 a[],
+  Quat b[],
+  Float32 t,
+  Mat33 typedValue,
+  Boolean useSingleValue
+  ) {
+  Mat33 bb = useSingleValue ? typedValue : Mat33(b[i]);
+  result[i] = a[i].inverse() * bb;
+}
+
+operator _MathBasic_Mat33_MulInv_Quat<<<i>>>(
+  io Mat33 result[],
+  Mat33 a[],
+  Quat b[],
+  Float32 t,
+  Mat33 typedValue,
+  Boolean useSingleValue
+  ) {
+  Mat33 bb = useSingleValue ? typedValue : Mat33(b[i]);
+  result[i] = a[i] * bb.inverse();
+}
+
+/// \internal
+private function Boolean BaseGeometry.performMathBasicMat33Attribute!(
+  SInt32 mode,
+  io GeometryAttributes attributes,
+  GeometryAttribute attrA,
+  GeometryAttribute attrB,
+  String result,
+  Float32 t,
+  Boolean useSingleValue,
+  Mat33 typedValue
+) {
+  Mat33Attribute castA = attrA;
+  if(castA == null)
+    return false;
+  Mat33 aValues[] = castA.values;
+
+  GeometryAttribute resultAttr = attributes.getAttribute(result);
+  if(resultAttr != null)
+  {
+    if(resultAttr.type() != Mat33Attribute)
+    {
+      report('Error: MathBasic: Result attribute "'+result+'" already exists, but of wrong type.');
+      return false;
+    }
+  }
+  Mat33Attribute castResult = attributes.getOrCreateMat33Attribute(result);
+  if(castResult == null)
+    return false;
+  Mat33 resultValues[] = castResult.values;
+
+  switch(mode)
+  {
+    case 2: // Mul
+    {
+      if(useSingleValue)
+      {
+        if(aValues.size() < Attribute_Pex_Margin)
+        {
+          for(Index index=0;index<aValues.size();index++)
+          {
+            _MathBasic_Mat33_Mul_Mat33(
+              index, 
+              resultValues,
+              aValues,
+              aValues, // ignore b
+              t,
+              typedValue,
+              true
+            );
+          }
+        }
+        else
+        {
+          _MathBasic_Mat33_Mul_Mat33<<<aValues.size()>>>(
+            resultValues,
+            aValues,
+            aValues, // ignore b
+            t,
+            typedValue,
+            true
+          );
+        }
+      }
+      else
+      {
+        switch(attrB.type())
+        {
+          case Mat33Attribute:
+          {
+            Mat33Attribute castB = attrB;
+            if(castB == null)
+              return false;
+
+            Mat33 bValues[] = castB.values;
+            if(aValues.size() < Attribute_Pex_Margin)
+            {
+              for(Index index=0;index<aValues.size();index++)
+              {
+                _MathBasic_Mat33_Mul_Mat33(
+                  index, 
+                  resultValues,
+                  aValues,
+                  bValues,
+                  t,
+                  typedValue,
+                  false
+                );
+              }
+            }
+            else
+            {
+              _MathBasic_Mat33_Mul_Mat33<<<aValues.size()>>>(
+                resultValues,
+                aValues,
+                bValues,
+                t,
+                typedValue,
+                false
+              );
+            }
+            break;
+          }
+          case QuatAttribute:
+          {
+            QuatAttribute castB = attrB;
+            if(castB == null)
+              return false;
+
+            Quat bValues[] = castB.values;
+            if(aValues.size() < Attribute_Pex_Margin)
+            {
+              for(Index index=0;index<aValues.size();index++)
+              {
+                _MathBasic_Mat33_Mul_Quat(
+                  index, 
+                  resultValues,
+                  aValues,
+                  bValues,
+                  t,
+                  typedValue,
+                  false
+                );
+              }
+            }
+            else
+            {
+              _MathBasic_Mat33_Mul_Quat<<<aValues.size()>>>(
+                resultValues,
+                aValues,
+                bValues,
+                t,
+                typedValue,
+                false
+              );
+            }
+            break;
+          }
+
+          default:
+          {
+            report('Error: MathBasic: B attribute of type '+attrB.type()+' not supported for this mode.');
+            return false;
+          }
+        }
+      }
+
+      break;
+    }
+    case 6: // Interpolate
+    {
+      if(useSingleValue)
+      {
+        if(aValues.size() < Attribute_Pex_Margin)
+        {
+          for(Index index=0;index<aValues.size();index++)
+          {
+            _MathBasic_Mat33_Interpolate_Mat33(
+              index, 
+              resultValues,
+              aValues,
+              aValues, // ignore b
+              t,
+              typedValue,
+              true
+            );
+          }
+        }
+        else
+        {
+          _MathBasic_Mat33_Interpolate_Mat33<<<aValues.size()>>>(
+            resultValues,
+            aValues,
+            aValues, // ignore b
+            t,
+            typedValue,
+            true
+          );
+        }
+      }
+      else
+      {
+        switch(attrB.type())
+        {
+          case Mat33Attribute:
+          {
+            Mat33Attribute castB = attrB;
+            if(castB == null)
+              return false;
+
+            Mat33 bValues[] = castB.values;
+            if(aValues.size() < Attribute_Pex_Margin)
+            {
+              for(Index index=0;index<aValues.size();index++)
+              {
+                _MathBasic_Mat33_Interpolate_Mat33(
+                  index, 
+                  resultValues,
+                  aValues,
+                  bValues,
+                  t,
+                  typedValue,
+                  false
+                );
+              }
+            }
+            else
+            {
+              _MathBasic_Mat33_Interpolate_Mat33<<<aValues.size()>>>(
+                resultValues,
+                aValues,
+                bValues,
+                t,
+                typedValue,
+                false
+              );
+            }
+            break;
+          }
+          case QuatAttribute:
+          {
+            QuatAttribute castB = attrB;
+            if(castB == null)
+              return false;
+
+            Quat bValues[] = castB.values;
+            if(aValues.size() < Attribute_Pex_Margin)
+            {
+              for(Index index=0;index<aValues.size();index++)
+              {
+                _MathBasic_Mat33_Interpolate_Quat(
+                  index, 
+                  resultValues,
+                  aValues,
+                  bValues,
+                  t,
+                  typedValue,
+                  false
+                );
+              }
+            }
+            else
+            {
+              _MathBasic_Mat33_Interpolate_Quat<<<aValues.size()>>>(
+                resultValues,
+                aValues,
+                bValues,
+                t,
+                typedValue,
+                false
+              );
+            }
+            break;
+          }
+
+          default:
+          {
+            report('Error: MathBasic: B attribute of type '+attrB.type()+' not supported for this mode.');
+            return false;
+          }
+        }
+      }
+
+      break;
+    }
+    case 8: // InvMul
+    {
+      if(useSingleValue)
+      {
+        if(aValues.size() < Attribute_Pex_Margin)
+        {
+          for(Index index=0;index<aValues.size();index++)
+          {
+            _MathBasic_Mat33_InvMul_Mat33(
+              index, 
+              resultValues,
+              aValues,
+              aValues, // ignore b
+              t,
+              typedValue,
+              true
+            );
+          }
+        }
+        else
+        {
+          _MathBasic_Mat33_InvMul_Mat33<<<aValues.size()>>>(
+            resultValues,
+            aValues,
+            aValues, // ignore b
+            t,
+            typedValue,
+            true
+          );
+        }
+      }
+      else
+      {
+        switch(attrB.type())
+        {
+          case Mat33Attribute:
+          {
+            Mat33Attribute castB = attrB;
+            if(castB == null)
+              return false;
+
+            Mat33 bValues[] = castB.values;
+            if(aValues.size() < Attribute_Pex_Margin)
+            {
+              for(Index index=0;index<aValues.size();index++)
+              {
+                _MathBasic_Mat33_InvMul_Mat33(
+                  index, 
+                  resultValues,
+                  aValues,
+                  bValues,
+                  t,
+                  typedValue,
+                  false
+                );
+              }
+            }
+            else
+            {
+              _MathBasic_Mat33_InvMul_Mat33<<<aValues.size()>>>(
+                resultValues,
+                aValues,
+                bValues,
+                t,
+                typedValue,
+                false
+              );
+            }
+            break;
+          }
+          case QuatAttribute:
+          {
+            QuatAttribute castB = attrB;
+            if(castB == null)
+              return false;
+
+            Quat bValues[] = castB.values;
+            if(aValues.size() < Attribute_Pex_Margin)
+            {
+              for(Index index=0;index<aValues.size();index++)
+              {
+                _MathBasic_Mat33_InvMul_Quat(
+                  index, 
+                  resultValues,
+                  aValues,
+                  bValues,
+                  t,
+                  typedValue,
+                  false
+                );
+              }
+            }
+            else
+            {
+              _MathBasic_Mat33_InvMul_Quat<<<aValues.size()>>>(
+                resultValues,
+                aValues,
+                bValues,
+                t,
+                typedValue,
+                false
+              );
+            }
+            break;
+          }
+
+          default:
+          {
+            report('Error: MathBasic: B attribute of type '+attrB.type()+' not supported for this mode.');
+            return false;
+          }
+        }
+      }
+
+      break;
+    }
+    case 9: // MulInv
+    {
+      if(useSingleValue)
+      {
+        if(aValues.size() < Attribute_Pex_Margin)
+        {
+          for(Index index=0;index<aValues.size();index++)
+          {
+            _MathBasic_Mat33_MulInv_Mat33(
+              index, 
+              resultValues,
+              aValues,
+              aValues, // ignore b
+              t,
+              typedValue,
+              true
+            );
+          }
+        }
+        else
+        {
+          _MathBasic_Mat33_MulInv_Mat33<<<aValues.size()>>>(
+            resultValues,
+            aValues,
+            aValues, // ignore b
+            t,
+            typedValue,
+            true
+          );
+        }
+      }
+      else
+      {
+        switch(attrB.type())
+        {
+          case Mat33Attribute:
+          {
+            Mat33Attribute castB = attrB;
+            if(castB == null)
+              return false;
+
+            Mat33 bValues[] = castB.values;
+            if(aValues.size() < Attribute_Pex_Margin)
+            {
+              for(Index index=0;index<aValues.size();index++)
+              {
+                _MathBasic_Mat33_MulInv_Mat33(
+                  index, 
+                  resultValues,
+                  aValues,
+                  bValues,
+                  t,
+                  typedValue,
+                  false
+                );
+              }
+            }
+            else
+            {
+              _MathBasic_Mat33_MulInv_Mat33<<<aValues.size()>>>(
+                resultValues,
+                aValues,
+                bValues,
+                t,
+                typedValue,
+                false
+              );
+            }
+            break;
+          }
+          case QuatAttribute:
+          {
+            QuatAttribute castB = attrB;
+            if(castB == null)
+              return false;
+
+            Quat bValues[] = castB.values;
+            if(aValues.size() < Attribute_Pex_Margin)
+            {
+              for(Index index=0;index<aValues.size();index++)
+              {
+                _MathBasic_Mat33_MulInv_Quat(
+                  index, 
+                  resultValues,
+                  aValues,
+                  bValues,
+                  t,
+                  typedValue,
+                  false
+                );
+              }
+            }
+            else
+            {
+              _MathBasic_Mat33_MulInv_Quat<<<aValues.size()>>>(
+                resultValues,
+                aValues,
+                bValues,
+                t,
+                typedValue,
+                false
+              );
+            }
+            break;
+          }
+
+          default:
+          {
+            report('Error: MathBasic: B attribute of type '+attrB.type()+' not supported for this mode.');
+            return false;
+          }
+        }
+      }
+
+      break;
+    }
+  }
+
+
+  return false;
+}
+
+operator _MathBasic_Mat44_Mul_Mat44<<<i>>>(
+  io Mat44 result[],
+  Mat44 a[],
+  Mat44 b[],
+  Float32 t,
+  Mat44 typedValue,
+  Boolean useSingleValue
+  ) {
+  Mat44 bb = useSingleValue ? typedValue : Mat44(b[i]);
+  result[i] = a[i] * bb;
+}
+
+operator _MathBasic_Mat44_Interpolate_Mat44<<<i>>>(
+  io Mat44 result[],
+  Mat44 a[],
+  Mat44 b[],
+  Float32 t,
+  Mat44 typedValue,
+  Boolean useSingleValue
+  ) {
+  Mat44 bb = useSingleValue ? typedValue : Mat44(b[i]);
+  result[i] = a[i].sphericalLinearInterpolate(bb, t);
+}
+
+operator _MathBasic_Mat44_InvMul_Mat44<<<i>>>(
+  io Mat44 result[],
+  Mat44 a[],
+  Mat44 b[],
+  Float32 t,
+  Mat44 typedValue,
+  Boolean useSingleValue
+  ) {
+  Mat44 bb = useSingleValue ? typedValue : Mat44(b[i]);
+  result[i] = a[i].inverse() * bb;
+}
+
+operator _MathBasic_Mat44_MulInv_Mat44<<<i>>>(
+  io Mat44 result[],
+  Mat44 a[],
+  Mat44 b[],
+  Float32 t,
+  Mat44 typedValue,
+  Boolean useSingleValue
+  ) {
+  Mat44 bb = useSingleValue ? typedValue : Mat44(b[i]);
+  result[i] = a[i] * bb.inverse();
+}
+
+/// \internal
+private function Boolean BaseGeometry.performMathBasicMat44Attribute!(
+  SInt32 mode,
+  io GeometryAttributes attributes,
+  GeometryAttribute attrA,
+  GeometryAttribute attrB,
+  String result,
+  Float32 t,
+  Boolean useSingleValue,
+  Mat44 typedValue
+) {
+  Mat44Attribute castA = attrA;
+  if(castA == null)
+    return false;
+  Mat44 aValues[] = castA.values;
+
+  GeometryAttribute resultAttr = attributes.getAttribute(result);
+  if(resultAttr != null)
+  {
+    if(resultAttr.type() != Mat44Attribute)
+    {
+      report('Error: MathBasic: Result attribute "'+result+'" already exists, but of wrong type.');
+      return false;
+    }
+  }
+  Mat44Attribute castResult = attributes.getOrCreateMat44Attribute(result);
+  if(castResult == null)
+    return false;
+  Mat44 resultValues[] = castResult.values;
+
+  switch(mode)
+  {
+    case 2: // Mul
+    {
+      if(useSingleValue)
+      {
+        if(aValues.size() < Attribute_Pex_Margin)
+        {
+          for(Index index=0;index<aValues.size();index++)
+          {
+            _MathBasic_Mat44_Mul_Mat44(
+              index, 
+              resultValues,
+              aValues,
+              aValues, // ignore b
+              t,
+              typedValue,
+              true
+            );
+          }
+        }
+        else
+        {
+          _MathBasic_Mat44_Mul_Mat44<<<aValues.size()>>>(
+            resultValues,
+            aValues,
+            aValues, // ignore b
+            t,
+            typedValue,
+            true
+          );
+        }
+      }
+      else
+      {
+        switch(attrB.type())
+        {
+          case Mat44Attribute:
+          {
+            Mat44Attribute castB = attrB;
+            if(castB == null)
+              return false;
+
+            Mat44 bValues[] = castB.values;
+            if(aValues.size() < Attribute_Pex_Margin)
+            {
+              for(Index index=0;index<aValues.size();index++)
+              {
+                _MathBasic_Mat44_Mul_Mat44(
+                  index, 
+                  resultValues,
+                  aValues,
+                  bValues,
+                  t,
+                  typedValue,
+                  false
+                );
+              }
+            }
+            else
+            {
+              _MathBasic_Mat44_Mul_Mat44<<<aValues.size()>>>(
+                resultValues,
+                aValues,
+                bValues,
+                t,
+                typedValue,
+                false
+              );
+            }
+            break;
+          }
+
+          default:
+          {
+            report('Error: MathBasic: B attribute of type '+attrB.type()+' not supported for this mode.');
+            return false;
+          }
+        }
+      }
+
+      break;
+    }
+    case 6: // Interpolate
+    {
+      if(useSingleValue)
+      {
+        if(aValues.size() < Attribute_Pex_Margin)
+        {
+          for(Index index=0;index<aValues.size();index++)
+          {
+            _MathBasic_Mat44_Interpolate_Mat44(
+              index, 
+              resultValues,
+              aValues,
+              aValues, // ignore b
+              t,
+              typedValue,
+              true
+            );
+          }
+        }
+        else
+        {
+          _MathBasic_Mat44_Interpolate_Mat44<<<aValues.size()>>>(
+            resultValues,
+            aValues,
+            aValues, // ignore b
+            t,
+            typedValue,
+            true
+          );
+        }
+      }
+      else
+      {
+        switch(attrB.type())
+        {
+          case Mat44Attribute:
+          {
+            Mat44Attribute castB = attrB;
+            if(castB == null)
+              return false;
+
+            Mat44 bValues[] = castB.values;
+            if(aValues.size() < Attribute_Pex_Margin)
+            {
+              for(Index index=0;index<aValues.size();index++)
+              {
+                _MathBasic_Mat44_Interpolate_Mat44(
+                  index, 
+                  resultValues,
+                  aValues,
+                  bValues,
+                  t,
+                  typedValue,
+                  false
+                );
+              }
+            }
+            else
+            {
+              _MathBasic_Mat44_Interpolate_Mat44<<<aValues.size()>>>(
+                resultValues,
+                aValues,
+                bValues,
+                t,
+                typedValue,
+                false
+              );
+            }
+            break;
+          }
+
+          default:
+          {
+            report('Error: MathBasic: B attribute of type '+attrB.type()+' not supported for this mode.');
+            return false;
+          }
+        }
+      }
+
+      break;
+    }
+    case 8: // InvMul
+    {
+      if(useSingleValue)
+      {
+        if(aValues.size() < Attribute_Pex_Margin)
+        {
+          for(Index index=0;index<aValues.size();index++)
+          {
+            _MathBasic_Mat44_InvMul_Mat44(
+              index, 
+              resultValues,
+              aValues,
+              aValues, // ignore b
+              t,
+              typedValue,
+              true
+            );
+          }
+        }
+        else
+        {
+          _MathBasic_Mat44_InvMul_Mat44<<<aValues.size()>>>(
+            resultValues,
+            aValues,
+            aValues, // ignore b
+            t,
+            typedValue,
+            true
+          );
+        }
+      }
+      else
+      {
+        switch(attrB.type())
+        {
+          case Mat44Attribute:
+          {
+            Mat44Attribute castB = attrB;
+            if(castB == null)
+              return false;
+
+            Mat44 bValues[] = castB.values;
+            if(aValues.size() < Attribute_Pex_Margin)
+            {
+              for(Index index=0;index<aValues.size();index++)
+              {
+                _MathBasic_Mat44_InvMul_Mat44(
+                  index, 
+                  resultValues,
+                  aValues,
+                  bValues,
+                  t,
+                  typedValue,
+                  false
+                );
+              }
+            }
+            else
+            {
+              _MathBasic_Mat44_InvMul_Mat44<<<aValues.size()>>>(
+                resultValues,
+                aValues,
+                bValues,
+                t,
+                typedValue,
+                false
+              );
+            }
+            break;
+          }
+
+          default:
+          {
+            report('Error: MathBasic: B attribute of type '+attrB.type()+' not supported for this mode.');
+            return false;
+          }
+        }
+      }
+
+      break;
+    }
+    case 9: // MulInv
+    {
+      if(useSingleValue)
+      {
+        if(aValues.size() < Attribute_Pex_Margin)
+        {
+          for(Index index=0;index<aValues.size();index++)
+          {
+            _MathBasic_Mat44_MulInv_Mat44(
+              index, 
+              resultValues,
+              aValues,
+              aValues, // ignore b
+              t,
+              typedValue,
+              true
+            );
+          }
+        }
+        else
+        {
+          _MathBasic_Mat44_MulInv_Mat44<<<aValues.size()>>>(
+            resultValues,
+            aValues,
+            aValues, // ignore b
+            t,
+            typedValue,
+            true
+          );
+        }
+      }
+      else
+      {
+        switch(attrB.type())
+        {
+          case Mat44Attribute:
+          {
+            Mat44Attribute castB = attrB;
+            if(castB == null)
+              return false;
+
+            Mat44 bValues[] = castB.values;
+            if(aValues.size() < Attribute_Pex_Margin)
+            {
+              for(Index index=0;index<aValues.size();index++)
+              {
+                _MathBasic_Mat44_MulInv_Mat44(
+                  index, 
+                  resultValues,
+                  aValues,
+                  bValues,
+                  t,
+                  typedValue,
+                  false
+                );
+              }
+            }
+            else
+            {
+              _MathBasic_Mat44_MulInv_Mat44<<<aValues.size()>>>(
+                resultValues,
+                aValues,
+                bValues,
+                t,
+                typedValue,
+                false
+              );
+            }
+            break;
+          }
+
+          default:
+          {
+            report('Error: MathBasic: B attribute of type '+attrB.type()+' not supported for this mode.');
+            return false;
+          }
+        }
+      }
+
+      break;
+    }
+  }
+
+
+  return false;
+}

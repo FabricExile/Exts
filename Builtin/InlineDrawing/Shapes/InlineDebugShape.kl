@@ -1,0 +1,334 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+The InlineDebugShape inherits from the InlineShape for debug drawing purposes.
+
+\example
+    InlineDebugShape shape('debug');
+
+    // draw a couple of points
+    shape.drawPoint(Vec3(5, 0, 0));
+    shape.drawPoint(Vec3(0, 5, 0));
+    shape.drawPoint(Vec3(0, 0, 5));
+
+    // draw a couple of lines
+    shape.drawLine(Vec3(0, 0, 0), Vec3(5, 0, 0));
+    shape.drawLine(Vec3(0, 0, 0), Vec3(0, 5, 0));
+    shape.drawLine(Vec3(0, 0, 0), Vec3(0, 0, 5));
+
+    // for more methods check the method description below.
+\endexample
+*/
+object InlineDebugShape : InlineGeometryShape {
+  /// \internal
+  GeometryAttributes attributes; // for backward compatibility
+  /// \internal
+  DrawElements drawElements;
+  /// \internal
+  Ref<StaticInlineTransform> transform;
+};
+
+
+/// default constructor
+/// \dfgPresetOmit
+function InlineDebugShape() {
+  // Avoid calling the init method if this default constructor is being invoked 
+  // during the construction of a derived object.
+  if(InlineShape(this).type() == InlineDebugShape)
+    this.init('debug');
+}
+
+// default constructor with a name
+/// \dfgPresetOmit
+function InlineDebugShape(String name) {
+  this.init(name);
+}
+
+// default constructor
+/// \dfgPresetOmit
+function InlineDebugShape.init!(String name) {
+  this.name = name;
+  this.setDrawElements( DrawElements() );
+}
+
+// default constructor
+/// \dfgPresetOmit
+function InlineDebugShape.setDrawElements!( Ref<DrawElements> drawElements ) {
+  this.drawElements = drawElements;
+  this.geo = drawElements;
+  if( drawElements )
+    this.attributes = drawElements.getAttributes();
+  else
+    this.attributes = null;
+}
+
+/// return the current point size used
+function Scalar InlineDebugShape.getPointSize() {
+  return this.drawElements.getPointSize();
+}
+
+/// sets the current point size used
+/// \dfgPresetDefault value 1.0
+function InlineDebugShape.setPointSize!(Scalar value) {
+  this.drawElements.setPointSize( value );
+}
+
+/// return the current line width used
+function Scalar InlineDebugShape.getLineWidth() {
+  return this.drawElements.getLineWidth();
+}
+
+/// sets the current line width used
+/// \dfgPresetDefault value 1.0
+function InlineDebugShape.setLineWidth!(Scalar value) {
+  this.drawElements.setLineWidth( value );
+}
+
+/// gets the current transform
+function Xfo InlineDebugShape.getXfo() {
+  if(this.transform)
+    return this.transform.nonLocking_getLocalXfo(0);
+  return Xfo();
+}
+
+/// sets the current transform
+function InlineDebugShape.setXfo!(Xfo xfo) {
+  if(this.transform)
+    this.transform.setLocalXfo(0, xfo);
+}
+
+/// returns the contained geometryattirbutes
+/// \dfgPresetOmit
+function GeometryAttributes InlineDebugShape.getAttributes() {
+  return this.attributes;
+}
+
+/// sets the current pen
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault radius 1.0
+function InlineDebugShape.setPen!(Color color, Float32 radius) {
+  this.drawElements.setPen( color, radius );
+}
+
+/// disables the current pen
+function InlineDebugShape.disablePen!() {
+  this.drawElements.disablePen();
+}
+
+/// fills the vertex color attributes with the pen color + radius
+/// \internal
+function InlineDebugShape.drawPenColors!(UInt32 lastPointSize) {
+  this.drawElements.drawPenColors( lastPointSize );
+}
+
+/// draws the instance on screen. this is used by the 
+/// material and should not be called manually.
+/// \internal
+function Boolean InlineDebugShape.draw!(io DrawContext context) {
+
+  if(!this.adaptor) {
+    InlineDrawing drawing = context.getMetaData('drawing');
+    this.adaptor = drawing.getShapeAdaptor(this.type());
+  }
+  context.setMetaData('shape', Object(this));
+  Ref<InlineShape> thisShape = this;
+  if(!this.adaptor || !this.adaptor.draw(context, thisShape))
+    return false;
+
+  return true;
+}
+
+
+////////////////////////////////////////////////////////////////
+
+/// resets all offsets of this InlineDebugShape
+/// \dfgPresetOmit
+function InlineDebugShape.reset!() {
+  this.drawElements.reset();
+}
+
+/// clears the content of the InlineDebugShape
+/// \dfgPresetOmit
+function InlineDebugShape.clear!() {
+  this.drawElements.clear();
+}
+
+/// allocates space for new vertices
+/// \dfgPresetOmit
+function Index InlineDebugShape.allocateVertices!(Size nbVertices) {
+  return this.drawElements.allocateVertices( nbVertices );
+}
+
+/// allocates space for new points
+/// \dfgPresetOmit
+function Index InlineDebugShape.allocatePoints!(Size nbPoints) {
+  return this.drawElements.allocatePoints( nbPoints );
+}
+
+/// allocates space for new lines
+function Index InlineDebugShape.allocateLines!(Size nbPoints, Size nbLines) {
+  return this.drawElements.allocateLines( nbPoints, nbLines );
+}
+
+/// allocates space for new lines
+/// \dfgPresetOmit
+function Index InlineDebugShape.allocateTriangles!(Size nbPoints, Size nbTriangles) {
+  return this.drawElements.allocateTriangles( nbPoints, nbTriangles );
+}
+
+/// draws a single point given a position
+function InlineDebugShape.drawPoint!(Vec3 pos) {
+  this.drawElements.drawPoint( pos );
+}
+
+/// draws a bunch of points
+function InlineDebugShape.drawPoints!(Vec3 pos[]) {
+  this.drawElements.drawPoints( pos );
+}
+
+/// draws a line given two positions
+/// \dfgPresetDefault from {"x": 0.0, "y": 0.0, "z": 0.0}
+/// \dfgPresetDefault to {"x": 0.0, "y": 4.0, "z": 0.0}
+function InlineDebugShape.drawLine!(Vec3 from, Vec3 to) {
+  this.drawElements.drawLine( from, to );
+}
+
+/// draws a segmented line given two positions, a number of segmentation
+/// segments (minimum of 2) and a segment ratio (0.0 to 1.0).
+/// \dfgPresetDefault from {"x": 0.0, "y": 0.0, "z": 0.0}
+/// \dfgPresetDefault to {"x": 0.0, "y": 4.0, "z": 0.0}
+/// \dfgPresetDefault numSegments 8
+/// \dfgPresetDefault ratio 0.5
+function InlineDebugShape.drawSegmentedLine!(Vec3 from, Vec3 to, Size numSegments, Scalar ratio) {
+  this.drawElements.drawSegmentedLine( from, to, numSegments, ratio );
+}
+
+/// overloaded method, uses 0.5 for the ratio
+function InlineDebugShape.drawSegmentedLine!(Vec3 from, Vec3 to, Size numSegments) {
+  this.drawElements.drawSegmentedLine( from, to, numSegments );
+}
+
+/// draws a line through all of the points provided
+function InlineDebugShape.drawLineStrip!(Vec3 points[]) {
+  this.drawElements.drawLineStrip( points );
+}
+
+/// draws a line through all of the points provided
+function InlineDebugShape.drawLineSegments!(Vec3 starts[], Vec3 ends[]) {
+  this.drawElements.drawLineSegments( starts, ends );
+}
+
+/// draws a line circle around the Y axis given a transform for the circle, 
+/// a radius and a detail setting. the detail describes the number 
+/// of line segments of the circle (minimum of 3).
+/// \dfgPresetDefault radius 3.0
+/// \dfgPresetDefault detail 12
+function InlineDebugShape.drawCircle!(Xfo xfo, Scalar radius, Integer detail) {
+  this.drawElements.drawCircle( xfo, radius, detail );
+}
+
+/// draws a line arc around the Y axis given a transform for the arc, 
+/// a radius, a angular min and max as a Vec3 and a detail setting. 
+/// the detail describes the number of line segments of the circle (minimum of 3).
+/// \param angleMinMax [minAngle, maxAngle], in radians
+/// \dfgPresetDefault radius 3.0
+/// \dfgPresetDefault angleMinMax {"x": 0.0, "y": 1.47}
+/// \dfgPresetDefault detail 12
+function InlineDebugShape.drawArc!(Xfo xfo, Scalar radius, Vec2 angleMinMax, Integer detail) {
+  this.drawElements.drawArc( xfo, radius, angleMinMax, detail );
+}
+
+/// draws three line circles representing a sphere given a transform
+/// for the sphere, a radius and a detail setting. 
+/// the detail describes the number of line segments for each circle (minimum of 3).
+/// \dfgPresetDefault radius 3.0
+/// \dfgPresetDefault detail 12
+function InlineDebugShape.drawSphereLines!(Xfo xfo, Scalar radius, Integer detail) {
+  this.drawElements.drawSphereLines( xfo, radius, detail );
+}
+
+
+/// draws a capsule shape using lines. 
+/// the detail describes the number of line segments for each circle (minimum of 3).
+/// \dfgPresetDefault radius 3.0
+/// \dfgPresetDefault height 7.0
+/// \dfgPresetDefault detail 12
+function InlineDebugShape.drawCapsuleLines!(Xfo xfo, Scalar radius, Scalar height, Integer detail) {
+  this.drawElements.drawCapsuleLines( xfo, radius, height, detail );
+}
+
+/// draws a line square given a transform for the square, a length (along X),
+/// a width (along Z).
+/// \dfgPresetDefault length 3.0
+/// \dfgPresetDefault width 5.0
+function InlineDebugShape.drawSquare!(Xfo xfo, Scalar length, Scalar width) {
+  this.drawElements.drawSquare( xfo, length, width );
+}
+
+/// draws a line bounding box given a transform for the box, a minimum and
+/// maximum position.
+/// \dfgPresetDefault bboxmin {"x": -2.0, "y": -2.0, "z": -2.0}
+/// \dfgPresetDefault bboxmax {"x": 2.0, "y": 2.0, "z": 2.0}
+function InlineDebugShape.drawBBox!(Xfo xfo, Vec3 bboxmin, Vec3 bboxmax) {
+  this.drawElements.drawBBox( xfo, bboxmin, bboxmax );
+}
+
+/// draws a cross given a transform
+function InlineDebugShape.drawAxes!(Xfo xfo, Boolean bothSides) {
+  this.drawElements.drawAxes( xfo, bothSides );
+}
+
+/// draws a single triangle given three positions and three normals
+function InlineDebugShape.drawTriangle!(Vec3 p0, Vec3 p1, Vec3 p2, Vec3 n0, Vec3 n1, Vec3 n2) {
+  this.drawElements.drawTriangle( p0, p1, p2, n0, n1, n2 );
+}
+
+
+/// draws a single triangle given three positions and a single normal
+function InlineDebugShape.drawTriangle!(Vec3 p0, Vec3 p1, Vec3 p2, Vec3 n) {
+  this.drawElements.drawTriangle( p0, p1, p2, n );
+}
+
+/// draws a single triangle given only three positions
+function InlineDebugShape.drawTriangle!(Vec3 p0, Vec3 p1, Vec3 p2) {
+  this.drawElements.drawTriangle( p0, p1, p2 );
+}
+
+/// draws a triangle sphere given a transform for the sphere, a radius
+/// and a detail setting. the detail setting describes the 
+/// number of segments along u and v of the sphere (minimum of 3).
+/// \dfgPresetDefault radius 3.0
+/// \dfgPresetDefault detail 12
+function InlineDebugShape.drawTrianglesSphere!(Xfo xfo, Scalar radius, Integer detail) {
+  this.drawElements.drawTrianglesSphere( xfo, radius, detail );
+}
+
+/// draws a triangle cone given a transform for the cone, a radius,
+/// a height (along Y) and a detail setting. the detail setting
+/// describes the segmentation of the cone circle (minimum of 3).
+/// \dfgPresetDefault radius 3.0
+/// \dfgPresetDefault height 7.0
+/// \dfgPresetDefault detail 12
+function InlineDebugShape.drawTrianglesCone!(Xfo xfo, Scalar radius, Scalar height, Integer detail) {
+  this.drawElements.drawTrianglesCone( xfo, radius, height, detail );
+}
+
+/// draws a triangle cube given a transform for the cube, a width (along X),
+/// a height (along Y), a length (along Z).
+/// \dfgPresetDefault width 4.0
+/// \dfgPresetDefault height 4.0
+/// \dfgPresetDefault length 4.0
+function InlineDebugShape.drawTrianglesCube!(Xfo xfo, Scalar width, Scalar height, Scalar length) {
+  this.drawElements.drawTrianglesCube( xfo, width, height, length );
+}
+
+/// draws a triangle plane given a transform for the plane, a width (along X),
+/// a height (along Z).
+/// \dfgPresetDefault width 4.0
+/// \dfgPresetDefault height 4.0
+function InlineDebugShape.drawTrianglesPlane!(Xfo xfo, Scalar width, Scalar height) {
+  this.drawElements.drawTrianglesPlane( xfo, width, height );
+}
+

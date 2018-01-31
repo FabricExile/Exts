@@ -1,0 +1,414 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+//A LocalIndexArray is an alias to a LocalL8UInt32Array. This array will avoid the cost of heap allocations if size <= 8
+alias LocalL8UInt32Array LocalIndexArray;
+
+require Math;
+
+/**
+  A PolygonMeshTopology encapsulates the topological information for a :kl-ref:`PolygonMesh`.
+
+\rst
+
+Please refer to the following guide for an in-depth description of the
+mesh structure, components and attributes:
+
+.. toctree::
+  :maxdepth: 2
+  
+  polygonmeshstructure
+
+\endrst
+\dfgTypeColor Color(51, 1, 106)
+
+*/
+struct PolygonMeshTopology {
+  /// \internal polygon -> [point, neighborPolygonIndex] pairs
+  ArrayOffsetAllocator polyData;
+  /// \internal point -> [polygon, polygonPointIndex] pairs
+  ArrayOffsetAllocator pointData;
+
+  /// \internal unshared attribute index -> point.
+  /// First element index = unsharedAttrToPointSlidingArrayBegin (avoids to frequently move elements)
+  UInt32 unsharedAttrToPointSlidingArray[];
+  /// \internal First element index for unsharedAttrToPointSlidingArray
+  UInt32 unsharedAttrToPointSlidingArrayBegin;
+};
+
+/// \internal
+function PolygonMeshTopology.clear!() {
+  this.polyData.clear();
+  this.pointData.clear();
+  this.unsharedAttrToPointSlidingArray.resize( 0 );
+  this.unsharedAttrToPointSlidingArrayBegin = 0;
+}
+
+/// \internal Returns an approximation of the memory used by the mesh topology, including unused allocated space.
+function Size PolygonMeshTopology.memUsage() {
+  return this.polyData.memUsage() + this.pointData.memUsage() + this.unsharedAttrToPointSlidingArray.size() * 4;
+}
+
+/// \internal Returns the amount of unused allocated memory (due to memory fragmentation).
+function Size PolygonMeshTopology.unusedMemUsage() {
+  return this.polyData.data.unusedSize() + this.pointData.data.unusedSize();
+}
+
+/// \internal Copies the topology data.
+function PolygonMeshTopology._copyStructure!( PolygonMeshTopology src ) {
+  this.polyData = src.polyData.clone();
+  this.pointData = src.pointData.clone();
+  this.unsharedAttrToPointSlidingArray = src.unsharedAttrToPointSlidingArray.clone();
+  this.unsharedAttrToPointSlidingArrayBegin = src.unsharedAttrToPointSlidingArrayBegin;
+}
+
+
+/// \internal Per-attribute data
+struct AttributeInitializedBits {
+
+  /// Per attribute index 'initialized' bit. If false, the attribute value was not initialized.
+  BitVector vertexAttrInitialized;
+  Ref<GeometryAttribute> attrRefKey;//To synchronize
+};
+
+
+/**
+  A PolygonMesh is a geometry made of a collection of polygons connected points.
+  Attributes values, such as UVs and normals, can be attached to the points, and these
+  are contained in a GeometryAttributes container. The PolygonMesh supports spatial queries
+  such as `raycast` by implementing the SpatialQueryable interface.
+
+\rst
+
+Please refer to the following guide for an in-depth description of the
+mesh structure, components and attributes:
+
+.. toctree::
+  :maxdepth: 2
+  
+  polygonmeshstructure
+
+\endrst
+
+  \note Unless stated otherwise, functions that read the mesh are threadsafe only if the mesh structure or attribute sharing layout is not modified. Functions that modify the mesh structure or the attribute sharing layout are not threadsafe.
+
+  \example
+    // create a simple polygon mesh
+    PolygonMesh mesh();
+
+    // begin changes before adding polygons
+    mesh.beginStructureChanges();
+
+    // create points and set their positions
+    Size firstPoint = mesh.createPoints(4);
+    mesh.setPointPosition( 0, Vec3( 0, 0, 0) );
+    mesh.setPointPosition( 1, Vec3( 1, 0, 0) );
+    mesh.setPointPosition( 2, Vec3( 0, 0, 1) );
+    mesh.setPointPosition( 3, Vec3( 1, 0, 1) );
+
+    // create a quad
+    mesh.addPolygon( 0, 2, 3, 1 );
+
+    // end changes bracket (batch update pointPolygons order)
+    mesh.endStructureChanges();
+
+    // generate default normals
+    mesh.recomputePointNormals();
+
+    // print the resulting structure
+    for( Size i = 0; i < mesh.polygonCount(); ++i ) {
+      report("Polygon " + i + ":");
+      for( Size j = 0; j < mesh.getPolygonSize(i); ++j ) {
+        UInt32 point = mesh.getPolygonPoint( i, j );
+        report( "  Point " + point 
+              + ": pos=" + mesh.getPointPosition(point) 
+              + " normal=" + mesh.getPointNormal(point) );
+      }
+    }
+  \endexample
+
+  \dfgTypeColor Color(51, 1, 106)
+*/
+object PolygonMesh : BaseGeometry, Geometry, SpatialQueryable, GeometryAttributesOwnerCallbacks {
+
+  PolygonMeshTopology topology;
+  UInt32 memType; // CPU = 0, GPU = 1;
+
+  /// \internal cache of polygon point count
+  UInt32 totalPolygonPoints;
+
+  /// This version is automatically incremented when attribute sharing layout changes
+  UInt32 attributeSharingVersion;
+
+  /// \internal Last GeometryAttributes keys version (detect if needs to synchronize)
+  UInt32 attributesKeyVersion;
+
+  /// If this is false, pointPolygons will not be reordered.
+  /// This will increase performance if the mesh only needs to hold
+  /// data with no need to query the structure.
+  Boolean maintainOrderedPointPolygons;
+
+
+  /// \internal Records points that need neighborPolygons to be reordering.
+  BitVector unorderedPoints;
+  /// \internal Number of unorderedPoints
+  UInt32 unorderedPointsCount;
+
+  /// \internal Recompact memory if unused/total >= (1 / minFreeDataPortionDiviserToRecompact) and unused > minFreeDataSizeToRecompact
+  UInt8 minFreeDataPortionDiviserToRecompact;
+  /// \internal
+  UInt32 minFreeDataSizeToRecompact;
+
+  /// \internal Current beginStructureChanges bracket count
+  UInt32 topoChangesBracket;
+
+  /// \internal per attribute data (initialized value bits)
+  AttributeInitializedBits attrInitializedBits[];
+
+  /// \internal attribute cache for fast access
+  Ref<Vec3Attribute> positionsAttribute;
+  /// \internal attribute cache for fast access
+  Ref<Vec3_dAttribute> positionsAttribute_d;
+  /// \internal attribute cache for fast access
+  Ref<Vec3Attribute> normalsAttribute;
+  /// \internal attribute cache for fast access
+  Ref<Vec2Attribute> uvs0Attribute;
+
+  /// \internal detecting legal GeometryAttributes.resize()
+  Boolean _currentlyResizing;
+
+  /// \internal positions version at last recomputePointNormals
+  UInt32 normals_lastPositionsVersion;
+  /// \internal hard angle at last recomputePointNormals
+  Scalar normals_lastHardAngle;
+  /// \internal normals version at last recomputeTangents
+  UInt32 tangents_lastNormalsVersion;
+  /// \internal uvs0 version at last recomputeTangents
+  UInt32 tangents_lastUvsVersion;
+
+  /// \internal SpatialQueryable acceleration structure cache (cached from the meta-data dictionary to avoid locks)
+  Object spatialAccelerationCache;//Created on demand. Cache from the meta-data dictionary to avoid locks.
+};
+
+/// \internal initialize members
+inline PolygonMesh._init!(String debugName, Boolean float64Positions) {
+  this.parent._init(debugName);
+  if(float64Positions) {
+    this.positionsAttribute_d = this.attributes.getOrCreatePositions_d();
+  }
+  else{
+    this.positionsAttribute = this.attributes.getPositions();
+  }
+  this.attributes.registerOwner(this);
+
+  //Structure options:
+  this.maintainOrderedPointPolygons = true;
+  this.minFreeDataPortionDiviserToRecompact = 5;//Tolerate 20% of unused space
+  this.minFreeDataSizeToRecompact = 256;
+
+  this.normals_lastPositionsVersion = InvalidIndex;
+  this.normals_lastHardAngle = TWO_PI;
+  this.tangents_lastNormalsVersion = InvalidIndex;
+  this.tangents_lastUvsVersion = InvalidIndex;
+
+}
+
+/// \internal Increment mesh structure version, which includes attribute sharing version
+inline PolygonMesh._incrementStructureVersion!() {
+  ++this.structureVersion;
+  ++this.attributeSharingVersion;
+}
+
+/// \internal Copy the points & polygons structure from another mesh, including attribute sharing information
+function PolygonMesh._copyStructure!( PolygonMesh src ) {
+  this.topology._copyStructure( src.topology );
+  this.totalPolygonPoints = src.totalPolygonPoints;
+
+  this.maintainOrderedPointPolygons = src.maintainOrderedPointPolygons;
+  this.unorderedPoints = src.unorderedPoints.clone();
+  this.unorderedPointsCount = src.unorderedPointsCount;
+
+  this.minFreeDataPortionDiviserToRecompact = src.minFreeDataPortionDiviserToRecompact;
+  this.minFreeDataSizeToRecompact = src.minFreeDataSizeToRecompact;
+
+  this.resizeAttributesInternal(src.attributes.size());
+
+  this.structureVersion += src.structureVersion + 1;
+  this.attributeSharingVersion += src.attributeSharingVersion + 1;
+  this.attributesKeyVersion += src.attributesKeyVersion + 1;
+  this.normals_lastPositionsVersion += src.normals_lastPositionsVersion + 1;
+  this.tangents_lastNormalsVersion += src.tangents_lastNormalsVersion + 1;
+  this.tangents_lastUvsVersion += src.tangents_lastUvsVersion + 1;
+
+  this._incrementStructureVersion();
+}
+
+/// Constructor. By default, the PolygonMesh positions use a Float32 precision.
+inline PolygonMesh() {
+  this._init("PolygonMesh", false);
+}
+
+/// Constructor taking the string to be used as the name. 
+/// \param debugName the name displayed in debugging
+function PolygonMesh(String debugName) {
+  this._init(debugName, false);
+}
+
+/// Constructor.
+/// \param float64Positions If true, positions will use a Float64 precision (Vec3_d)
+inline PolygonMesh(Boolean float64Positions) {
+  this._init("PolygonMesh", float64Positions);
+}
+
+/// Constructor.
+/// \param debugName the name displayed in debugging
+/// \param float64Positions If true, positions will use a Float64 precision (Vec3_d)
+inline PolygonMesh(String debugName, Boolean float64Positions) {
+  this._init(debugName, float64Positions);
+}
+
+/// Returns the debug name used when constructing the geometry.
+function String PolygonMesh.getDebugName() {
+  return this.debugName;
+}
+
+/// Returns the version of the geometry including attribute values
+inline UInt32 PolygonMesh.getVersion() {
+  return this.parent.getVersion();
+}
+
+/// Returns the version of the geometry structure including the the attribute set (but not attribute values).
+inline UInt32 PolygonMesh.getStructureVersion() {
+  return this.parent.getStructureVersion();
+}
+
+/// Returns the metaData container for this Geometry.
+function Ref<ThreadsafeMetaDataContainer> PolygonMesh.getMetaData() {
+  return this.metaData;
+}
+
+/// Clears all data, including points, polygons and attributes.
+/// \note The mesh and attribute versions will be incremented.
+function PolygonMesh.clear!() {
+  UInt32 version = this.structureVersion;
+  UInt32 attributeSharingVersion = this.attributeSharingVersion;
+
+  this.topology.clear();
+
+  this.totalPolygonPoints = 0;
+
+  this.structureVersion = version+1;
+  this.attributeSharingVersion = this.attributeSharingVersion+1;
+
+  Boolean float64Positions = this.positionsAttribute_d;
+  this.attributes.clear();
+  if(float64Positions)
+    this.positionsAttribute_d = this.attributes.getOrCreatePositions_d();
+  else
+    this.positionsAttribute = this.attributes.getOrCreatePositions();
+  this.normalsAttribute = null;
+  this.uvs0Attribute = null;
+
+  this.attrInitializedBits.resize(0);
+  
+  this.unorderedPoints.resize(0);
+  this.unorderedPointsCount = 0;
+}
+
+/// Copies all the data from source, including attributes.
+/// \note This will increments the mesh and attributes' versions.
+function PolygonMesh.copy!( PolygonMesh src ) {
+  this._copyStructure( src );
+  this.attributes.copy(src.attributes);
+
+  this.positionsAttribute = this.attributes.getPositions();
+  this.positionsAttribute_d = this.attributes.getPositions_d();
+  this.normalsAttribute = this.attributes.getNormals();
+  if( src.uvs0Attribute )
+    this.uvs0Attribute = this.attributes.getAttribute( "uvs0" );
+  else
+    this.uvs0Attribute = null;
+
+  this.synchronizeGeometryAttributes();
+
+  //Update attribute cached states.
+  //Our attribute versions don't match input ones, but validity of cached states is preserved.
+  this.normals_lastHardAngle = src.normals_lastHardAngle;
+  if( Boolean(src.positionsAttribute_d) && src.normals_lastPositionsVersion == src.positionsAttribute_d.getVersion() )
+    this.normals_lastPositionsVersion = this.positionsAttribute_d.getVersion();
+
+  if( Boolean(src.positionsAttribute) && src.normals_lastPositionsVersion == src.positionsAttribute.getVersion() )
+    this.normals_lastPositionsVersion = this.positionsAttribute.getVersion();
+
+  if( Boolean(src.normalsAttribute) && src.tangents_lastNormalsVersion == src.normalsAttribute.getVersion() )
+    this.tangents_lastNormalsVersion = this.normalsAttribute.getVersion();
+
+  if( src.tangents_lastUvsVersion != InvalidIndex ) {
+    Ref<Vec2Attribute> uvs = src.getAttribute( "uvs0" );
+    if( Boolean(uvs) && src.tangents_lastUvsVersion == uvs.getVersion() )
+      this.tangents_lastUvsVersion = this.getAttribute( "uvs0" ).getVersion();
+  }
+}
+
+/// Copies all the data from source, including attributes.
+/// \note This will increments the mesh and attributes' versions.
+function PolygonMesh.copy!( Geometry src ) {
+  PolygonMesh srcMesh = src;
+  if(!srcMesh)
+    throw("PolygonMesh Cannot copy data from a non-PolygonMesh. Src Geometry is a :"+src.type());
+  this.copy(srcMesh);
+}
+
+/// \dfgPresetCreate
+PolygonMesh.cloneMembersTo(io PolygonMesh that) {
+  //The difference with default clone() is that new.parent.autoStat will point to 'new' (from constructor)
+  //and updates the cached attribute references
+  that.copy( PolygonMesh(this) );
+  that.debugName = this.debugName;
+}
+
+function LocalBoundingVolume PolygonMesh.getBoundingVolume() {
+  return this.parent.getBoundingVolume();
+}
+
+/// Geometry interface: transforms the positions of the geometry and normals
+PolygonMesh.applyTransform!( Mat44 transform ) {
+  this.parent.applyTransform( transform );
+}
+
+/// Geometry interface: transforms the positions of the geometry and normals
+PolygonMesh.applyTransform!( Xfo transform ) {
+  this.parent.applyTransform( transform );
+}
+
+/// \internal Returns an approximation of the memory used by the mesh structure, including unused allocated space, but excluding attributes.
+function Size PolygonMesh.memUsage() {
+  Size memUsage = this.topology.memUsage() + this.unorderedPoints.memUsage();
+  for( Size i = 0; i < this.attrInitializedBits.size(); ++i )
+    memUsage += this.attrInitializedBits[i].vertexAttrInitialized.getMemUsage();
+
+  return memUsage;
+}
+
+/// \internal Returns the amount of unused allocated memory (due to memory fragmentation).
+function Size PolygonMesh.unusedMemUsage() {
+  return this.topology.unusedMemUsage();
+}
+
+/// Returns the memory location id. CPU = 0, GPU = 1, VSM = 2;
+inline UInt32 PolygonMesh.getMemType( ) {
+  return this.memType;
+}
+
+function PolygonMesh.convertToGPU!() {
+  this.topology.convertToGPU();
+  this.memType = Fabric_MemType_GPU;
+  this._incrementStructureVersion();
+}
+
+function PolygonMesh.convertToCPU!() {
+  this.topology.convertToCPU();
+  this.memType = Fabric_MemType_CPU;
+  this._incrementStructureVersion();
+}

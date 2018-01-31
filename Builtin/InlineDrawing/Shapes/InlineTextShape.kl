@@ -1,0 +1,138 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Text;
+
+/**
+\versionadded 2.4.0
+
+The InlineTextShape inherits from the InlineBaseTextShape object. 
+It provides a shape type to draw text with TextGL. 
+
+\rst
+
+.. kl-example:: InlineTextShape
+    :nooutput:
+
+  // Get or create an InlineAtlasTexture texture (shared)
+  FilePath fontPath = FilePath("${FABRIC_DIR}/Resources/Fonts/Roboto/Roboto-Regular.ttf");
+  Ref<InlineDrawing> drawing = OGLInlineDrawing_GetInstance();
+  InlineAtlasTexture texture = drawing.getOrCreateAtlasTexture(fontPath, 20);
+  
+  // Get the atlas owned by the texture
+  Ref<AtlasGL> atlas = texture.getAtlas(); 
+
+  // Create the shape
+  InlineTextShape shape = InlineTextShape('Text', atlas);
+\endrst
+
+\seealso :kl-ref:`InlineBaseTextShape`.
+
+\dfgPresetOmit
+*/
+object InlineTextShape : InlineBaseTextShape {
+};
+
+/// Constructs a InlineGeometryAttributeTextShape.
+/// \param name The name of the InlineShape
+/// \param atlas A reference to an AtlasGL
+function InlineTextShape(String name, Ref<AtlasGL> atlas) {
+  this.init(name, atlas);
+}
+
+/// Sets the text in world space from a string. 
+/// \param atlas A reference to an AtlasGL
+/// \param text Text to display
+/// \param worldPosition Positions, to place the text on the world space
+/// \param color Text color
+function InlineTextShape.set3DText!(Ref<AtlasGL> atlas, String text, Vec3 worldPosition, Color color) {
+  Boolean atlasChanged = !this.oglText.getAtlas().equal(atlas);
+  if(atlasChanged) this.oglText.setAtlas(atlas);
+
+  this.oglText.allocVertices(1, text.length());
+
+  this.oglText.clearVertices();
+  this.oglText.setState(FreeTypeGL_FROZEN);
+ 
+  this.oglText.pushText(text, color, worldPosition);
+  
+  this.oglText.setState(FreeTypeGL_DIRTY);
+}
+
+/// Sets the text on screen space from a string. 
+/// \param atlas A reference to an AtlasGL
+/// \param text Array of strings to display
+/// \param screenPosition Positions, to place the text on the screen (-1, 1)
+/// \param color Text color
+function InlineTextShape.set2DText!(Ref<AtlasGL> atlas, String text, Vec2 screenPosition, Color color) {
+  Boolean atlasChanged = !this.oglText.getAtlas().equal(atlas);
+  if(atlasChanged) this.oglText.setAtlas(atlas);
+
+  this.oglText.allocVertices(1, text.length());
+
+  this.oglText.clearVertices();
+  this.oglText.setState(FreeTypeGL_FROZEN);
+ 
+  Vec3 pos(screenPosition.x, screenPosition.y, 0.0f);
+  this.oglText.pushText(text, color, pos);
+  
+  this.oglText.setState(FreeTypeGL_DIRTY);
+}
+
+/// Sets the text on world space from an array of string. 
+/// \param atlas A reference to an AtlasGL
+/// \param text Array of strings to display
+/// \param worldPositions Positions, to place the text in the world (-1, 1)
+/// \param color Text color
+function InlineTextShape.set3DTextArray!(Ref<AtlasGL> atlas, String text[], Vec3 worldPositions[], Color color[]) {
+  Boolean atlasChanged = !this.oglText.getAtlas().equal(atlas);
+  if(atlasChanged) this.oglText.setAtlas(atlas);
+
+  if(text.size() != worldPositions.size() || text.size() != color.size())
+    report("InlineTextShape.set3DTex : Inputs arrays have differents size");
+
+  UInt32 maxTextLenght = 0;
+  for(UInt32 i=0; i<text.size(); ++i)
+  {
+    if(maxTextLenght < text[i].length())
+      maxTextLenght = text[i].length();
+  }
+  this.oglText.allocVertices(text.size(), maxTextLenght);
+
+  this.oglText.clearVertices();
+  this.oglText.setState(FreeTypeGL_FROZEN);
+  for(UInt32 i=0; i<text.size(); ++i)
+    this.oglText.pushText(text[i], color[i], worldPositions[i]);
+  this.oglText.setState(FreeTypeGL_DIRTY);
+}
+
+/// Sets the text on screen space from an array of string. 
+/// \param atlas A reference to an AtlasGL
+/// \param text Array of strings to display
+/// \param screenPositions Positions, to place the text on the screen (-1, 1)
+/// \param color Text color
+function InlineTextShape.set2DTextArray!(Ref<AtlasGL> atlas, String text[], Vec2 screenPositions[], Color color[]) {
+  Boolean atlasChanged = !this.oglText.getAtlas().equal(atlas);
+  if(atlasChanged) this.oglText.setAtlas(atlas);
+
+  if(text.size() != screenPositions.size() || text.size() != color.size())
+    report("InlineTextShape.set2DTex : Inputs arrays have differents size");
+
+  UInt32 maxTextLenght = 0;
+  for(UInt32 i=0; i<text.size(); ++i)
+  {
+    if(maxTextLenght < text[i].length())
+      maxTextLenght = text[i].length();
+  }
+  this.oglText.allocVertices(text.size(), maxTextLenght);
+
+  this.oglText.clearVertices();
+  this.oglText.setState(FreeTypeGL_FROZEN);
+  for(UInt32 i=0; i<text.size(); ++i)
+  {
+    Vec3 pos(screenPositions[i].x, screenPositions[i].y, 0.0f);
+    this.oglText.pushText(text[i], color[i], pos);
+  }
+  this.oglText.setState(FreeTypeGL_DIRTY);
+}

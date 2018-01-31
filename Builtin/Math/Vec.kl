@@ -1,0 +1,410 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+/**
+The :kl-ref:`Vec` represents a dense vector.
+
+\rst
+  .. kl-example:: Vec
+
+    // create a 7-element vector
+    Vec vec(7);
+
+\endrst
+
+\dfgTypeColor Color(249, 157, 28)
+\dfgPresetColor Color(99, 129, 92)
+*/
+
+struct Vec {
+  private Scalar vals[];
+};
+
+/// Construct a vector with ``size`` elements
+inline Vec(Integer size) {
+  this.vals.resize(size);
+}
+
+/// Construct a vector with predefined values
+inline Vec(Scalar vals[]) {
+  this.vals = vals.clone();
+}
+
+/// Construct a vector from the vector ``that``
+inline Vec(Vec that) {
+  this.vals = that.vals.clone();
+}
+
+/// Sets from Vec.
+inline Vec.set!(Vec vec) {
+  this.vals = vec.vals.clone();
+}
+
+/// Converts to Vec.
+inline Vec Vec.toVec() {
+  return this;
+}
+
+/// Get the size of the vector
+inline Integer Vec.size() {
+  return this.vals.size();
+}
+
+/// Return all of the values
+inline Scalar[] Vec.getValues() {
+  return this.vals.clone();
+}
+
+/// In Fabric guarded mode this method throws an exception if the size
+/// of the current vector differs from the size of the ``that`` vector
+inline Integer Vec.validateSize(Vec that, String desc) {
+  Integer thisSize = this.size();
+  if (Fabric_Guarded) {
+    Integer thatSize = that.size();
+    if (thatSize != thisSize)
+      throw desc + ": incompatible sizes (" + thisSize + " vs. " + thatSize + ")";
+  }
+  return thisSize;
+}
+
+/// Get value of the vector element at the ``ind`` position
+inline Scalar Vec.get(Integer ind) {
+  return this.vals[ind];
+}
+
+/// Change the number of elements in the vector to ``newSize``
+inline Vec.resize!(Integer newSize) {
+  this.vals.resize(newSize);
+}
+
+/// Set the value of element ``ind`` to ``val``
+inline Vec.set!(Integer ind, Scalar val) {
+  this.vals[ind] = val;
+}
+
+/// Inserts a value ``val`` at index ``ind``.
+/// Resize the vector accordingly if ``ind`` is superior to its size.
+inline Vec.insert!(Integer ind, Scalar val) {
+  this.vals.resize( ind > this.size()  ? ind + 1 : this.size()+1);
+  for(Index i=this.size()-1; i>ind; i--)
+    this.vals[i] = this.vals[i-1];
+  this.vals[ind] = val;
+}
+
+/// Remove and retuens the value at index ``ind``
+/// resize the vector.
+inline Scalar Vec.remove!(Integer ind) {
+  Scalar temp = this.vals[ind];
+  for(Index i=ind; i<this.size()-1; i++)
+    this.vals[i] = this.vals[i+1];
+  this.vals.resize(this.size()-1);
+  return temp;
+}
+
+inline Vec.push_top!(Scalar val) {
+  this.insert(0, val);
+}
+
+inline Vec.push_back!(Scalar val) {
+  this.insert(this.size(), val);
+}
+
+inline Scalar Vec.pop_top!() {
+  return this.remove(0);
+}
+
+inline Scalar Vec.pop_back!() {
+  return this.remove(this.size()-1);
+}
+
+/// Return a String description of this vector and its size
+inline String Vec.sizeDesc() {
+  return "Vec(" + this.size() + ")";
+}
+
+/// Append a String description of this vector's size and contents
+/// to the io variable ``string``
+Vec.appendDesc(io String string) {
+  string += this.sizeDesc();
+  string += ":[";
+  Integer size = this.size();
+  for (Integer ind = 0; ind < size; ++ind) {
+    if (ind > 0)
+      string += " ";
+    string += this.get(ind);
+  }
+  string += "]";
+}
+
+/// Set the value of all vector elements to ``val``
+inline Vec.setAll!(Scalar val) {
+  Integer size = this.size();
+  for (Integer ind = 0; ind < size; ++ind)
+    this.set(ind, val);
+}
+
+/// Set the value of all vector elements to zero
+inline Vec.setNull!() {
+  this.setAll(Scalar());
+}
+
+/// Returns true if this vector is the same as another one
+inline Boolean Vec.equal(Vec that) {
+  for (Integer i = 0; i < this.vals.size(); ++i)
+    if (this.vals[i] != that.vals[i])
+      return false;
+  return true;
+}
+
+/// Returns true if this vector is almost the same as another one
+/// (using a default precision)
+inline Boolean Vec.almostEqual(
+  Vec that,
+  Scalar precision
+  )
+{
+  for (Integer i = 0; i < this.vals.size(); ++i)
+    if (abs(this.vals[i] - that.vals[i]) >= precision)
+      return false;
+  return true;
+}
+
+/// Returns true if this vector is almost the same as another one
+/// (using a default precision)
+inline Boolean Vec.almostEqual(in Vec other) {
+  return this.almostEqual(other, PRECISION);
+}
+
+/// Equals operator
+inline Boolean == (Vec lhs, Vec rhs) {
+  return lhs.equal(rhs);
+}
+
+/// Not equals operator
+inline Boolean != (Vec lhs, Vec rhs) {
+  return !lhs.equal(rhs);
+}
+
+/// Hash for this matrix
+inline UInt32 Vec.hash() {
+  UInt32 hash;
+  for (Integer ind = 0; ind < this.vals.size(); ++ind)
+    hash ^= this.get(ind).hash();
+  return hash;
+}
+
+/// Returns the addition of two matrices
+inline Vec +(Vec a, Vec b) {
+  Integer size = a.validateSize(b, FUNC);
+  Vec result(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    result.set(ind, a.get(ind) + b.get(ind));
+  return result;
+}
+
+/// Add another matrix in place
+inline Vec.+=(Vec that) {
+  Integer size = this.validateSize(that, FUNC);
+  for (Integer ind = 0; ind < size; ++ind)
+    this.set(ind, this.get(ind) + that.get(ind));
+}
+
+/// Returns the addition of two matrices
+inline Vec -(Vec a, Vec b) {
+  Integer size = a.validateSize(b, FUNC);
+  Vec result(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    result.set(ind, a.get(ind) - b.get(ind));
+  return result;
+}
+
+/// Add another matrix in place
+inline Vec.-=(Vec that) {
+  Integer size = this.validateSize(that, FUNC);
+  for (Integer ind = 0; ind < size; ++ind)
+    this.set(ind, this.get(ind) - that.get(ind));
+}
+
+/// unary -
+inline Vec -Vec() {
+  Integer size = this.size();
+  Vec res(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    res.set(ind, -this.get(ind));
+  return res;
+}
+
+inline Vec *(Vec lhs, Scalar rhs) {
+  Integer size = lhs.size();
+  Vec res(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    res.set(ind, lhs.get(ind) * rhs);
+  return res;
+}
+
+inline Vec *(Scalar lhs, Vec rhs) {
+  Integer size = rhs.size();
+  Vec result(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    result.set(ind, lhs * rhs.get(ind));
+  return result;
+}
+
+inline Vec.*=(Scalar val) {
+  Integer size = this.size();
+  for (Integer ind = 0; ind < size; ++ind)
+    this.set(ind, this.get(ind) * val);
+}
+
+inline Vec /(Vec lhs, Scalar rhs) {
+  Integer size = lhs.size();
+  Vec res(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    res.set(ind, lhs.get(ind) / rhs);
+  return res;
+}
+
+inline Vec /(Scalar lhs, Vec rhs) {
+  Integer size = rhs.size();
+  Vec result(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    result.set(ind, lhs / rhs.get(ind));
+  return result;
+}
+
+inline Vec./=(Scalar val) {
+  Integer size = this.size();
+  for (Integer ind = 0; ind < size; ++ind)
+    this.set(ind, this.get(ind) / val);
+}
+
+inline Vec *(Vec lhs, Vec rhs) {
+  Integer size = lhs.validateSize(rhs, FUNC);
+  Vec res(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    res.set(ind, lhs.get(ind) * rhs.get(ind));
+  return res;
+}
+
+inline Vec.*=(Vec val) {
+  Integer size = this.validateSize(val, FUNC);
+  for (Integer ind = 0; ind < size; ++ind)
+    this.set(ind, this.get(ind) * val.get(ind));
+}
+
+inline Vec /(Vec lhs, Vec rhs) {
+  Integer size = lhs.validateSize(rhs, FUNC);
+  Vec res(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    res.set(ind, lhs.get(ind) / rhs.get(ind));
+  return res;
+}
+
+inline Vec./=(Vec val) {
+  Integer size = this.validateSize(val, FUNC);
+  for (Integer ind = 0; ind < size; ++ind)
+    this.set(ind, this.get(ind) / val.get(ind));
+}
+
+inline Scalar Vec.dot(Vec that) {
+  Integer size = this.validateSize(that, FUNC);
+  Scalar res;
+  for (Integer ind = 0; ind < size; ++ind)
+    res += this.get(ind) * that.get(ind);
+  return res;
+}
+
+inline Scalar Vec.lengthSquared() {
+  Integer size = this.size();
+  Scalar res;
+  for (Integer ind = 0; ind < size; ++ind) {
+    Scalar val = this.get(ind);
+    res += val * val;
+  }
+  return res;
+}
+
+/// Return the length of the vector
+inline Scalar Vec.length() {
+  return sqrt(this.lengthSquared());
+}
+
+/// Returns the unit vector of this one, throws and exception if almost zero length
+inline Vec Vec.unit() {
+  Scalar len = this.length();
+  if (Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor(len))
+    Math_reportBadDivisor(len, FUNC);
+  return this / len;
+}
+
+/// Sets this vector to its unit vector
+/// and returns its previous length
+inline Scalar Vec.setUnit!() {
+  Scalar len = this.length();
+  if (Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor(len))
+    Math_reportBadDivisor(len, FUNC);
+  this /= len;
+  return len;
+}
+
+/// Mormalizes the vector, same as setUnit.
+inline Vec.normalize!() {
+  this.setUnit();
+}
+
+/// Clamps this vector per component by a min and max vector
+inline Vec Vec.clamp(Vec min, Vec max) {
+  Integer size = this.validateSize(min, FUNC);
+  this.validateSize(max, FUNC);
+  Vec result(size);
+  for (Integer ind = 0; ind < size; ++ind)
+    result.set(ind, Math_clamp(this.get(ind), min.get(ind), max.get(ind)));
+  return result;
+}
+
+/// Linearly interpolates this vector with another one
+/// based on a scalar blend value (0.0 to 1.0)
+inline Vec Vec.linearInterpolate(Vec that, Scalar t) {
+  return this * (1 - t) + that * t;
+}
+
+// Return a subvector of elements in the range [s, e)
+inline Vec Vec.sub(Integer s, Integer e) {
+  if (Fabric_Guarded) {
+    if (s > e)
+      throw FUNC + ": must have s <= e";
+    if (e > this.size())
+      throw FUNC + ": must have e <= this.size()";
+  }
+  Integer n = e - s;
+  Vec res(n);
+  for (Integer i = 0; i < n; ++i)
+    res.set(i, this.get(s + i));
+  return res;
+}
+
+// Return first part of vector
+inline Vec Vec.head(Integer n) {
+  return this.sub(0, n);
+}
+
+inline Scalar Vec.minimum() {
+  Scalar smallest = this.get(0);
+  for (UInt32 i = 1; i < this.size(); i++) 
+    if (this.get(i) < smallest) smallest = this.get(i);
+  return smallest;
+}
+
+inline Scalar Vec.maximum() {
+  Scalar biggest = this.get(0);
+  for (UInt32 i = 1; i < this.size(); i++) 
+    if (this.get(i) > biggest) biggest = this.get(i);
+  return biggest;
+}
+
+inline Scalar Vec.sum() {
+  Scalar result;
+  for (UInt32 i = 0; i < this.size(); i++)
+      result += this.get(i);
+  return result;
+}

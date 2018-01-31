@@ -1,0 +1,123 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  Specialized GeometryAttribute containing one Mat33 per element.
+  Values can be accessed with the Mat33Attribute.values array member, but its usage might be restricted by the owner Geometry.
+*/
+object Mat33Attribute : BaseAttribute {
+  /// Values array container
+  Mat33 values[];
+};
+
+function StatisticRecord[] Mat33Attribute.getStatistics() {
+  StatisticRecord stats[] = this.parent.getStatistics();
+  stats.push( StatisticRecord( Statistic_MemoryUsage, this.values.size()*4*9 ) );
+  return stats;
+}
+
+/// \dfgPresetOmit
+Mat33Attribute.cloneMembersTo( io Mat33Attribute that ) {
+  //The difference with default clone() is that new.parent.autoStat will point to 'new' (from constructor)
+  this.parent.cloneMembersTo(that);//Copies all but the values
+  that.copyFrom(this);
+}
+
+inline Mat33Attribute.resize!(Size count) {
+  this.parent.resize(count);
+  this.values.resize(count);
+}
+
+inline Boolean Mat33Attribute.checkConsistency() {
+  if( this.size() != this.values.size() )
+    return false;
+  return this.parent.checkConsistency();
+}
+
+inline Data Mat33Attribute.data() {
+  return this.values.data();
+}
+
+inline UInt32 Mat33Attribute.getElementsMemType( ) {
+  return this.values.getElementsMemType();
+}
+
+inline Mat33Attribute.convertToGPU!( ) {
+  this.values.convertToGPU();
+  this.incrementVersion();
+}
+
+inline Mat33Attribute.convertToCPU!( ) {
+  this.values.convertToCPU();
+  this.incrementVersion();
+}
+
+inline Mat33Attribute.copyValue!( Size sourceIndex, Size targetIndex ) {
+  this.values[targetIndex] = this.values[sourceIndex];
+}
+
+inline Mat33Attribute.copyValue!( Ref<Object> sourceAttr, Size sourceIndex, Size targetIndex ) {
+  Ref<Mat33Attribute> source = sourceAttr;
+  this.values[targetIndex] = source.values[sourceIndex];
+}
+
+inline Mat33Attribute.copyFrom!( Ref<Object> otherAttr ) {
+  this.parent.copyFrom( otherAttr );
+  Ref<Mat33Attribute> other = otherAttr;
+  other.values.copyTo(this.values);
+}
+
+/** Returns a linear combination of source values.
+    \param sourceIndices The array of source indices
+    \param sourceWeights The array of source weights, which need to correspond to each sourceIndices. Normally the sum of the weights should be 1.0
+*/
+inline Mat33 Mat33Attribute.getLinearCombination( LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights ) {
+  Mat33 result;
+  for( Size i = 0; i < sourceIndices.size(); ++i )
+    result += this.values[sourceIndices.get(i)]*sourceWeights.get(i);
+  return result;
+}
+
+inline Mat33Attribute.linearCombine!( Ref<Object> sourceAttr, LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights, Size targetIndex ) {
+  Ref<Mat33Attribute> source = sourceAttr;
+  this.values[targetIndex] = source.getLinearCombination( sourceIndices, sourceWeights );
+}
+
+inline Mat33Attribute.setFromScalar!( Size index, LocalL16ScalarArray value ) {
+  this.values[index].row0.x = value.get(0);
+  this.values[index].row0.y = value.get(1);
+  this.values[index].row0.z = value.get(2);
+  this.values[index].row1.x = value.get(0);
+  this.values[index].row1.y = value.get(1);
+  this.values[index].row1.z = value.get(2);
+  this.values[index].row2.x = value.get(0);
+  this.values[index].row2.y = value.get(1);
+  this.values[index].row2.z = value.get(2);
+}
+
+inline Size Mat33Attribute.getScalarValueSize() {
+  return 9;
+}
+
+inline Boolean Mat33Attribute.equalValues( Size index1, Size index2 ) {
+  return this.values[index1].equal( this.values[index2] );
+}
+
+function String Mat33Attribute.valueDesc( Size index ) {
+  return String(this.values[index]);
+}
+
+require Util;
+function String Mat33Attribute.unitTestPrint( Size index ) {
+  return unitTestPrint(this.values[index]);
+}
+
+function String Mat33Attribute.truncateDecimalsPrint( Size index , UInt32 n) {
+  return truncateDecimalsPrint(this.values[index], n);
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+function Ref<Mat33Attribute> GeometryAttributes.getOrCreateMat33Attribute!( String name ) {
+  return this.getOrCreateAttribute( name, Mat33Attribute );
+}

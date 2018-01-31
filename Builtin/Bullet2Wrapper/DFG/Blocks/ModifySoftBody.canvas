@@ -1,0 +1,99 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+    "uiNodeColor" : "{\n  \"r\" : 121,\n  \"g\" : 134,\n  \"b\" : 143\n  }"
+    },
+  "title" : "ModifySoftBody",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Execute" : {}
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "body",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Bt2SoftBody"
+      }
+    ],
+  "blocks" : [
+    {
+      "objectType" : "ExecBlock",
+      "metadata" : {
+        "uiGraphPos" : "{\"x\":0.0,\"y\":0.0}"
+        },
+      "name" : "PerVertex",
+      "ports" : [
+        {
+          "objectType" : "ExecBlockPort",
+          "name" : "exec",
+          "nodePortType" : "Out",
+          "outsidePortType" : "Out",
+          "typeSpec" : "Execute"
+          },
+        {
+          "objectType" : "ExecBlockPort",
+          "name" : "body",
+          "nodePortType" : "IO",
+          "outsidePortType" : "IO",
+          "typeSpec" : "Bt2SoftBody"
+          },
+        {
+          "objectType" : "ExecBlockPort",
+          "name" : "vertex",
+          "nodePortType" : "In",
+          "outsidePortType" : "In",
+          "typeSpec" : "SInt32"
+          }
+        ],
+      "defaultExec" : {
+        "objectType" : "Graph",
+        "title" : "",
+        "ports" : [],
+        "fixedPorts" : [
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "exec",
+            "nodePortType" : "In",
+            "outsidePortType" : "Out"
+            },
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "body",
+            "nodePortType" : "IO",
+            "outsidePortType" : "IO"
+            },
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "vertex",
+            "nodePortType" : "Out",
+            "outsidePortType" : "In"
+            }
+          ],
+        "extDeps" : {},
+        "nodes" : [],
+        "connections" : {}
+        }
+      }
+    ],
+  "extDeps" : {
+    "Bullet2Wrapper" : "*"
+    },
+  "presetGUID" : "AA1F5EAB3781923C4F2FABD023281B58",
+  "code" : "dfgEntry {
+  if(!body.isValid())
+    return;
+  UInt32 count = body.nodeCount();
+  for(UInt32 i=0;i<count;i++)
+    dfgPullBlockPort('PerVertex.exec', body, i);
+}
+"
+  }

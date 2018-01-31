@@ -1,0 +1,57 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+function BaseGeometry.getSkinningAttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  io String type,
+  io UInt16 skinIdValue[],
+  io Float32 skinWeightValue[]
+) {
+  type = "";
+
+  if(!this.getAttributeValue_CheckIndex(mode, index))
+    return;
+
+  SkinningAttribute cast = attr;
+  if(cast == null)
+    return;
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      type = "Skinning";
+      UInt32 count = cast.getPairCount(index);
+      skinIdValue.resize(count);
+      skinWeightValue.resize(count);
+      for(UInt32 i=0;i<count;i++)
+        cast.getPair(index, i, skinIdValue[i], skinWeightValue[i]);
+    }
+    case 2: // per face corner
+    {
+      Size size = mesh.getPolygonSize(index);
+      Size idx = mesh.getPolygonAttributeIndex(index, faceCorner % size);
+      type = "Skinning";
+      UInt32 count = cast.getPairCount(idx);
+      skinIdValue.resize(count);
+      skinWeightValue.resize(count);
+      for(UInt32 i=0;i<count;i++)
+        cast.getPair(idx, i, skinIdValue[i], skinWeightValue[i]);
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValue mode for SkinningAttribute.");
+      return;
+    }
+  }  
+}

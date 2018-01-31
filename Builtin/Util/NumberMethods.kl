@@ -1,0 +1,779 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+require Math;
+
+/// Get significant and exponent
+/// Breaks the floating point number x into its binary significant 
+///(a floating point value between 0.5(included) and 1.0(excluded)) 
+/// and an integral exponent for 2, such that:
+function Float32 frexp(in Float32 value, io Integer e) = "Float32_frexp";
+
+/// Get significant and exponent
+/// Breaks the floating point number x into its binary significant 
+///(a floating point value between 0.5(included) and 1.0(excluded)) 
+/// and an integral exponent for 2, such that:
+function Float64 frexp(in Float64 value, io Integer e) = "Float64_frexp";
+
+/// Generate value from significant and exponent
+/// Returns the result of multiplying x (the significant) by 2 raised
+/// to the power of exp (the exponent).
+function Float32 ldexp(in Float32 value, in Integer e) = "Float32_ldexp";
+
+/// Generate value from significant and exponent
+/// Returns the result of multiplying x (the significant) by 2 raised
+/// to the power of exp (the exponent).
+function Float64 ldexp(in Float64 value, in Integer e) = "Float64_ldexp";
+
+/// Removes accuracy to the Float32 value 
+/// to ensure the same result across all platforms. 
+function Float32 unitTestTruncate(Float32 value){
+  // Don't do anything to Inf and NaN values
+  if (!value.isReg())
+    return value;
+
+  // Remove precision from the value without losing range. 
+  // Extract the significant and exponent.
+  // round the significant to use 5 orders of magnitude. 
+  // regenerate the number. 
+  Integer n;
+  Float32 result = frexp(value, n);
+  result = floor((result * 8192)+0.5) / 8192;//Use a power of 2 to avoid having lower precision bits
+  return Float32(ldexp(result, n));
+}
+
+/// Converts the Scalar value to a string, removing accuracy
+/// to ensure the same result across all platforms. 
+function String unitTestPrint(Float32 value){
+  return(String(unitTestTruncate(value)));
+}
+
+/// Removes accuracy to the Float32 array values 
+/// to ensure the same result across all platforms. 
+function Float32[] unitTestTruncate(Float32 array[]) {
+  Float32 truncateArray[];
+  for(Index i=0; i<array.size(); ++i)
+    truncateArray.push(unitTestTruncate(array[i]));
+  return truncateArray;
+}
+
+/// Converts the Float32 array values to a string, removing accuracy
+/// to ensure the same result across all platforms. 
+function String unitTestPrint(Float32 array[]){
+  return(String(unitTestTruncate(array)));
+}
+
+/// Removes accuracy to the Float64 value 
+/// to ensure the same result across all platforms. 
+function Float64 unitTestTruncate(Float64 value){
+  // Don't do anything to Inf and NaN values
+  if (!value.isReg())
+    return value;
+
+  // Remove precision from the value without losing range. 
+  // Extract the significant and exponent.
+  // round the significant to use 10 orders of magnitude. 
+  // regenerate the number. 
+  Integer n;
+  Float64 result = frexp(value, n);
+  result = floor((result * 1048576)+0.5) / 1048576;//Use a power of 2 to avoid having lower precision bits
+  return Float64(ldexp(result, n));
+}
+
+/// Removes accuracy to the Float64 array values 
+/// to ensure the same result across all platforms. 
+function Float64[] unitTestTruncate(Float64 array[]) {
+  Float64 truncateArray[];
+  for(Index i=0; i<array.size(); ++i)
+    truncateArray.push(unitTestTruncate(array[i]));
+  return truncateArray;
+}
+
+/// Converts the Float64 array valuee to a string, removing accuracy
+/// to ensure the same result across all platforms. 
+function String unitTestPrint(Float64 array[]){
+  return(String(unitTestTruncate(array)));
+}
+
+/// Converts the Scalar value to a string, removing accuracy
+/// to ensure the same result across all platforms. 
+function String unitTestPrint(Float64 value){
+  return String(unitTestTruncate(value));
+}
+
+/// Converts the Scalar value to a string, removing accuracy
+/// to ensure the same result across all platforms. 
+function String unitTestPrint(Complex value){
+  String result = unitTestTruncate(value.re);
+  if (value.im != Complex(0.0)) {
+    result += ",";
+    result += unitTestTruncate(value.im);
+    result += "i";
+  }
+  return result;
+}
+
+/// Converts the Scalar value to a string, removing accuracy
+/// to ensure the same result across all platforms. 
+function String unitTestPrint(Complex_d value){
+  String result = unitTestTruncate(value.re);
+  if (value.im != Complex_d(0.0)) {
+    result += ",";
+    result += unitTestTruncate(value.im);
+    result += "i";
+  }
+  return result;
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms. 
+function String unitTestPrint(ARGB value){
+  return String(value);
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms. 
+function String unitTestPrint(Color value){
+  return "{r:"+unitTestPrint(value.r)+",g:"+unitTestPrint(value.g)+",b:"+unitTestPrint(value.b)+",a:"+unitTestPrint(value.a)+"}";
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms. 
+function String unitTestPrint(Euler value){
+  return "{x:"+unitTestPrint(value.x)+",y:"+unitTestPrint(value.y)+",z:"+unitTestPrint(value.z)+",ro:"+unitTestPrint(value.ro)+"}";
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms. 
+function String unitTestPrint(Mat22 value){
+  return "{row0:"+unitTestPrint(value.row0)+",row1:"+unitTestPrint(value.row1)+"}";
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms. 
+function String unitTestPrint(Mat33 value){
+  return "{row0:"+unitTestPrint(value.row0)+",row1:"+unitTestPrint(value.row1)+",row2:"+unitTestPrint(value.row2)+"}";
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms. 
+function String unitTestPrint(Mat44 value){
+  return "{row0:"+unitTestPrint(value.row0)+",row1:"+unitTestPrint(value.row1)+",row2:"+unitTestPrint(value.row2)+",row3:"+unitTestPrint(value.row3)+"}";
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms. 
+function String unitTestPrint(Quat value){
+  return "{v:"+unitTestPrint(value.v)+",w:"+unitTestPrint(value.w)+"}";
+}
+ 
+/// Converts the value to a string
+/// ensuring the same result across all platforms. 
+function String unitTestPrint(Ray value){
+  return "{start:"+unitTestPrint(value.start)+",direction:"+unitTestPrint(value.direction)+"}";
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms. 
+function String unitTestPrint(RGB value){
+  return String(value);
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms. 
+function String unitTestPrint(RGBA value){
+  return String(value);
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms. 
+function String unitTestPrint(RotationOrder value){
+  return String(value);
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms. 
+function String unitTestPrint(Vec2 value){
+  return "{x:"+unitTestPrint(value.x)+",y:"+unitTestPrint(value.y)+"}";
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms. 
+function String unitTestPrint(Vec3 value){
+  return "{x:"+unitTestPrint(value.x)+",y:"+unitTestPrint(value.y)+",z:"+unitTestPrint(value.z)+"}";
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms. 
+function String unitTestPrint(Vec3_d value){
+  return "{x:"+unitTestPrint(value.x)+",y:"+unitTestPrint(value.y)+",z:"+unitTestPrint(value.z)+"}";
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms. 
+function String unitTestPrint(Vec3_c value){
+  return "{x:"+unitTestPrint(value.x)+",y:"+unitTestPrint(value.y)+",z:"+unitTestPrint(value.z)+"}";
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms. 
+function String unitTestPrint(Vec3_cd value){
+  return "{x:"+unitTestPrint(value.x)+",y:"+unitTestPrint(value.y)+",z:"+unitTestPrint(value.z)+"}";
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms. 
+function String unitTestPrint(Vec4 value){
+  return "{x:"+unitTestPrint(value.x)+",y:"+unitTestPrint(value.y)+",z:"+unitTestPrint(value.z)+",t:"+unitTestPrint(value.t)+"}";
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms. 
+function String unitTestPrint(Xfo value){
+  return "{tr:"+unitTestPrint(value.tr)+",ori:"+unitTestPrint(value.ori)+",sc:"+unitTestPrint(value.sc)+",sh:"+unitTestPrint(value.sh)+"}";
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms. 
+function String unitTestPrint(Box3 value){
+  Box3 temp;
+  temp.min.x = unitTestTruncate(value.min.x);
+  temp.min.y = unitTestTruncate(value.min.y);
+  temp.min.z = unitTestTruncate(value.min.z);
+  temp.max.x = unitTestTruncate(value.max.x);
+  temp.max.y = unitTestTruncate(value.max.y);
+  temp.max.z = unitTestTruncate(value.max.z);
+  return String(temp);
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms.
+function String unitTestPrint(Vec vec) {
+  String string;
+  string += vec.sizeDesc();
+  string += ":[";
+  Integer size = vec.size();
+  for (Integer ind = 0; ind < size; ++ind) {
+    if (ind > 0)
+      string += " ";
+    string += unitTestPrint(vec.get(ind));
+  }
+  string += "]";
+  return string;
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms.
+function String unitTestPrint(Vec_i vec) {
+  String string;
+  string += vec.sizeDesc();
+  string += ":[";
+  Integer size = vec.size();
+  for (Integer ind = 0; ind < size; ++ind) {
+    if (ind > 0)
+      string += " ";
+    string += unitTestPrint(vec.get(ind));
+  }
+  string += "]";
+  return string;
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms.
+function String unitTestPrint(Vec_d vec) {
+  String string;
+  string += vec.sizeDesc();
+  string += ":[";
+  Integer size = vec.size();
+  for (Integer ind = 0; ind < size; ++ind) {
+    if (ind > 0)
+      string += " ";
+    string += unitTestPrint(vec.get(ind));
+  }
+  string += "]";
+  return string;
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms.
+function String unitTestPrint(Vec_c vec) {
+  String string;
+  string += vec.sizeDesc();
+  string += ":[";
+  Integer size = vec.size();
+  for (Integer ind = 0; ind < size; ++ind) {
+    if (ind > 0)
+      string += " ";
+    string += unitTestPrint(vec.get(ind));
+  }
+  string += "]";
+  return string;
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms.
+function String unitTestPrint(Vec_cd vec) {
+  String string;
+  string += vec.sizeDesc();
+  string += ":[";
+  Integer size = vec.size();
+  for (Integer ind = 0; ind < size; ++ind) {
+    if (ind > 0)
+      string += " ";
+    string += unitTestPrint(vec.get(ind));
+  }
+  string += "]";
+  return string;
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms.
+function String unitTestPrint(Mat mat) {
+  String string;
+  string += mat.sizeDesc();
+  string += ":[";
+  for (Integer row = 0; row < mat.rows(); ++row) {
+    if (row > 0)
+      string += " ";
+    string += "[";
+    for (Integer col = 0; col < mat.cols(); ++col) {
+      if (col > 0)
+        string += " ";
+      string += unitTestPrint(mat.get(row, col));
+    }
+    string += "]";
+  }
+  string += "]";
+  return string;
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms.
+function String unitTestPrint(Mat_i mat) {
+  String string;
+  string += mat.sizeDesc();
+  string += ":[";
+  for (Integer row = 0; row < mat.rows(); ++row) {
+    if (row > 0)
+      string += " ";
+    string += "[";
+    for (Integer col = 0; col < mat.cols(); ++col) {
+      if (col > 0)
+        string += " ";
+      string += unitTestPrint(mat.get(row, col));
+    }
+    string += "]";
+  }
+  string += "]";
+  return string;
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms.
+function String unitTestPrint(Mat_d mat) {
+  String string;
+  string += mat.sizeDesc();
+  string += ":[";
+  for (Integer row = 0; row < mat.rows(); ++row) {
+    if (row > 0)
+      string += " ";
+    string += "[";
+    for (Integer col = 0; col < mat.cols(); ++col) {
+      if (col > 0)
+        string += " ";
+      string += unitTestPrint(mat.get(row, col));
+    }
+    string += "]";
+  }
+  string += "]";
+  return string;
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms.
+function String unitTestPrint(Mat_c mat) {
+  String string;
+  string += mat.sizeDesc();
+  string += ":[";
+  for (Integer row = 0; row < mat.rows(); ++row) {
+    if (row > 0)
+      string += " ";
+    string += "[";
+    for (Integer col = 0; col < mat.cols(); ++col) {
+      if (col > 0)
+        string += " ";
+      string += unitTestPrint(mat.get(row, col));
+    }
+    string += "]";
+  }
+  string += "]";
+  return string;
+}
+
+/// Converts the value to a string
+/// ensuring the same result across all platforms.
+function String unitTestPrint(Mat_cd mat) {
+  String string;
+  string += mat.sizeDesc();
+  string += ":[";
+  for (Integer row = 0; row < mat.rows(); ++row) {
+    if (row > 0)
+      string += " ";
+    string += "[";
+    for (Integer col = 0; col < mat.cols(); ++col) {
+      if (col > 0)
+        string += " ";
+      string += unitTestPrint(mat.get(row, col));
+    }
+    string += "]";
+  }
+  string += "]";
+  return string;
+}
+
+
+/// *********************
+/// Keeps the first n decimals. of the value.
+function Float32 truncateDecimals(in Float32 value, in Integer n) {
+  return floor(value * pow(10.0f, n)) / pow(10.0f, n);
+}
+
+/// Keeps the first n decimals. of the value.
+function Float64 truncateDecimals(in Float64 value, in Integer n) {
+  return floor(value * pow(10.0, n)) / pow(10.0, n);
+}
+
+/// Keeps the first n decimals. of Float32 array values 
+function Float32[] truncateDecimals(Float32 array[], in Integer n) {
+  Float32 truncateArray[];
+  for(Index i=0; i<array.size(); ++i)
+    truncateArray.push(truncateDecimals(array[i], n));
+  return truncateArray;
+}
+
+/// Keeps the first n decimals. of Float64 array values 
+function Float64[] truncateDecimals(Float64 array[], in Integer n) {
+  Float64 truncateArray[];
+  for(Index i=0; i<array.size(); ++i)
+    truncateArray.push(truncateDecimals(array[i], n));
+  return truncateArray;
+}
+
+/// Converts the Scalar value to a string, keeping the first n decimals.
+function String truncateDecimalsPrint(Float32 value, Integer n){
+  return(String(truncateDecimals(value, n)));
+}
+
+/// Converts the Float32 array values to a string, keeping the first n decimals.
+function String truncateDecimalsPrint(Float32 array[], UInt32 n){
+  return(String(truncateDecimals(array, n)));
+}
+
+/// Converts the Float64 array valuee to a string, keeping the first n decimals.
+function String truncateDecimalsPrint(Float64 array[], UInt32 n){
+  return(String(truncateDecimals(array, n)));
+}
+
+/// Converts the value to a string, keeping the first n decimals.
+function String truncateDecimalsPrint(Float64 value, UInt32 n){
+  return String(truncateDecimals(value, n));
+}
+
+/// Converts the value to a string, keeping the first n decimals.
+function String truncateDecimalsPrint(Complex value, UInt32 n){
+  String result = truncateDecimals(value.re, n);
+  if (value.im != Complex(0.0)) {
+    result += ",";
+    result += truncateDecimals(value.im, n);
+    result += "i";
+  }
+  return result;
+}
+
+/// Converts the value to a string, keeping the first n decimals.
+function String truncateDecimalsPrint(Complex_d value, UInt32 n){
+  String result = truncateDecimals(value.re, n);
+  if (value.im != Complex_d(0.0)) {
+    result += ",";
+    result += truncateDecimals(value.im, n);
+    result += "i";
+  }
+  return result;
+}
+
+/// Converts the value to a string, keeping the first n decimals. 
+function String truncateDecimalsPrint(ARGB value, UInt32 n){
+  return String(value);
+}
+
+/// Converts the value to a string, keeping the first n decimals. 
+function String truncateDecimalsPrint(Color value, UInt32 n){
+  return "{r:"+truncateDecimalsPrint(value.r, n)+",g:"+truncateDecimalsPrint(value.g, n)+",b:"+truncateDecimalsPrint(value.b, n)+",a:"+truncateDecimalsPrint(value.a, n)+"}";
+}
+
+/// Converts the value to a string, keeping the first n decimals.
+function String truncateDecimalsPrint(Euler value, UInt32 n){
+  return "{x:"+truncateDecimalsPrint(value.x, n)+",y:"+truncateDecimalsPrint(value.y, n)+",z:"+truncateDecimalsPrint(value.z, n)+",ro:"+truncateDecimalsPrint(value.ro, n)+"}";
+}
+
+/// Converts the value to a string, keeping the first n decimals.
+function String truncateDecimalsPrint(Mat22 value, UInt32 n){
+  return "{row0:"+truncateDecimalsPrint(value.row0, n)+",row1:"+truncateDecimalsPrint(value.row1, n)+"}";
+}
+
+/// Converts the value to a string, keeping the first n decimals. 
+function String truncateDecimalsPrint(Mat33 value, UInt32 n){
+  return "{row0:"+truncateDecimalsPrint(value.row0, n)+",row1:"+truncateDecimalsPrint(value.row1, n)+",row2:"+truncateDecimalsPrint(value.row2, n)+"}";
+}
+
+/// Converts the value to a string, keeping the first n decimals. 
+function String truncateDecimalsPrint(Mat44 value, UInt32 n){
+  return "{row0:"+truncateDecimalsPrint(value.row0, n)+",row1:"+truncateDecimalsPrint(value.row1, n)+",row2:"+truncateDecimalsPrint(value.row2, n)+",row3:"+truncateDecimalsPrint(value.row3, n)+"}";
+}
+
+/// Converts the value to a string, keeping the first n decimals. 
+function String truncateDecimalsPrint(Quat value, UInt32 n){
+  return "{v:"+truncateDecimalsPrint(value.v, n)+",w:"+truncateDecimalsPrint(value.w, n)+"}";
+}
+ 
+/// Converts the value to a string, keeping the first n decimals. 
+function String truncateDecimalsPrint(Ray value, UInt32 n){
+  return "{start:"+truncateDecimalsPrint(value.start, n)+",direction:"+truncateDecimalsPrint(value.direction, n)+"}";
+}
+
+/// Converts the value to a string, keeping the first n decimals. 
+function String truncateDecimalsPrint(RGB value, UInt32 n){
+  return String(value);
+}
+
+/// Converts the value to a string, keeping the first n decimals. 
+function String truncateDecimalsPrint(RGBA value, UInt32 n){
+  return String(value);
+}
+
+/// Converts the value to a string, keeping the first n decimals. 
+function String truncateDecimalsPrint(RotationOrder value, UInt32 n){
+  return String(value);
+}
+
+/// Converts the value to a string, keeping the first n decimals. 
+function String truncateDecimalsPrint(Vec2 value, UInt32 n){
+  return "{x:"+truncateDecimalsPrint(value.x, n)+",y:"+truncateDecimalsPrint(value.y, n)+"}";
+}
+
+/// Converts the value to a string, keeping the first n decimals. 
+function String truncateDecimalsPrint(Vec3 value, UInt32 n){
+  return "{x:"+truncateDecimalsPrint(value.x, n)+",y:"+truncateDecimalsPrint(value.y, n)+",z:"+truncateDecimalsPrint(value.z, n)+"}";
+}
+
+/// Converts the value to a string, keeping the first n decimals. 
+function String truncateDecimalsPrint(Vec3_d value, UInt32 n){
+  return "{x:"+truncateDecimalsPrint(value.x, n)+",y:"+truncateDecimalsPrint(value.y, n)+",z:"+truncateDecimalsPrint(value.z, n)+"}";
+}
+
+/// Converts the value to a string, keeping the first n decimals. 
+function String truncateDecimalsPrint(Vec3_c value, UInt32 n){
+  return "{x:"+truncateDecimalsPrint(value.x, n)+",y:"+truncateDecimalsPrint(value.y, n)+",z:"+truncateDecimalsPrint(value.z, n)+"}";
+}
+
+/// Converts the value to a string, keeping the first n decimals. 
+function String truncateDecimalsPrint(Vec3_cd value, UInt32 n){
+  return "{x:"+truncateDecimalsPrint(value.x, n)+",y:"+truncateDecimalsPrint(value.y, n)+",z:"+truncateDecimalsPrint(value.z, n)+"}";
+}
+
+/// Converts the value to a string, keeping the first n decimals. 
+function String truncateDecimalsPrint(Vec4 value, UInt32 n){
+  return "{x:"+truncateDecimalsPrint(value.x, n)+",y:"+truncateDecimalsPrint(value.y, n)+",z:"+truncateDecimalsPrint(value.z, n)+",t:"+truncateDecimalsPrint(value.t, n)+"}";
+}
+
+/// Converts the value to a string, keeping the first n decimals. 
+function String truncateDecimalsPrint(Xfo value, UInt32 n){
+  return "{tr:"+truncateDecimalsPrint(value.tr, n)+",ori:"+truncateDecimalsPrint(value.ori, n)+",sc:"+truncateDecimalsPrint(value.sc, n)+",sh:"+truncateDecimalsPrint(value.sh,n)+"}";
+}
+
+/// Converts the value to a string, keeping the first n decimals. 
+function String truncateDecimalsPrint(Box3 value, UInt32 n){
+  Box3 temp;
+  temp.min.x = truncateDecimals(value.min.x, n);
+  temp.min.y = truncateDecimals(value.min.y, n);
+  temp.min.z = truncateDecimals(value.min.z, n);
+  temp.max.x = truncateDecimals(value.max.x, n);
+  temp.max.y = truncateDecimals(value.max.y, n);
+  temp.max.z = truncateDecimals(value.max.z, n);
+  return String(temp);
+}
+
+/// Converts the value to a string, keeping the first n decimals.
+function String truncateDecimalsPrint(Vec vec, UInt32 n) {
+  String string;
+  string += vec.sizeDesc();
+  string += ":[";
+  Integer size = vec.size();
+  for (Integer ind = 0; ind < size; ++ind) {
+    if (ind > 0)
+      string += " ";
+    string += truncateDecimalsPrint(vec.get(ind), n);
+  }
+  string += "]";
+  return string;
+}
+
+/// Converts the value to a string, keeping the first n decimals.
+function String truncateDecimalsPrint(Vec_i vec, UInt32 n) {
+  String string;
+  string += vec.sizeDesc();
+  string += ":[";
+  Integer size = vec.size();
+  for (Integer ind = 0; ind < size; ++ind) {
+    if (ind > 0)
+      string += " ";
+    string += truncateDecimalsPrint(vec.get(ind), n);
+  }
+  string += "]";
+  return string;
+}
+
+/// Converts the value to a string, keeping the first n decimals.
+function String truncateDecimalsPrint(Vec_d vec, UInt32 n) {
+  String string;
+  string += vec.sizeDesc();
+  string += ":[";
+  Integer size = vec.size();
+  for (Integer ind = 0; ind < size; ++ind) {
+    if (ind > 0)
+      string += " ";
+    string += truncateDecimalsPrint(vec.get(ind), n);
+  }
+  string += "]";
+  return string;
+}
+
+/// Converts the value to a string, keeping the first n decimals.
+function String truncateDecimalsPrint(Vec_c vec, UInt32 n) {
+  String string;
+  string += vec.sizeDesc();
+  string += ":[";
+  Integer size = vec.size();
+  for (Integer ind = 0; ind < size; ++ind) {
+    if (ind > 0)
+      string += " ";
+    string += truncateDecimalsPrint(vec.get(ind), n);
+  }
+  string += "]";
+  return string;
+}
+
+/// Converts the value to a string, keeping the first n decimals.
+function String truncateDecimalsPrint(Vec_cd vec, UInt32 n) {
+  String string;
+  string += vec.sizeDesc();
+  string += ":[";
+  Integer size = vec.size();
+  for (Integer ind = 0; ind < size; ++ind) {
+    if (ind > 0)
+      string += " ";
+    string += truncateDecimalsPrint(vec.get(ind), n);
+  }
+  string += "]";
+  return string;
+}
+
+/// Converts the value to a string, keeping the first n decimals.
+function String truncateDecimalsPrint(Mat mat, UInt32 n) {
+  String string;
+  string += mat.sizeDesc();
+  string += ":[";
+  for (Integer row = 0; row < mat.rows(); ++row) {
+    if (row > 0)
+      string += " ";
+    string += "[";
+    for (Integer col = 0; col < mat.cols(); ++col) {
+      if (col > 0)
+        string += " ";
+      string += truncateDecimalsPrint(mat.get(row, col), n);
+    }
+    string += "]";
+  }
+  string += "]";
+  return string;
+}
+
+/// Converts the value to a string, keeping the first n decimals.
+function String truncateDecimalsPrint(Mat_i mat, UInt32 n) {
+  String string;
+  string += mat.sizeDesc();
+  string += ":[";
+  for (Integer row = 0; row < mat.rows(); ++row) {
+    if (row > 0)
+      string += " ";
+    string += "[";
+    for (Integer col = 0; col < mat.cols(); ++col) {
+      if (col > 0)
+        string += " ";
+      string += truncateDecimalsPrint(mat.get(row, col), n);
+    }
+    string += "]";
+  }
+  string += "]";
+  return string;
+}
+
+/// Converts the value to a string, keeping the first n decimals.
+function String truncateDecimalsPrint(Mat_d mat, UInt32 n) {
+  String string;
+  string += mat.sizeDesc();
+  string += ":[";
+  for (Integer row = 0; row < mat.rows(); ++row) {
+    if (row > 0)
+      string += " ";
+    string += "[";
+    for (Integer col = 0; col < mat.cols(); ++col) {
+      if (col > 0)
+        string += " ";
+      string += truncateDecimalsPrint(mat.get(row, col), n);
+    }
+    string += "]";
+  }
+  string += "]";
+  return string;
+}
+
+/// Converts the value to a string, keeping the first n decimals.
+function String truncateDecimalsPrint(Mat_c mat, UInt32 n) {
+  String string;
+  string += mat.sizeDesc();
+  string += ":[";
+  for (Integer row = 0; row < mat.rows(); ++row) {
+    if (row > 0)
+      string += " ";
+    string += "[";
+    for (Integer col = 0; col < mat.cols(); ++col) {
+      if (col > 0)
+        string += " ";
+      string += truncateDecimalsPrint(mat.get(row, col), n);
+    }
+    string += "]";
+  }
+  string += "]";
+  return string;
+}
+
+/// Converts the value to a string, keeping the first n decimals.
+function String truncateDecimalsPrint(Mat_cd mat, UInt32 n) {
+  String string;
+  string += mat.sizeDesc();
+  string += ":[";
+  for (Integer row = 0; row < mat.rows(); ++row) {
+    if (row > 0)
+      string += " ";
+    string += "[";
+    for (Integer col = 0; col < mat.cols(); ++col) {
+      if (col > 0)
+        string += " ";
+      string += truncateDecimalsPrint(mat.get(row, col), n);
+    }
+    string += "]";
+  }
+  string += "]";
+  return string;
+}

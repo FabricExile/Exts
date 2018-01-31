@@ -1,0 +1,60 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 1.12.0
+
+  :kl-ref:`MouseWheelEvent` object used to propagate mouse wheel events 
+  into the Manipulation system. 
+
+  \seealso :kl-ref:`BaseEvent`
+
+  \dfgPresetOmit
+*/
+object MouseWheelEvent : BaseEvent {
+
+  /// The button state when the event was generated. 
+  /// The button state is a combination of MouseButton_LeftButton, MouseButton_RightButton, MouseButton_MidButton using the OR operator. 
+  /// For mouse move events, this is all buttons that are pressed down. 
+  /// For mouse press and double click events this includes the button that caused the event.
+  /// For mouse release events this excludes the button that caused the event.
+  MouseButton buttons;
+
+  /// The distance that the wheel is rotated, in eighths of a degree. A positive value indicates that the wheel was rotated forwards away from the user; a negative value indicates that the wheel was rotated backwards toward the user.
+  Integer delta;
+
+  /// The cursor position in pixels, relative to the viewport that received the event. 
+  Vec2 pos;
+};
+
+/// Constructor.
+/// \param eventType The mouse event type (wheel).
+/// \param modifiers The key modifier.
+/// \param buttons The button state.
+/// \param delta The mouse wheel delta.
+/// \param pos The mouse position in the viewport.
+/// \param viewport The viewport from where the event has been emitted.
+MouseWheelEvent(
+  EventType eventType, 
+  ModiferKey modifiers, 
+  MouseButton buttons, 
+  Integer delta, 
+  Vec2 pos, 
+  Viewport_Virtual viewport)
+{
+  this.pos = pos;
+  this.delta = delta;
+  this.buttons = buttons;
+  this.viewport = viewport;
+  this.eventType = eventType;
+  this.modifiers = modifiers;
+}
+
+String MouseWheelEvent.describe( Boolean includeContext ) {
+  String result = "MouseWheelEvent pos=(" + Integer( this.pos.x ) + ", " + Integer( this.pos.y ) + ") delta=" + this.delta + " buttons=" + DescribeMouseButtons( this.buttons );
+  result += " event=" + DescribeEventType( this.eventType );
+  if( includeContext )
+    result += " " + this.describeContext();
+  return result;
+}

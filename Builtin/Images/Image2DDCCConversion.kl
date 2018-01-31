@@ -1,0 +1,112 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+ 
+ const Integer Image2D_ExecuteParallel_Count = 10000;
+ 
+  /// \internal
+operator Image2DColor_getColorsAsExternalArrayTask(Index index, io Float32 values<>, Size components, Image2DColor img) {
+  Index offset = index * components;
+  Color col = img.pixels[index];  
+  values[offset++] = col.r;
+  if(components > 1) {
+    values[offset++] = col.g;
+    if(components > 2) {
+      values[offset++] = col.b;
+      if(components > 3)
+        values[offset++] = col.a;
+    }
+  }
+}
+
+/// \internal
+function Image2DColor._getColorsAsExternalArray(io Float32 values<>, Size components) {
+  Image2DColor foo = this;
+  Size imgSize = this.width * this.height;
+  Size totSize = Math_min(values.size() / components, imgSize);
+  if(totSize >= Image2D_ExecuteParallel_Count) {
+    Image2DColor_getColorsAsExternalArrayTask<<<totSize>>>(values, components, foo);
+  } else {
+    for(Size i=0;i<totSize;i++) {
+      Image2DColor_getColorsAsExternalArrayTask(i, values, components, foo);
+    }
+  }
+}
+
+ /// \internal
+operator Image2DColor_setColorsFromExternalArrayTask(Index index, Float32 values<>, Size components, io Image2DColor img) {
+  Index offset = index * components;
+  img.pixels[index].r = values[offset++];
+  if(components > 1) {
+    img.pixels[index].g = values[offset++];
+    if(components > 2) {
+      img.pixels[index].b = values[offset++];
+      if(components > 3)
+        img.pixels[index].a = values[offset++];
+    }
+  }
+}
+
+
+/// \internal
+function Image2DColor._setColorsFromExternalArray!(Float32 values<>, Size components) {
+  Image2DColor foo = this;
+  Size imgSize = this.width * this.height;
+  Size totSize = Math_min(values.size() / components, imgSize);
+  if(totSize >= Image2D_ExecuteParallel_Count) {
+    Image2DColor_setColorsFromExternalArrayTask<<<totSize>>>(values, components, foo);
+  } else {
+    for(Size i=0;i<totSize;i++) {
+      Image2DColor_setColorsFromExternalArrayTask(i, values, components, foo);
+    }
+  }
+  this.incrementVersion();
+}
+
+
+
+  /// \internal
+operator Image2DScalar_getScalarsAsExternalArrayTask(Index index, io Float32 values<>, Size components, Image2DScalar img) {
+  values[index * components] = img.pixels[index];  
+}
+
+
+
+/// \internal
+function Image2DScalar._getScalarsAsExternalArray(io Float32 values<>, Size components) {
+  Image2DScalar foo = this;
+  Size imgSize = this.width * this.height;
+  Size totSize = Math_min(values.size() / components, imgSize);
+  if(totSize >= Image2D_ExecuteParallel_Count) {
+    Image2DScalar_getScalarsAsExternalArrayTask<<<totSize>>>(values, components, foo);
+  } else {
+    for(Size i=0;i<totSize;i++) {
+      Image2DScalar_getScalarsAsExternalArrayTask(i, values, components, foo);
+    }
+  }
+}
+
+
+  /// \internal
+operator Image2DScalar_setScalarsFromExternalArrayTask(Index index, Float32 values<>, Size components, io Image2DScalar img) {
+  img.pixels[index] = values[index * components];
+}
+
+
+/// \internal
+function Image2DScalar._setScalarsFromExternalArray!(Float32 values<>, Size components) {
+  Image2DScalar foo = this;
+  Size imgSize = this.width * this.height;
+  Size totSize = Math_min(values.size() / components, imgSize);
+  if(totSize >= Image2D_ExecuteParallel_Count) {
+    Image2DScalar_setScalarsFromExternalArrayTask<<<totSize>>>(values, components, foo);
+  } else {
+    for(Size i=0;i<totSize;i++) {
+      Image2DScalar_setScalarsFromExternalArrayTask(i, values, components, foo);
+    }
+  }
+  this.incrementVersion();
+}
+
+

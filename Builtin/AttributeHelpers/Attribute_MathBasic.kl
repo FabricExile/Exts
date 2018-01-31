@@ -1,0 +1,274 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+/// mode values can be:
+///    Add (a + b) = 0
+///    Sub (a - b) = 1
+///    Mul (a * b) = 2
+///    Div (a / b) = 3
+///    Min (between a and b)) = 4
+///    Max (between a and b)) = 5
+///    Interpolate (a + (b-a) * t) = 6
+///    AddMul (a + b * t) = 7
+///    InvMul (inv(a) * b) = 8
+///    MulInv (a * inv(b)) = 9
+///    Scale (a * t) = 10
+///    SubOne (1.0 - a) = 11
+///    Inv (1.0 / a) = 12
+///    Neg (-a) = 13
+function Boolean BaseGeometry.performMathBasic!(
+  SInt32 mode,
+  String a,
+  String b,
+  String result,
+  Scalar t,
+  Boolean normalize,
+  Vec2 range,
+  Boolean useSingleValue,
+  SInt32 sint32Value,
+  UInt32 uint32Value,
+  Float32 float32Value,
+  Vec2 vec2Value,
+  Vec3 vec3Value,
+  Vec4 vec4Value,
+  Quat quatValue,
+  Mat33 mat33Value,
+  Mat44 mat44Value,
+  Color colorValue,
+  RGB rgbValue,
+  RGBA rgbaValue
+) {
+
+  GeometryAttributes attributes = this.attributes;
+  GeometryAttribute attrA = attributes.getAttribute(a);
+  if(attrA == null)
+  {
+    report("MathBasic: Error: Attribute '"+a+"'' not found.");
+    return false;
+  }
+
+  Boolean reallyUseSingleValue = useSingleValue;
+  switch(mode)
+  {
+    case 10: // Scale (a * t)
+    case 11: // SubOne (1.0 - a)
+    case 12: // Inv (1.0 / a)
+    case 13: // Neg (-a)
+      reallyUseSingleValue = true;
+  }
+
+  // ensure the second attribute exists for the given cases
+  GeometryAttribute attrB = null;
+  if(!reallyUseSingleValue)
+  {
+    switch(mode)
+    {
+      case 0: // Add (a + b)
+      case 1: // Sub (a - b)
+      case 2: // Mul (a * b)
+      case 3: // Div (a / b)
+      case 4: // Min (between a and b))
+      case 5: // Max (between a and b)) 
+      case 6: // Interpolate (a + (b-a) * t) 
+      case 7: // AddMul (a + b * t) 
+      case 8: // InvMul (inv(a) * b) 
+      case 9: // MulInv (a * inv(b)) 
+      {
+        if(b == "")
+          return false;
+        attrB = attributes.getAttribute(b);
+        if(attrB == null)
+        {
+          report("MathBasic: Error: Attribute '"+b+"'' not found.");
+          return false;
+        }
+        break;
+      }
+    }
+  }
+
+  switch(attrA.type())
+  {
+    case IntegerAttribute:
+    {
+      return this.performMathBasicIntegerAttribute(
+        mode,
+        attributes,
+        attrA,
+        attrB,
+        result,
+        t,
+        normalize,
+        range,
+        reallyUseSingleValue,
+        sint32Value
+      );
+    }
+    case UInt32Attribute:
+    {
+      return this.performMathBasicUInt32Attribute(
+        mode,
+        attributes,
+        attrA,
+        attrB,
+        result,
+        t,
+        normalize,
+        range,
+        reallyUseSingleValue,
+        uint32Value
+      );
+    }
+    case ScalarAttribute:
+    {
+      return this.performMathBasicScalarAttribute(
+        mode,
+        attributes,
+        attrA,
+        attrB,
+        result,
+        t,
+        normalize,
+        range,
+        reallyUseSingleValue,
+        float32Value
+      );
+    }
+    case Vec2Attribute:
+    {
+      return this.performMathBasicVec2Attribute(
+        mode,
+        attributes,
+        attrA,
+        attrB,
+        result,
+        t,
+        normalize,
+        range,
+        reallyUseSingleValue,
+        vec2Value
+      );
+    }
+    case Vec3Attribute:
+    {
+      return this.performMathBasicVec3Attribute(
+        mode,
+        attributes,
+        attrA,
+        attrB,
+        result,
+        t,
+        normalize,
+        range,
+        reallyUseSingleValue,
+        vec3Value
+      );
+    }
+    case Vec4Attribute:
+    {
+      return this.performMathBasicVec4Attribute(
+        mode,
+        attributes,
+        attrA,
+        attrB,
+        result,
+        t,
+        normalize,
+        range,
+        reallyUseSingleValue,
+        vec4Value
+      );
+    }
+    case QuatAttribute:
+    {
+      return this.performMathBasicQuatAttribute(
+        mode,
+        attributes,
+        attrA,
+        attrB,
+        result,
+        t,
+        reallyUseSingleValue,
+        quatValue
+      );
+    }
+    case Mat33Attribute:
+    {
+      return this.performMathBasicMat33Attribute(
+        mode,
+        attributes,
+        attrA,
+        attrB,
+        result,
+        t,
+        reallyUseSingleValue,
+        mat33Value
+      );
+    }
+    case Mat44Attribute:
+    {
+      return this.performMathBasicMat44Attribute(
+        mode,
+        attributes,
+        attrA,
+        attrB,
+        result,
+        t,
+        reallyUseSingleValue,
+        mat44Value
+      );
+    }
+    case ColorAttribute:
+    {
+      return this.performMathBasicColorAttribute(
+        mode,
+        attributes,
+        attrA,
+        attrB,
+        result,
+        t,
+        normalize,
+        range,
+        reallyUseSingleValue,
+        colorValue
+      );
+    }
+    case RGBAttribute:
+    {
+      return this.performMathBasicRGBAttribute(
+        mode,
+        attributes,
+        attrA,
+        attrB,
+        result,
+        t,
+        normalize,
+        range,
+        reallyUseSingleValue,
+        rgbValue
+      );
+    }
+    case RGBAAttribute:
+    {
+      return this.performMathBasicRGBAAttribute(
+        mode,
+        attributes,
+        attrA,
+        attrB,
+        result,
+        t,
+        normalize,
+        range,
+        reallyUseSingleValue,
+        rgbaValue
+      );
+    }
+    default:
+    {
+      report("MathBasic: Error: Unsupported attribute type '"+attrA.type()+"'.");
+      return false;
+    }
+  }
+}

@@ -1,0 +1,72 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require InlineDrawing;
+
+
+/**
+\versionadded 1.12.0
+
+The :kl-ref:`PositionGizmoHandler` converts mouse events into translation in 3D.
+
+\seealso GizmoHandler, BaseGizmoHandler
+\dfgPresetOmit
+*/
+object PositionGizmoHandler : BaseGizmoHandler {
+  Boolean dragging;
+  Vec3 p1, p2;
+  Vec3 hitPointStart;
+};
+
+function PositionGizmoHandler(InlineInstance owner, GizmoManipulationCallback callback){
+  this.init(owner, callback);
+}
+
+function PositionGizmoHandler(InlineInstance owner, GizmoManipulationCallback callback, EvalContext evalContext){
+  this.init(owner, callback, evalContext);
+}
+
+function PositionGizmoHandler.onEvent!(io MouseEvent mouseEvent){
+  if(mouseEvent.eventType() == Event_MouseButtonPress){
+    // On Mousedown.
+    if(mouseEvent.button == MouseButton_LeftButton){
+      Ref<InlineViewport> viewport = mouseEvent.getViewport();
+      Ray ray = viewport.calcRayFromScreenPos(mouseEvent.pos);
+      Xfo xfo = this.owner.getTransform().getGlobalXfo(0);
+      this.p1 = xfo.tr;
+      Mat44 camMat = mouseEvent.getViewport().getCamera().getMat44();
+      this.p2 = Xfo(camMat).ori.getZaxis();
+
+      this.hitPointStart = ray.intersectPlaneVec3(this.p1, this.p2);
+      this.dragging = true;
+
+      this.callback.onDragBegin(mouseEvent);
+      mouseEvent.accept();
+    }
+  }
+  else if(mouseEvent.eventType() == Event_MouseMove){
+    // On drag
+    if(this.dragging){
+      Ref<InlineViewport> viewport = mouseEvent.getViewport();
+      Ray ray = viewport.calcRayFromScreenPos(mouseEvent.pos);
+
+      Vec3 hitPoint2 = ray.intersectPlaneVec3(this.p1, this.p2);
+      Xfo delta();
+      delta.tr = hitPoint2 - this.hitPointStart;
+      
+      this.callback.onDrag(mouseEvent, Xfo(), delta, ManipulationMode_Position);
+      mouseEvent.accept();
+    }
+  }
+  else if(mouseEvent.eventType() == Event_MouseButtonRelease){
+    // On release
+    if(this.dragging){
+      this.dragging = false;
+      this.callback.onDragEnd(mouseEvent);
+      mouseEvent.accept();
+    }
+  }
+}
+
+

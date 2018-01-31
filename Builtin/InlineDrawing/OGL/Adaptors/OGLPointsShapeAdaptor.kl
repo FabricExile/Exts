@@ -1,0 +1,112 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+\versionadded 1.12.0
+
+The OGLPointsShapeAdaptor implements the InlineShapeAdaptor interface. It is used to draw a InlinePointsShape within an OpenGL viewport.
+\dfgPresetOmit
+*/
+object OGLPointsShapeAdaptor : InlineShapeAdaptor {};
+
+/// default constructor
+function OGLPointsShapeAdaptor() {}
+
+/// returns the types this adaptor is capable of drawing
+function String[] OGLPointsShapeAdaptor.getShapeTypes() {
+  String result[];
+  result.push('InlinePointsShape');
+  return result;
+}
+
+/// draws the points to the screen. this is used by the 
+/// InlineInstance, and should not be called manually.
+/// \internal
+function Boolean OGLPointsShapeAdaptor.draw!(io DrawContext context, io Ref<InlineShape> shape) {
+
+  // access the points shape
+  InlinePointsShape pointsShape = shape;
+  Points points = pointsShape.getPoints();
+  if(points == null)
+    return true;
+  
+  OGLBufferDictionary buffers = pointsShape.getMetaData('buffers');
+  if(buffers == null) {
+    buffers = OGLBufferDictionary();
+    pointsShape.setMetaData('buffers', buffers);
+  }
+
+  if(points.size() == 0)
+    return true;
+  
+  // reset all versions if the uid changed
+  if(buffers.getVersion('uid') != points.uid()) {
+    buffers.resetAllVersions();
+    buffers.setVersion('uid', points.uid());
+  }
+
+  Ref<InlineShader> shader = context.getMetaData('currentShader');
+  OGLShape_updateGeometryAttributeBuffers(context, buffers, points.getAttributes());
+
+  if(buffers.getVersion('topology') != points.size()) {
+    OGLBuffer buffer = buffers.get('topology');
+    if(buffer == null) {
+      buffer = OGLBuffer();
+      buffer.bufferType = GL_ARRAY_BUFFER;
+      buffer.bufferUsage = GL_STATIC_DRAW;
+      buffers.set('topology', buffer);
+    }
+    if( buffer.bufferID )
+      buffer.bufferUsage = GL_DYNAMIC_DRAW;//Loaded at least 2 times: lazily upgrade to "dynamic"
+
+    UInt32 indices[];
+    indices.resize(points.size());
+    for(Size i=0;i<indices.size();i++)
+      indices[i] = i;
+
+    buffer.bufferElementComponentType = GL_UNSIGNED_INT;
+
+    buffer.genBuffer(indices.data(), indices.dataSize(), indices.size());
+
+    buffers.setVersion('topology', points.size());
+  }
+
+  OGLBuffer buffer = buffers.get('topology');
+  if(buffer == null){
+    report("Warning: invalid topology for :" +shape.getName());
+    return false;
+  }
+
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffer.bufferID);
+
+  glPointSize(pointsShape.getPointSize());
+
+  Data NULL;
+  Ref<InlineInstance> instance = context.getMetaData('currentInstance');
+  Xfo xfos[] = instance.transform.nonLocking_getAllGlobalXfos();
+
+  if(shader.supportsHardwareInstancing())
+  {
+    shader.enableHardwareInstancing(context, true, instance.instancingStorage, xfos, instance.transform.getVersion());
+
+    glDrawElementsInstanced(GL_POINTS, buffer.elementCount, buffer.bufferElementComponentType, NULL, xfos.size());
+
+    shader.enableHardwareInstancing(context, false, instance.instancingStorage, xfos, instance.transform.getVersion());
+  }
+  else
+  {
+    for(Size i=0;i<xfos.size();i++)
+    {
+      if(!OGLTransform_draw(context, shader, xfos[i].toMat44()))
+        return false;
+      if(!instance.drawTransformUniforms(context, shader, i))
+        return false;
+      glDrawElements(GL_POINTS, buffer.elementCount, buffer.bufferElementComponentType, NULL);
+    }
+  }
+
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+  return true;
+}

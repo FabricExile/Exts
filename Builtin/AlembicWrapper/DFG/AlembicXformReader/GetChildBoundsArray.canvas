@@ -1,0 +1,71 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "returns the bounding box\n\nSupported types:\n  this: AlembicXformReader\n  time: Float64\n  result: Box3\n"
+    },
+  "title" : "GetChildBounds[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicXformReader[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "time",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float64[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float64[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Box3[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "C1F2BD910D1706DE77184668269A77FE",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicXformReader_getChildBounds_task<<<index>>>(
+  io Box3[] result
+, io AlembicXformReader[] this
+, in Float64[] time
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].getChildBounds(time[index < time.size() ? index : time.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( time.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < time.size()) task_size = time.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      AlembicWrapper_AlembicXformReader_getChildBounds_task(index, result, this, time);
+    }
+  } else {
+    AlembicWrapper_AlembicXformReader_getChildBounds_task<<<task_size>>>(result, this, time);
+  }
+}
+"
+  }

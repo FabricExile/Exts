@@ -1,0 +1,112 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  const String ScaleAlongAxisTool_XfoChanged = "scAxis_changed";
+
+  /// This tool allows to scale a :kl-ref:`Tool::TransformTarget` along
+  /// an axis by clicking on a 3D arrow. The tool creates a :kl-ref:`ScaleAlongAxisDragInteraction` 
+  /// to map mouse moves to transform changes.
+  ///
+  /// While this tool is used as a sub-tool of the :kl-ref:`ScaleTool`,
+  /// it can also be created independently.
+  object ScaleAlongAxisTool : XfoTargetAlignedGizmo{
+    Vec3 axisDirection;
+    Boolean localTranslate;
+    ScaleAlongAxisDragInteraction scaleInteraction;
+
+    Scalar handleLength, handleSpacing, handleWidth;
+    Color handleColor;
+    DrawElements handleElts;
+
+    Float32 drawScaleFactor;
+  };
+
+  ScaleAlongAxisTool( TransformTarget target, Vec3 axisDirection, Color handleColor, Scalar handleLength, Scalar handleSpacing, Scalar handleWidth, Color highlightColor ) {
+    this.construct( target, axisDirection, handleColor, handleLength, handleSpacing, handleWidth, highlightColor );
+  }
+
+  ScaleAlongAxisTool.construct!( TransformTarget target, Vec3 axisDirection, Color handleColor, Scalar handleLength, Scalar handleSpacing, Scalar handleWidth, Color highlightColor ) {
+
+    this.axisDirection = axisDirection;
+    this.drawScaleFactor = 1;
+    this.handleLength = handleLength;
+    this.handleSpacing = handleSpacing;
+    this.handleWidth = handleWidth;
+    this.handleColor = handleColor;
+
+    // Add a drag interaction to the shape
+    MouseClickDragRaycastInteraction clickAndDragInteraction();
+    this.scaleInteraction = ScaleAlongAxisDragInteraction( clickAndDragInteraction, target, axisDirection, this.localTranslate );
+    this.attachComponent( this.scaleInteraction );
+    this.scaleInteraction.addListener( this, false, ToolEvent_DragMove, ScaleAlongAxisTool_XfoChanged );
+    this.scaleInteraction.addListener( this, false, ToolEvent_DragEnd, ScaleAlongAxisTool_XfoChanged );
+
+    GeometricShape gizmoShape();
+    this.handleElts = DrawElements();
+    gizmoShape.setGeometry( this.handleElts );
+    Xfo localTransform;
+    localTransform.ori.setFrom2Vectors( Vec3( 0, 1, 0 ), axisDirection.unit_safe() );
+    gizmoShape.setLocalTransform( localTransform );
+
+    this.parent.construct( target, highlightColor, gizmoShape, this.scaleInteraction );
+    this.enableLocalTranslation( true );
+
+    this.updateHandle();
+  }
+
+  ScaleAlongAxisTool.enableLocalTranslation!( Boolean localTranslate ) {
+    this.localTranslate = localTranslate;
+    this.alignModifier.setAlignType( true, this.localTranslate, false, true );
+    this.scaleInteraction.setLocal( localTranslate );
+  }
+
+  ScaleAlongAxisTool.updateHandle!() {
+    // Draw in local space (Y up)
+    this.handleElts.clear();
+    this.handleElts.setPen( this.handleColor, 1 );
+
+    this.handleElts.drawTrianglesCube( Xfo( Vec3(0,1,0) * this.drawScaleFactor * this.handleLength ), this.handleWidth, this.handleWidth, this.handleWidth );
+
+    Scalar endY = this.handleSpacing;
+    if( this.drawScaleFactor < 0 )
+      endY = -endY;
+    if( abs( this.drawScaleFactor ) < this.handleSpacing )
+      endY = 0;
+
+    this.handleElts.drawLine( Vec3( 0, endY, 0 ), Vec3( 0, this.drawScaleFactor * this.handleLength, 0 ) );
+  }
+
+  ScaleAlongAxisTool.onEnterState!( String newState, Boolean mainState ) {
+    this.parent.onEnterState( newState, mainState );
+    switch( newState ) {
+      case XfoTargetAlignedGizmo_waiting:
+      {
+        // Restore
+        if( this.localTranslate )
+          this.alignModifier.freezeTransform( false );
+      }
+      case XfoTargetAlignedGizmo_dragging:
+      {
+        // Freeze the rotation else axis can flip because of negative scaling
+        if( this.localTranslate )
+          this.alignModifier.freezeTransform( true );
+      }
+    }
+  }
+
+  ScaleAlongAxisTool.setDrawScaleFactor!( Scalar factor ) {
+    this.drawScaleFactor = factor;
+    this.updateHandle();
+  }
+
+  /// \internal
+  ScaleAlongAxisTool.onEvent!( ToolEvent event, ToolEventUserID userID ) {
+    if( event.name == ScaleAlongAxisTool_XfoChanged )
+      this.setDrawScaleFactor( this.scaleInteraction.lastFactor );
+    this.parent.onEvent( event, userID );
+  }
+
+}// namespace Tool

@@ -1,0 +1,532 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/**
+The :kl-ref:`Vec4_i` type represents a vector with 4 components. The :kl-ref:`Vec4_i` is also used as the row type for the :kl-ref:`Mat44`.
+
+\rst
+  .. kl-example:: Vec4_i
+
+    Vec4_i v(0.0, 0.0, 0.0, 0.0);
+
+\endrst
+\note Vec4_i utilizes the KL :ref:`vector_functions`
+\seealso Vec2, Vec3_i
+\dfgTypeColor Color(255, 242, 0)
+\dfgPresetColor Color(99, 129, 92)
+*/
+struct Vec4_i
+{
+  SInt32 x;
+  SInt32 y;
+  SInt32 z;
+  SInt32 t;
+};
+
+/// Default constructor
+inline Vec4_i() {
+  this.set(0, 0, 0, 0);
+}
+
+/// Constructor from scalar components
+inline Vec4_i(SInt32 x, SInt32 y, SInt32 z, SInt32 t) {
+  this.set(x, y, z, t);
+}
+
+
+/// Setter from scalar components
+inline Vec4_i.set!(SInt32 x, SInt32 y, SInt32 z, SInt32 t) {
+  this.x = x;
+  this.y = y;
+  this.z = z;
+  this.t = t;
+}
+
+/// Setter from same scalar for all components
+inline Vec4_i.set!(SInt32 value) {
+  this.x = value;
+  this.y = value;
+  this.z = value;
+  this.t = value;
+}
+
+/// Constructor with same scalar for all components
+inline Vec4_i(SInt32 value) {
+  this.set(value);
+}
+
+/// Setter from a Vec3_i (t = 1.0)
+inline Vec4_i.set!(Vec3_i v) {
+  this.x = v.x;
+  this.y = v.y;
+  this.z = v.z;
+  this.t = SInt32(1.0);
+}
+
+/// Setter from (standard/external) float32 array and an offset
+inline Vec4_i.set!(Float32 v<>, UInt32 o) {
+  if(v.size() >= 4 + o) {
+    this.x = v[o + 0];
+    this.y = v[o + 1];
+    this.z = v[o + 2];
+    this.t = v[o + 3];
+  }
+}
+
+/// Getter as external float32 array and an offset
+inline Vec4_i.get(io Float32 v<>, UInt32 o) {
+  if(v.size() >= 4 + o) {
+    v[o + 0] = Float32(this.x);
+    v[o + 1] = Float32(this.y);
+    v[o + 2] = Float32(this.z);
+    v[o + 3] = Float32(this.t);
+  }
+}
+
+/// Getter as float32 array and an offset
+inline Vec4_i.get(io Float32 v[], UInt32 o) {
+  if(v.size() < 4 + o)
+    v.resize(4 + o);
+  v[o + 0] = Float32(this.x);
+  v[o + 1] = Float32(this.y);
+  v[o + 2] = Float32(this.z);
+  v[o + 3] = Float32(this.t);
+}
+
+/// Setter from (standard/external) float64 array and an offset
+inline Vec4_i.set!(Float64 v<>, UInt32 o) {
+  if(v.size() >= 4 + o) {
+    this.x = Float32(v[o + 0]);
+    this.y = Float32(v[o + 1]);
+    this.z = Float32(v[o + 2]);
+    this.t = Float32(v[o + 3]);
+  }
+}
+
+/// Getter as external float64 array and an offset
+inline Vec4_i.get(io Float64 v<>, UInt32 o) {
+  if(v.size() >= 4 + o) {
+    v[o + 0] = this.x;
+    v[o + 1] = this.y;
+    v[o + 2] = this.z;
+    v[o + 3] = this.t;
+  }
+}
+
+/// Getter as float64 array and an offset
+inline Vec4_i.get(io Float64 v[], UInt32 o) {
+  if(v.size() < 4 + o)
+    v.resize(4 + o);
+  v[o + 0] = this.x;
+  v[o + 1] = this.y;
+  v[o + 2] = this.z;
+  v[o + 3] = this.t;
+}
+
+/// Setter from (standard/external) float32 array
+inline Vec4_i.set!(Float32 v<>) {
+  this.set(v, 0);
+}
+
+/// Getter as external float32 array
+inline Vec4_i.get(io Float32 v<>) {
+  this.get(v, 0);
+}
+
+/// Getter as float32 array
+inline Vec4_i.get(io Float32 v[]) {
+  this.get(v, 0);
+}
+
+/// Setter from (standard/external) float64 array
+inline Vec4_i.set!(Float64 v<>) {
+  this.set(v, 0);
+}
+
+/// Getter as external float64 array
+inline Vec4_i.get(io Float64 v<>) {
+  this.get(v, 0);
+}
+
+/// Getter as float64 array
+inline Vec4_i.get(io Float64 v[]) {
+  this.get(v, 0);
+}
+
+/// Sets from Vec.
+inline Vec4_i(Vec_i vec) {
+  this.set(vec);
+}
+
+/// Sets from Vec.
+inline Vec4_i.set!(Vec_i vec) {
+  this.x = vec.get(0);
+  this.y = vec.get(1);
+  this.z = vec.get(2);
+  this.t = vec.get(3);
+}
+
+/// Converts to Vec.
+inline Vec_i Vec4_i.toVec() {
+  Vec_i vec(4);
+  vec.set(0, this.x);
+  vec.set(1, this.y);
+  vec.set(2, this.z);
+  vec.set(3, this.t);
+  return vec;
+}
+
+/// Sets all components of this vec to 0.0
+inline Vec4_i.setNull!() {
+  this.x = this.y = this.z = this.t = SInt32();
+}
+
+/// Returns true if this vector is the same as another one
+inline Boolean Vec4_i.equal(in Vec4_i other) {
+  return this.x == other.x && this.y == other.y && this.z == other.z && this.t == other.t;
+}
+
+/// Returns true if this vector is the same as another one
+/// (given a precision)
+inline Boolean Vec4_i.almostEqual(in Vec4_i other, in SInt32 precision) {
+  return
+      (abs(this.x - other.x) < precision) &&
+      (abs(this.y - other.y) < precision) &&
+      (abs(this.z - other.z) < precision) &&
+      (abs(this.t - other.t) < precision);
+}
+
+/// Returns true if this vector is the same as another one
+/// (using a default precision)
+inline Boolean Vec4_i.almostEqual(in Vec4_i other) {
+  return this.almostEqual(other, PRECISION);
+}
+
+/// Returns a Vec3_i containing the X, Y and Z components.
+inline Vec3_i Vec4_i.xyz() {
+  return Vec3_i(this.x, this.y, this.z);
+}
+
+/// Returns the component of this vector by index
+inline SInt32 Vec4_i.component( Size i ) {
+  if(i == 0)
+    return this.x;
+  else if(i == 1)
+    return this.y;
+  else if(i == 2)
+    return this.z;
+  else
+    return this.t;
+}
+
+/// Sets the component of this vector by index
+inline Vec4_i.setComponent!( Size i, SInt32 v ) {
+  if(i == 0)
+    this.x = v;
+  else if(i == 1)
+    this.y = v;
+  else if(i == 2)
+    this.z = v;
+  else
+    this.t = v;
+}
+
+/// Equals operator
+inline Boolean == (Vec4_i a, Vec4_i b) {
+  return a.x == b.x && a.y == b.y && a.z == b.z && a.t == b.t;
+}
+
+/// Not equals operator
+inline Boolean != (Vec4_i a, Vec4_i b) {
+  return a.x != b.x || a.y != b.y || a.z != b.z || a.t != b.t;
+}
+
+/// Hash for this value
+inline UInt32 Vec4_i.hash() {
+  return this.x.hash() ^ this.y.hash() ^ this.z.hash() ^ this.t.hash();
+}
+
+/// Adds to vectors
+inline Vec4_i + (Vec4_i a, Vec4_i b) {
+  return vecAdd(a, b);
+}
+
+/// Adds a vector to this one
+inline Vec4_i. += (Vec4_i other) {
+  this = this + other;
+}
+
+/// Subtracts two vectors
+inline Vec4_i - (Vec4_i a, Vec4_i b) {
+  return vecSub(a, b);
+}
+
+/// Subtracts a vector from this one
+inline Vec4_i. -= (Vec4_i other) {
+  this = this - other;
+}
+
+/// Multiplies a scalar and a vector
+/// \dfgPresetDefault a 1
+inline Vec4_i * (SInt32 a, Vec4_i b) {
+  return vecMul(a, b);
+}
+
+/// Multiplies a vector and a scalar
+/// \dfgPresetDefault b 1
+inline Vec4_i * (Vec4_i a, SInt32 b) {
+  return vecMul(a, b);
+}
+
+/// Multiplies two vectors
+/// \dfgPresetDefault b {"x": 1, "y": 1, "z": 1, "t": 1}
+inline Vec4_i * (Vec4_i a, Vec4_i b) {
+  return vecMul(a, b);
+}
+
+/// Multiplies this vector with a scalar
+/// \dfgPresetDefault other 1
+inline Vec4_i. *= (SInt32 other) {
+  this = this * other;
+}
+
+/// Multiplies this vector with another one
+/// \dfgPresetDefault other {"x": 1, "y": 1, "z": 1, "t": 1}
+inline Vec4_i. *= (Vec4_i other) {
+  this = this * other;
+}
+
+/// Divides two vectors
+/// \dfgPresetDefault b {"x": 1, "y": 1, "z": 1, "t": 1}
+inline Vec4_i / (Vec4_i a, Vec4_i b) {
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( b.x ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( b.x, "Vec4_i.divide: b.x" );
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( b.y ) )
+    Math_reportBadDivisor( b.y, "Vec4_i.divide: b.y" );
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( b.z ) )
+    Math_reportBadDivisor( b.z, "Vec4_i.divide: b.z" );
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( b.t ) )
+    Math_reportBadDivisor( b.t, "Vec4_i.divide: b.t" );
+  return vecDiv(a, b);
+}
+
+/// Divides a vector by a scalar
+/// \dfgPresetDefault b 1
+inline Vec4_i / (Vec4_i a, SInt32 b) {
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( b ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( b, "Vec4_i.divide" );
+  return vecDiv(a, b);
+}
+
+/// Divides this vector with a scalar
+/// \dfgPresetDefault other 1
+inline Vec4_i. /= (SInt32 other) {
+  this = this / other;
+}
+
+/// Divides this vector with another one
+/// \dfgPresetDefault other {"x": 1, "y": 1, "z": 1, "t": 1}
+inline Vec4_i. /= (Vec4_i other) {
+  this = this / other;
+}
+
+/// Overload method for the add operator
+inline Vec4_i Vec4_i.add(Vec4_i other) {
+  return this + other;
+}
+
+/// Overload method for the subtract operator
+inline Vec4_i Vec4_i.subtract(Vec4_i other) {
+  return this - other;
+}
+
+/// Overload method for the multiply operator
+/// \dfgPresetDefault other {"x": 1, "y": 1, "z": 1, "t": 1}
+inline Vec4_i Vec4_i.multiply(Vec4_i other) {
+  return this * other;
+}
+
+/// Overload method for the divide operator
+/// \dfgPresetDefault other {"x": 1, "y": 1, "z": 1, "t": 1}
+inline Vec4_i Vec4_i.divide(Vec4_i other) {
+  return this / other;
+}
+
+/// Returns the product of this vector and a scalar
+/// \dfgPresetDefault other 1
+inline Vec4_i Vec4_i.multiplySInt32(SInt32 other) {
+  return this * other;
+}
+
+/// Returns the division of this vector and a scalar
+/// \dfgPresetDefault other 1
+inline Vec4_i Vec4_i.divideSInt32(SInt32 other) {
+  return this / other;
+}
+
+/// Returns the negated version of this vector
+inline Vec4_i Vec4_i.negate() {
+  return Vec4_i(-this.x, - this.y, - this.z, - this.t);
+}
+
+/// Returns the inversed version of this vector
+inline Vec4_i Vec4_i.inverse() {
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( this.x ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( this.x, "Vec4_i.inverse: this.x" );
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( this.y ) )
+    Math_reportBadDivisor( this.y, "Vec4_i.inverse: this.y" );
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( this.z ) )
+    Math_reportBadDivisor( this.z, "Vec4_i.inverse: this.z" );
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( this.t ) )
+    Math_reportBadDivisor( this.t, "Vec4_i.inverse: this.t" );
+  return Vec4_i(1.0/this.x, 1.0/this.y, 1.0/this.z, 1.0/this.t);
+}
+
+/// Returns the dot product of this vector and another one
+inline SInt32 Vec4_i.dot(in Vec4_i other) {
+  return this.x * other.x + this.y * other.y + this.z * other.z + this.t * other.t;
+}
+
+/// Returns the squared length of this vector
+inline SInt32 Vec4_i.lengthSquared() {
+  return this.dot(this);
+}
+
+/// Returns the length of this vector
+inline SInt32 Vec4_i.length() {
+  return sqrt(this.lengthSquared());
+}
+
+/// Returns the unit vector of this one
+inline Vec4_i Vec4_i.unit() {
+  SInt32 n = this.length();
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( n ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( n, "Vec4_i.unit" );
+  return this / n;
+}
+
+/// Sets this vector to its unit vector
+/// and returns its previous length
+inline SInt32 Vec4_i.setUnit!() {
+  SInt32 n = this.length();
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( n ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( n, "Vec4_i.setUnit" );
+  this /= n;
+  return n;
+}
+
+inline Vec4_i.normalize!() {
+  this.setUnit();
+}
+
+/// clamps this vector per component by 
+/// a min and max vector
+inline Vec4_i Vec4_i.clamp(in Vec4_i min, in Vec4_i max) {
+  return Vec4_i(
+    (this.x < min.x ? min.x : (this.x > max.x ? max.x : this.x)),
+    (this.y < min.y ? min.y : (this.y > max.y ? max.y : this.y)),
+    (this.z < min.z ? min.z : (this.z > max.z ? max.z : this.z)),
+    (this.t < min.t ? min.t : (this.t > max.t ? max.t : this.t))
+  );
+}
+
+/// Returns the angle (in radians) of this vector
+/// to the given vector
+/// \note expects both vectors to be units (else use angleTo)
+inline SInt32 Vec4_i.unitsAngleTo(in Vec4_i other) {
+  SInt32 acosAngle = Math_clamp(this.dot(other), -1.0, 1.0);
+  return acos(acosAngle);
+}
+
+/// Returns the angle (in radians) of this vector
+/// to the given vector
+inline SInt32 Vec4_i.angleTo(in Vec4_i other) {
+  return this.unit().unitsAngleTo(other.unit());
+}
+
+/// Returns the distance of this vector to the given vector
+inline SInt32 Vec4_i.distanceTo(in Vec4_i other) {
+  return (this - other).length();
+}
+
+/// Linearly interpolates this vector with the given vector
+/// based on a scalar blend value (0.0 to 1.0)
+inline Vec4_i Vec4_i.linearInterpolate(in Vec4_i other, in SInt32 t) {
+  return this + ((other - this) * t);
+}
+
+/// Returns a homogeneous Vec3_i
+inline Vec3_i Vec4_i.makeHomogeneousVec3_i() {
+  if( this.t != SInt32(1.0) ) {
+    if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( this.t ) )//Perf: check first to avoid building the report string
+      Math_reportBadDivisor( this.t, "Vec4_i.makeHomogeneousVec3_i" );
+    SInt32 invT = 1.0 / this.t;
+    return Vec3_i(this.x * invT, this.y * invT, this.z * invT);
+  }
+  else
+    return Vec3_i(this.x, this.y, this.z);
+}
+
+/// Returns the X, Y and Z components as Vec3_i
+inline Vec3_i Vec4_i.toVec3_i(){
+  return Vec3_i(this.x, this.y, this.z);
+}
+
+/// \internal
+/// Smooth Hermite interpolation of a Vec4 components between 0 and 1 when edge0 < x < edge1.
+inline Vec4_i Math_smoothstep(in Vec4_i edge0, in Vec4_i edge1, in Vec4_i x){
+  Vec4_i result;
+  result.x = Math_smoothstep(edge0.x, edge1.x, x.x);
+  result.y = Math_smoothstep(edge0.y, edge1.y, x.y);
+  result.z = Math_smoothstep(edge0.z, edge1.z, x.z);
+  result.t = Math_smoothstep(edge0.y, edge1.t, x.t);
+  return result;  
+}
+
+/// Returns the minimum of two Vec4_i values
+/// \dfgPresetColor Color(99, 129, 92)
+inline Vec4_i Math_min(in Vec4_i val1, in Vec4_i val2){
+  Vec4_i result;
+  result.x = Math_min(val1.x, val2.x);
+  result.y = Math_min(val1.y, val2.y);
+  result.z = Math_min(val1.z, val2.z);
+  result.t = Math_min(val1.t, val2.t);
+  return result;
+}
+
+/// Returns the minimum of two Vec4_i values
+/// \dfgPresetColor Color(99, 129, 92)
+inline Vec4_i Math_max(in Vec4_i val1, in Vec4_i val2){
+  Vec4_i result;
+  result.x = Math_max(val1.x, val2.x);
+  result.y = Math_max(val1.y, val2.y);
+  result.z = Math_max(val1.z, val2.z);
+  result.t = Math_max(val1.t, val2.t);
+  return result;
+}
+
+/// Clamps a Vec4_i value by min and max
+/// \dfgPresetColor Color(99, 129, 92)
+inline Vec4_i Math_clamp(in Vec4_i val, in Scalar minval, in Scalar maxval){
+  Vec4_i result;
+  result.x = Math_clamp(val.x, minval, maxval);
+  result.y = Math_clamp(val.y, minval, maxval);
+  result.z = Math_clamp(val.z, minval, maxval);
+  result.t = Math_clamp(val.t, minval, maxval);
+  return result;
+}
+
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgPresetFolder Random
+/// \dfgCreateArrayPreset false
+/// \dfgPresetDefault min 0.0
+/// \dfgPresetDefault min 1.0
+inline Vec4_i mathRandomVec4_i(Size seed, Size index, Float32 min, Float32 max) {
+  Vec4_i result;
+  result.x = mathRandomScalar(seed, index+0, min, max);
+  result.y = mathRandomScalar(seed, index+1, min, max);
+  result.z = mathRandomScalar(seed, index+2, min, max);
+  result.t = mathRandomScalar(seed, index+3, min, max);
+  return result;
+}

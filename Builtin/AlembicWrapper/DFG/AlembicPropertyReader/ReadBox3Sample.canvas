@@ -1,0 +1,47 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "returns the value in the property as a Box3.\nthis method interpolates values between frames.\n\nSupported types:\n  this: AlembicPropertyReader\n  time: Float64\n  result: Box3\n"
+    },
+  "title" : "ReadBox3Sample",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicPropertyReader"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "time",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Float64"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Box3"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "D1E91001067BEF96455FC6DED1C06085",
+  "code" : "require AlembicWrapper;
+
+dfgEntry {
+  result = this.readBox3Sample(time);
+}
+"
+  }

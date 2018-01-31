@@ -1,0 +1,349 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+
+require Math;
+require Bullet;
+require Geometry;
+
+/**
+  The RigidBodySimulation object provides a tool to combine Fabric Engine systems such as Geometry and InlineDrawing with Bullet Physics. 
+
+  \brief An object for managing rigid body simulations.
+  \seealso SoftBodySimulation
+*/
+object SoftBodySimulation
+{
+  Boolean           initialized;
+  Scalar             timeStep;
+  UInt32             subSteps;
+
+  SoftBodyMesh         softBodyMeshes[];
+  SoftBodyLines         softBodyLines[];
+  BulletRigidBody         rigidBodies[];
+
+  BulletBroadphaseInterface  broadphase;
+
+  BulletCollisionDispatcher  dispatcher;
+
+  BulletConstraintSolver    solver;
+
+  BulletCollisionConfiguration collisionConfiguration;
+
+  BulletDynamicsWorld     dynamicsWorld;
+
+  BulletSoftSoftCollisionAlgorithm   SoftSoftCollisionAlgorithms[];
+
+  BulletSoftRigidCollisionAlgorithm   SoftRigidCollisionAlgorithms[];
+
+  BulletSoftBodyWorldInfo        softBodyWorldInfo;
+};
+
+function SoftBodySimulation(){
+  this.initialized = false;
+  this.timeStep = 1.0/24.0;
+  this.subSteps = 10;
+  this.initPhysics();
+}
+
+/// Cleans up the simulation
+function ~SoftBodySimulation(){}
+
+/// \internal
+inline SoftBodySimulation.cloneMembersTo( io SoftBodySimulation that ) {
+  that.initialized = this.initialized;
+  that.timeStep = this.timeStep;
+  that.subSteps = this.subSteps;
+  that.softBodyMeshes = this.softBodyMeshes;
+  that.softBodyLines = this.softBodyLines;
+  that.rigidBodies = this.rigidBodies;
+  that.broadphase = this.broadphase;
+  that.dispatcher = this.dispatcher;
+  that.solver = this.solver;
+  that.collisionConfiguration = this.collisionConfiguration;
+  that.dynamicsWorld = this.dynamicsWorld;
+  that.SoftSoftCollisionAlgorithms = this.SoftSoftCollisionAlgorithms;
+  that.SoftRigidCollisionAlgorithms = this.SoftRigidCollisionAlgorithms;
+  that.softBodyWorldInfo = this.softBodyWorldInfo;
+}
+
+function BulletSoftRigidDynamicsWorld SoftBodySimulation.getSoftDynamicsWorld()
+{
+  BulletSoftRigidDynamicsWorld softWorld = this.dynamicsWorld;
+  return softWorld;
+}
+
+
+/// Initializes the physics simulation.
+function SoftBodySimulation.initPhysics!()
+{
+  const Integer maxProxies = 32766;
+  const Integer maxOverlap = 65535;
+
+  ///register some softBody collision algorithms on top of the default BulletDefaultCollisionConfiguration
+  BulletSoftBodyRigidBodyCollisionConfiguration bulletSoftBodyRigidBodyCollisionConfiguration();
+  this.collisionConfiguration = bulletSoftBodyRigidBodyCollisionConfiguration;
+
+
+  this.dispatcher = BulletCollisionDispatcher(bulletSoftBodyRigidBodyCollisionConfiguration);
+  this.softBodyWorldInfo = BulletSoftBodyWorldInfo();
+  this.softBodyWorldInfo.setDispatcher(this.dispatcher);
+
+  ////////////////////////////
+  ///Register softBody versus softBody collision algorithm
+
+
+  ////////////////////////////
+
+  Vec3 worldAabbMin(-1000,-1000,-1000);
+  Vec3 worldAabbMax(1000,1000,1000);
+
+  this.broadphase = BulletAxisSweep3(worldAabbMin,worldAabbMax,maxProxies);
+
+  this.softBodyWorldInfo.setBroadphase(this.broadphase);
+
+  BulletSequentialImpulseConstraintSolver solver();
+
+  this.solver = solver;
+
+  BulletSoftBodySolver softBodySolver = null;
+
+  this.dynamicsWorld = BulletSoftRigidDynamicsWorld(this.dispatcher, this.broadphase, this.solver, this.collisionConfiguration, softBodySolver);
+  // this.dynamicsWorld.setInternalTickCallback(pickingPreTickCallback,this,true);
+
+  // this.dynamicsWorld.getDispatchInfo().m_enableSPU = true;
+  this.dynamicsWorld.setGravity(Vec3(0,-10,0));
+  this.softBodyWorldInfo.setGravity(Vec3(0,-10,0));
+
+  BulletSparseSdf sparsesdf = this.softBodyWorldInfo.getSparsesdf();
+  sparsesdf.Initialize();
+
+  this.initialized = true;
+}
+
+
+/* Reset    */ 
+/// \internal
+operator resetBulletSoftBodyTask<<<index>>>(
+  io BulletSoftBody softBody,
+  Vec3 initialPositions[],
+  Xfo initialWorldTransform
+) {
+  BulletSoftBodyNode node = softBody.getNode(index);
+  node.x = initialPositions[index];
+  node.v = Vec3(0.0,0.0,0.0);
+  node.f = Vec3(0.0,0.0,0.0);
+  softBody.setNode(index, node);
+}
+
+/// \internal
+operator resetBulletSoftBodyLinesTask<<<index>>>(
+  io BulletSoftBody softBody,
+  Vec3 initialPositions[],
+  Xfo initialWorldTransform
+) {
+  BulletSoftBodyNode node = softBody.getNode(index);
+  node.x = initialPositions[index];
+  node.v = Vec3(0.0,0.0,0.0);
+  node.f = Vec3(0.0,0.0,0.0);
+  softBody.setNode(index, node);
+}
+
+/// Resets the simulation, moving all the objects back to thier initial positions.
+function SoftBodySimulation.resetSimulation!()
+{
+  if(!this.initialized){
+    report("Error in resetSimulation. Demo not yet initialized.");
+    return;
+  }
+
+  ///create a copy of the array, not a reference!
+  BulletICollisionObject collisionObjects[] = this.dynamicsWorld.getCollisionObjectArray();
+  
+  for (Integer i=0;i<collisionObjects.size();i++)
+  {
+    BulletICollisionObject colObj = collisionObjects[i];
+    if(colObj.type() == BulletRigidBody){
+      BulletRigidBody body = colObj;
+      if (body.getMotionState() != null && body.getInvMass() != 0.0)
+      {
+        BulletDefaultMotionState myMotionState = body.getMotionState();
+        myMotionState.setGraphicsWorldTrans(myMotionState.getStartWorldTrans());
+        body.setCenterOfMassTransform( myMotionState.getGraphicsWorldTrans() );
+        colObj.setInterpolationWorldTransform( myMotionState.getStartWorldTrans() );
+        colObj.forceActivationState(AS_ACTIVE_TAG);
+        colObj.activate(false);
+        colObj.setDeactivationTime(0);
+        //colObj.setActivationState(AS_WANTS_DEACTIVATION);
+      }
+      //removed cached contact points (this is not necessary if all objects have been removed from the dynamics world)
+      if (this.broadphase.getOverlappingPairCache()){
+        BulletOverlappingPairCache pairCache = this.broadphase.getOverlappingPairCache();
+        pairCache.cleanProxyFromPairs(colObj.getBroadphaseHandle(),this.dispatcher);
+      }
+
+      if (!body.isStaticObject())
+      {
+        body.setLinearVelocity(Vec3(0,0,0));
+        body.setAngularVelocity(Vec3(0,0,0));
+      }
+    }
+  }
+
+  for (Integer i=0;i<this.softBodyMeshes.size();i++)
+  {
+    SoftBodyMesh sbm = this.softBodyMeshes[i];
+    if(sbm.initialPositions.size() > 0){
+      // Creates and returns a soft body"""
+      resetBulletSoftBodyTask<<<sbm.initialPositions.size()>>>(
+        sbm.body,
+        sbm.initialPositions,
+        sbm.body.getInitialWorldTransform()
+      );
+      sbm.body.transform(sbm.body.getInitialWorldTransform());
+    }
+  }
+
+  for (Integer i=0;i<this.softBodyLines.size();i++)
+  {
+    SoftBodyLines sbl = this.softBodyLines[i];
+    if(sbl.initialPositions.size() > 0){
+      // Creates and returns a soft body"""
+      resetBulletSoftBodyTask<<<sbl.initialPositions.size()>>>(
+        sbl.body,
+        sbl.initialPositions,
+        sbl.body.getInitialWorldTransform()
+      );
+      sbl.body.transform(sbl.body.getInitialWorldTransform());
+    }
+  }
+
+  ///reset some internal cached data in the broadphase
+  this.broadphase.resetPool(this.dispatcher);
+  this.solver.reset();
+}
+
+
+
+/// Creates a large box shape to be used at the ground plane. 
+function SoftBodySimulation.createFlatGround!(Scalar yPosition){
+  //create ground object
+  
+  const Scalar CUBE_HALF_EXTENTS = 1.5;
+  BulletCollisionShape groundShape = BulletBoxShape(Vec3(1000, CUBE_HALF_EXTENTS, 1000));
+
+  Xfo tr;
+  tr.setIdentity();
+  tr.tr = Vec3(0,yPosition-CUBE_HALF_EXTENTS,0);
+
+  BulletCollisionObject groundObject = BulletCollisionObject();
+  groundObject.setWorldTransform(tr);
+  groundObject.setInterpolationWorldTransform(tr);
+
+  groundObject.setCollisionShape(groundShape);
+  this.dynamicsWorld.addCollisionObject(groundObject);
+}
+
+function BulletRigidBody SoftBodySimulation.addRigidBody!(Scalar  mass, Xfo xfo, BulletCollisionShape shape)
+{
+  //rigidbody is dynamic if and only if mass is non zero, otherwise static
+  Boolean isDynamic = (mass != 0.0);
+
+  Vec3 localInertia(0,0,0);
+  if (isDynamic)
+    shape.calculateLocalInertia(mass, localInertia);
+
+  //using motionstate is recommended, it provides Integererpolation capabilities, and only synchronizes 'active' objects
+  BulletDefaultMotionState myMotionState = BulletDefaultMotionState(xfo);
+  BulletRigidBodyConstructionInfo rbInfo(mass, myMotionState, shape, localInertia);
+  BulletRigidBody body = BulletRigidBody(rbInfo);
+
+  this.dynamicsWorld.addRigidBody(body);
+
+  this.rigidBodies.push(body);
+
+  return body;
+}
+
+function SoftBodyMesh SoftBodySimulation.addSoftBody!(BulletSoftBody psb, PolygonMesh mesh)
+{
+  BulletSoftRigidDynamicsWorld softWorld = this.getSoftDynamicsWorld();
+  softWorld.addSoftBody(psb);
+
+  SoftBodyMesh softBodyMesh;
+  softBodyMesh.body = psb;
+
+  // Store the initial state of the soft body so we can reset it.
+  GeometryAttributes attr = mesh.getAttributes();
+  Ref<Vec3Attribute> positions = attr.getPositions();
+  Ref<Vec3Attribute> normals = attr.getNormals();
+  softBodyMesh.initialPositions = positions.values.clone();
+  if(normals)
+    softBodyMesh.initialNormals = normals.values.clone();
+
+  this.softBodyMeshes.push(softBodyMesh);
+  return softBodyMesh;
+}
+
+function SoftBodyLines SoftBodySimulation.addSoftBodyLines!(BulletSoftBody psb, Lines lines)
+{
+  BulletSoftRigidDynamicsWorld softWorld = this.getSoftDynamicsWorld();
+  softWorld.addSoftBody(psb);
+
+  SoftBodyLines softBodyLines;
+  softBodyLines.body = psb;
+  this.softBodyLines.push(softBodyLines);
+  return softBodyLines;
+}
+
+operator getBulletSoftBodyMeshPositionsTask<<<index>>>(
+  io BulletSoftBody softBody,
+  io PolygonMesh mesh
+) {
+  BulletSoftBodyNode node = softBody.getNode(index);
+  mesh.setPointPosition(index, node.x);
+  // mesh.setPointNormal(index, node.n);
+}
+
+// function SoftBodySimulation.updatePolygonMeshFromSoftBody!(io SoftBodyMesh softBodyMesh){
+//   // Creates and returns a soft body"""
+//   softBodyMesh.mesh.getOrCreateNormals();
+//   getBulletSoftBodyMeshPositionsTask<<<softBodyMesh.mesh.pointCount()>>>(
+//     softBodyMesh.body,
+//     softBodyMesh.mesh
+//   );
+//   softBodyMesh.mesh.positionsAttribute.incrementVersion();
+//   softBodyMesh.mesh.recomputePointNormals();
+// }
+
+
+// operator getBulletSoftBodyLinePointsTask<<<index>>>(
+//   io BulletSoftBody softBody,
+//   io Vec3 positions[]
+// ) {
+//   BulletSoftBodyNode node = softBody.getNode(index);
+//   positions[index] = node.x;
+// }
+
+
+// function SoftBodySimulation.updateLinesFromSoftBody!(io SoftBodyLines softBodyMesh){
+//   // Creates and returns a soft body"""
+//   GeometryAttributes attr = softBodyMesh.lines.getAttributes();
+//   Ref<Vec3Attribute> posAttr = attr.getPositions();
+//   getBulletSoftBodyLinePointsTask<<<softBodyMesh.lines.pointCount()>>>(
+//     softBodyMesh.body,
+//     posAttr.values
+//   );
+// }
+
+function SoftBodySimulation.stepSimulation()
+{
+  if(!this.initialized){
+    report("Error: Soft body demo not initialized.");
+    return;
+  }
+  SoftBodySimulation self = this;
+  self.dynamicsWorld.stepSimulation(this.timeStep, this.subSteps);
+}
+

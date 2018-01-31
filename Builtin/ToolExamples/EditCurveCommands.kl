@@ -1,0 +1,172 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+/// AddMoveCurvePointDeltasCommand: specialization of MovePointsCommand which stores the values as part of a CurveEditData
+object AddMoveCurvePointDeltasCommand : BaseScriptableCommand{
+};
+
+AddMoveCurvePointDeltasCommand() {
+  this.declareArg( "curveEditData", CurveEditData, CommandArgFlag_IO | CommandArgFlag_CLONE_FOR_UNDO, RTVal() );
+  this.declareArg( "movedPointIndices", CurveAndPointIndexArray, CommandArgFlag_IN, RTVal() );
+  this.declareArg( "movedPointPositions", Vec3Array, CommandArgFlag_IN, RTVal() );
+}
+
+Boolean AddMoveCurvePointDeltasCommand.canUndo() {
+  return true;
+}
+
+Boolean AddMoveCurvePointDeltasCommand.redoIt!() {
+  if( !this.parent.redoIt() )
+    return false;
+
+  CurveEditData curveEditData = this.getArgValue( "curveEditData" );
+  CurveAndPointIndex movedCurveIndices[] = this.getArgValue( "movedPointIndices" );
+  Vec3 movedPointPositions[] = this.getArgValue( "movedPointPositions" );
+
+  for( Size i = 0; i < movedCurveIndices.size(); ++i ) {
+    // Translate the indices as of before deletion
+    CurveAndPointIndex index = movedCurveIndices[i];
+    TranslateIndexBeforeDeletePoints( index, curveEditData.deletedPointIndices );
+    // Set or update the position
+    InsertMovedData( index, movedPointPositions[i], curveEditData );
+  }
+  return true;
+}
+
+Boolean AddMoveCurvePointDeltasCommand.doIt!( io String error ) {
+  if( !this.parent.doIt( error ) )
+    return false;
+
+  CurveEditData curveEditData = this.getArgValue( "curveEditData" );
+  return this.redoIt();
+}
+
+Boolean AddMoveCurvePointDeltasCommand.undoIt!( ) {
+  return this.parent.undoIt();
+}
+
+// DeleteCurvePointsCommand: deletes points of a curve, by inserting a delete instruction to the CurveEditData
+object DeleteCurvePointsCommand : BaseScriptableCommand{
+};
+
+DeleteCurvePointsCommand() {
+  this.declareArg( "curveEditData", CurveEditData, CommandArgFlag_IO | CommandArgFlag_CLONE_FOR_UNDO, RTVal() );
+  this.declareArg( "deletedPointIndices", CurveAndPointIndexArray, CommandArgFlag_IN, RTVal() );// Assumed to be sorted by points
+  this.declareArg( "selection", ItemReferences, CommandArgFlag_IO | CommandArgFlag_OPTIONAL | CommandArgFlag_CLONE_FOR_UNDO, RTVal() );// Clear the selection
+}
+
+Boolean DeleteCurvePointsCommand.canUndo() {
+  return true;
+}
+
+Boolean DeleteCurvePointsCommand.redoIt!() {
+  if( !this.parent.redoIt() )
+    return false;
+
+  CurveAndPointIndex deletedPointIndices[] = this.getArgValue( "deletedPointIndices" );
+  CurveEditData curveEditData = this.getArgValue( "curveEditData" );
+  this.setArgValue( "selection", RTVal( ItemReferences() ) );//clear the selection
+
+  // Note: the following are technical details required to merge and restore curve edit operations in a robust manner
+  // As this is just an example, it is not written to be scalable under many deleted points
+
+  // Go in reverse order to avoid index renaming conflicts
+  for( Size i = deletedPointIndices.size(); i--; ) {
+    // Check if it was added
+    Boolean added;
+    for( Size j = 0; j < curveEditData.addedPointIndices.size(); ++j ) {
+      if( curveEditData.addedPointIndices[j] == deletedPointIndices[i] ) {
+        added = true;
+        break;
+      } else if( curveEditData.addedPointIndices[j] > deletedPointIndices[i] )
+        break;
+    }
+    if( added ) {
+      // If the point was added, it is no longer added, nothing to delete
+      // Following curve indices must be decreased
+      Vec3 dummy[];
+      UpdateDataUponDeletePoint( deletedPointIndices[i], curveEditData.addedPointIndices, dummy );
+      UpdateDataUponDeletePoint( deletedPointIndices[i], curveEditData.movedPointIndices, curveEditData.movedPointPositions );
+      UpdateDataUponDeletePoint( deletedPointIndices[i], curveEditData.deletedPointIndices, dummy );
+    } else {
+      CurveAndPointIndex deletedIndex = deletedPointIndices[i];
+      // Find the "original name" of that point, before previous ones were deleted (we remove from highest to lowest index)
+      for( Size j = 0; j < curveEditData.deletedPointIndices.size(); ++j ) {
+        if( curveEditData.deletedPointIndices[j].curveIndex > deletedIndex.curveIndex )
+          break;
+        if( curveEditData.deletedPointIndices[j].curveIndex == deletedIndex.curveIndex
+            && curveEditData.deletedPointIndices[j].curvePointIndex <= deletedIndex.curvePointIndex )
+          ++deletedIndex.curvePointIndex;
+      }
+      // Insert in deleted points data
+      InsertInSortedCurveEditData( deletedIndex, curveEditData.deletedPointIndices );
+    }
+  }
+  return true;
+}
+
+Boolean DeleteCurvePointsCommand.doIt!( io String error ) {
+  if( !this.parent.doIt( error ) )
+    return false;
+
+  return this.redoIt();
+}
+
+Boolean DeleteCurvePointsCommand.undoIt!() {
+  return this.parent.undoIt();
+}
+
+// AddCurvePointCommand: adds a point to a curve, by inserting an instruction to the CurveEditData
+object AddCurvePointCommand : BaseScriptableCommand{
+};
+
+AddCurvePointCommand() {
+  this.declareArg( "curveEditData", CurveEditData, CommandArgFlag_IO | CommandArgFlag_CLONE_FOR_UNDO, RTVal() );
+  this.declareArg( "curveIndex", UInt32, CommandArgFlag_IN, RTVal() );// Assumed to be sorted by points
+  this.declareArg( "curvePointIndex", UInt32, CommandArgFlag_IN, RTVal() );
+  this.declareArg( "position", Vec3, CommandArgFlag_IN, RTVal() );
+  this.declareArg( "selection", ItemReferences, CommandArgFlag_IO | CommandArgFlag_OPTIONAL | CommandArgFlag_CLONE_FOR_UNDO, RTVal() );// Clear the selection
+}
+
+Boolean AddCurvePointCommand.canUndo() {
+  return true;
+}
+
+Boolean AddCurvePointCommand.redoIt!( ) {
+  if( !this.parent.redoIt() )
+    return false;
+
+  CurveEditData curveEditData = this.getArgValue( "curveEditData" );
+
+  CurveAndPointIndex index;
+  index.curveIndex = this.getArgValue( "curveIndex" );
+  index.curvePointIndex = this.getArgValue( "curvePointIndex" );
+  TranslateIndexBeforeDeletePoints( index, curveEditData.deletedPointIndices );
+
+  Vec3 position = this.getArgValue( "position" );
+  this.setArgValue( "selection", RTVal( ItemReferences() ) );//just clear the selection (let's be lazy here)
+
+  // Shift up existing indices (because we insert an index)
+  UpdateDataUponAddedPoint( index, curveEditData.addedPointIndices );
+  UpdateDataUponAddedPoint( index, curveEditData.movedPointIndices );
+  UpdateDataUponAddedPoint( index, curveEditData.deletedPointIndices );
+
+  // Insert add point instruction
+  InsertInSortedCurveEditData( index, curveEditData.addedPointIndices );
+
+  // Update move point data with the new position
+  InsertMovedData( index, position, curveEditData );
+  return true;
+}
+
+Boolean AddCurvePointCommand.doIt!( io String error ) {
+  if( !this.parent.doIt( error ) )
+    return false;
+
+  return this.redoIt();
+}
+
+Boolean AddCurvePointCommand.undoIt!( ) {
+  return this.parent.undoIt();
+}

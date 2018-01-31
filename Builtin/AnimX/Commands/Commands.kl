@@ -1,0 +1,518 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace AnimX {
+
+object SetKeyframeBaseCommand : BaseScriptableCommand {};
+
+protected SetKeyframeBaseCommand.declareKeyArgs!( Boolean deflt )
+{
+  RTVal dF64 = deflt ? RTVal(Float64(0)) : RTVal();
+  RTVal dTT = deflt ? RTVal(TangentType(0)) : RTVal();
+  this.declareArg( "time", Float64, CommandArgFlag_IN, dF64 );
+  this.declareArg( "value", Float64, CommandArgFlag_IN, dF64 );
+  this.declareArg( "tanInType", TangentType, CommandArgFlag_IN, dTT );
+  this.declareArg( "tanInX", Float64, CommandArgFlag_IN, dF64 );
+  this.declareArg( "tanInY", Float64, CommandArgFlag_IN, dF64 );
+  this.declareArg( "tanOutType", TangentType, CommandArgFlag_IN, dTT );
+  this.declareArg( "tanOutX", Float64, CommandArgFlag_IN, dF64 );
+  this.declareArg( "tanOutY", Float64, CommandArgFlag_IN, dF64 );
+  this.declareArg( "autoTangent", Boolean, CommandArgFlag_IN, RTVal(false) );
+}
+
+protected Keyframe SetKeyframeBaseCommand.getKey()
+{
+  Keyframe key;
+  key.time = Float64(this.getArgValue("time"));
+  key.value = Float64(this.getArgValue("value"));
+  key.tanIn.type = TangentType(this.getArgValue("tanInType"));
+  key.tanIn.x = Float64(this.getArgValue("tanInX"));
+  key.tanIn.y = Float64(this.getArgValue("tanInY"));
+  key.tanOut.type = TangentType(this.getArgValue("tanOutType"));
+  key.tanOut.x = Float64(this.getArgValue("tanOutX"));
+  key.tanOut.y = Float64(this.getArgValue("tanOutY"));
+  return key;
+}
+
+protected String SetKeyframeBaseCommand.getKeyDesc()
+{
+  String dst =
+    "time = " + Float64(this.getArgValue("time")) + "; "
+    + "value = " + Float64(this.getArgValue("value")) + "; "
+  ;
+  if(Boolean(this.getArgValue("autoTangent")))
+    dst += "autoTangents";
+  else
+    dst +=
+      "tanIn = ["
+        + Float64(this.getArgValue("tanInX")) + "; "
+        + Float64(this.getArgValue("tanInY")) + "; "
+        + TangentType(this.getArgValue("tanInType"))
+      + " ]; "
+      + "tanOut = ["
+        + Float64(this.getArgValue("tanOutX")) + "; "
+        + Float64(this.getArgValue("tanOutY")) + "; "
+        + TangentType(this.getArgValue("tanOutType"))
+      + " ] "
+    ;
+  return dst;
+}
+
+object SetKeyframeCommand : SetKeyframeBaseCommand
+{
+  Keyframe prevKeyframe, nextKeyframe;
+};
+
+SetKeyframeCommand()
+{
+  this.declareArg( "target", AnimX::AnimCurve, CommandArgFlag_IO | CommandArgFlag_CREATE_IF_NULL, RTVal() );
+  this.declareArg( "id", UInt32, CommandArgFlag_IN, RTVal() );
+  this.declareKeyArgs( false );
+  this.declareArg( "interactionEnd", Boolean, CommandArgFlag_IN, RTVal(false) );
+}
+
+Boolean SetKeyframeCommand.canUndo() { return true; }
+
+function SetKeyframe( io Ref<AnimCurve> curve, io Index index, Keyframe key )
+{
+  curve.setKeyframe(
+    index,
+    key.time,
+    key.value,
+    key.tanIn.type,
+    key.tanIn.x,
+    key.tanIn.y,
+    key.tanOut.type,
+    key.tanOut.x,
+    key.tanOut.y  
+  );
+}
+
+Boolean SetKeyframeCommand.redoIt!()
+{
+  if( !this.parent.redoIt() )
+    return false;
+
+  Ref<AnimCurve> curve = this.getArgValue( "target" );
+  Keyframe key = this.nextKeyframe;
+  Index id = UInt32(this.getArgValue("id"));
+  Index index = curve.getKeyIndex( id );
+  SetKeyframe( curve, index, key );
+
+  if(Boolean(this.getArgValue("autoTangent")))
+    curve.autoTangent(curve.getKeyIndex(id));
+
+  return true;
+}
+
+Boolean SetKeyframeCommand.doIt!( io String error )
+{
+  if( !this.parent.doIt( error ) )
+    return false;
+  Ref<AnimCurve> curve = this.getArgValue( "target" );
+  Index id = UInt32(this.getArgValue("id"));
+  Index index = curve.getKeyIndex( id );
+  Keyframe key;
+  curve.keyframeAtIndex( index, key );
+  this.prevKeyframe = key;
+
+  key = this.getKey();
+  this.nextKeyframe = key;
+
+  if( !Boolean(this.getArgValue("interactionEnd")) )
+    this.blockLog();
+
+  return this.redoIt();
+}
+
+Boolean SetKeyframeCommand.undoIt!()
+{
+  Ref<AnimCurve> curve = this.getArgValue( "target" );
+  Keyframe key = this.prevKeyframe;
+  Index id = UInt32(this.getArgValue("id"));
+  Index index = curve.getKeyIndex( id );
+  SetKeyframe( curve, index, key );
+  return this.parent.undoIt();
+}
+
+String SetKeyframeCommand.getHistoryDesc()
+{
+  return "AnimX::SetKeyframe : " + this.getArgPath( "target" )
+    + " [" + UInt32(this.getArgValue("id")) + "] -> { "
+    + this.getKeyDesc()
+    + "}"
+  ;
+}
+
+function SetKeyframeCommand.merge!( Command prevCmd )
+{
+  this.parent.merge( prevCmd );
+  Ref<SetKeyframeCommand> prev = prevCmd;
+  this.prevKeyframe = prev.prevKeyframe;
+}
+
+object MoveKeyframesCommand : BaseScriptableCommand
+{
+  Keyframe prevKeyframes[];
+  Keyframe nextKeyframes[];
+};
+
+MoveKeyframesCommand()
+{
+  this.declareArg( "target", AnimX::AnimCurve, CommandArgFlag_IO | CommandArgFlag_CREATE_IF_NULL, RTVal() );
+  this.declareArg( "ids", UInt32Array, CommandArgFlag_IN, RTVal() );
+  this.declareArg( "dx", Float64, CommandArgFlag_IN, RTVal() );
+  this.declareArg( "dy", Float64, CommandArgFlag_IN, RTVal() );
+  this.declareArg( "interactionEnd", Boolean, CommandArgFlag_IN, RTVal(false) );
+}
+
+Boolean MoveKeyframesCommand.canUndo() { return true; }
+
+Boolean MoveKeyframesCommand.redoIt!()
+{
+  if( !this.parent.redoIt() )
+    return false;
+
+  Ref<AnimCurve> curve = this.getArgValue( "target" );
+  Index ids[] = this.getArgValue("ids");
+  for( Index i = 0; i < ids.size(); i++ )
+  {
+    Keyframe key = this.nextKeyframes[i];
+    Index index = curve.getKeyIndex( ids[i] );
+    SetKeyframe( curve, index, key );
+  }
+  return true;
+}
+
+Boolean MoveKeyframesCommand.doIt!( io String error )
+{
+  if( !this.parent.doIt( error ) )
+    return false;
+  Ref<AnimCurve> curve = this.getArgValue( "target" );
+  Index ids[] = this.getArgValue("ids");
+  this.prevKeyframes.resize( ids.size() );
+  this.nextKeyframes.resize( ids.size() );
+  for( Index i = 0; i < ids.size(); i++ )
+  {
+    Index index = curve.getKeyIndex( ids[i] );
+    Keyframe key;
+    curve.keyframeAtIndex( index, key );
+    this.prevKeyframes[i] = key;
+    key.time += Float64(this.getArgValue("dx"));
+    key.value += Float64(this.getArgValue("dy"));
+    this.nextKeyframes[i] = key;
+  }
+  if( !Boolean(this.getArgValue("interactionEnd")) )
+    this.blockLog();
+  return this.redoIt();
+}
+
+Boolean MoveKeyframesCommand.undoIt!()
+{
+  Ref<AnimCurve> curve = this.getArgValue( "target" );
+  Index ids[] = this.getArgValue("ids");
+  for( Index i = 0; i < ids.size(); i++ )
+  {
+    Keyframe key = this.prevKeyframes[i];
+    Index index = curve.getKeyIndex( ids[i] );
+    SetKeyframe( curve, index, key );
+  }
+  return this.parent.undoIt();
+}
+
+String MoveKeyframesCommand.getHistoryDesc()
+{
+  return "AnimX::MoveKeyframes : " + this.getArgPath( "target" )
+    + " " + this.getArgValue("ids") + " -> "
+    + "delta = [" + Float64(this.getArgValue("dx")) + "; " + Float64(this.getArgValue("dy")) + " ]"
+  ;
+}
+
+function MoveKeyframesCommand.merge!( Command prevCmd )
+{
+  this.parent.merge( prevCmd );
+  Ref<MoveKeyframesCommand> prev = prevCmd;
+  this.prevKeyframes = prev.prevKeyframes;
+}
+
+object PushKeyframeCommand : SetKeyframeBaseCommand
+{
+};
+
+PushKeyframeCommand()
+{
+  this.declareArg( "target", AnimX::AnimCurve, CommandArgFlag_IO | CommandArgFlag_CREATE_IF_NULL, RTVal() );
+  this.declareKeyArgs( true );
+}
+
+String PushKeyframeCommand.getHistoryDesc()
+{
+  return "AnimX::PushKeyframe : " + this.getArgPath( "target" )
+    + " -> { "
+    + this.getKeyDesc()
+    + "}"
+  ;
+}
+
+Boolean PushKeyframeCommand.canUndo() { return true; }
+
+Boolean PushKeyframeCommand.redoIt!()
+{
+  if( !this.parent.redoIt() )
+    return false;
+
+  Ref<AnimX::AnimCurve> curve = this.getArgValue( "target" );
+  curve.pushKeyframe();
+  curve.useIds( true );
+  Index index = curve.getKeyIndex( curve.keyframeCount()-1 );
+  SetKeyframe( curve, index, this.getKey() );
+  if(Boolean(this.getArgValue("autoTangent")))
+    curve.autoTangent( curve.getKeyIndex( curve.keyframeCount()-1 ) );
+  return true;
+}
+
+Boolean PushKeyframeCommand.doIt!( io String error )
+{
+  if( !this.parent.doIt( error ) )
+    return false;
+  return this.redoIt();
+}
+
+Boolean PushKeyframeCommand.undoIt!()
+{
+  Ref<AnimX::AnimCurve> curve = this.getArgValue( "target" );
+  curve.removeKeyframe( curve.getKeyIndex( curve.keyframeCount()-1 ) );
+  return this.parent.undoIt();
+}
+
+object RemoveKeyframeCommand : BaseScriptableCommand
+{
+  Keyframe removedKey;
+};
+
+RemoveKeyframeCommand()
+{
+  this.declareArg( "target", AnimX::AnimCurve, CommandArgFlag_IO | CommandArgFlag_CREATE_IF_NULL, RTVal() );
+  this.declareArg( "id", UInt32, CommandArgFlag_IN, RTVal() );
+}
+
+String RemoveKeyframeCommand.getHistoryDesc()
+{
+  return "AnimX::RemoveKeyframe : " + this.getArgPath( "target" ) + "[ " + UInt32(this.getArgValue("id")) + " ]";
+}
+
+Boolean RemoveKeyframeCommand.canUndo() { return true; }
+
+Boolean RemoveKeyframeCommand.redoIt!()
+{
+  if( !this.parent.redoIt() )
+    return false;
+
+  Ref<AnimX::AnimCurve> curve = this.getArgValue( "target" );
+  Index index = curve.getKeyIndex( UInt32(this.getArgValue("id") ) );
+  curve.removeKeyframe( index );
+  return true;
+}
+
+Boolean RemoveKeyframeCommand.doIt!( io String error )
+{
+  if( !this.parent.doIt( error ) )
+    return false;
+  Ref<AnimX::AnimCurve> curve = this.getArgValue( "target" );
+  Index index = curve.getKeyIndex( UInt32(this.getArgValue("id") ) );
+  curve.keyframeAtIndex( index, this.removedKey );
+  return this.redoIt();
+}
+
+Boolean RemoveKeyframeCommand.undoIt!()
+{
+  Ref<AnimX::AnimCurve> curve = this.getArgValue( "target" );
+  curve.pushKeyframe();
+  Keyframe key = this.removedKey;
+  Index index = curve.getKeyIndex( curve.keyframeCount()-1 );
+  curve.setKeyId( index, UInt32(this.getArgValue("id") ) );
+  SetKeyframe( curve, index, key );
+  return this.parent.undoIt();
+}
+
+object RemoveKeyframesCommand : BaseScriptableCommand
+{
+  Keyframe removedKeys[];
+};
+
+RemoveKeyframesCommand()
+{
+  this.declareArg( "target", AnimX::AnimCurve, CommandArgFlag_IO | CommandArgFlag_CREATE_IF_NULL, RTVal() );
+  this.declareArg( "ids", UInt32Array, CommandArgFlag_IN, RTVal() );
+}
+
+String RemoveKeyframesCommand.getHistoryDesc()
+{
+  Index ids[] = this.getArgValue("ids");
+  return "AnimX::RemoveKeyframes : " + this.getArgPath( "target" ) + " " + ids;
+}
+
+Boolean RemoveKeyframesCommand.canUndo() { return true; }
+
+Boolean RemoveKeyframesCommand.redoIt!()
+{
+  if( !this.parent.redoIt() )
+    return false;
+
+  Ref<AnimX::AnimCurve> curve = this.getArgValue( "target" );
+  Index ids[] = this.getArgValue("ids");
+  Index indices[]; indices.resize( ids.size() );
+  for( Index i = 0; i < indices.size(); i++ )
+    indices[i] = curve.getKeyIndex( ids[i] );
+  curve.removeKeyframes( indices );
+  return true;
+}
+
+Boolean RemoveKeyframesCommand.doIt!( io String error )
+{
+  if( !this.parent.doIt( error ) )
+    return false;
+  Ref<AnimX::AnimCurve> curve = this.getArgValue( "target" );
+  Index ids[] = this.getArgValue("ids");
+  this.removedKeys.resize( ids.size() );
+  for( Index i = 0; i < ids.size(); i++ )
+    curve.keyframeAtIndex( curve.getKeyIndex( ids[i] ), this.removedKeys[i] );
+  return this.redoIt();
+}
+
+Boolean RemoveKeyframesCommand.undoIt!()
+{
+  Ref<AnimX::AnimCurve> curve = this.getArgValue( "target" );
+  Index ids[] = this.getArgValue("ids");
+  for( Index i = 0; i < this.removedKeys.size(); i++ )
+  {
+    curve.pushKeyframe();
+    Keyframe key = this.removedKeys[i];
+    Index index = curve.getKeyIndex( curve.keyframeCount()-1 );
+    curve.setKeyId( index, ids[i] );
+    SetKeyframe( curve, index, key );
+  }
+  return this.parent.undoIt();
+}
+
+String InfinityTypeName( InfinityType type )
+{
+  switch( type )
+  {
+  case InfinityType_Constant : return "Constant";
+  case InfinityType_Linear : return "Linear";
+  case InfinityType_Cycle : return "Cycle";
+  case InfinityType_CycleRelative : return "Cycle Relative";
+  case InfinityType_Oscillate : return "Oscillate";
+  }
+  return "None";
+}
+
+object SetPreInfinityTypeCommand : BaseScriptableCommand
+{
+  InfinityType previousType;
+};
+
+SetPreInfinityTypeCommand()
+{
+  this.declareArg( "target", AnimX::AnimCurve, CommandArgFlag_IO | CommandArgFlag_CREATE_IF_NULL, RTVal() );
+  this.declareArg( "type", InfinityType, CommandArgFlag_IN, RTVal() );
+}
+
+String SetPreInfinityTypeCommand.getHistoryDesc()
+{
+  InfinityType t = this.getArgValue("type");
+  return "AnimX::SetPreInfinityType : " + this.getArgPath( "target" ) + " -> "
+    + InfinityTypeName( t ) + " (" + t + ")";
+}
+
+Boolean SetPreInfinityTypeCommand.canUndo() { return true; }
+
+Boolean SetPreInfinityTypeCommand.redoIt!()
+{
+  if( !this.parent.redoIt() )
+    return false;
+
+  Ref<AnimX::AnimCurve> curve = this.getArgValue( "target" );
+  curve.setPreInfinityType( InfinityType(this.getArgValue("type")) );
+  return true;
+}
+
+Boolean SetPreInfinityTypeCommand.doIt!( io String error )
+{
+  if( !this.parent.doIt( error ) )
+    return false;
+  Ref<AnimX::AnimCurve> curve = this.getArgValue( "target" );
+  this.previousType = curve.preInfinityType();
+  return this.redoIt();
+}
+
+Boolean SetPreInfinityTypeCommand.undoIt!()
+{
+  Ref<AnimX::AnimCurve> curve = this.getArgValue( "target" );
+  curve.setPreInfinityType( this.previousType );
+  return this.parent.undoIt();
+}
+
+object SetPostInfinityTypeCommand : BaseScriptableCommand
+{
+  InfinityType previousType;
+};
+
+SetPostInfinityTypeCommand()
+{
+  this.declareArg( "target", AnimX::AnimCurve, CommandArgFlag_IO | CommandArgFlag_CREATE_IF_NULL, RTVal() );
+  this.declareArg( "type", InfinityType, CommandArgFlag_IN, RTVal() );
+}
+
+String SetPostInfinityTypeCommand.getHistoryDesc()
+{
+  InfinityType t = this.getArgValue("type");
+  return "AnimX::SetPostInfinityType : " + this.getArgPath( "target" ) + " -> "
+    + InfinityTypeName( t ) + " (" + t + ")";
+}
+
+Boolean SetPostInfinityTypeCommand.canUndo() { return true; }
+
+Boolean SetPostInfinityTypeCommand.redoIt!()
+{
+  if( !this.parent.redoIt() )
+    return false;
+
+  Ref<AnimX::AnimCurve> curve = this.getArgValue( "target" );
+  curve.setPostInfinityType( InfinityType(this.getArgValue("type")) );
+  return true;
+}
+
+Boolean SetPostInfinityTypeCommand.doIt!( io String error )
+{
+  if( !this.parent.doIt( error ) )
+    return false;
+  Ref<AnimX::AnimCurve> curve = this.getArgValue( "target" );
+  this.previousType = curve.preInfinityType();
+  return this.redoIt();
+}
+
+Boolean SetPostInfinityTypeCommand.undoIt!()
+{
+  Ref<AnimX::AnimCurve> curve = this.getArgValue( "target" );
+  curve.setPostInfinityType( this.previousType );
+  return this.parent.undoIt();
+}
+
+// Extension initialization callback
+operator ExtDidLoad() {
+
+  // Registering commands
+  Ref<CommandRegistry> commandRegistry = GetCommandRegistry();
+  commandRegistry.registerCommand( "AnimX_SetKeyframe", SetKeyframeCommand );
+  commandRegistry.registerCommand( "AnimX_MoveKeyframes", MoveKeyframesCommand );
+  commandRegistry.registerCommand( "AnimX_PushKeyframe", PushKeyframeCommand );
+  commandRegistry.registerCommand( "AnimX_RemoveKeyframe", RemoveKeyframeCommand );
+  commandRegistry.registerCommand( "AnimX_RemoveKeyframes", RemoveKeyframesCommand );
+  commandRegistry.registerCommand( "AnimX_SetPreInfinityType", SetPreInfinityTypeCommand );
+  commandRegistry.registerCommand( "AnimX_SetPostInfinityType", SetPostInfinityTypeCommand );
+}
+
+} // namespace AnimX

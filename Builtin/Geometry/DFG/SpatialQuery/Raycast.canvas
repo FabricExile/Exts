@@ -1,0 +1,69 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/SpatialQuery.html",
+    "uiTooltip" : "Raycasts a Geometry and returns the result as a GeometryLocation . A hit was found if :kl-ref:`GeometryLocation.isValid` is true.\nProperly calling :kl-ref:`SpatialQueryable.prepareForSpatialQueries` beforehand can increase significatively the performance of multiple raycasts.\n\n\n Supported by SpatialQuery"
+    },
+  "title" : "Raycast",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "SpatialQuery"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "ray",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Ray"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "doubleSided",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Boolean"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "coneThreshold",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Scalar"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "maxDistance",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Scalar"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "GeometryLocation"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "33EE3B3A9E0A751C07E485529EECBA23",
+  "code" : "require Geometry;
+
+dfgEntry {
+  result = this.raycast(ray, doubleSided, coneThreshold, maxDistance);
+}
+"
+  }

@@ -1,0 +1,122 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+    "uiNodeColor" : "{\n  \"r\" : 121,\n  \"g\" : 134,\n  \"b\" : 143\n  }",
+    "uiTooltip" : "Draws an array of Xfos using 3 colored arrows. The size of the displayed Xfo is driven by the scale factor of the xfo parameter.\n"
+    },
+  "title" : "DrawXfoArray",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Execute" : {}
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "rootTransform",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "InlineTransform" : null
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "InlineTransform"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "name",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String" : "xfoArray"
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "xfos",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Xfo" : {
+          "ori" : {
+            "v" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              },
+            "w" : 1
+            },
+          "tr" : {
+            "x" : -1.200000047683716,
+            "y" : 0,
+            "z" : 0
+            },
+          "sc" : {
+            "x" : 1,
+            "y" : 1,
+            "z" : 1
+            }
+          },
+        "Xfo[]" : []
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Xfo[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "color",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Color" : {
+          "r" : 0.7686274647712708,
+          "g" : 0.772549033164978,
+          "b" : 0.8274509906768799,
+          "a" : 1
+          }
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Color"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "colorBlend",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float32" : 0.5
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "inlineTransform",
+      "nodePortType" : "In",
+      "defaultValues" : {
+        "InlineTransform" : null
+        },
+      "execPortType" : "Out",
+      "typeSpec" : "InlineTransform"
+      }
+    ],
+  "extDeps" : {
+    "InlineDrawing" : "*"
+    },
+  "presetGUID" : "D64BF3146EE02ACBF2324080E8766D2F",
+  "code" : "dfgEntry {
+  if(rootTransform)
+  {
+    inlineTransform = drawXfoArray(
+      rootTransform,
+      name,
+      xfos,
+      color,
+      colorBlend);
+  }
+}
+"
+  }

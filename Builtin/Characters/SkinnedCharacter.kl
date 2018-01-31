@@ -1,0 +1,197 @@
+/*
+ *  Copyright 2010-2015 Fabric Software Inc. All rights reserved.
+ */
+
+require Geometry;
+
+/**
+*/
+object SkinnedCharacter {
+  /// \Internal
+  /// The skinning matrices combine the reference pose stored in the skeleton and the transforms in the pose structure
+  private Mat44 skinningMatrices[];
+  /// \Internal
+  /// The Skeleton defining the hierarchy of bones of the character
+  private Skeleton skeleton;
+  /// \Internal
+  /// The pose of the character
+  private IPose pose;
+};
+
+/// Default constructor
+SkinnedCharacter() {}
+
+/// \Internal
+/// Set a new skeleton to be used for this character. 
+/// The Pose of the character will be reset when this method is called.
+private SkinnedCharacter.init!(Skeleton skeleton) {
+  this.skeleton = skeleton;
+  this.pose = Pose(skeleton);
+  this.updateSkinningMatrices();
+}
+
+/// \Internal
+/// Update the skinning matrix
+/// To-be called after the character pose has been updated
+private SkinnedCharacter.updateSkinningMatrices!() {
+  Index deformerIndices[] = this.skeleton.getDeformerIndices();
+  if(this.skinningMatrices.size() != deformerIndices.size())
+    this.skinningMatrices.resize(deformerIndices.size());
+
+  for (Index i = 0; i < deformerIndices.size(); i++) 
+    this.skinningMatrices[i] = (this.pose.getBoneXfo(deformerIndices[i])).toMat44() * this.skeleton.getBone(deformerIndices[i]).invRefPose;
+}
+
+/// \Internal
+/// Set a new skeleton from an array of bones
+SkinnedCharacter.init!(io Bone bones[], Boolean visibleBones[]) {
+  // Calculate the bone length by checking the offsets of the bones children.
+  for(Index i=0; i<bones.size(); i++) 
+  {
+    Index children[];
+    for(Index j=i+1; j<bones.size(); j++) 
+      if(bones[j].parentIndex == i) children.push(j);
+    
+    if(children.size() > 0)
+    {
+      Scalar boneLength = 0.0;
+      Boolean chainBone = false;
+      Index childChainBoneIndex = -1;
+      Index numChildrenContributingToBoneLength = 0;
+
+      for(Index j=0; j<children.size(); j++) 
+      {
+        // We compute the bones lenght, by looking at all children,a nd seeing if they are offset
+        // along the bones vector (X axis). We then take the furtherest child's distance as the bones length.
+        // Compute the local pose values for the skeleton based on the global pose.
+        Xfo referenceLocalPose;
+        if(bones[children[j]].parentIndex == -1) referenceLocalPose = bones[children[j]].referencePose;
+        else referenceLocalPose = bones[bones[children[j]].parentIndex].referencePose.inverse() * bones[children[j]].referencePose;
+        
+        Vec3 childOffset = referenceLocalPose.tr;
+        Scalar boneVecProjectionLength = childOffset.x;
+        childOffset.x = 0.0;
+        
+        // Check if the chld bone is aligned with the x axis of this bone.
+        if(chainBone || (childOffset.length() < (abs(boneVecProjectionLength) * 0.05)))
+        {
+          if(!chainBone || abs(boneVecProjectionLength) > boneLength)
+          {
+            boneLength = boneVecProjectionLength;
+            childChainBoneIndex = j;
+          }
+          chainBone = true;
+        }
+        else
+        {
+          boneLength += boneVecProjectionLength;
+          numChildrenContributingToBoneLength++;
+        }
+      }
+
+      // We are a chain bone, and our length is
+      // the distance to the next joint in the chain. 
+      if(chainBone) bones[i].length = boneLength;
+      
+      // Or this bone has a collection of children bones,
+      // and its length is the average distance to children in the +X direction
+      else if(numChildrenContributingToBoneLength > 0)
+      {
+        boneLength /= Scalar(numChildrenContributingToBoneLength);
+        bones[i].length = boneLength;
+      }
+    }
+
+    else
+    {
+      if(bones[i].parentIndex > 0)
+      {
+        bones[i].length = bones[bones[i].parentIndex].length * 0.75;
+        // Clamp bones from extending below the level of the floor.
+        Vec3 bonePos = bones[i].referencePose.tr;
+        Vec3 boneVec = bones[i].referencePose.ori.getXaxis();
+        if(bonePos.y > 0.0 && boneVec.y < 0.0 && (bonePos + (boneVec * bones[i].length)).y < 0.0)
+          bones[i].length = (1.0/boneVec.dot(Vec3(0.0, -1.0, 0.0))) * bonePos.y;
+      }
+    }
+  }
+
+  // To compute the bone radius, we find the longest bone in the skeleton, and 
+  // require its length to compute a good radius for the bones. 
+  Scalar maxBoneLength = 0.0;
+  Scalar minBoneLength = 99999999.0;
+  for(Index i=0; i<bones.size(); i++) 
+  {
+    if(abs(bones[i].length) > maxBoneLength) maxBoneLength = abs(bones[i].length);
+    if(abs(bones[i].length) > 0.0 && abs(bones[i].length) < minBoneLength) minBoneLength = abs(bones[i].length);
+  }
+
+  Scalar shortBoneLength = Math_linearInterpolate(minBoneLength, maxBoneLength, 0.1);
+  for(Index i=0; i<bones.size(); i++) 
+  {
+    // Assign a length skinning bones
+    if(bones[i].length == 0.0 && visibleBones[i])
+    {
+      if(bones[i].parentIndex > 0 && bones[bones[i].parentIndex].length < 0.0) bones[i].length = -shortBoneLength;
+      else bones[i].length = shortBoneLength;
+    }
+
+    if(bones[i].length != 0.0)
+    {
+      // the bones radius is based on its length vs the max bone length. 
+      // A bones raduis is proportional to its length, but shorter bones are fatter, 
+      // and longer bones are skinnier. 
+      Scalar boneLengthRatio = abs(bones[i].length) / maxBoneLength;
+      bones[i].radius = abs(bones[i].length) * Math_linearInterpolate(0.2, 0.05, boneLengthRatio);
+    }
+  }
+
+  this.init(Skeleton("Skeleton", bones));
+}
+
+/// Get the Skeleton of this character
+Ref<Skeleton> SkinnedCharacter.getSkeleton() {
+  return this.skeleton;
+}
+
+/// Get the skinning matrices for the character at its current pose.
+Mat44[] SkinnedCharacter.getSkinningMatrices() {
+  return this.skinningMatrices;
+}
+
+/// Return the number of sample of the clip pose
+Index SkinnedCharacter.getNbSamples() {
+  Ref<ClipPose> pose = this.pose;
+  if(pose)
+  {
+    pose.init();
+    return pose.getNumXfos();
+  }
+  return 2;
+}
+
+/// Get the current pose
+Ref<IPose> SkinnedCharacter.getPose() {
+  if(this.pose) return this.pose;
+  return null;
+}
+
+/// Set a the current pose
+SkinnedCharacter.setPoseFromClip!(AnimX::AnimClip clip) {
+  this.pose = ClipPose(this.skeleton, clip);
+  this.updateSkinningMatrices();
+}
+
+/// Set a the current pose
+SkinnedCharacter.setPose!(IPose pose) {
+  this.pose = pose;
+  this.updateSkinningMatrices();
+}
+
+/// Set the time of the clip pose
+SkinnedCharacter.setPoseAtTime!(Float32 time) {
+  Ref<ClipPose> pose = this.pose;
+  if(!pose) return;
+  pose.evaluate(time);
+  this.setPose(pose);
+}

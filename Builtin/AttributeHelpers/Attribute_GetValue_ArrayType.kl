@@ -1,0 +1,160 @@
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+function UInt32[] BaseGeometry.getUInt32ArrayAttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  io String type
+) {
+  type = "";
+  UInt32 value[];
+
+  if(!this.getAttributeValue_CheckIndex(mode, index))
+    return value;
+
+  UInt32ArrayAttribute cast = attr;
+  if(cast == null)
+    return value;
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      type = "UInt32[]";
+      value.resize(cast.getCount(index));
+      for(Size i=0;i<value.size();i++)
+        value[i] = cast.get(index, i);
+      break;
+    }
+    case 2: // per face corner
+    {
+      type = "UInt32[]";
+      Size size = mesh.getPolygonSize(index);
+      Size idx = mesh.getPolygonAttributeIndex(index, faceCorner % size);
+      value.resize(cast.getCount(idx));
+      for(Size i=0;i<value.size();i++)
+        value[i] = cast.get(idx, i);
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValue mode for UInt32ArrayAttribute.");
+      return value;
+    }
+  }  
+
+  return value;
+}
+
+/// \internal
+function SInt32[] BaseGeometry.getIntegerArrayAttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  io String type
+) {
+  type = "";
+  SInt32 value[];
+
+  if(!this.getAttributeValue_CheckIndex(mode, index))
+    return value;
+
+  IntegerArrayAttribute cast = attr;
+  if(cast == null)
+    return value;
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      type = "SInt32[]";
+      value.resize(cast.getCount(index));
+      for(Size i=0;i<value.size();i++)
+        value[i] = cast.get(index, i);
+      break;
+    }
+    case 2: // per face corner
+    {
+      type = "SInt32[]";
+      Size size = mesh.getPolygonSize(index);
+      Size idx = mesh.getPolygonAttributeIndex(index, faceCorner % size);
+      value.resize(cast.getCount(idx));
+      for(Size i=0;i<value.size();i++)
+        value[i] = cast.get(idx, i);
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValue mode for IntegerArrayAttribute.");
+      return value;
+    }
+  }  
+
+  return value;
+}
+
+/// \internal
+function Float32[] BaseGeometry.getScalarArrayAttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  io String type
+) {
+  type = "";
+  Float32 value[];
+
+  if(!this.getAttributeValue_CheckIndex(mode, index))
+    return value;
+
+  ScalarArrayAttribute cast = attr;
+  if(cast == null)
+    return value;
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      type = "Float32[]";
+      value.resize(cast.getCount(index));
+      for(Size i=0;i<value.size();i++)
+        value[i] = cast.get(index, i);
+      break;
+    }
+    case 2: // per face corner
+    {
+      type = "Float32[]";
+      Size size = mesh.getPolygonSize(index);
+      Size idx = mesh.getPolygonAttributeIndex(index, faceCorner % size);
+      value.resize(cast.getCount(idx));
+      for(Size i=0;i<value.size();i++)
+        value[i] = cast.get(idx, i);
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValue mode for ScalarArrayAttribute.");
+      return value;
+    }
+  }  
+
+  return value;
+}

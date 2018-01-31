@@ -1,0 +1,136 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+require FabricOGL, OSOGL, Containers;
+
+object OGLContext {
+  UInt32 ID;//From 0 to N, mapping to the OGLWrapperGlobals.contexts member
+  OSOGLContext context;
+  OSOGLContext tempCurrContext;
+
+  OGLWrapperGlobals globals;
+  OGLStateCache stateCache;
+  OGLCapabilities capabilities;
+
+  Boolean toDetachFromThreadContext;
+
+  Boolean initializedVertexArrays;
+  Size defaultVertexArray;
+
+  UInt32 frameBufferIDsToDelete[];
+  LightLock frameBufferIDsToDeleteLock;
+
+  UInt32 vertexArrayIDsToDelete[];
+  LightLock vertexArrayIDsToDeleteLock;
+};
+
+function OGLContext() {
+  this.globals = GetOGLWrapperGlobals();
+  this.capabilities = this.globals.capabilities;
+  this.stateCache = OGLStateCache();
+  this.context = OSOGLContext();
+  this.tempCurrContext = OSOGLContext();
+
+  // Assign an ID to this context (0..N)
+  if( this.globals.contextIDs.getFreeIndex( this.ID ) )
+    this.globals.contexts.resize( this.globals.contextIDs.getIndexEnd() );
+  this.globals.contexts[this.ID] = this;
+}
+
+function ~OGLContext() {
+  this.globals.contexts[this.ID] = null;
+
+  //Don't recycle IDs for now as this causes issues with deletion order
+  //(eg: context destroys before related framebuffers)
+  //this.globals.contextIDs.unusedIndex( this.ID );
+
+  if( this.toDetachFromThreadContext ) {
+    Ref<Object> nullObject = null;
+    this.globals.perThreadContexts.setCurrentContextWrapper( nullObject, false );
+  }
+}
+
+inline OGLContext.prepareForDraw!() {
+
+  if( !CheckOGLContextValidity( this ) ) {
+    setError("OGLContext.prepareForDraw: OpenGL context not bound");
+    return;
+  }
+
+  if( !this.initializedVertexArrays ) {
+    this.initializedVertexArrays = true;
+    if( !this.capabilities.useVertexArrays && this.capabilities.GLMajorVersion >= 3 ) {
+      // GL3+ specs require that at least we bind a 'default' vertex array (enforced by OSX)
+      UInt32 buffers[1];
+      UInt32 buffersExt<> = buffers;
+      glGenVertexArrays( 1, buffersExt );
+      this.defaultVertexArray = buffers[0];
+    }
+  }
+
+  if( this.frameBufferIDsToDelete.size() ) {
+    LightLockBracket lock( this.frameBufferIDsToDeleteLock );
+    glDeleteFramebuffers(this.frameBufferIDsToDelete.size(), this.frameBufferIDsToDelete);
+    this.frameBufferIDsToDelete.resize(0);
+  }
+
+  if( this.vertexArrayIDsToDelete.size() ) {
+    LightLockBracket lock( this.vertexArrayIDsToDeleteLock );
+    glDeleteFramebuffers(this.vertexArrayIDsToDelete.size(), this.vertexArrayIDsToDelete);
+    this.vertexArrayIDsToDelete.resize(0);
+  }
+
+  if( this.defaultVertexArray ) {
+    this.stateCache.bindVertexArray( this.defaultVertexArray );
+    this.stateCache.defaultVertexArray = this.defaultVertexArray;
+  }
+
+  //TODO: accumulate 'buffers to delete' that couldn't be deleted (wrong context) and delete them here
+}
+
+inline Boolean OGLContext.isValid() {
+  return Boolean(this.context) && this.context.isValid();
+}
+
+function OGLContext.initializeFromCurrentContext!() {
+  this.globals.perThreadContexts.setCurrentContextWrapper( this, false );
+
+  this.toDetachFromThreadContext = true;
+
+  this.tempCurrContext.setFromCurrent();
+  if( !this.tempCurrContext.isSameContext( this.context ) ) {
+    this.context.setFromCurrent();
+    if( this.context.isValid() )
+      this.stateCache.reset();
+    if( this.context.isValid() )
+      this.globals.getGLCapabilities();//Initialize caps
+  }
+}
+
+function Ref<OGLContext> GetCurrentContext( Boolean canCreate ) {
+  Ref<OGLWrapperGlobals> globals = GetOGLWrapperGlobals();
+  Ref<OGLContext> threadContext = globals.perThreadContexts.getCurrentContextWrapper();
+  if( !threadContext && canCreate ) {
+    OGLContext newContext();
+    threadContext = newContext;
+    globals.perThreadContexts.setCurrentContextWrapper( newContext, true );
+    threadContext.initializeFromCurrentContext();
+  }
+  return threadContext;
+}
+
+inline Ref<OGLContext> GetCurrentContext() {
+  return GetCurrentContext(true);
+}
+
+inline Boolean OGLContext.emulatedVertexArrayObjects() {
+  return this.globals.getGLCapabilities().GLMajorVersion < 3;
+}
+
+inline Boolean CheckOGLContextValidity( io Ref<OGLContext> context ) {
+  if( Boolean(Fabric_Guarded) )
+    return Boolean(context) && context.isValid();
+  else
+    return true;
+}

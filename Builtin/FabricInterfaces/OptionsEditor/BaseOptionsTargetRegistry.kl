@@ -1,0 +1,185 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+struct OptionsTargetGroup {
+  String idList[];
+};
+
+OptionsTargetGroup.addTarget!(String id) {
+  this.idList.push(id);
+}
+
+OptionsTargetGroup.removeTarget!(String id) {
+  UInt32 index;
+  if(this.hasTarget(id, index))
+  {
+    this.idList.swap(index, this.idList.size()-1);
+    this.idList.pop();
+  }
+}
+
+Boolean OptionsTargetGroup.hasTarget(String id, io UInt32 index) {
+  for(UInt32 i=0; i<this.idList.size(); ++i)
+  {
+    if(this.idList[i] == id)
+    {
+      index = i;
+      return true;
+    }
+  }
+  return false;
+}
+
+/// \internal
+struct OptionsTarget_data {
+  Ref<OptionsTarget> target;
+  String groupName;
+  String id;
+};
+
+/// \internal
+interface OptionsTargetRegistry_virtuals {
+  /// Unregisters a target.
+  /// \param target Reference to the OptionsTarget.
+  unregisterTarget!(Ref<OptionsTarget> target);
+};
+
+struct OptionsTargetRegistryIterator;
+
+/**
+  \versionadded 2.6.0
+  
+  BaseOptionsTargetRegistry registers OptionsTarget. 
+  It defines a base class for any options registry.
+*/
+object BaseOptionsTargetRegistry : OptionsTargetRegistry_virtuals {
+  /// Used the set the registry id.
+  private UInt32 idCounter;
+  /// Dictionary of registered targets. 
+  OptionsTarget_data targets_data[];
+  /// 
+  private OptionsTargetGroup groups[String];
+};
+
+UInt32 BaseOptionsTargetRegistry.count() {
+  return this.targets_data.size();
+}
+
+/// Gets the target id, returns InvalidIndex if the target was not found.
+String BaseOptionsTargetRegistry.getID(Ref<OptionsTarget> target) {
+  for(UInt32 i=0; i<this.targets_data.size(); ++i) 
+  {
+    OptionsTarget_data data = this.targets_data[i];
+    if(data.target === target)
+      return data.id;
+  }
+  return "";
+}
+
+/// Gets a target.
+Ref<OptionsTarget> BaseOptionsTargetRegistry.getTarget(String id) {
+  for(UInt32 i=0; i<this.targets_data.size(); ++i) 
+  {
+    OptionsTarget_data data = this.targets_data[i];
+    if(data.id == id)
+      return data.target;
+  }
+  return null;
+}
+
+private BaseOptionsTargetRegistry.registerToGroup!(String groupName, String id) {
+  if(!this.groups.has(groupName))
+  {
+    OptionsTargetGroup group;
+    this.groups[groupName] = group;
+  }
+  OptionsTargetGroup group = this.groups.get(groupName);
+  group.addTarget(id);
+}
+
+/// Registers a target.
+BaseOptionsTargetRegistry.registerTargetToGroup!(io Ref<OptionsTarget> target, String groupName, String id) {
+  
+  if(!this.getTarget(id))
+  {
+    OptionsTarget_data data;
+    data.target = target;
+    data.id = id;
+
+    if(groupName.length() > 0)
+    {
+      data.groupName = groupName;  
+      this.registerToGroup(groupName, id);
+    }
+    this.targets_data.push(data);   
+  } 
+}
+
+/// Registers a target.
+BaseOptionsTargetRegistry.registerTargetToGroup!(io Ref<OptionsTarget> target, String groupName) {
+  this.registerTargetToGroup(target, groupName, groupName + "_" + String(this.idCounter));
+  this.idCounter ++;
+}
+
+/// Registers a target.
+BaseOptionsTargetRegistry.registerTarget!(io Ref<OptionsTarget> target, String id) {
+  this.registerTargetToGroup(target, "", id);
+}
+
+/// Registers a target.
+BaseOptionsTargetRegistry.registerTarget!(io Ref<OptionsTarget> target) {
+  this.registerTargetToGroup(target, "", String(this.idCounter));
+  this.idCounter ++;
+}
+
+/// Implementation of OptionsTargetRegistry_virtuals.
+BaseOptionsTargetRegistry.unregisterTarget!(Ref<OptionsTarget> target) {
+
+  Boolean replace = false;
+
+  for(UInt32 i=0; i<this.targets_data.size(); ++i) 
+  {
+    OptionsTarget_data data = this.targets_data[i];
+    if(data.target === target)
+    {
+      String id = data.id;
+      String groupName = data.groupName;
+
+      if(this.groups.has(groupName))
+      {
+        this.groups[groupName].removeTarget(id);
+        if(!this.groups[groupName].idList.size())
+          this.groups.delete(groupName);
+      }
+      replace = true;
+    }
+
+    if(replace && i < this.targets_data.size() - 1)
+      this.targets_data[i] = this.targets_data[i+1];
+  }
+
+  if(replace)
+    this.targets_data.pop();
+}
+
+struct OptionsTargetRegistryIterator {
+  Ref<BaseOptionsTargetRegistry> registry;
+  Index index;
+};
+
+OptionsTargetRegistryIterator( Ref<BaseOptionsTargetRegistry> registry ) {
+  this.registry = registry;
+}
+
+Ref<OptionsTarget> OptionsTargetRegistryIterator.next!() {
+
+  if( !this.registry )
+    return null;
+
+  while( this.index < this.registry.count() ) 
+    return this.registry.targets_data[this.index++].target;
+  
+  return null;
+}

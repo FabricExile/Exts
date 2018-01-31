@@ -1,0 +1,90 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+require Math;
+
+/**
+  \versionadded 2.4.0
+    
+  OpenGL helpers functions and structures for Text extension.
+
+  \dfgPresetOmit
+*/
+
+/// Helper function to compile a GLSL shader.
+/// \param source The shader source.
+/// \param type Shader type (GL_VERTEX_SHADER, GL_FRAGMENT_SHADER)
+function UInt32 OGLTextCompileShader(String source, UInt32 type) {
+
+  Integer strlens[]; strlens.push(source.length());
+  String srcs[]; srcs.push(source);
+
+  UInt32 shaderID = glCreateShader(type);
+  glShaderSource(shaderID, srcs.size(), srcs, strlens);
+  glCompileShader(shaderID);
+
+  SInt32 param[]; param.resize(1);
+  glGetShaderiv(shaderID, GL_COMPILE_STATUS, param);
+  if(param[0] == GL_FALSE)
+  {
+    report("OGLTextCompileShader : error when compiling shader");
+    return InvalidIndex;
+  }
+  return shaderID;
+}
+
+/// Helper function to get the ID of the GL shader (program) used.
+/// \param vertexPath The vertex shader path.
+/// \param fragPath The fragment shader path.
+function UInt32 OGLTextLoadShader(String vertexPath, String fragPath) {
+
+  UInt32 programId = glCreateProgram();
+  if(vertexPath.length() > 0)
+  {
+    TextReader reader(vertexPath);
+    String vertSource = reader.readAll();
+    UInt32 vertexShader = OGLTextCompileShader(vertSource, GL_VERTEX_SHADER);
+    glAttachShader(programId, vertexShader);
+    glDeleteShader(vertexShader);
+  }
+  if(fragPath.length() > 0)
+  {
+    TextReader reader(fragPath);
+    String fragSource = reader.readAll();
+    UInt32 fragShader = OGLTextCompileShader(fragSource, GL_FRAGMENT_SHADER);
+    glAttachShader(programId, fragShader);
+    glDeleteShader(fragShader);
+  }
+  glLinkProgram(programId);
+
+  SInt32 param[]; param.resize(1);
+  glGetProgramiv(programId, GL_LINK_STATUS, param);
+   if(param[0] == GL_FALSE)
+  {
+    report("OGLTextLoadShader : error when loading shader");
+    return InvalidIndex;
+  }
+  return programId;
+}
+
+/// Helper function to generate the OpenGl texture.
+/// \param atlas Reference to an AtlasGL
+function AtlasGLGenerateTexture(io Ref<AtlasGL> atlas) {
+  UInt32 textIds[]; textIds.push(atlas.getTextureID());
+  glGenTextures(textIds.size(), textIds);  
+  atlas.setTextureID(textIds[0]);
+}
+ 
+/// Helper function to set the texture content.
+/// \param atlas Reference to an AtlasGL
+function AtlasGLSetTextureData(io Ref<AtlasGL> atlas) {
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
+  Data data; atlas.getData(data);
+  Size width, height; atlas.getDimensions(width, height);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, data);
+}

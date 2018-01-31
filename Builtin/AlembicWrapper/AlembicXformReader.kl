@@ -1,0 +1,313 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Alembic;
+
+/**
+  The :kl-ref:`AlembicXformReader` specializes the :kl-ref:`AlembicObjectReader` interface for reading :kl-ref:`AlembicIXform` data. 
+  It can be created using the :kl-ref:`AlembicArchiveReader.getXform` method.
+  \example
+
+  require AlembicWrapper;
+  require FileIO;
+
+  operator entry() {
+    
+    FilePath path = FilePath('${FABRIC_SCENE_GRAPH_DIR}/Python/Apps/Resources/Alembic/hierarchy.abc').expandEnvVars();
+
+    AlembicArchiveReader archive(path.string());
+    String xformPaths[] = archive.getPathsOfType('Xform');
+
+    for(Size i=0;i<xformPaths.size();i++) {
+
+      AlembicXformReader xform = archive.getXform(xformPaths[i]);
+      report('samples: '+xform.getNumSamples());
+
+      Xfo m = xform.readSample(2.4);
+      report(m.tr);
+
+    }
+
+  }
+
+  \endexample
+  \seealso AlembicXformWriter
+*/
+object AlembicXformReader : AlembicBaseObjectReader {
+  /// \internal
+  private AlembicIXform _xform;
+  /// \internal
+  private AlembicIXformSchema _schema;
+  /// \internal
+  private AlembicXformSample _sample;
+  /// \internal
+  private Float64 _times[];
+  /// \internal
+  private Boolean _xfosRead[]; // Tells whether a sample has been extracted from the archives yet
+  /// \internal
+  private Xfo _xfos[];
+  /// \internal
+  private Size _lastXfoIndex;
+  /// \internal
+  public AlembicXformReader _parentReader;
+};
+
+/// \internal
+private AlembicXformReader(AlembicArchiveReader archive, AlembicIObject xform) {
+
+  this._xform = AlembicIXform(xform);
+  this._schema = this._xform.getSchema();
+  this._sample = AlembicXformSample();
+  
+  AlembicTimeSampling ts = this._schema.getTimeSampling(); 
+  this.parent.set( archive, xform, ts, this._schema.getNumSamples(), this._schema.getChildBoundsProperty() );
+
+  for(Integer t = 0; t < this._schema.getNumSamples(); t++)
+    this._times.push(ts.getSampleTime(t));
+
+  if(this._times.size() == 0)
+    this._times.push(0.0);
+
+  this._lastXfoIndex = 0;
+
+  // the _parentReader will be set by the
+  // AlembicArchiveReader.getReader function
+  this._parentReader = null;
+}
+
+/// \internal
+private Xfo AlembicXformReader.requestXfo!(UInt32 i) {
+
+  if( this._xfos.size() != this._times.size() ) {
+
+    this._xfos.resize(this._times.size());
+    this._xfosRead.resize(this._times.size());
+  }
+  if( !this._xfosRead[i] ) {
+
+    this._schema.get(this._sample, this.archive.getISampleSelector(i));
+    Mat44 m = this._sample.getMatrix().transpose();
+    m.row3 = Vec4(0,0,0,1);
+    this._xfos[i] = m;
+    this._xfosRead[i] = true;
+  }
+  return this._xfos[i];
+}
+
+/// returns the full path of the wrapped AlembicIXform
+public String AlembicXformReader.getPath() {
+  return this._xform.asIObject().getFullName();
+}
+
+/// returns true if this reader wraps a valid AlembicIXform
+public Boolean AlembicXformReader.valid() {
+  if(!this._xform.valid())
+    return false;
+  return this.parent.valid();
+}
+
+/// clears all pointers and releases all alembic containers
+public AlembicXformReader.reset!() {
+  this._xform.reset();
+  this._schema.reset();
+  this._sample = null;
+  this._times.resize(0);
+  this._xfos.resize(0);
+  this._lastXfoIndex = 0;
+}
+
+/// returns the number of samples of this reader
+public SInt32 AlembicXformReader.getNumSamples() {
+  return this._times.size();
+}
+
+/// returns the schema of this reader
+public AlembicIXformSchema AlembicXformReader.getSchema() 
+{ 
+  return this._schema; 
+}
+
+/// returns the first (and only) sample used by this reader
+public AlembicXformSample AlembicXformReader.getSample() 
+{ 
+  return this._sample; 
+}
+
+/// returns the timesampling of this reader
+public Float64[] AlembicXformReader.getTimes() 
+{ 
+  return this._times; 
+}
+
+/// returns the longest timesampling in the hierarchy for this xform
+public Float64[] AlembicXformReader.getTimesFromHierarchy!()
+{
+  Float64 result[] = this.getTimes();
+
+  if(this._parentReader == null)
+    return result;
+
+  Float64 parentResult[] = this._parentReader.getTimesFromHierarchy();
+
+  if(parentResult.size() < result.size())
+    return result;
+
+  if(result.size() > 0 && parentResult.size() > 0)
+  {
+    if(parentResult[0] < result[0])
+      result = parentResult;
+    else if(parentResult[parentResult.size()-1] > result[result.size()-1])
+      result = parentResult;
+  }
+
+  return result;
+}
+
+/// returns the bounds of this object, including all children and this Xform, if any
+public Box3 AlembicXformReader.getBounds!(Float64 time, io Boolean isConstant) {
+  Boolean isChildBoundsConstant;
+  Box3 result = this.parent.getChildBounds( time, isChildBoundsConstant );
+  isConstant = isChildBoundsConstant && this._numSamples <= 1;
+  Mat44 xfo = this.readSample(time).toMat44();
+  return xfo * result;
+}
+
+/// returns true if the bounds are constant
+public Boolean AlembicXformReader.areSelfBoundsConstant() {
+  return this._numSamples <= 1;
+}
+
+/// returns the bounding box
+public Box3 AlembicXformReader.getChildBounds!(Float64 time) {
+  
+  AlembicIScalarProperty scalarProp = this._schema.getChildBoundsProperty();
+  Box3 result;
+  if(scalarProp)
+  {
+    AlembicIBox3Property boxProp(scalarProp);
+    AlembicTimeSampling timeSampling = boxProp.getTimeSampling();
+    AlembicSampleInfo info(time, timeSampling, boxProp.getNumSamples());
+
+    result = boxProp.get(AlembicISampleSelector(info.indexA));
+    if(info.requiresInterpolation())
+    {
+      Box3 result2 = boxProp.get(AlembicISampleSelector(info.indexB));
+      result.min = result.min.linearInterpolate(result2.min, Float32(info.fraction));
+      result.max = result.max.linearInterpolate(result2.max, Float32(info.fraction));
+    }
+  }
+  else if(this.archive)
+  {
+    AlembicIObject parent = this.getIObject();
+    for(UInt32 i=0;i<parent.getNumChildren();i++)
+    {
+      Boolean isConstant;
+      AlembicIObject child = parent.getChild(i);
+      String objType = this.archive.getObjectType(child.getFullName());
+      if(objType == "Xform")
+      {
+        AlembicXformReader reader = this.archive.getXform(child.getFullName());
+        Mat44 xfo = reader.readSample(time).toMat44();
+        result += xfo * reader.getChildBounds(time);
+      }
+      else if(objType == "Points")
+      {
+        AlembicPointsReader reader = this.archive.getPoints(child.getFullName());
+        result += reader.getSelfBounds(time, isConstant);
+      }
+      else if(objType == "PolyMesh")
+      {
+        AlembicPolyMeshReader reader = this.archive.getPolyMesh(child.getFullName());
+        result += reader.getSelfBounds(time, isConstant);
+      }
+      else if(objType == "SubD")
+      {
+        AlembicSubDReader reader = this.archive.getSubD(child.getFullName());
+        result += reader.getSelfBounds(time, isConstant);
+      }
+      else if(objType == "Curves")
+      {
+        AlembicCurvesReader reader = this.archive.getCurves(child.getFullName());
+        result += reader.getSelfBounds(time, isConstant);
+      }
+    }
+  }
+
+  return result;
+}
+
+/// reads a sample at a given time. this will properly interpolate between samples.
+public Xfo AlembicXformReader.readSample!(Float64 time) {
+
+  if(this == null)
+    return Xfo();
+  
+  if(this._times.size() == 0)
+    return Xfo();
+  
+  if(this._times.size() <= 1)
+    return this.requestXfo(0);
+
+  while(this._lastXfoIndex > 0 && this._times[this._lastXfoIndex] >= time) {
+    this._lastXfoIndex--;
+  }
+  while(this._lastXfoIndex < (this._times.size() - 2) && this._times[this._lastXfoIndex+1] < time) {
+    this._lastXfoIndex++;
+  }
+
+  //AlembicSampleInfo info( time, this._timeSampling, this._numSamples );
+  //if(info.requiresInterpolation())
+  //  return this._xfos[info.indexA].linearInterpolate( this._xfos[info.indexB], Float32(info.fraction) );
+  //else
+  //  return this._xfos[info.indexA];
+
+  if(this._lastXfoIndex == 0) {
+    if(this._times[0] >= time) {
+      return this.requestXfo(0);
+    }
+  } else if(this._lastXfoIndex >= this._times.size() - 2) {
+    if(this._times[this._times.size()-1] <= time) {
+      return this.requestXfo(this._times.size()-1);
+    }
+  }
+
+  Float64 timeStep = this._times[this._lastXfoIndex+1] - this._times[this._lastXfoIndex];
+  Float64 delta = time - this._times[this._lastXfoIndex];
+  Float64 u = delta / timeStep;
+  return this.requestXfo(this._lastXfoIndex).linearInterpolate(this.requestXfo(this._lastXfoIndex+1), Float32(u));
+}
+
+/// reads a sample at a given time and project to global space.
+/// this will properly interpolate between samples.
+function Xfo AlembicXformReader.readSampleGlobal!(Float64 time) {
+
+  if(this == null)
+    return Xfo();
+
+  if(this._times.size() == 0)
+    return Xfo();
+  Xfo local = this.readSample(time);
+
+  if(this._parentReader == null)
+    return local;
+  
+  return this._parentReader.readSampleGlobal(time) * local;
+}
+
+/// reads several sample at given times. this will properly interpolate between samples.
+public Xfo[] AlembicXformReader.readSamples!(Float64 times[]) {
+  Xfo result[](times.size());
+  for(Size i=0;i<times.size();i++)
+    result[i] = this.readSample(times[i]);
+  return result;
+}
+
+/// reads several samples at given times and project to global space.
+/// this will properly interpolate between samples.
+public Xfo[] AlembicXformReader.readSamplesGlobal!(Float64 times[]) {
+  Xfo result[](times.size());
+  for(Size i=0;i<times.size();i++)
+    result[i] = this.readSampleGlobal(times[i]);
+  return result;
+}

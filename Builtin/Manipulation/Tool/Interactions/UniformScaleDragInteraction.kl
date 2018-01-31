@@ -1,0 +1,156 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /**
+    The UniformScaleDragInteraction will change a TransformTarget's scaling
+    uniformly, 1 to 3 axis, based on a DragInteraction movements relative to a center.
+
+    The :kl-ref:`Tool::UniformScaleDragInteraction.setLocal` method allows to interpret the 
+    axis can be in TransformTarget's local space or in global space (local space is default).
+
+    By default, the scaling center is the TransformTarget translation,
+    else an explicit center can be set with :kl-ref:`Tool::UniformScaleDragInteraction.setExplicitCenter`.
+
+    See :ref:`TPG.interactive-tools` for more information and examples related to tool interactions.
+  */
+  object UniformScaleDragInteraction : BaseXfoDragInteraction{
+    Boolean local;//Else: global
+    Boolean scaleX, scaleY, scaleZ;
+    Vec3 planeNormalIfPlane;//If 2 axis are moved
+
+    Vec3 explicitCenter;
+    Boolean hasExplicitCenter;
+    Mat44 initialTransform;
+
+    Boolean enablePixelDelta;
+    Float32 pixelsForFirstFactor2;
+
+    Float32 lastFactor;
+  };
+
+  UniformScaleDragInteraction() {
+    this.setLocal( true );
+    this.lastFactor = 1;
+  }
+
+  UniformScaleDragInteraction( DragInteraction dragInteraction, TransformTarget transformTarget, Boolean scaleX, Boolean scaleY, Boolean scaleZ, Boolean localDirection, Scalar pixelsForFirstFactor2 ) {
+    this.setInteraction( dragInteraction );
+    this.setTransformTarget( transformTarget );
+    this.setLocal( localDirection );
+    this.scaleX = scaleX;
+    this.scaleY = scaleY;
+    this.scaleZ = scaleZ;
+    this.pixelsForFirstFactor2 = pixelsForFirstFactor2;
+
+    if( !scaleX && scaleY && scaleZ )
+      this.planeNormalIfPlane = Vec3( 1, 0, 0 );
+    if( scaleX && !scaleY && scaleZ )
+      this.planeNormalIfPlane = Vec3( 0, 1, 0 );
+    if( scaleX && scaleY && !scaleZ )
+      this.planeNormalIfPlane = Vec3( 0, 0, 1 );
+
+    Size sum = ( scaleX ? 1 : 0 ) + ( scaleY ? 1 : 0 ) + ( scaleZ ? 1 : 0 );
+    if( sum < 2 )
+      setError( "UniformScaleDragInteraction: error: must scale in at least 2 dimensions; to scale in one axis use ScaleAlongAxisDragInteraction" );
+  }
+
+  UniformScaleDragInteraction.setLocal!( Boolean localDirection ) {
+    this.local = localDirection;
+  }
+
+  UniformScaleDragInteraction.usePixelDelta!( Boolean enable, Scalar pixelsForFirstFactor2 ) {
+    this.enablePixelDelta = enable;
+    this.pixelsForFirstFactor2 = pixelsForFirstFactor2;
+  }
+
+  /// Sets an explicit scaling center. If in local (:kl-ref:`Tool::UniformScaleDragInteraction.setLocal` ),
+  /// the center will be interpreted in local space, else it will be transformed by the TransformTarget transform.
+  UniformScaleDragInteraction.setExplicitCenter!( Vec3 explicitCenter ) {
+    this.explicitCenter = explicitCenter;
+    this.hasExplicitCenter = true;
+  }
+
+  UniformScaleDragInteraction.onBegin!( Ref<DragInteraction> interaction ) {
+    this.initialTransform = this.getTransform();
+    this.parent.onBegin( interaction );
+  }
+
+  UniformScaleDragInteraction.onEnd!( Ref<DragInteraction> interaction ) {
+    this.lastFactor = 1;
+    this.parent.onEnd( interaction );
+  }
+
+  UniformScaleDragInteraction.onDrag!( Ref<DragInteraction> interaction ) {
+    // Get the current transfos
+    Mat44 transfo = this.initialTransform;
+    Ref<Viewport> viewport = interaction.getContextualViewport();
+
+    Vec3 center = transfo.translation();
+    if( this.hasExplicitCenter )
+      center = this.explicitCenter;
+
+    Scalar factor = 1;
+    String space = this.getTransformSpace();
+    Mat44 viewProj = viewport.getProjectionMat() * viewport.getViewMat();
+
+    // Simply use a factor of the pixel delta
+    Vec2 pixelDelta = interaction.getCurrentPixelPosition() - interaction.getInitialPixelPosition();
+
+    // If not all axis, use local offset to determine scaling direction
+    Vec3 localOffset;
+    if( !this.scaleX )
+      localOffset = Vec3( 0, 1, 1 );
+    else if( !this.scaleY )
+      localOffset = Vec3( 1, 0, 1 );
+    else if( !this.scaleZ )
+      localOffset = Vec3( 1, 1, 0 );
+
+    if( localOffset != Vec3() ) {
+      Vec3 projCenter = viewProj * center;
+      Vec2 pixCenter = NormalizedScreenSpaceToPixel( viewport, Vec2( projCenter.x, projCenter.y ) );
+
+      Vec3 projOffset = viewProj * ( center + localOffset );
+      Vec2 pixOffset = NormalizedScreenSpaceToPixel( viewport, Vec2( projOffset.x, projOffset.y ) );
+
+      Vec2 offsetDelta = pixOffset - pixCenter;
+
+      // Flip if not aligned with offset
+      if( offsetDelta.x < 0 )
+        pixelDelta.x = -pixelDelta.x;
+      if( offsetDelta.y < 0 )
+        pixelDelta.y = -pixelDelta.y;
+    }
+
+    factor = ( ( pixelDelta.x + pixelDelta.y ) + this.pixelsForFirstFactor2) / this.pixelsForFirstFactor2;
+
+    // Block factor 0
+    if( abs( factor ) < 1e-3 )
+      factor = factor < 0 ? -1e-3 : 1e-3;
+
+    // Apply factor in plane
+    Mat44 scaleMat;
+    if( this.planeNormalIfPlane != Vec3() ) {
+      Vec3 normal = this.planeNormalIfPlane;
+      if( this.local )
+        normal = ( transfo.upperLeft() * normal ).unit_safe();
+
+      Quat rot;
+      rot.setFrom2Vectors( normal, Vec3( 1, 0, 0 ), true );
+      Mat33 xScaling;
+      xScaling.setDiagonal( Vec3( 1, factor, factor ) );
+      scaleMat.setFromMat33( rot.inverse().toMat33() * xScaling * rot.toMat33() );
+    } else
+      scaleMat.setDiagonal( Vec3(factor) );
+
+    // Apply on pivot center
+    transfo.setTranslation( transfo.translation() - center );
+    transfo = scaleMat * transfo;
+    transfo.setTranslation( transfo.translation() + center );
+
+    this.lastFactor = factor;
+    this.setTransform( transfo );
+  }
+}// namespace Tool

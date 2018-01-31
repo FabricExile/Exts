@@ -1,0 +1,117 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /**
+    The RotateDragInteraction will change a TransformTarget's orientation
+    component based on a DragInteraction movements amplitude in X or Y screen coordinates.
+    The axis is interpreted in TransformTarget's space, which can be 
+    in world or screen space.
+
+    By default, the rotation center is the TransformTarget translation, 
+    else an explicit center can be set with :kl-ref:`Tool::RotateDragInteraction.setExplicitCenter`.
+
+    See :ref:`TPG.interactive-tools` for more information and examples related to tool interactions.
+  */
+  object RotateDragInteraction : BaseXfoDragInteraction{
+    Vec3 worldAxis;//If Vec3(0), interaction is deactivated
+    Float32 radAnglePerPixel;
+
+    Vec3 explicitWorldCenter;
+    Boolean hasExplicitWorldCenter;
+    Mat44 initialTransform;
+  };
+
+  RotateDragInteraction() {
+    this.worldAxis = Vec3( 1, 0, 0 );
+  }
+
+  /// Creates a RotateDragInteraction. If worldAxis == Vec3(), it is deactivated.
+  RotateDragInteraction( DragInteraction dragInteraction, TransformTarget transformTarget, Vec3 worldAxis, Float32 radAnglePerPixel ) {
+    this.setInteraction( dragInteraction );
+    this.setTransformTarget( transformTarget );
+    this.setWorldAxis( worldAxis );
+    this.radAnglePerPixel = radAnglePerPixel;
+  }
+
+  /// If worldAxis == Vec3(), it is deactivated.
+  RotateDragInteraction.setWorldAxis!( Vec3 worldAxis ) {
+    this.worldAxis = worldAxis == Vec3() ? worldAxis : worldAxis.unit_safe();//Vec3 -> deactivate
+  }
+
+  /// Sets an explicit rotation center. If in local (:kl-ref:`Tool::RotateDragInteraction.setLocal` ),
+  /// the center will be interpreted in local space, else it will be transformed by the TransformTarget transform.
+  RotateDragInteraction.setExplicitCenter!( Vec3 explicitWorldCenter ) {
+    this.explicitWorldCenter = explicitWorldCenter;
+    this.hasExplicitWorldCenter = true;
+  }
+
+  RotateDragInteraction.onBegin!( Ref<DragInteraction> interaction ) {
+    this.initialTransform = this.getTransform();
+    this.parent.onBegin( interaction );
+  }
+
+  RotateDragInteraction.onDrag!( Ref<DragInteraction> interaction ) {
+    if( this.worldAxis == Vec3() )
+      return;//deactivated
+
+    // Get the current transfos
+    Mat44 transfo = this.initialTransform;
+    Quat rotation;
+    Ref<Viewport> viewport = interaction.getContextualViewport();
+    String space = this.getTransformSpace();
+
+    Vec3 axis = this.worldAxis;
+    if( space != WorldSpace ) {
+      // Ignore axis if screen space
+      axis = Vec3( 0, 0, -1 );
+    }
+
+    Vec3 center = transfo.translation();
+    if( this.hasExplicitWorldCenter )
+      center = this.explicitWorldCenter;
+
+    Vec2 startPixels = interaction.getInitialPixelPosition();
+    Vec2 currPixels = interaction.getCurrentPixelPosition();
+
+    // Use tangent direction relative to pixel center
+    Vec2 pixelCenter = Vec2( center.x, center.y );
+    if( space == NormalizedViewportSpace )
+      pixelCenter = NormalizedScreenSpaceToPixel( viewport, Vec2( center.x, center.y ) );
+    else if( space == WorldSpace ) {
+      Vec3 projCenter = viewport.getProjectionMat() * viewport.getViewMat() * center;
+      pixelCenter = NormalizedScreenSpaceToPixel( viewport, Vec2( projCenter.x, projCenter.y ) );
+    }
+
+    // Choose rotation direction based on where the start was
+    Float32 deltaPixels;
+    Float32 deltaPix = currPixels.x - startPixels.x;
+    if( startPixels.y < pixelCenter.y )
+      deltaPix = -deltaPix;
+    deltaPixels += deltaPix;
+
+    deltaPix = startPixels.y - currPixels.y;
+    if( startPixels.x < pixelCenter.x )
+      deltaPix = -deltaPix;
+    deltaPixels += deltaPix;
+
+    // Flip if axis is inverted
+    Vec3 camDir = viewport.getViewMat().upperLeft().inverse() * Vec3( 0, 0, -1 );
+    if( camDir.dot( axis ) > 0 )
+      deltaPixels = -deltaPixels;
+
+    Float32 angle = this.radAnglePerPixel * deltaPixels;
+    rotation.setFromAxisAndAngle( axis, angle );
+
+    Mat44 rotationMat;
+    rotationMat.setFromMat33( rotation.toMat33() );
+
+    transfo.setTranslation( transfo.translation() - center );
+    transfo = rotationMat * transfo;
+    transfo.setTranslation( transfo.translation() + center );
+
+    this.setTransform( transfo );
+  }
+}// namespace Tool

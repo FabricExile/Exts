@@ -1,0 +1,63 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiTooltip" : "Returns the fractional component of the Float32 value.\n\n Supported by Float32,Float64"
+    },
+  "title" : "Fract[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "val",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float32[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "$TYPE$[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "$TYPE$[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "B5456CEE6020C0223FE9BA88FEBFEA72",
+  "code" : "require Math;
+
+operator Math_fract_task<<<index>>>(
+  io $TYPE$[] result
+, in $TYPE$[] val
+) {
+  result[index] = fract(val[index < val.size() ? index : val.size() - 1]);
+}
+
+dfgEntry {
+  if( val.size() == 0) return;
+  Size task_size = 0;
+  if(task_size < val.size()) task_size = val.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_fract_task(index, result, val);
+    }
+  } else {
+    Math_fract_task<<<task_size>>>(result, val);
+  }
+}
+"
+  }

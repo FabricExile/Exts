@@ -1,0 +1,86 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+namespace Tool {
+
+  /// Base object being both a Component and a EventSource.
+  /// See :ref:`TPG.events` for more information and examples.
+  object EventSourceComponent : BaseComponent, EventSource{
+    BaseEventSource eventSource;
+  };
+
+  /// \internal
+  /// Optimization: create only if we have listeners
+  EventSourceComponent.createEventSourceIfNotDone() {
+    if( !this.eventSource ) {
+      Ref<EventSourceComponent> mutableThis = this;
+      mutableThis.eventSource = BaseEventSource();
+      mutableThis.eventSource.setContainer( this );
+    }
+  }
+
+  /// Implementation of EventSource
+  /// \note If "owned", not only the this object will create an owner reference, but it will consider the owned listener as its child if it is a Component (setParent, invalidate).
+  EventSourceComponent.addListener!( Ref<EventListener> listener, Boolean owned ) { this.createEventSourceIfNotDone(); this.eventSource.addListener( listener, owned ); }
+
+  /// Implementation of EventSource
+  /// \note If "owned", not only the this object will create an owner reference, but it will consider the owned listener as its child if it is a Component (setParent, invalidate).
+  EventSourceComponent.addListener!( Ref<EventListener> listener, Boolean owned, String sourceEvent ) { this.createEventSourceIfNotDone(); this.eventSource.addListener( listener, owned, sourceEvent ); }
+
+  /// Implementation of EventSource
+  /// \note If "owned", not only the this object will create an owner reference, but it will consider the owned listener as its child if it is a Component (setParent, invalidate).
+  EventSourceComponent.addListener!( Ref<EventListener> listener, Boolean owned, String sourceEvent, String mappedListenerEvent ) { this.createEventSourceIfNotDone(); this.eventSource.addListener( listener, owned, sourceEvent, mappedListenerEvent ); }
+
+  /// Implementation of EventSource
+  /// \note If "owned", not only the this object will create an owner reference, but it will consider the owned listener as its child if it is a Component (setParent, invalidate).
+  EventSourceComponent.addListener!( Ref<EventListener> listener, Boolean owned, String sourceEvent, String mappedListenerEvent, ToolEventUserID userID ) { this.createEventSourceIfNotDone(); this.eventSource.addListener( listener, owned, sourceEvent, mappedListenerEvent, userID ); }
+
+  /// Implementation of EventSource
+  EventSourceComponent.removeListener!( Ref<EventListener> listener, String sourceEvent ) { if( this.eventSource )this.eventSource.removeListener( listener, sourceEvent ); }
+
+  /// Implementation of EventSource
+  EventSourceComponent.removeListener!( Ref<EventListener> listener, String sourceEvent, ToolEventUserID userID ) { if( this.eventSource )this.eventSource.removeListener( listener, sourceEvent, userID ); }
+
+  /// Implementation of EventSource
+  EventSourceComponent.removeListener!( Ref<EventListener> listener ) { if( this.eventSource )this.eventSource.removeListener( listener ); }
+
+  EventSourceComponent.sendEventToListeners( EventName name, EventPropagationType propagationType, String tag, Ref<Object> customData ) { if( this.eventSource )this.eventSource.sendEvent( name, propagationType, tag, customData ); }
+
+  EventSourceComponent.sendEventToListeners( EventName name, EventPropagationType propagationType, String tag ) { if( this.eventSource )this.eventSource.sendEvent( name, propagationType, tag ); }
+
+  EventSourceComponent.sendEventToListeners( EventName name, EventPropagationType propagationType ) { if( this.eventSource )this.eventSource.sendEvent( name, propagationType ); }
+
+  EventSourceComponent.sendEventToListeners( EventName name ) { if( this.eventSource )this.eventSource.sendEvent( name ); }
+
+  /// Send event to parent and listeners
+  EventSourceComponent.sendEventToParentAndListeners( EventName name, String tag, Ref<Object> customData ) {
+    ToolEvent event;
+    event.sender = this;
+    event.name = name;
+    event.propagationType = EventPropagationType_parent;
+    event.tag = tag;
+    event.customData = customData;
+    this.propagateEvent( event, ToolEventUserID(), false );
+    if( this.eventSource )this.eventSource.sendEvent( event.name, event.propagationType, event.tag, event.customData );
+  }
+  /// Send event to parent and listeners
+  EventSourceComponent.sendEventToParentAndListeners( EventName name, String tag ) { this.sendEventToParentAndListeners( name, tag, null ); }
+  /// Send event to parent and listeners
+  EventSourceComponent.sendEventToParentAndListeners( EventName name ) { this.sendEventToParentAndListeners( name, String(), null ); }
+
+  /// \internal
+  /// Non-virtual version that can be safely called from the destructor
+  /// This can be removed once KL is fixed to not call specialized methods in destructors
+  EventSourceComponent.invalidateInternal!( ) {
+    if( this.eventSource )this.eventSource.invalidate();
+    this.parent.invalidate();
+  }
+
+  EventSourceComponent.invalidate!( ) {
+    this.invalidateInternal();
+  }
+
+  ~EventSourceComponent() {
+    this.invalidateInternal();
+  }
+}// namespace Tool

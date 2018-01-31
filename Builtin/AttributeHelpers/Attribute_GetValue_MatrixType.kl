@@ -1,0 +1,151 @@
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+function Quat BaseGeometry.getQuatAttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  io String type
+) {
+  type = "";
+
+  if(!this.getAttributeValue_CheckIndex(mode, index))
+    return Quat();
+
+  QuatAttribute cast = attr;
+  if(cast == null)
+    return Quat();
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  Quat value;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      type = "Quat";
+      value = cast.values[index];
+      break;
+    }
+    case 2: // per face corner
+    {
+      type = "Quat";
+      Size size = mesh.getPolygonSize(index);
+      Size idx = mesh.getPolygonAttributeIndex(index, faceCorner % size);
+      value = cast.values[idx];
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValue mode for QuatAttribute.");
+      return Quat();
+    }
+  }  
+
+  return value;
+}
+ 
+
+/// \internal
+function Mat33 BaseGeometry.getMat33AttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  io String type
+) {
+  type = "";
+
+  if(!this.getAttributeValue_CheckIndex(mode, index))
+    return Mat33();
+
+  Mat33Attribute cast = attr;
+  if(cast == null)
+    return Mat33();
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  Mat33 value;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      type = "Mat33";
+      value = cast.values[index];
+      break;
+    }
+    case 2: // per face corner
+    {
+      type = "Mat33";
+      Size size = mesh.getPolygonSize(index);
+      Size idx = mesh.getPolygonAttributeIndex(index, faceCorner % size);
+      value = cast.values[idx];
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValue mode for Mat33Attribute.");
+      return Mat33();
+    }
+  }  
+
+  return value;
+}
+ 
+
+/// \internal
+function Mat44 BaseGeometry.getMat44AttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  io String type
+) {
+  type = "";
+
+  if(!this.getAttributeValue_CheckIndex(mode, index))
+    return Mat44();
+
+  Mat44Attribute cast = attr;
+  if(cast == null)
+    return Mat44();
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  Mat44 value;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      type = "Mat44";
+      value = cast.values[index];
+      break;
+    }
+    case 2: // per face corner
+    {
+      type = "Mat44";
+      Size size = mesh.getPolygonSize(index);
+      Size idx = mesh.getPolygonAttributeIndex(index, faceCorner % size);
+      value = cast.values[idx];
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValue mode for Mat44Attribute.");
+      return Mat44();
+    }
+  }  
+
+  return value;
+}
+ 

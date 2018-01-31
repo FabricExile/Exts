@@ -1,0 +1,72 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Alembic;
+
+/**
+  The :kl-ref:`AlembicFaceSetWriter` specializes the :kl-ref:`AlembicObjectWriter` interface for writing :kl-ref:`AlembicOFaceSet` data. 
+  It can be created using the :kl-ref:`AlembicArchiveWriter.addFaceSet` methods.
+  \seealso AlembicFaceSetReader
+  \dfgArrayPexDisable true
+*/
+object AlembicFaceSetWriter : AlembicObjectWriter{
+  /// \internal
+  private AlembicOFaceSet _faceset;
+  /// \internal
+  private AlembicOFaceSetSchema _schema;
+  /// \internal
+  private AlembicOFaceSetSample _sample;
+  /// \internal
+  private UInt32 _numSamples;
+  /// \internal
+  private UInt32 _storedSamples;
+};
+
+/// \internal
+private function AlembicFaceSetWriter(AlembicOObject parent, String name, SInt32 timeSampling) {
+  this._faceset = AlembicOFaceSet(parent, name, timeSampling);
+  this._schema = this._faceset.getSchema();
+  this._numSamples = 1;
+  this._storedSamples = 0;
+  this._sample = AlembicOFaceSetSample();
+}
+
+/// returns the full path of the wrapped AlembicOFaceSet
+function String AlembicFaceSetWriter.getPath() {
+  return this._faceset.asOObject().getFullName();
+}
+
+/// returns true if this writer wraps a valid AlembicOFaceSet
+function Boolean AlembicFaceSetWriter.valid() {
+  return this._faceset.valid();
+}
+
+/// clears all pointers and releases all alembic containers
+function AlembicFaceSetWriter.reset!() {
+  this._faceset.reset();
+  this._schema.reset();
+}
+
+/// returns the wrapped AlembicOObject
+function AlembicOObject AlembicFaceSetWriter.getOObject() {
+  return this._faceset.asOObject();
+}
+
+/// writes a single sample into the file based on the provided Mat44.
+function Boolean AlembicFaceSetWriter.writeSample!(SInt32 faces<>, Box3 bounds) {
+
+  if(this == null)
+    return false;
+
+  if(this._storedSamples == this._numSamples) {
+    setError('AlembicFaceSetWriter: Max number of samples reached.');
+    return false;
+  }
+
+  this._sample.setFaces(faces);
+  this._sample.setSelfBounds(bounds);
+  this._schema.set(this._sample);
+  this._storedSamples++;
+  return true;
+}

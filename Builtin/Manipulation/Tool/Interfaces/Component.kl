@@ -1,0 +1,110 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// A  Component is an owned object.
+  /// Its methods are a subset of the HierarchyNode methods, without the children capability.
+  /// See :ref:`TPG.hierarchy-properties` for more information about tool hierarchy and components.
+  interface Component {
+    setParent!( Ref<Object> owner );//Important: only keep Ref<> on owner, else there will be a cyclic reference!
+    Ref<Object> getParent();
+
+    String getName();
+    setName!( String name );
+
+    // getPath: name composited with parent's name
+    String getPath();
+
+    // Pre-destroy, ensure it is inactive even if there are leaks
+    invalidate!( );
+
+    // Notification telling that the parent hierarchy changed
+    parentHierarchyChanged!( );
+
+    // Notification telling that a child component has been added
+    componentAdded!( Ref<Component> child );
+
+    // Notification telling that a child component was removed
+    componentRemoved!( Ref<Component> child );
+  };
+
+  object BaseTool;
+
+  /// Helper function
+  Ref<BaseTool> GetParentTool( Ref<Component> component ) {
+    Ref<Component> parent = component.getParent();
+    while( parent ) {
+      Ref<BaseTool> parentTool = parent;
+      if( parentTool )
+        return parentTool;
+      parent = parent.getParent();
+    }
+    return null;
+  }
+
+  interface PropertyContainer;
+
+  /// Helper function
+  Ref<PropertyContainer> GetParentPropertyContainer( Ref<Component> component ) {
+    Ref<Component> parent = component.getParent();
+    while( parent ) {
+      Ref<PropertyContainer> parentInterface = parent;
+      if( parentInterface )
+        return parentInterface;
+      parent = parent.getParent();
+    }
+    return null;
+  }
+
+  interface EventListener;
+
+  /// Helper function
+  Ref<EventListener> GetParentEventListener( Ref<Component> component ) {
+    Ref<Component> parent = component.getParent();
+    while( parent ) {
+      Ref<EventListener> parentInterface = parent;
+      if( parentInterface )
+        return parentInterface;
+      parent = parent.getParent();
+    }
+    return null;
+  }
+
+  interface HierarchyNode;
+
+  /// Helper function
+  Ref<HierarchyNode> GetParentHierarchyNode( Ref<Component> component ) {
+    Ref<Component> parent = component.getParent();
+    while( parent ) {
+      Ref<HierarchyNode> parentInterface = parent;
+      if( parentInterface )
+        return parentInterface;
+      parent = parent.getParent();
+    }
+    return null;
+  }
+
+  interface RaycastTargetShape;
+
+  /// Helper function
+  Ref<RaycastTargetShape> GetParentRaycastShape( Ref<Component> component ) {
+    Ref<Component> parent = component.getParent();
+    while( parent ) {
+      Ref<RaycastTargetShape> parentInterface = parent;
+      if( parentInterface )
+        return parentInterface;
+      parent = parent.getParent();
+    }
+    return null;
+  }
+
+  String GetComponentName( Ref<Object> obj ) {
+    Ref<Component> component = obj;
+    if( component )
+      return component.getPath();
+    else
+      return obj.type();
+  }
+}// namespace Tool

@@ -1,0 +1,308 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+/**
+The :kl-ref:`mathRandomInteger`, :kl-ref:`mathRandomFloat32` and :kl-ref:`mathRandomFloat64`
+provide sequences of random numbers that can be accessed by index.
+
+Each of these functions takes a first parameter, ``id``, which is the sequence 
+number.  Each sequence number is periodic with period length of 536,870,912.
+However, sequence ``id + 1`` overlaps with sequence ``id`` after 1,048,576
+elements, so take care using different sequences.
+*/
+
+/*
+** [pzion 20110714] Order of 300772 (mod 2^31=2147483648) is 536870912
+*/
+
+/// \internal
+/// \dfgPresetColor Color(99, 129, 92)
+const Integer mathRandomBase = 300773;
+/// \internal
+/// \dfgPresetColor Color(99, 129, 92)
+const Size mathRandomOffsetsPerID = 1048576;
+
+/// \internal function to efficiently compute number at an offset in
+/// random sequence
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgCreateArrayPreset false
+inline Integer mathRandomPower(Size exp) {
+  Integer result = 1;
+  Integer mult = mathRandomBase;
+  for (Size mask=1; mask; mask<<=1 ) {
+    if ( exp & mask )
+      result *= mult;
+    mult *= mult;
+  }
+  return result;
+}
+
+/**
+\brief Generate an element of a sequence of uniformly-distributed random Integers between 0 and 2^29-1 (inclusive)
+
+\param seed The sequence number
+\param index The index within the sequence
+
+\note Each sequence is periodic with period length of 536,870,912. However, sequence ``seed + 1`` overlaps with sequence ``seed`` after 1,048,576 elements, so take care using different sequences.
+
+\seealso mathRandomFloat32, mathRandomFloat64
+
+\example
+  // generate 10 random Integers from sequence 18
+  Integer values[10];
+  for (Index i = 0; i < 10; ++i)
+    values[i] = mathRandomInteger(18, i);
+  report(values);
+\endexample
+\dfgPresetColor Color(99, 129, 92)
+\dfgPresetFolder Random
+\dfgCreateArrayPreset false
+*/
+inline Integer mathRandomInteger(Size seed, Size index) {
+  Integer power = mathRandomPower(mathRandomOffsetsPerID*seed + index);
+  return ((power & 0x7FFFFFFF) - 1) / 4;
+}
+
+/**
+Generate an element of a sequence of uniformly-distributed random Float64s in the interval [0, 1)
+
+\param seed The sequence number
+\param index The index within the sequence
+
+\note Each sequence is periodic with period length of 536,870,912. However, sequence ``seed + 1`` overlaps with sequence ``seed`` after 1,048,576 elements, so take care using different sequences.
+
+\seealso mathRandomFloat32, mathRandomInteger
+
+\example
+  // generate 10 random Float64s from sequence 18
+  Float64 values[10];
+  for (Index i = 0; i < 10; ++i)
+    values[i] = mathRandomFloat64(18, i);
+  report(values);
+\endexample
+\dfgPresetColor Color(99, 129, 92)
+\dfgPresetFolder Random
+\dfgCreateArrayPreset false
+*/
+inline Float64 mathRandomFloat64(Size seed, Size index) {
+  return Float64(mathRandomInteger(seed, index)) / 536870912.0f64;
+}
+
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgPresetFolder Random
+/// \dfgCreateArrayPreset false
+/// \dfgPresetDefault min 0.0
+/// \dfgPresetDefault min 1.0
+inline Float64 mathRandomFloat64(Size seed, Size index, Float64 min, Float64 max) {
+  return min + mathRandomFloat64(seed, index) * (max - min);
+}
+
+/**
+Generate an element of a sequence of uniformly-distributed random Float32s in the interval [0, 1)
+
+\param seed The sequence number
+\param index The index within the sequence
+
+\note Each sequence is periodic with period length of 536,870,912. However, sequence ``seed + 1`` overlaps with sequence ``seed`` after 1,048,576 elements, so take care using different sequences.
+
+\seealso mathRandomFloat64, mathRandomScalar
+
+\example
+  // generate 10 random Float32s from sequence 18
+  Float32 values[10];
+  for (Index i = 0; i < 10; ++i)
+    values[i] = mathRandomFloat32(18, i);
+  report(values);
+\endexample
+\dfgPresetColor Color(99, 129, 92)
+\dfgPresetFolder Random
+\dfgCreateArrayPreset false
+*/
+inline Float32 mathRandomFloat32(Size seed, Size index) {
+  return Float32(mathRandomInteger(seed, index)) / 536870912.0f32;
+}
+
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgPresetFolder Random
+/// \dfgCreateArrayPreset false
+/// \dfgPresetDefault min 0.0
+/// \dfgPresetDefault min 1.0
+inline Float32 mathRandomFloat32(Size seed, Size index, Float32 min, Float32 max) {
+  return min + mathRandomScalar(seed, index) * (max - min);
+}
+
+/// An alias for :kl-ref:`mathRandomFloat32`
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgPresetFolder Random
+/// \dfgCreateArrayPreset false
+inline Scalar mathRandomScalar(Size seed, Size index) {
+  return mathRandomFloat32(seed, index);
+}
+
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgPresetFolder Random
+/// \dfgCreateArrayPreset false
+/// \dfgPresetDefault min 0.0
+/// \dfgPresetDefault min 1.0
+inline SInt32 mathRandomSInt32(Size seed, Size index, SInt32 min, SInt32 max) {
+  return min + SInt32(mathRandomScalar(seed, index) * Scalar(max - min));
+}
+
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgPresetFolder Random
+/// \dfgCreateArrayPreset false
+/// \dfgPresetDefault min 0.0
+/// \dfgPresetDefault min 1.0
+inline UInt32 mathRandomUInt32(Size seed, Size index, UInt32 min, UInt32 max) {
+  return min + UInt32(mathRandomScalar(seed, index) * Scalar(max - min));
+}
+
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgPresetFolder Random
+/// \dfgCreateArrayPreset false
+/// \dfgPresetDefault min 0.0
+/// \dfgPresetDefault min 1.0
+inline Scalar mathRandomScalar(Size seed, Size index, Scalar min, Scalar max) {
+  return mathRandomFloat32(seed, index, min, max);
+}
+
+/// \internal
+operator mathRandomIntegerTask<<<index>>>(io Integer result[], Size seed, Size seedShift, Size indexShift)
+{
+  result[index] = mathRandomInteger(seed + index * seedShift, index + indexShift);
+}
+
+/// \dfgPresetTitle mathRandomInteger[]
+/// \dfgPresetDefault count 1
+/// \dfgPresetDefault seed 217
+/// \dfgPresetDefault seedShift 7
+/// \dfgPresetFolder Random
+inline Integer[] mathRandomIntegerArray(UInt32 count, Size seed, Size seedShift, Size indexShift) {
+  Integer result[];
+  result.resize(count);
+  if(count < 10000 /* pexmargin */)
+  {
+    for(Size i=0;i<count;i++)
+      mathRandomIntegerTask(i, result, seed, seedShift, indexShift);
+  }
+  else
+  {
+    mathRandomIntegerTask<<<count>>>(result, seed, seedShift, indexShift);
+  }
+  return result;
+}
+
+/// \internal
+operator mathRandomFloat64Task<<<index>>>(io Float64 result[], Size seed, Size seedShift, Size indexShift, Scalar min, Scalar max)
+{
+  result[index] = mathRandomFloat64(seed + index * seedShift, index + indexShift, min, max);
+}
+
+/// \dfgPresetTitle mathRandomFloat64[]
+/// \dfgPresetDefault count 1
+/// \dfgPresetDefault seed 217
+/// \dfgPresetDefault seedShift 7
+/// \dfgPresetDefault min 0.0
+/// \dfgPresetDefault min 1.0
+/// \dfgPresetFolder Random
+inline Float64[] mathRandomFloat64Array(UInt32 count, Size seed, Size seedShift, Size indexShift, Scalar min, Scalar max) {
+  Float64 result[];
+  result.resize(count);
+  if(count < 10000 /* pexmargin */)
+  {
+    for(Size i=0;i<count;i++)
+      mathRandomFloat64Task(i, result, seed, seedShift, indexShift, min, max);
+  }
+  else
+  {
+    mathRandomFloat64Task<<<count>>>(result, seed, seedShift, indexShift, min, max);
+  }
+  return result;
+}
+
+/// \internal
+operator mathRandomFloat32Task<<<index>>>(io Float32 result[], Size seed, Size seedShift, Size indexShift, Scalar min, Scalar max)
+{
+  result[index] = mathRandomFloat32(seed + index * seedShift, index + indexShift, min, max);
+}
+
+/// \dfgPresetTitle mathRandomFloat32[]
+/// \dfgPresetDefault count 1
+/// \dfgPresetDefault seed 217
+/// \dfgPresetDefault seedShift 7
+/// \dfgPresetDefault min 0.0
+/// \dfgPresetDefault min 1.0
+/// \dfgPresetFolder Random
+inline Float32[] mathRandomFloat32Array(UInt32 count, Size seed, Size seedShift, Size indexShift, Scalar min, Scalar max) {
+  Float32 result[];
+  result.resize(count);
+  if(count < 10000 /* pexmargin */)
+  {
+    for(Size i=0;i<count;i++)
+      mathRandomFloat32Task(i, result, seed, seedShift, indexShift, min, max);
+  }
+  else
+  {
+    mathRandomFloat32Task<<<count>>>(result, seed, seedShift, indexShift, min, max);
+  }
+  return result;
+}
+
+/// \internal
+operator mathRandomFloat32ByIdTask<<<index>>>(io Float32 result[], Size seed[], Size id[], Scalar min, Scalar max)
+{
+  result[index] = mathRandomFloat32(seed[index < seed.size() ? index : seed.size()-1], id[index < id.size() ? index : id.size()-1], min, max);
+}
+
+/// \dfgPresetTitle mathRandomFloat32ById[]
+/// \dfgPresetDefault min 0.0
+/// \dfgPresetDefault min 1.0
+/// \dfgPresetFolder Random
+inline Float32[] mathRandomFloat32ArrayById(Size seed[], Size id[], Scalar min, Scalar max) {
+  Float32 result[];
+  if(seed.size() == 0 || id.size() == 0)
+    return result;
+
+  Size size = seed.size();
+  if(size < id.size()) size = id.size();
+  result.resize(size);
+  if(size < 10000 /* pexmargin */)
+  {
+    for(Size i=0;i<size;i++)
+      mathRandomFloat32ByIdTask(i, result, seed, id, min, max);
+  }
+  else
+  {
+    mathRandomFloat32ByIdTask<<<size>>>(result, seed, id, min, max);
+  }
+  return result;
+}
+
+/// \internal
+operator mathRandomScalarTask<<<index>>>(io Scalar result[], Size seed, Size seedShift, Size indexShift, Scalar min, Scalar max)
+{
+  result[index] = mathRandomScalar(seed + index * seedShift, index + indexShift, min, max);
+}
+
+/// \dfgPresetTitle mathRandomScalar[]
+/// \dfgPresetDefault count 1
+/// \dfgPresetDefault seed 217
+/// \dfgPresetDefault seedShift 7
+/// \dfgPresetDefault min 0.0
+/// \dfgPresetDefault min 1.0
+/// \dfgPresetFolder Random
+inline Scalar[] mathRandomScalarArray(UInt32 count, Size seed, Size seedShift, Size indexShift, Scalar min, Scalar max) {
+  Scalar result[];
+  result.resize(count);
+  if(count < 10000 /* pexmargin */)
+  {
+    for(Size i=0;i<count;i++)
+      mathRandomScalarTask(i, result, seed, seedShift, indexShift, min, max);
+  }
+  else
+  {
+    mathRandomScalarTask<<<count>>>(result, seed, seedShift, indexShift, min, max);
+  }
+  return result;
+}
+

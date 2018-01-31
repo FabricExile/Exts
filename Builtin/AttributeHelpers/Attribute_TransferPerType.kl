@@ -1,0 +1,5944 @@
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+operator _BaseGeom_Transfer_IntegerAttribute_Simple<<<i>>>(
+  io SInt32 results[],
+  Vec3 positions[],
+  Vec3 normals[],
+  SpatialQueryable sourceSpatial,
+  Ref<IntegerAttribute> sourceCast,
+  io PolygonMesh targetMesh,
+  io Ref<IntegerAttribute> targetCastRef,
+  UInt32 faceCornerPolygon[],
+  UInt32 faceCornerOffset[],
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  SInt32 component,
+  Xfo xfo,
+  Vec3 localDir
+) {
+
+  // get the vertex, face or face corner position!
+  Vec3 pos;
+  Vec3 normal = localDir;
+  if(component == 0 || targetMesh == null) {
+    pos = positions[i];
+    normal = normals.size() > i ? normals[i] : localDir;
+  } else if(component == 1) {
+    Size size = targetMesh.getPolygonSize(i);
+    for(Size j=0;j<size;j++) {
+      Size idx = targetMesh.getPolygonAttributeIndex(i, j);
+      pos += positions[idx];
+      normal += normals.size() > i ? normals[i] : localDir;
+    }
+    pos *= 1.0 / Float32(size);
+    normal *= 1.0 / Float32(size);
+  } else if(component == 2) {
+    Size idx = targetMesh.getPolygonAttributeIndex(faceCornerPolygon[i], faceCornerOffset[i]);
+    pos = positions[idx];
+    normal = normals.size() > idx ? normals[idx] : localDir;
+  }
+
+  // project position + normal
+  pos = xfo.transformVector(pos);
+  normal = xfo.ori.rotateVector(normal);
+
+  GeometryLocation loc;
+  switch(mode) {
+    case 0: // closest
+    {
+      loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 1: // raycast along normal
+    {
+      loc = sourceSpatial.raycast(Ray(pos, normal), true, 0.0, SCALAR_INFINITE);
+      GeometryLocation locB = sourceSpatial.raycast(Ray(pos, -normal), true, 0.0, SCALAR_INFINITE);
+      if(loc.isValid() && locB.isValid()) {
+        Vec3 posA = sourceSpatial.getPositionAtLocation(loc);
+        Vec3 posB = sourceSpatial.getPositionAtLocation(locB);
+        if((posB - pos).lengthSquared() < (posA - pos).lengthSquared())
+          loc = locB;
+      } else if(locB.isValid()) {
+        loc = locB;
+      }
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 2: // raycast along direction
+    {
+      Ray ray(pos, localDir);
+      loc = sourceSpatial.raycast(ray, true, 0.0, SCALAR_INFINITE);
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+  }
+
+  if(!loc.isValid()) 
+    return;
+
+  SInt32 result = GetAttributeAtLocation(sourceSpatial, loc, sourceCast);
+  if(targetMesh != null && component == 0) {
+    targetMesh.setPointAttribute(i, targetCastRef, result);
+  } else  {
+    results[i] = result;
+  }
+}
+
+operator _BaseGeom_Transfer_IntegerAttribute_PerFaceCorner<<<i>>>(
+  io SInt32 results[],
+  Vec3 positions[],
+  Vec3 normals[],
+  PolygonMesh sourceMesh,
+  Ref<IntegerAttribute> sourceCast,
+  io PolygonMesh targetMesh,
+  io Ref<IntegerAttribute> targetCastRef,
+  UInt32 faceCornerPolygon[],
+  UInt32 faceCornerOffset[],
+  Vec3 sourcePolygonPositions[],
+  Vec3 targetPolygonPositions[],
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  Xfo xfo,
+  Vec3 localDir
+) {
+
+  // get face corner position!
+  Size targetIdx = targetMesh.getPolygonAttributeIndex(faceCornerPolygon[i], faceCornerOffset[i]);
+  Vec3 pos = positions[targetIdx];
+  Vec3 normal = normals.size() > targetIdx ? normals[targetIdx] : localDir;
+
+  // project position + normal
+  pos = xfo.transformVector(pos);
+  normal = xfo.ori.rotateVector(normal);
+
+  GeometryLocation loc;
+  switch(mode) {
+    case 0: // closest
+    {
+      loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 1: // raycast along normal
+    {
+      loc = sourceMesh.raycast(Ray(pos, normal), true, 0.0, SCALAR_INFINITE);
+      GeometryLocation locB = sourceMesh.raycast(Ray(pos, -normal), true, 0.0, SCALAR_INFINITE);
+      if(loc.isValid() && locB.isValid()) {
+        Vec3 posA = sourceMesh.getPositionAtLocation(loc);
+        Vec3 posB = sourceMesh.getPositionAtLocation(locB);
+        if((posB - pos).lengthSquared() < (posA - pos).lengthSquared())
+          loc = locB;
+      } else if(locB.isValid()) {
+        loc = locB;
+      }
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 2: // raycast along direction
+    {
+      Ray ray(pos, localDir);
+      loc = sourceMesh.raycast(ray, true, 0.0, SCALAR_INFINITE);
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+  }
+
+  if(!loc.isValid()) 
+    return;
+
+  // let's do some special treatment if the polygon
+  // has discontinuities....!
+  Index polygon = sourceMesh.getLocationPolygon(loc);
+  if(!sourceMesh.isPolygonAttributeUniformForAllCorners(polygon, sourceCast)) {
+
+    // skip internal edges
+    Scalar weight = 0.0;
+    UInt32 edge = sourceMesh.getClosestEdgeToLocation(loc, weight);
+    if(weight <= threshold) {
+
+      UInt32 polygonPointIndices[3];
+      Scalar weights[3];
+      sourceMesh.getLocationPolygonPointIndicesAndWeights( loc, polygonPointIndices, weights );
+
+      // check if this is on a vertex
+      if(weights[0] > 1.0 - threshold ||
+        weights[1] > 1.0 - threshold ||
+        weights[2] > 1.0 - threshold
+      ) {
+
+        Index sourcePointIndex = polygonPointIndices[0];
+        if(weights[1] > weights[0] && weights[1] > weights[2])
+          sourcePointIndex = polygonPointIndices[1];
+        else if(weights[2] > weights[0] && weights[2] > weights[1])
+          sourcePointIndex = polygonPointIndices[2];
+        Index sourcePoint = sourceMesh.getPolygonPoint(polygon, sourcePointIndex);
+
+        Vec3 sourcePointPos = sourceMesh.getPointPosition(sourcePoint);
+        Scalar minAngle = SCALAR_INFINITE;
+        Index sourcePolygon = polygon;
+        sourcePointIndex = 0;
+
+        Vec3 targetVector = (targetPolygonPositions[faceCornerPolygon[i]] - positions[targetIdx]).unit();
+        targetVector = xfo.ori.rotateVector(targetVector);
+
+        for(Size j=0;j<sourceMesh.getPointPolygonCount(sourcePoint);j++) {
+          
+          Size wingPolygon;
+          Size wingPolygonPointIndex;
+          sourceMesh.getPointPolygonAndIndex(sourcePoint, j, wingPolygon, wingPolygonPointIndex);
+
+          Vec3 sourceVector = (sourcePolygonPositions[wingPolygon] - sourcePointPos).unit();
+          Scalar angle = sourceVector.unitsAngleTo(targetVector);
+
+          if(angle < minAngle) {
+            minAngle = angle;
+            sourcePolygon = wingPolygon;
+            sourcePointIndex = wingPolygonPointIndex;
+          }
+
+        }
+        
+        Size sourceTriangle = sourcePointIndex > 2 ? (sourcePointIndex - 1) / 2 : 0;
+
+        GeometryLocation newLoc;
+        newLoc.index = sourcePolygon;
+        newLoc.subIndex = sourceTriangle;
+        newLoc.barycentric = Vec3(0, 0, 0);
+
+        UInt32 newPolygonPointIndices[3];
+        Scalar newWeights[3];
+        sourceMesh.getLocationPolygonPointIndicesAndWeights( newLoc, newPolygonPointIndices, newWeights );
+
+        for(Size j=0;j<3;j++) {
+          if(newPolygonPointIndices[j] == sourcePointIndex) {
+            newLoc.barycentric.setComponent(j, 1.0);
+            break;
+          }
+        }
+
+        loc = newLoc;
+
+      } else {
+
+        // let's find the neighbor polygon (if it exists)
+        Size adjacentPolygon;
+        Size adjacentPolygonPointIndex;
+        sourceMesh.getPolygonAdjacentPolygonAndIndex(
+          polygon,
+          polygonPointIndices[edge], 
+          adjacentPolygon, 
+          adjacentPolygonPointIndex
+        );
+
+        if(adjacentPolygon == InvalidIndex) {
+          
+          // leave things are they are
+          // todo: we might want to move the geometry location to the edge,
+          // in other words: make the opposing weight = 0.0
+
+        } else {
+
+          // let's find out which polygon is closer to the target polygon
+          Vec3 targetVector = (targetPolygonPositions[faceCornerPolygon[i]] - positions[targetIdx]).unit();
+          targetVector = xfo.ori.rotateVector(targetVector);
+
+          Vec3 sourcePos = sourceMesh.getPositionAtLocation(loc);
+          Vec3 sourceVectorA = (sourcePolygonPositions[polygon] - sourcePos).unit();
+          Vec3 sourceVectorB = (sourcePolygonPositions[adjacentPolygon] - sourcePos).unit();
+          Scalar angleA = targetVector.unitsAngleTo(sourceVectorA);
+          Scalar angleB = targetVector.unitsAngleTo(sourceVectorB);
+
+          if(angleB < angleA) {
+
+            Size adjacentPolygonSize = sourceMesh.getPolygonSize(adjacentPolygon);
+            Size adjacentPolygonTriangles = adjacentPolygonSize - 2;
+            Size edgeTriangle = polygonPointIndices[edge] > 2 ? (polygonPointIndices[edge] - 1) / 2 : 0;
+
+            GeometryLocation newLoc;
+            newLoc.index = adjacentPolygon;
+            newLoc.subIndex = edgeTriangle;
+            newLoc.barycentric = Vec3(0, 0, 0);
+
+            UInt32 newPolygonPointIndices[3];
+            Scalar newWeights[3];
+            sourceMesh.getLocationPolygonPointIndicesAndWeights( newLoc, newPolygonPointIndices, newWeights );
+
+            for(Size j=0;j<3;j++) {
+              if(newPolygonPointIndices[j] == adjacentPolygonPointIndex) {
+                newLoc.barycentric.setComponent((j+1)%3, weights[edge]);
+                newLoc.barycentric.setComponent((j+0)%3, weights[(edge+1) % 3]);
+                break;
+              }
+            }
+
+            Scalar newLocSum = newLoc.barycentric.x + newLoc.barycentric.y + newLoc.barycentric.z;
+            if(newLocSum != 0.0)
+            {
+              newLoc.barycentric /= newLocSum;
+              loc = newLoc;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  results[i] = GetAttributeAtLocation(sourceMesh, loc, sourceCast);
+}
+
+/// \internal
+private function Boolean BaseGeometry.transferIntegerAttribute!(
+  BaseGeometry sourceGeo,
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  SInt32 component,
+  IntegerAttribute sourceCast,
+  String target,
+  Xfo sourceXfo,
+  Xfo targetXfo,
+  Vec3 direction
+) {
+  if(sourceCast == null)
+    return false;
+  Ref<IntegerAttribute> sourceRef = sourceCast;
+
+  // figure out how many lookups we have to do
+  SpatialQueryable sourceSpatial = sourceGeo;
+  if(sourceSpatial == null) {
+    report('Error: Transfer: Source geometry is not a SpatialQueryable.');
+    return false;
+  }
+
+  GeometryAttributes attributes = this.attributes;
+  if(!attributes)
+    return false;
+
+  GeometryAttribute targetAttr = attributes.getAttribute(target);
+  if(targetAttr != null)
+  {
+    if(targetAttr.type() != IntegerAttribute) {
+      report('Error: Transfer: Target attribute "'+target+'" exists, but it\'s not a IntegerAttribute.');
+      return false;
+    }
+  }
+
+  IntegerAttribute targetCast = attributes.getOrCreateIntegerAttribute(target);
+  if(targetCast == null)
+    return false;
+  Ref<IntegerAttribute> targetCastRef = targetCast;
+
+  Vec3 positions[];
+  Vec3 normals[];
+  Vec3Attribute positionsAttr = attributes.getAttribute('positions');
+  Vec3Attribute normalsAttr = attributes.getAttribute('normals');
+  if(positionsAttr == null) {
+    report('Error: Transfer: positions don\'t exist on target geometry.');
+    return false;
+  }
+  positions = positionsAttr.values;
+  Size numTasks = positions.size();
+  if(normalsAttr)
+    normals = normalsAttr.values;
+
+  // localize the direction + transforms
+  Vec3 localDir = sourceXfo.ori.inverse().rotateVector(direction);
+  Xfo xfo = sourceXfo.inverse() * targetXfo;
+
+  // setup the spatial queries
+  GenericValueContainer spatialOptions();
+  PrepareForSpatialQueries_setOctree(spatialOptions);
+
+  PolygonMesh targetMesh = this;
+  PolygonMesh sourceMesh = sourceGeo;
+
+  UInt32 faceCornerPolygon[];
+  UInt32 faceCornerOffset[];
+  if(targetMesh != null) {
+    numTasks = targetMesh.pointCount();
+    if(component == 2) {
+      numTasks = targetMesh.polygonPointsCount();
+      faceCornerPolygon.resize(numTasks);
+      faceCornerOffset.resize(numTasks);
+
+      Index offset = 0;
+      for(Size i=0;i<targetMesh.polygonCount();i++) {
+        Size count = targetMesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++) {
+          faceCornerPolygon[offset] = i;
+          faceCornerOffset[offset] = j;
+          offset++;
+        }
+      }
+    }
+  }
+
+  // deal with a special case if both source
+  // and target are of type PolygonMesh
+  if(targetMesh != null && sourceMesh != null && component == 2) {
+
+    Vec3 sourcePolygonPos[] = sourceMesh.getNormalizedPolygonPositions();
+    Vec3 targetPolygonPos[] = targetMesh.getNormalizedPolygonPositions();
+
+    numTasks = targetMesh.polygonPointsCount();
+    SInt32 results[](numTasks);
+
+    sourceMesh.prepareForSpatialQueries(numTasks * 4, spatialOptions);
+
+    _BaseGeom_Transfer_IntegerAttribute_PerFaceCorner<<<numTasks>>>(
+      results,
+      positions,
+      normals,
+      sourceMesh,
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      sourcePolygonPos,
+      targetPolygonPos,
+      mode,
+      closestIfNotHit,
+      threshold,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      targetMesh.setPolygonAttribute( faceCornerPolygon[i], faceCornerOffset[i], targetCastRef, results[i] );
+    }
+
+  } else if(component == 0 || targetMesh == null) {
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_IntegerAttribute_Simple<<<numTasks>>>(
+      targetCast.values,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+  } else if(component == 1) {
+
+    numTasks = targetMesh.polygonCount();
+    SInt32 results[](numTasks);
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_IntegerAttribute_Simple<<<numTasks>>>(
+      results,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      Size size = targetMesh.getPolygonSize(i);
+      for(Size j=0;j<size;j++)
+        targetMesh.setPolygonAttribute( i, j, targetCastRef, results[i] );
+    }
+
+  } else if(component == 2) {
+
+    numTasks = targetMesh.polygonPointsCount();
+    SInt32 results[](numTasks);
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_IntegerAttribute_Simple<<<numTasks>>>(
+      targetCast.values,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      targetMesh.setPolygonAttribute( faceCornerPolygon[i], faceCornerOffset[i], targetCastRef, results[i] );
+    }
+  }
+
+  targetCast.incrementVersion();
+  return true;
+}
+
+operator _BaseGeom_Transfer_UInt32Attribute_Simple<<<i>>>(
+  io UInt32 results[],
+  Vec3 positions[],
+  Vec3 normals[],
+  SpatialQueryable sourceSpatial,
+  Ref<UInt32Attribute> sourceCast,
+  io PolygonMesh targetMesh,
+  io Ref<UInt32Attribute> targetCastRef,
+  UInt32 faceCornerPolygon[],
+  UInt32 faceCornerOffset[],
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  SInt32 component,
+  Xfo xfo,
+  Vec3 localDir
+) {
+
+  // get the vertex, face or face corner position!
+  Vec3 pos;
+  Vec3 normal = localDir;
+  if(component == 0 || targetMesh == null) {
+    pos = positions[i];
+    normal = normals.size() > i ? normals[i] : localDir;
+  } else if(component == 1) {
+    Size size = targetMesh.getPolygonSize(i);
+    for(Size j=0;j<size;j++) {
+      Size idx = targetMesh.getPolygonAttributeIndex(i, j);
+      pos += positions[idx];
+      normal += normals.size() > i ? normals[i] : localDir;
+    }
+    pos *= 1.0 / Float32(size);
+    normal *= 1.0 / Float32(size);
+  } else if(component == 2) {
+    Size idx = targetMesh.getPolygonAttributeIndex(faceCornerPolygon[i], faceCornerOffset[i]);
+    pos = positions[idx];
+    normal = normals.size() > idx ? normals[idx] : localDir;
+  }
+
+  // project position + normal
+  pos = xfo.transformVector(pos);
+  normal = xfo.ori.rotateVector(normal);
+
+  GeometryLocation loc;
+  switch(mode) {
+    case 0: // closest
+    {
+      loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 1: // raycast along normal
+    {
+      loc = sourceSpatial.raycast(Ray(pos, normal), true, 0.0, SCALAR_INFINITE);
+      GeometryLocation locB = sourceSpatial.raycast(Ray(pos, -normal), true, 0.0, SCALAR_INFINITE);
+      if(loc.isValid() && locB.isValid()) {
+        Vec3 posA = sourceSpatial.getPositionAtLocation(loc);
+        Vec3 posB = sourceSpatial.getPositionAtLocation(locB);
+        if((posB - pos).lengthSquared() < (posA - pos).lengthSquared())
+          loc = locB;
+      } else if(locB.isValid()) {
+        loc = locB;
+      }
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 2: // raycast along direction
+    {
+      Ray ray(pos, localDir);
+      loc = sourceSpatial.raycast(ray, true, 0.0, SCALAR_INFINITE);
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+  }
+
+  if(!loc.isValid()) 
+    return;
+
+  UInt32 result = GetAttributeAtLocation(sourceSpatial, loc, sourceCast);
+  if(targetMesh != null && component == 0) {
+    targetMesh.setPointAttribute(i, targetCastRef, result);
+  } else  {
+    results[i] = result;
+  }
+}
+
+operator _BaseGeom_Transfer_UInt32Attribute_PerFaceCorner<<<i>>>(
+  io UInt32 results[],
+  Vec3 positions[],
+  Vec3 normals[],
+  PolygonMesh sourceMesh,
+  Ref<UInt32Attribute> sourceCast,
+  io PolygonMesh targetMesh,
+  io Ref<UInt32Attribute> targetCastRef,
+  UInt32 faceCornerPolygon[],
+  UInt32 faceCornerOffset[],
+  Vec3 sourcePolygonPositions[],
+  Vec3 targetPolygonPositions[],
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  Xfo xfo,
+  Vec3 localDir
+) {
+
+  // get face corner position!
+  Size targetIdx = targetMesh.getPolygonAttributeIndex(faceCornerPolygon[i], faceCornerOffset[i]);
+  Vec3 pos = positions[targetIdx];
+  Vec3 normal = normals.size() > targetIdx ? normals[targetIdx] : localDir;
+
+  // project position + normal
+  pos = xfo.transformVector(pos);
+  normal = xfo.ori.rotateVector(normal);
+
+  GeometryLocation loc;
+  switch(mode) {
+    case 0: // closest
+    {
+      loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 1: // raycast along normal
+    {
+      loc = sourceMesh.raycast(Ray(pos, normal), true, 0.0, SCALAR_INFINITE);
+      GeometryLocation locB = sourceMesh.raycast(Ray(pos, -normal), true, 0.0, SCALAR_INFINITE);
+      if(loc.isValid() && locB.isValid()) {
+        Vec3 posA = sourceMesh.getPositionAtLocation(loc);
+        Vec3 posB = sourceMesh.getPositionAtLocation(locB);
+        if((posB - pos).lengthSquared() < (posA - pos).lengthSquared())
+          loc = locB;
+      } else if(locB.isValid()) {
+        loc = locB;
+      }
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 2: // raycast along direction
+    {
+      Ray ray(pos, localDir);
+      loc = sourceMesh.raycast(ray, true, 0.0, SCALAR_INFINITE);
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+  }
+
+  if(!loc.isValid()) 
+    return;
+
+  // let's do some special treatment if the polygon
+  // has discontinuities....!
+  Index polygon = sourceMesh.getLocationPolygon(loc);
+  if(!sourceMesh.isPolygonAttributeUniformForAllCorners(polygon, sourceCast)) {
+
+    // skip internal edges
+    Scalar weight = 0.0;
+    UInt32 edge = sourceMesh.getClosestEdgeToLocation(loc, weight);
+    if(weight <= threshold) {
+
+      UInt32 polygonPointIndices[3];
+      Scalar weights[3];
+      sourceMesh.getLocationPolygonPointIndicesAndWeights( loc, polygonPointIndices, weights );
+
+      // check if this is on a vertex
+      if(weights[0] > 1.0 - threshold ||
+        weights[1] > 1.0 - threshold ||
+        weights[2] > 1.0 - threshold
+      ) {
+
+        Index sourcePointIndex = polygonPointIndices[0];
+        if(weights[1] > weights[0] && weights[1] > weights[2])
+          sourcePointIndex = polygonPointIndices[1];
+        else if(weights[2] > weights[0] && weights[2] > weights[1])
+          sourcePointIndex = polygonPointIndices[2];
+        Index sourcePoint = sourceMesh.getPolygonPoint(polygon, sourcePointIndex);
+
+        Vec3 sourcePointPos = sourceMesh.getPointPosition(sourcePoint);
+        Scalar minAngle = SCALAR_INFINITE;
+        Index sourcePolygon = polygon;
+        sourcePointIndex = 0;
+
+        Vec3 targetVector = (targetPolygonPositions[faceCornerPolygon[i]] - positions[targetIdx]).unit();
+        targetVector = xfo.ori.rotateVector(targetVector);
+
+        for(Size j=0;j<sourceMesh.getPointPolygonCount(sourcePoint);j++) {
+          
+          Size wingPolygon;
+          Size wingPolygonPointIndex;
+          sourceMesh.getPointPolygonAndIndex(sourcePoint, j, wingPolygon, wingPolygonPointIndex);
+
+          Vec3 sourceVector = (sourcePolygonPositions[wingPolygon] - sourcePointPos).unit();
+          Scalar angle = sourceVector.unitsAngleTo(targetVector);
+
+          if(angle < minAngle) {
+            minAngle = angle;
+            sourcePolygon = wingPolygon;
+            sourcePointIndex = wingPolygonPointIndex;
+          }
+
+        }
+        
+        Size sourceTriangle = sourcePointIndex > 2 ? (sourcePointIndex - 1) / 2 : 0;
+
+        GeometryLocation newLoc;
+        newLoc.index = sourcePolygon;
+        newLoc.subIndex = sourceTriangle;
+        newLoc.barycentric = Vec3(0, 0, 0);
+
+        UInt32 newPolygonPointIndices[3];
+        Scalar newWeights[3];
+        sourceMesh.getLocationPolygonPointIndicesAndWeights( newLoc, newPolygonPointIndices, newWeights );
+
+        for(Size j=0;j<3;j++) {
+          if(newPolygonPointIndices[j] == sourcePointIndex) {
+            newLoc.barycentric.setComponent(j, 1.0);
+            break;
+          }
+        }
+
+        loc = newLoc;
+
+      } else {
+
+        // let's find the neighbor polygon (if it exists)
+        Size adjacentPolygon;
+        Size adjacentPolygonPointIndex;
+        sourceMesh.getPolygonAdjacentPolygonAndIndex(
+          polygon,
+          polygonPointIndices[edge], 
+          adjacentPolygon, 
+          adjacentPolygonPointIndex
+        );
+
+        if(adjacentPolygon == InvalidIndex) {
+          
+          // leave things are they are
+          // todo: we might want to move the geometry location to the edge,
+          // in other words: make the opposing weight = 0.0
+
+        } else {
+
+          // let's find out which polygon is closer to the target polygon
+          Vec3 targetVector = (targetPolygonPositions[faceCornerPolygon[i]] - positions[targetIdx]).unit();
+          targetVector = xfo.ori.rotateVector(targetVector);
+
+          Vec3 sourcePos = sourceMesh.getPositionAtLocation(loc);
+          Vec3 sourceVectorA = (sourcePolygonPositions[polygon] - sourcePos).unit();
+          Vec3 sourceVectorB = (sourcePolygonPositions[adjacentPolygon] - sourcePos).unit();
+          Scalar angleA = targetVector.unitsAngleTo(sourceVectorA);
+          Scalar angleB = targetVector.unitsAngleTo(sourceVectorB);
+
+          if(angleB < angleA) {
+
+            Size adjacentPolygonSize = sourceMesh.getPolygonSize(adjacentPolygon);
+            Size adjacentPolygonTriangles = adjacentPolygonSize - 2;
+            Size edgeTriangle = polygonPointIndices[edge] > 2 ? (polygonPointIndices[edge] - 1) / 2 : 0;
+
+            GeometryLocation newLoc;
+            newLoc.index = adjacentPolygon;
+            newLoc.subIndex = edgeTriangle;
+            newLoc.barycentric = Vec3(0, 0, 0);
+
+            UInt32 newPolygonPointIndices[3];
+            Scalar newWeights[3];
+            sourceMesh.getLocationPolygonPointIndicesAndWeights( newLoc, newPolygonPointIndices, newWeights );
+
+            for(Size j=0;j<3;j++) {
+              if(newPolygonPointIndices[j] == adjacentPolygonPointIndex) {
+                newLoc.barycentric.setComponent((j+1)%3, weights[edge]);
+                newLoc.barycentric.setComponent((j+0)%3, weights[(edge+1) % 3]);
+                break;
+              }
+            }
+
+            Scalar newLocSum = newLoc.barycentric.x + newLoc.barycentric.y + newLoc.barycentric.z;
+            if(newLocSum != 0.0)
+            {
+              newLoc.barycentric /= newLocSum;
+              loc = newLoc;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  results[i] = GetAttributeAtLocation(sourceMesh, loc, sourceCast);
+}
+
+/// \internal
+private function Boolean BaseGeometry.transferUInt32Attribute!(
+  BaseGeometry sourceGeo,
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  SInt32 component,
+  UInt32Attribute sourceCast,
+  String target,
+  Xfo sourceXfo,
+  Xfo targetXfo,
+  Vec3 direction
+) {
+  if(sourceCast == null)
+    return false;
+  Ref<UInt32Attribute> sourceRef = sourceCast;
+
+  // figure out how many lookups we have to do
+  SpatialQueryable sourceSpatial = sourceGeo;
+  if(sourceSpatial == null) {
+    report('Error: Transfer: Source geometry is not a SpatialQueryable.');
+    return false;
+  }
+
+  GeometryAttributes attributes = this.attributes;
+  if(!attributes)
+    return false;
+
+  GeometryAttribute targetAttr = attributes.getAttribute(target);
+  if(targetAttr != null)
+  {
+    if(targetAttr.type() != UInt32Attribute) {
+      report('Error: Transfer: Target attribute "'+target+'" exists, but it\'s not a UInt32Attribute.');
+      return false;
+    }
+  }
+
+  UInt32Attribute targetCast = attributes.getOrCreateUInt32Attribute(target);
+  if(targetCast == null)
+    return false;
+  Ref<UInt32Attribute> targetCastRef = targetCast;
+
+  Vec3 positions[];
+  Vec3 normals[];
+  Vec3Attribute positionsAttr = attributes.getAttribute('positions');
+  Vec3Attribute normalsAttr = attributes.getAttribute('normals');
+  if(positionsAttr == null) {
+    report('Error: Transfer: positions don\'t exist on target geometry.');
+    return false;
+  }
+  positions = positionsAttr.values;
+  Size numTasks = positions.size();
+  if(normalsAttr)
+    normals = normalsAttr.values;
+
+  // localize the direction + transforms
+  Vec3 localDir = sourceXfo.ori.inverse().rotateVector(direction);
+  Xfo xfo = sourceXfo.inverse() * targetXfo;
+
+  // setup the spatial queries
+  GenericValueContainer spatialOptions();
+  PrepareForSpatialQueries_setOctree(spatialOptions);
+
+  PolygonMesh targetMesh = this;
+  PolygonMesh sourceMesh = sourceGeo;
+
+  UInt32 faceCornerPolygon[];
+  UInt32 faceCornerOffset[];
+  if(targetMesh != null) {
+    numTasks = targetMesh.pointCount();
+    if(component == 2) {
+      numTasks = targetMesh.polygonPointsCount();
+      faceCornerPolygon.resize(numTasks);
+      faceCornerOffset.resize(numTasks);
+
+      Index offset = 0;
+      for(Size i=0;i<targetMesh.polygonCount();i++) {
+        Size count = targetMesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++) {
+          faceCornerPolygon[offset] = i;
+          faceCornerOffset[offset] = j;
+          offset++;
+        }
+      }
+    }
+  }
+
+  // deal with a special case if both source
+  // and target are of type PolygonMesh
+  if(targetMesh != null && sourceMesh != null && component == 2) {
+
+    Vec3 sourcePolygonPos[] = sourceMesh.getNormalizedPolygonPositions();
+    Vec3 targetPolygonPos[] = targetMesh.getNormalizedPolygonPositions();
+
+    numTasks = targetMesh.polygonPointsCount();
+    UInt32 results[](numTasks);
+
+    sourceMesh.prepareForSpatialQueries(numTasks * 4, spatialOptions);
+
+    _BaseGeom_Transfer_UInt32Attribute_PerFaceCorner<<<numTasks>>>(
+      results,
+      positions,
+      normals,
+      sourceMesh,
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      sourcePolygonPos,
+      targetPolygonPos,
+      mode,
+      closestIfNotHit,
+      threshold,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      targetMesh.setPolygonAttribute( faceCornerPolygon[i], faceCornerOffset[i], targetCastRef, results[i] );
+    }
+
+  } else if(component == 0 || targetMesh == null) {
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_UInt32Attribute_Simple<<<numTasks>>>(
+      targetCast.values,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+  } else if(component == 1) {
+
+    numTasks = targetMesh.polygonCount();
+    UInt32 results[](numTasks);
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_UInt32Attribute_Simple<<<numTasks>>>(
+      results,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      Size size = targetMesh.getPolygonSize(i);
+      for(Size j=0;j<size;j++)
+        targetMesh.setPolygonAttribute( i, j, targetCastRef, results[i] );
+    }
+
+  } else if(component == 2) {
+
+    numTasks = targetMesh.polygonPointsCount();
+    UInt32 results[](numTasks);
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_UInt32Attribute_Simple<<<numTasks>>>(
+      targetCast.values,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      targetMesh.setPolygonAttribute( faceCornerPolygon[i], faceCornerOffset[i], targetCastRef, results[i] );
+    }
+  }
+
+  targetCast.incrementVersion();
+  return true;
+}
+
+operator _BaseGeom_Transfer_ScalarAttribute_Simple<<<i>>>(
+  io Float32 results[],
+  Vec3 positions[],
+  Vec3 normals[],
+  SpatialQueryable sourceSpatial,
+  Ref<ScalarAttribute> sourceCast,
+  io PolygonMesh targetMesh,
+  io Ref<ScalarAttribute> targetCastRef,
+  UInt32 faceCornerPolygon[],
+  UInt32 faceCornerOffset[],
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  SInt32 component,
+  Xfo xfo,
+  Vec3 localDir
+) {
+
+  // get the vertex, face or face corner position!
+  Vec3 pos;
+  Vec3 normal = localDir;
+  if(component == 0 || targetMesh == null) {
+    pos = positions[i];
+    normal = normals.size() > i ? normals[i] : localDir;
+  } else if(component == 1) {
+    Size size = targetMesh.getPolygonSize(i);
+    for(Size j=0;j<size;j++) {
+      Size idx = targetMesh.getPolygonAttributeIndex(i, j);
+      pos += positions[idx];
+      normal += normals.size() > i ? normals[i] : localDir;
+    }
+    pos *= 1.0 / Float32(size);
+    normal *= 1.0 / Float32(size);
+  } else if(component == 2) {
+    Size idx = targetMesh.getPolygonAttributeIndex(faceCornerPolygon[i], faceCornerOffset[i]);
+    pos = positions[idx];
+    normal = normals.size() > idx ? normals[idx] : localDir;
+  }
+
+  // project position + normal
+  pos = xfo.transformVector(pos);
+  normal = xfo.ori.rotateVector(normal);
+
+  GeometryLocation loc;
+  switch(mode) {
+    case 0: // closest
+    {
+      loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 1: // raycast along normal
+    {
+      loc = sourceSpatial.raycast(Ray(pos, normal), true, 0.0, SCALAR_INFINITE);
+      GeometryLocation locB = sourceSpatial.raycast(Ray(pos, -normal), true, 0.0, SCALAR_INFINITE);
+      if(loc.isValid() && locB.isValid()) {
+        Vec3 posA = sourceSpatial.getPositionAtLocation(loc);
+        Vec3 posB = sourceSpatial.getPositionAtLocation(locB);
+        if((posB - pos).lengthSquared() < (posA - pos).lengthSquared())
+          loc = locB;
+      } else if(locB.isValid()) {
+        loc = locB;
+      }
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 2: // raycast along direction
+    {
+      Ray ray(pos, localDir);
+      loc = sourceSpatial.raycast(ray, true, 0.0, SCALAR_INFINITE);
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+  }
+
+  if(!loc.isValid()) 
+    return;
+
+  Float32 result = GetAttributeAtLocation(sourceSpatial, loc, sourceCast);
+  if(targetMesh != null && component == 0) {
+    targetMesh.setPointAttribute(i, targetCastRef, result);
+  } else  {
+    results[i] = result;
+  }
+}
+
+operator _BaseGeom_Transfer_ScalarAttribute_PerFaceCorner<<<i>>>(
+  io Float32 results[],
+  Vec3 positions[],
+  Vec3 normals[],
+  PolygonMesh sourceMesh,
+  Ref<ScalarAttribute> sourceCast,
+  io PolygonMesh targetMesh,
+  io Ref<ScalarAttribute> targetCastRef,
+  UInt32 faceCornerPolygon[],
+  UInt32 faceCornerOffset[],
+  Vec3 sourcePolygonPositions[],
+  Vec3 targetPolygonPositions[],
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  Xfo xfo,
+  Vec3 localDir
+) {
+
+  // get face corner position!
+  Size targetIdx = targetMesh.getPolygonAttributeIndex(faceCornerPolygon[i], faceCornerOffset[i]);
+  Vec3 pos = positions[targetIdx];
+  Vec3 normal = normals.size() > targetIdx ? normals[targetIdx] : localDir;
+
+  // project position + normal
+  pos = xfo.transformVector(pos);
+  normal = xfo.ori.rotateVector(normal);
+
+  GeometryLocation loc;
+  switch(mode) {
+    case 0: // closest
+    {
+      loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 1: // raycast along normal
+    {
+      loc = sourceMesh.raycast(Ray(pos, normal), true, 0.0, SCALAR_INFINITE);
+      GeometryLocation locB = sourceMesh.raycast(Ray(pos, -normal), true, 0.0, SCALAR_INFINITE);
+      if(loc.isValid() && locB.isValid()) {
+        Vec3 posA = sourceMesh.getPositionAtLocation(loc);
+        Vec3 posB = sourceMesh.getPositionAtLocation(locB);
+        if((posB - pos).lengthSquared() < (posA - pos).lengthSquared())
+          loc = locB;
+      } else if(locB.isValid()) {
+        loc = locB;
+      }
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 2: // raycast along direction
+    {
+      Ray ray(pos, localDir);
+      loc = sourceMesh.raycast(ray, true, 0.0, SCALAR_INFINITE);
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+  }
+
+  if(!loc.isValid()) 
+    return;
+
+  // let's do some special treatment if the polygon
+  // has discontinuities....!
+  Index polygon = sourceMesh.getLocationPolygon(loc);
+  if(!sourceMesh.isPolygonAttributeUniformForAllCorners(polygon, sourceCast)) {
+
+    // skip internal edges
+    Scalar weight = 0.0;
+    UInt32 edge = sourceMesh.getClosestEdgeToLocation(loc, weight);
+    if(weight <= threshold) {
+
+      UInt32 polygonPointIndices[3];
+      Scalar weights[3];
+      sourceMesh.getLocationPolygonPointIndicesAndWeights( loc, polygonPointIndices, weights );
+
+      // check if this is on a vertex
+      if(weights[0] > 1.0 - threshold ||
+        weights[1] > 1.0 - threshold ||
+        weights[2] > 1.0 - threshold
+      ) {
+
+        Index sourcePointIndex = polygonPointIndices[0];
+        if(weights[1] > weights[0] && weights[1] > weights[2])
+          sourcePointIndex = polygonPointIndices[1];
+        else if(weights[2] > weights[0] && weights[2] > weights[1])
+          sourcePointIndex = polygonPointIndices[2];
+        Index sourcePoint = sourceMesh.getPolygonPoint(polygon, sourcePointIndex);
+
+        Vec3 sourcePointPos = sourceMesh.getPointPosition(sourcePoint);
+        Scalar minAngle = SCALAR_INFINITE;
+        Index sourcePolygon = polygon;
+        sourcePointIndex = 0;
+
+        Vec3 targetVector = (targetPolygonPositions[faceCornerPolygon[i]] - positions[targetIdx]).unit();
+        targetVector = xfo.ori.rotateVector(targetVector);
+
+        for(Size j=0;j<sourceMesh.getPointPolygonCount(sourcePoint);j++) {
+          
+          Size wingPolygon;
+          Size wingPolygonPointIndex;
+          sourceMesh.getPointPolygonAndIndex(sourcePoint, j, wingPolygon, wingPolygonPointIndex);
+
+          Vec3 sourceVector = (sourcePolygonPositions[wingPolygon] - sourcePointPos).unit();
+          Scalar angle = sourceVector.unitsAngleTo(targetVector);
+
+          if(angle < minAngle) {
+            minAngle = angle;
+            sourcePolygon = wingPolygon;
+            sourcePointIndex = wingPolygonPointIndex;
+          }
+
+        }
+        
+        Size sourceTriangle = sourcePointIndex > 2 ? (sourcePointIndex - 1) / 2 : 0;
+
+        GeometryLocation newLoc;
+        newLoc.index = sourcePolygon;
+        newLoc.subIndex = sourceTriangle;
+        newLoc.barycentric = Vec3(0, 0, 0);
+
+        UInt32 newPolygonPointIndices[3];
+        Scalar newWeights[3];
+        sourceMesh.getLocationPolygonPointIndicesAndWeights( newLoc, newPolygonPointIndices, newWeights );
+
+        for(Size j=0;j<3;j++) {
+          if(newPolygonPointIndices[j] == sourcePointIndex) {
+            newLoc.barycentric.setComponent(j, 1.0);
+            break;
+          }
+        }
+
+        loc = newLoc;
+
+      } else {
+
+        // let's find the neighbor polygon (if it exists)
+        Size adjacentPolygon;
+        Size adjacentPolygonPointIndex;
+        sourceMesh.getPolygonAdjacentPolygonAndIndex(
+          polygon,
+          polygonPointIndices[edge], 
+          adjacentPolygon, 
+          adjacentPolygonPointIndex
+        );
+
+        if(adjacentPolygon == InvalidIndex) {
+          
+          // leave things are they are
+          // todo: we might want to move the geometry location to the edge,
+          // in other words: make the opposing weight = 0.0
+
+        } else {
+
+          // let's find out which polygon is closer to the target polygon
+          Vec3 targetVector = (targetPolygonPositions[faceCornerPolygon[i]] - positions[targetIdx]).unit();
+          targetVector = xfo.ori.rotateVector(targetVector);
+
+          Vec3 sourcePos = sourceMesh.getPositionAtLocation(loc);
+          Vec3 sourceVectorA = (sourcePolygonPositions[polygon] - sourcePos).unit();
+          Vec3 sourceVectorB = (sourcePolygonPositions[adjacentPolygon] - sourcePos).unit();
+          Scalar angleA = targetVector.unitsAngleTo(sourceVectorA);
+          Scalar angleB = targetVector.unitsAngleTo(sourceVectorB);
+
+          if(angleB < angleA) {
+
+            Size adjacentPolygonSize = sourceMesh.getPolygonSize(adjacentPolygon);
+            Size adjacentPolygonTriangles = adjacentPolygonSize - 2;
+            Size edgeTriangle = polygonPointIndices[edge] > 2 ? (polygonPointIndices[edge] - 1) / 2 : 0;
+
+            GeometryLocation newLoc;
+            newLoc.index = adjacentPolygon;
+            newLoc.subIndex = edgeTriangle;
+            newLoc.barycentric = Vec3(0, 0, 0);
+
+            UInt32 newPolygonPointIndices[3];
+            Scalar newWeights[3];
+            sourceMesh.getLocationPolygonPointIndicesAndWeights( newLoc, newPolygonPointIndices, newWeights );
+
+            for(Size j=0;j<3;j++) {
+              if(newPolygonPointIndices[j] == adjacentPolygonPointIndex) {
+                newLoc.barycentric.setComponent((j+1)%3, weights[edge]);
+                newLoc.barycentric.setComponent((j+0)%3, weights[(edge+1) % 3]);
+                break;
+              }
+            }
+
+            Scalar newLocSum = newLoc.barycentric.x + newLoc.barycentric.y + newLoc.barycentric.z;
+            if(newLocSum != 0.0)
+            {
+              newLoc.barycentric /= newLocSum;
+              loc = newLoc;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  results[i] = GetAttributeAtLocation(sourceMesh, loc, sourceCast);
+}
+
+/// \internal
+private function Boolean BaseGeometry.transferScalarAttribute!(
+  BaseGeometry sourceGeo,
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  SInt32 component,
+  ScalarAttribute sourceCast,
+  String target,
+  Xfo sourceXfo,
+  Xfo targetXfo,
+  Vec3 direction
+) {
+  if(sourceCast == null)
+    return false;
+  Ref<ScalarAttribute> sourceRef = sourceCast;
+
+  // figure out how many lookups we have to do
+  SpatialQueryable sourceSpatial = sourceGeo;
+  if(sourceSpatial == null) {
+    report('Error: Transfer: Source geometry is not a SpatialQueryable.');
+    return false;
+  }
+
+  GeometryAttributes attributes = this.attributes;
+  if(!attributes)
+    return false;
+
+  GeometryAttribute targetAttr = attributes.getAttribute(target);
+  if(targetAttr != null)
+  {
+    if(targetAttr.type() != ScalarAttribute) {
+      report('Error: Transfer: Target attribute "'+target+'" exists, but it\'s not a ScalarAttribute.');
+      return false;
+    }
+  }
+
+  ScalarAttribute targetCast = attributes.getOrCreateScalarAttribute(target);
+  if(targetCast == null)
+    return false;
+  Ref<ScalarAttribute> targetCastRef = targetCast;
+
+  Vec3 positions[];
+  Vec3 normals[];
+  Vec3Attribute positionsAttr = attributes.getAttribute('positions');
+  Vec3Attribute normalsAttr = attributes.getAttribute('normals');
+  if(positionsAttr == null) {
+    report('Error: Transfer: positions don\'t exist on target geometry.');
+    return false;
+  }
+  positions = positionsAttr.values;
+  Size numTasks = positions.size();
+  if(normalsAttr)
+    normals = normalsAttr.values;
+
+  // localize the direction + transforms
+  Vec3 localDir = sourceXfo.ori.inverse().rotateVector(direction);
+  Xfo xfo = sourceXfo.inverse() * targetXfo;
+
+  // setup the spatial queries
+  GenericValueContainer spatialOptions();
+  PrepareForSpatialQueries_setOctree(spatialOptions);
+
+  PolygonMesh targetMesh = this;
+  PolygonMesh sourceMesh = sourceGeo;
+
+  UInt32 faceCornerPolygon[];
+  UInt32 faceCornerOffset[];
+  if(targetMesh != null) {
+    numTasks = targetMesh.pointCount();
+    if(component == 2) {
+      numTasks = targetMesh.polygonPointsCount();
+      faceCornerPolygon.resize(numTasks);
+      faceCornerOffset.resize(numTasks);
+
+      Index offset = 0;
+      for(Size i=0;i<targetMesh.polygonCount();i++) {
+        Size count = targetMesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++) {
+          faceCornerPolygon[offset] = i;
+          faceCornerOffset[offset] = j;
+          offset++;
+        }
+      }
+    }
+  }
+
+  // deal with a special case if both source
+  // and target are of type PolygonMesh
+  if(targetMesh != null && sourceMesh != null && component == 2) {
+
+    Vec3 sourcePolygonPos[] = sourceMesh.getNormalizedPolygonPositions();
+    Vec3 targetPolygonPos[] = targetMesh.getNormalizedPolygonPositions();
+
+    numTasks = targetMesh.polygonPointsCount();
+    Float32 results[](numTasks);
+
+    sourceMesh.prepareForSpatialQueries(numTasks * 4, spatialOptions);
+
+    _BaseGeom_Transfer_ScalarAttribute_PerFaceCorner<<<numTasks>>>(
+      results,
+      positions,
+      normals,
+      sourceMesh,
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      sourcePolygonPos,
+      targetPolygonPos,
+      mode,
+      closestIfNotHit,
+      threshold,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      targetMesh.setPolygonAttribute( faceCornerPolygon[i], faceCornerOffset[i], targetCastRef, results[i] );
+    }
+
+  } else if(component == 0 || targetMesh == null) {
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_ScalarAttribute_Simple<<<numTasks>>>(
+      targetCast.values,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+  } else if(component == 1) {
+
+    numTasks = targetMesh.polygonCount();
+    Float32 results[](numTasks);
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_ScalarAttribute_Simple<<<numTasks>>>(
+      results,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      Size size = targetMesh.getPolygonSize(i);
+      for(Size j=0;j<size;j++)
+        targetMesh.setPolygonAttribute( i, j, targetCastRef, results[i] );
+    }
+
+  } else if(component == 2) {
+
+    numTasks = targetMesh.polygonPointsCount();
+    Float32 results[](numTasks);
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_ScalarAttribute_Simple<<<numTasks>>>(
+      targetCast.values,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      targetMesh.setPolygonAttribute( faceCornerPolygon[i], faceCornerOffset[i], targetCastRef, results[i] );
+    }
+  }
+
+  targetCast.incrementVersion();
+  return true;
+}
+
+operator _BaseGeom_Transfer_Vec2Attribute_Simple<<<i>>>(
+  io Vec2 results[],
+  Vec3 positions[],
+  Vec3 normals[],
+  SpatialQueryable sourceSpatial,
+  Ref<Vec2Attribute> sourceCast,
+  io PolygonMesh targetMesh,
+  io Ref<Vec2Attribute> targetCastRef,
+  UInt32 faceCornerPolygon[],
+  UInt32 faceCornerOffset[],
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  SInt32 component,
+  Xfo xfo,
+  Vec3 localDir
+) {
+
+  // get the vertex, face or face corner position!
+  Vec3 pos;
+  Vec3 normal = localDir;
+  if(component == 0 || targetMesh == null) {
+    pos = positions[i];
+    normal = normals.size() > i ? normals[i] : localDir;
+  } else if(component == 1) {
+    Size size = targetMesh.getPolygonSize(i);
+    for(Size j=0;j<size;j++) {
+      Size idx = targetMesh.getPolygonAttributeIndex(i, j);
+      pos += positions[idx];
+      normal += normals.size() > i ? normals[i] : localDir;
+    }
+    pos *= 1.0 / Float32(size);
+    normal *= 1.0 / Float32(size);
+  } else if(component == 2) {
+    Size idx = targetMesh.getPolygonAttributeIndex(faceCornerPolygon[i], faceCornerOffset[i]);
+    pos = positions[idx];
+    normal = normals.size() > idx ? normals[idx] : localDir;
+  }
+
+  // project position + normal
+  pos = xfo.transformVector(pos);
+  normal = xfo.ori.rotateVector(normal);
+
+  GeometryLocation loc;
+  switch(mode) {
+    case 0: // closest
+    {
+      loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 1: // raycast along normal
+    {
+      loc = sourceSpatial.raycast(Ray(pos, normal), true, 0.0, SCALAR_INFINITE);
+      GeometryLocation locB = sourceSpatial.raycast(Ray(pos, -normal), true, 0.0, SCALAR_INFINITE);
+      if(loc.isValid() && locB.isValid()) {
+        Vec3 posA = sourceSpatial.getPositionAtLocation(loc);
+        Vec3 posB = sourceSpatial.getPositionAtLocation(locB);
+        if((posB - pos).lengthSquared() < (posA - pos).lengthSquared())
+          loc = locB;
+      } else if(locB.isValid()) {
+        loc = locB;
+      }
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 2: // raycast along direction
+    {
+      Ray ray(pos, localDir);
+      loc = sourceSpatial.raycast(ray, true, 0.0, SCALAR_INFINITE);
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+  }
+
+  if(!loc.isValid()) 
+    return;
+
+  Vec2 result = GetAttributeAtLocation(sourceSpatial, loc, sourceCast);
+  if(targetMesh != null && component == 0) {
+    targetMesh.setPointAttribute(i, targetCastRef, result);
+  } else  {
+    results[i] = result;
+  }
+}
+
+operator _BaseGeom_Transfer_Vec2Attribute_PerFaceCorner<<<i>>>(
+  io Vec2 results[],
+  Vec3 positions[],
+  Vec3 normals[],
+  PolygonMesh sourceMesh,
+  Ref<Vec2Attribute> sourceCast,
+  io PolygonMesh targetMesh,
+  io Ref<Vec2Attribute> targetCastRef,
+  UInt32 faceCornerPolygon[],
+  UInt32 faceCornerOffset[],
+  Vec3 sourcePolygonPositions[],
+  Vec3 targetPolygonPositions[],
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  Xfo xfo,
+  Vec3 localDir
+) {
+
+  // get face corner position!
+  Size targetIdx = targetMesh.getPolygonAttributeIndex(faceCornerPolygon[i], faceCornerOffset[i]);
+  Vec3 pos = positions[targetIdx];
+  Vec3 normal = normals.size() > targetIdx ? normals[targetIdx] : localDir;
+
+  // project position + normal
+  pos = xfo.transformVector(pos);
+  normal = xfo.ori.rotateVector(normal);
+
+  GeometryLocation loc;
+  switch(mode) {
+    case 0: // closest
+    {
+      loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 1: // raycast along normal
+    {
+      loc = sourceMesh.raycast(Ray(pos, normal), true, 0.0, SCALAR_INFINITE);
+      GeometryLocation locB = sourceMesh.raycast(Ray(pos, -normal), true, 0.0, SCALAR_INFINITE);
+      if(loc.isValid() && locB.isValid()) {
+        Vec3 posA = sourceMesh.getPositionAtLocation(loc);
+        Vec3 posB = sourceMesh.getPositionAtLocation(locB);
+        if((posB - pos).lengthSquared() < (posA - pos).lengthSquared())
+          loc = locB;
+      } else if(locB.isValid()) {
+        loc = locB;
+      }
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 2: // raycast along direction
+    {
+      Ray ray(pos, localDir);
+      loc = sourceMesh.raycast(ray, true, 0.0, SCALAR_INFINITE);
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+  }
+
+  if(!loc.isValid()) 
+    return;
+
+  // let's do some special treatment if the polygon
+  // has discontinuities....!
+  Index polygon = sourceMesh.getLocationPolygon(loc);
+  if(!sourceMesh.isPolygonAttributeUniformForAllCorners(polygon, sourceCast)) {
+
+    // skip internal edges
+    Scalar weight = 0.0;
+    UInt32 edge = sourceMesh.getClosestEdgeToLocation(loc, weight);
+    if(weight <= threshold) {
+
+      UInt32 polygonPointIndices[3];
+      Scalar weights[3];
+      sourceMesh.getLocationPolygonPointIndicesAndWeights( loc, polygonPointIndices, weights );
+
+      // check if this is on a vertex
+      if(weights[0] > 1.0 - threshold ||
+        weights[1] > 1.0 - threshold ||
+        weights[2] > 1.0 - threshold
+      ) {
+
+        Index sourcePointIndex = polygonPointIndices[0];
+        if(weights[1] > weights[0] && weights[1] > weights[2])
+          sourcePointIndex = polygonPointIndices[1];
+        else if(weights[2] > weights[0] && weights[2] > weights[1])
+          sourcePointIndex = polygonPointIndices[2];
+        Index sourcePoint = sourceMesh.getPolygonPoint(polygon, sourcePointIndex);
+
+        Vec3 sourcePointPos = sourceMesh.getPointPosition(sourcePoint);
+        Scalar minAngle = SCALAR_INFINITE;
+        Index sourcePolygon = polygon;
+        sourcePointIndex = 0;
+
+        Vec3 targetVector = (targetPolygonPositions[faceCornerPolygon[i]] - positions[targetIdx]).unit();
+        targetVector = xfo.ori.rotateVector(targetVector);
+
+        for(Size j=0;j<sourceMesh.getPointPolygonCount(sourcePoint);j++) {
+          
+          Size wingPolygon;
+          Size wingPolygonPointIndex;
+          sourceMesh.getPointPolygonAndIndex(sourcePoint, j, wingPolygon, wingPolygonPointIndex);
+
+          Vec3 sourceVector = (sourcePolygonPositions[wingPolygon] - sourcePointPos).unit();
+          Scalar angle = sourceVector.unitsAngleTo(targetVector);
+
+          if(angle < minAngle) {
+            minAngle = angle;
+            sourcePolygon = wingPolygon;
+            sourcePointIndex = wingPolygonPointIndex;
+          }
+
+        }
+        
+        Size sourceTriangle = sourcePointIndex > 2 ? (sourcePointIndex - 1) / 2 : 0;
+
+        GeometryLocation newLoc;
+        newLoc.index = sourcePolygon;
+        newLoc.subIndex = sourceTriangle;
+        newLoc.barycentric = Vec3(0, 0, 0);
+
+        UInt32 newPolygonPointIndices[3];
+        Scalar newWeights[3];
+        sourceMesh.getLocationPolygonPointIndicesAndWeights( newLoc, newPolygonPointIndices, newWeights );
+
+        for(Size j=0;j<3;j++) {
+          if(newPolygonPointIndices[j] == sourcePointIndex) {
+            newLoc.barycentric.setComponent(j, 1.0);
+            break;
+          }
+        }
+
+        loc = newLoc;
+
+      } else {
+
+        // let's find the neighbor polygon (if it exists)
+        Size adjacentPolygon;
+        Size adjacentPolygonPointIndex;
+        sourceMesh.getPolygonAdjacentPolygonAndIndex(
+          polygon,
+          polygonPointIndices[edge], 
+          adjacentPolygon, 
+          adjacentPolygonPointIndex
+        );
+
+        if(adjacentPolygon == InvalidIndex) {
+          
+          // leave things are they are
+          // todo: we might want to move the geometry location to the edge,
+          // in other words: make the opposing weight = 0.0
+
+        } else {
+
+          // let's find out which polygon is closer to the target polygon
+          Vec3 targetVector = (targetPolygonPositions[faceCornerPolygon[i]] - positions[targetIdx]).unit();
+          targetVector = xfo.ori.rotateVector(targetVector);
+
+          Vec3 sourcePos = sourceMesh.getPositionAtLocation(loc);
+          Vec3 sourceVectorA = (sourcePolygonPositions[polygon] - sourcePos).unit();
+          Vec3 sourceVectorB = (sourcePolygonPositions[adjacentPolygon] - sourcePos).unit();
+          Scalar angleA = targetVector.unitsAngleTo(sourceVectorA);
+          Scalar angleB = targetVector.unitsAngleTo(sourceVectorB);
+
+          if(angleB < angleA) {
+
+            Size adjacentPolygonSize = sourceMesh.getPolygonSize(adjacentPolygon);
+            Size adjacentPolygonTriangles = adjacentPolygonSize - 2;
+            Size edgeTriangle = polygonPointIndices[edge] > 2 ? (polygonPointIndices[edge] - 1) / 2 : 0;
+
+            GeometryLocation newLoc;
+            newLoc.index = adjacentPolygon;
+            newLoc.subIndex = edgeTriangle;
+            newLoc.barycentric = Vec3(0, 0, 0);
+
+            UInt32 newPolygonPointIndices[3];
+            Scalar newWeights[3];
+            sourceMesh.getLocationPolygonPointIndicesAndWeights( newLoc, newPolygonPointIndices, newWeights );
+
+            for(Size j=0;j<3;j++) {
+              if(newPolygonPointIndices[j] == adjacentPolygonPointIndex) {
+                newLoc.barycentric.setComponent((j+1)%3, weights[edge]);
+                newLoc.barycentric.setComponent((j+0)%3, weights[(edge+1) % 3]);
+                break;
+              }
+            }
+
+            Scalar newLocSum = newLoc.barycentric.x + newLoc.barycentric.y + newLoc.barycentric.z;
+            if(newLocSum != 0.0)
+            {
+              newLoc.barycentric /= newLocSum;
+              loc = newLoc;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  results[i] = GetAttributeAtLocation(sourceMesh, loc, sourceCast);
+}
+
+/// \internal
+private function Boolean BaseGeometry.transferVec2Attribute!(
+  BaseGeometry sourceGeo,
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  SInt32 component,
+  Vec2Attribute sourceCast,
+  String target,
+  Xfo sourceXfo,
+  Xfo targetXfo,
+  Vec3 direction
+) {
+  if(sourceCast == null)
+    return false;
+  Ref<Vec2Attribute> sourceRef = sourceCast;
+
+  // figure out how many lookups we have to do
+  SpatialQueryable sourceSpatial = sourceGeo;
+  if(sourceSpatial == null) {
+    report('Error: Transfer: Source geometry is not a SpatialQueryable.');
+    return false;
+  }
+
+  GeometryAttributes attributes = this.attributes;
+  if(!attributes)
+    return false;
+
+  GeometryAttribute targetAttr = attributes.getAttribute(target);
+  if(targetAttr != null)
+  {
+    if(targetAttr.type() != Vec2Attribute) {
+      report('Error: Transfer: Target attribute "'+target+'" exists, but it\'s not a Vec2Attribute.');
+      return false;
+    }
+  }
+
+  Vec2Attribute targetCast = attributes.getOrCreateVec2Attribute(target);
+  if(targetCast == null)
+    return false;
+  Ref<Vec2Attribute> targetCastRef = targetCast;
+
+  Vec3 positions[];
+  Vec3 normals[];
+  Vec3Attribute positionsAttr = attributes.getAttribute('positions');
+  Vec3Attribute normalsAttr = attributes.getAttribute('normals');
+  if(positionsAttr == null) {
+    report('Error: Transfer: positions don\'t exist on target geometry.');
+    return false;
+  }
+  positions = positionsAttr.values;
+  Size numTasks = positions.size();
+  if(normalsAttr)
+    normals = normalsAttr.values;
+
+  // localize the direction + transforms
+  Vec3 localDir = sourceXfo.ori.inverse().rotateVector(direction);
+  Xfo xfo = sourceXfo.inverse() * targetXfo;
+
+  // setup the spatial queries
+  GenericValueContainer spatialOptions();
+  PrepareForSpatialQueries_setOctree(spatialOptions);
+
+  PolygonMesh targetMesh = this;
+  PolygonMesh sourceMesh = sourceGeo;
+
+  UInt32 faceCornerPolygon[];
+  UInt32 faceCornerOffset[];
+  if(targetMesh != null) {
+    numTasks = targetMesh.pointCount();
+    if(component == 2) {
+      numTasks = targetMesh.polygonPointsCount();
+      faceCornerPolygon.resize(numTasks);
+      faceCornerOffset.resize(numTasks);
+
+      Index offset = 0;
+      for(Size i=0;i<targetMesh.polygonCount();i++) {
+        Size count = targetMesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++) {
+          faceCornerPolygon[offset] = i;
+          faceCornerOffset[offset] = j;
+          offset++;
+        }
+      }
+    }
+  }
+
+  // deal with a special case if both source
+  // and target are of type PolygonMesh
+  if(targetMesh != null && sourceMesh != null && component == 2) {
+
+    Vec3 sourcePolygonPos[] = sourceMesh.getNormalizedPolygonPositions();
+    Vec3 targetPolygonPos[] = targetMesh.getNormalizedPolygonPositions();
+
+    numTasks = targetMesh.polygonPointsCount();
+    Vec2 results[](numTasks);
+
+    sourceMesh.prepareForSpatialQueries(numTasks * 4, spatialOptions);
+
+    _BaseGeom_Transfer_Vec2Attribute_PerFaceCorner<<<numTasks>>>(
+      results,
+      positions,
+      normals,
+      sourceMesh,
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      sourcePolygonPos,
+      targetPolygonPos,
+      mode,
+      closestIfNotHit,
+      threshold,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      targetMesh.setPolygonAttribute( faceCornerPolygon[i], faceCornerOffset[i], targetCastRef, results[i] );
+    }
+
+  } else if(component == 0 || targetMesh == null) {
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_Vec2Attribute_Simple<<<numTasks>>>(
+      targetCast.values,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+  } else if(component == 1) {
+
+    numTasks = targetMesh.polygonCount();
+    Vec2 results[](numTasks);
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_Vec2Attribute_Simple<<<numTasks>>>(
+      results,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      Size size = targetMesh.getPolygonSize(i);
+      for(Size j=0;j<size;j++)
+        targetMesh.setPolygonAttribute( i, j, targetCastRef, results[i] );
+    }
+
+  } else if(component == 2) {
+
+    numTasks = targetMesh.polygonPointsCount();
+    Vec2 results[](numTasks);
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_Vec2Attribute_Simple<<<numTasks>>>(
+      targetCast.values,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      targetMesh.setPolygonAttribute( faceCornerPolygon[i], faceCornerOffset[i], targetCastRef, results[i] );
+    }
+  }
+
+  targetCast.incrementVersion();
+  return true;
+}
+
+operator _BaseGeom_Transfer_Vec3Attribute_Simple<<<i>>>(
+  io Vec3 results[],
+  Vec3 positions[],
+  Vec3 normals[],
+  SpatialQueryable sourceSpatial,
+  Ref<Vec3Attribute> sourceCast,
+  io PolygonMesh targetMesh,
+  io Ref<Vec3Attribute> targetCastRef,
+  UInt32 faceCornerPolygon[],
+  UInt32 faceCornerOffset[],
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  SInt32 component,
+  Xfo xfo,
+  Vec3 localDir
+) {
+
+  // get the vertex, face or face corner position!
+  Vec3 pos;
+  Vec3 normal = localDir;
+  if(component == 0 || targetMesh == null) {
+    pos = positions[i];
+    normal = normals.size() > i ? normals[i] : localDir;
+  } else if(component == 1) {
+    Size size = targetMesh.getPolygonSize(i);
+    for(Size j=0;j<size;j++) {
+      Size idx = targetMesh.getPolygonAttributeIndex(i, j);
+      pos += positions[idx];
+      normal += normals.size() > i ? normals[i] : localDir;
+    }
+    pos *= 1.0 / Float32(size);
+    normal *= 1.0 / Float32(size);
+  } else if(component == 2) {
+    Size idx = targetMesh.getPolygonAttributeIndex(faceCornerPolygon[i], faceCornerOffset[i]);
+    pos = positions[idx];
+    normal = normals.size() > idx ? normals[idx] : localDir;
+  }
+
+  // project position + normal
+  pos = xfo.transformVector(pos);
+  normal = xfo.ori.rotateVector(normal);
+
+  GeometryLocation loc;
+  switch(mode) {
+    case 0: // closest
+    {
+      loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 1: // raycast along normal
+    {
+      loc = sourceSpatial.raycast(Ray(pos, normal), true, 0.0, SCALAR_INFINITE);
+      GeometryLocation locB = sourceSpatial.raycast(Ray(pos, -normal), true, 0.0, SCALAR_INFINITE);
+      if(loc.isValid() && locB.isValid()) {
+        Vec3 posA = sourceSpatial.getPositionAtLocation(loc);
+        Vec3 posB = sourceSpatial.getPositionAtLocation(locB);
+        if((posB - pos).lengthSquared() < (posA - pos).lengthSquared())
+          loc = locB;
+      } else if(locB.isValid()) {
+        loc = locB;
+      }
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 2: // raycast along direction
+    {
+      Ray ray(pos, localDir);
+      loc = sourceSpatial.raycast(ray, true, 0.0, SCALAR_INFINITE);
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+  }
+
+  if(!loc.isValid()) 
+    return;
+
+  Vec3 result = GetAttributeAtLocation(sourceSpatial, loc, sourceCast);
+  if(targetMesh != null && component == 0) {
+    targetMesh.setPointAttribute(i, targetCastRef, result);
+  } else  {
+    results[i] = result;
+  }
+}
+
+operator _BaseGeom_Transfer_Vec3Attribute_PerFaceCorner<<<i>>>(
+  io Vec3 results[],
+  Vec3 positions[],
+  Vec3 normals[],
+  PolygonMesh sourceMesh,
+  Ref<Vec3Attribute> sourceCast,
+  io PolygonMesh targetMesh,
+  io Ref<Vec3Attribute> targetCastRef,
+  UInt32 faceCornerPolygon[],
+  UInt32 faceCornerOffset[],
+  Vec3 sourcePolygonPositions[],
+  Vec3 targetPolygonPositions[],
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  Xfo xfo,
+  Vec3 localDir
+) {
+
+  // get face corner position!
+  Size targetIdx = targetMesh.getPolygonAttributeIndex(faceCornerPolygon[i], faceCornerOffset[i]);
+  Vec3 pos = positions[targetIdx];
+  Vec3 normal = normals.size() > targetIdx ? normals[targetIdx] : localDir;
+
+  // project position + normal
+  pos = xfo.transformVector(pos);
+  normal = xfo.ori.rotateVector(normal);
+
+  GeometryLocation loc;
+  switch(mode) {
+    case 0: // closest
+    {
+      loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 1: // raycast along normal
+    {
+      loc = sourceMesh.raycast(Ray(pos, normal), true, 0.0, SCALAR_INFINITE);
+      GeometryLocation locB = sourceMesh.raycast(Ray(pos, -normal), true, 0.0, SCALAR_INFINITE);
+      if(loc.isValid() && locB.isValid()) {
+        Vec3 posA = sourceMesh.getPositionAtLocation(loc);
+        Vec3 posB = sourceMesh.getPositionAtLocation(locB);
+        if((posB - pos).lengthSquared() < (posA - pos).lengthSquared())
+          loc = locB;
+      } else if(locB.isValid()) {
+        loc = locB;
+      }
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 2: // raycast along direction
+    {
+      Ray ray(pos, localDir);
+      loc = sourceMesh.raycast(ray, true, 0.0, SCALAR_INFINITE);
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+  }
+
+  if(!loc.isValid()) 
+    return;
+
+  // let's do some special treatment if the polygon
+  // has discontinuities....!
+  Index polygon = sourceMesh.getLocationPolygon(loc);
+  if(!sourceMesh.isPolygonAttributeUniformForAllCorners(polygon, sourceCast)) {
+
+    // skip internal edges
+    Scalar weight = 0.0;
+    UInt32 edge = sourceMesh.getClosestEdgeToLocation(loc, weight);
+    if(weight <= threshold) {
+
+      UInt32 polygonPointIndices[3];
+      Scalar weights[3];
+      sourceMesh.getLocationPolygonPointIndicesAndWeights( loc, polygonPointIndices, weights );
+
+      // check if this is on a vertex
+      if(weights[0] > 1.0 - threshold ||
+        weights[1] > 1.0 - threshold ||
+        weights[2] > 1.0 - threshold
+      ) {
+
+        Index sourcePointIndex = polygonPointIndices[0];
+        if(weights[1] > weights[0] && weights[1] > weights[2])
+          sourcePointIndex = polygonPointIndices[1];
+        else if(weights[2] > weights[0] && weights[2] > weights[1])
+          sourcePointIndex = polygonPointIndices[2];
+        Index sourcePoint = sourceMesh.getPolygonPoint(polygon, sourcePointIndex);
+
+        Vec3 sourcePointPos = sourceMesh.getPointPosition(sourcePoint);
+        Scalar minAngle = SCALAR_INFINITE;
+        Index sourcePolygon = polygon;
+        sourcePointIndex = 0;
+
+        Vec3 targetVector = (targetPolygonPositions[faceCornerPolygon[i]] - positions[targetIdx]).unit();
+        targetVector = xfo.ori.rotateVector(targetVector);
+
+        for(Size j=0;j<sourceMesh.getPointPolygonCount(sourcePoint);j++) {
+          
+          Size wingPolygon;
+          Size wingPolygonPointIndex;
+          sourceMesh.getPointPolygonAndIndex(sourcePoint, j, wingPolygon, wingPolygonPointIndex);
+
+          Vec3 sourceVector = (sourcePolygonPositions[wingPolygon] - sourcePointPos).unit();
+          Scalar angle = sourceVector.unitsAngleTo(targetVector);
+
+          if(angle < minAngle) {
+            minAngle = angle;
+            sourcePolygon = wingPolygon;
+            sourcePointIndex = wingPolygonPointIndex;
+          }
+
+        }
+        
+        Size sourceTriangle = sourcePointIndex > 2 ? (sourcePointIndex - 1) / 2 : 0;
+
+        GeometryLocation newLoc;
+        newLoc.index = sourcePolygon;
+        newLoc.subIndex = sourceTriangle;
+        newLoc.barycentric = Vec3(0, 0, 0);
+
+        UInt32 newPolygonPointIndices[3];
+        Scalar newWeights[3];
+        sourceMesh.getLocationPolygonPointIndicesAndWeights( newLoc, newPolygonPointIndices, newWeights );
+
+        for(Size j=0;j<3;j++) {
+          if(newPolygonPointIndices[j] == sourcePointIndex) {
+            newLoc.barycentric.setComponent(j, 1.0);
+            break;
+          }
+        }
+
+        loc = newLoc;
+
+      } else {
+
+        // let's find the neighbor polygon (if it exists)
+        Size adjacentPolygon;
+        Size adjacentPolygonPointIndex;
+        sourceMesh.getPolygonAdjacentPolygonAndIndex(
+          polygon,
+          polygonPointIndices[edge], 
+          adjacentPolygon, 
+          adjacentPolygonPointIndex
+        );
+
+        if(adjacentPolygon == InvalidIndex) {
+          
+          // leave things are they are
+          // todo: we might want to move the geometry location to the edge,
+          // in other words: make the opposing weight = 0.0
+
+        } else {
+
+          // let's find out which polygon is closer to the target polygon
+          Vec3 targetVector = (targetPolygonPositions[faceCornerPolygon[i]] - positions[targetIdx]).unit();
+          targetVector = xfo.ori.rotateVector(targetVector);
+
+          Vec3 sourcePos = sourceMesh.getPositionAtLocation(loc);
+          Vec3 sourceVectorA = (sourcePolygonPositions[polygon] - sourcePos).unit();
+          Vec3 sourceVectorB = (sourcePolygonPositions[adjacentPolygon] - sourcePos).unit();
+          Scalar angleA = targetVector.unitsAngleTo(sourceVectorA);
+          Scalar angleB = targetVector.unitsAngleTo(sourceVectorB);
+
+          if(angleB < angleA) {
+
+            Size adjacentPolygonSize = sourceMesh.getPolygonSize(adjacentPolygon);
+            Size adjacentPolygonTriangles = adjacentPolygonSize - 2;
+            Size edgeTriangle = polygonPointIndices[edge] > 2 ? (polygonPointIndices[edge] - 1) / 2 : 0;
+
+            GeometryLocation newLoc;
+            newLoc.index = adjacentPolygon;
+            newLoc.subIndex = edgeTriangle;
+            newLoc.barycentric = Vec3(0, 0, 0);
+
+            UInt32 newPolygonPointIndices[3];
+            Scalar newWeights[3];
+            sourceMesh.getLocationPolygonPointIndicesAndWeights( newLoc, newPolygonPointIndices, newWeights );
+
+            for(Size j=0;j<3;j++) {
+              if(newPolygonPointIndices[j] == adjacentPolygonPointIndex) {
+                newLoc.barycentric.setComponent((j+1)%3, weights[edge]);
+                newLoc.barycentric.setComponent((j+0)%3, weights[(edge+1) % 3]);
+                break;
+              }
+            }
+
+            Scalar newLocSum = newLoc.barycentric.x + newLoc.barycentric.y + newLoc.barycentric.z;
+            if(newLocSum != 0.0)
+            {
+              newLoc.barycentric /= newLocSum;
+              loc = newLoc;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  results[i] = GetAttributeAtLocation(sourceMesh, loc, sourceCast);
+}
+
+/// \internal
+private function Boolean BaseGeometry.transferVec3Attribute!(
+  BaseGeometry sourceGeo,
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  SInt32 component,
+  Vec3Attribute sourceCast,
+  String target,
+  Xfo sourceXfo,
+  Xfo targetXfo,
+  Vec3 direction
+) {
+  if(sourceCast == null)
+    return false;
+  Ref<Vec3Attribute> sourceRef = sourceCast;
+
+  // figure out how many lookups we have to do
+  SpatialQueryable sourceSpatial = sourceGeo;
+  if(sourceSpatial == null) {
+    report('Error: Transfer: Source geometry is not a SpatialQueryable.');
+    return false;
+  }
+
+  GeometryAttributes attributes = this.attributes;
+  if(!attributes)
+    return false;
+
+  GeometryAttribute targetAttr = attributes.getAttribute(target);
+  if(targetAttr != null)
+  {
+    if(targetAttr.type() != Vec3Attribute) {
+      report('Error: Transfer: Target attribute "'+target+'" exists, but it\'s not a Vec3Attribute.');
+      return false;
+    }
+  }
+
+  Vec3Attribute targetCast = attributes.getOrCreateVec3Attribute(target);
+  if(targetCast == null)
+    return false;
+  Ref<Vec3Attribute> targetCastRef = targetCast;
+
+  Vec3 positions[];
+  Vec3 normals[];
+  Vec3Attribute positionsAttr = attributes.getAttribute('positions');
+  Vec3Attribute normalsAttr = attributes.getAttribute('normals');
+  if(positionsAttr == null) {
+    report('Error: Transfer: positions don\'t exist on target geometry.');
+    return false;
+  }
+  positions = positionsAttr.values;
+  Size numTasks = positions.size();
+  if(normalsAttr)
+    normals = normalsAttr.values;
+
+  // localize the direction + transforms
+  Vec3 localDir = sourceXfo.ori.inverse().rotateVector(direction);
+  Xfo xfo = sourceXfo.inverse() * targetXfo;
+
+  // setup the spatial queries
+  GenericValueContainer spatialOptions();
+  PrepareForSpatialQueries_setOctree(spatialOptions);
+
+  PolygonMesh targetMesh = this;
+  PolygonMesh sourceMesh = sourceGeo;
+
+  UInt32 faceCornerPolygon[];
+  UInt32 faceCornerOffset[];
+  if(targetMesh != null) {
+    numTasks = targetMesh.pointCount();
+    if(component == 2) {
+      numTasks = targetMesh.polygonPointsCount();
+      faceCornerPolygon.resize(numTasks);
+      faceCornerOffset.resize(numTasks);
+
+      Index offset = 0;
+      for(Size i=0;i<targetMesh.polygonCount();i++) {
+        Size count = targetMesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++) {
+          faceCornerPolygon[offset] = i;
+          faceCornerOffset[offset] = j;
+          offset++;
+        }
+      }
+    }
+  }
+
+  // deal with a special case if both source
+  // and target are of type PolygonMesh
+  if(targetMesh != null && sourceMesh != null && component == 2) {
+
+    Vec3 sourcePolygonPos[] = sourceMesh.getNormalizedPolygonPositions();
+    Vec3 targetPolygonPos[] = targetMesh.getNormalizedPolygonPositions();
+
+    numTasks = targetMesh.polygonPointsCount();
+    Vec3 results[](numTasks);
+
+    sourceMesh.prepareForSpatialQueries(numTasks * 4, spatialOptions);
+
+    _BaseGeom_Transfer_Vec3Attribute_PerFaceCorner<<<numTasks>>>(
+      results,
+      positions,
+      normals,
+      sourceMesh,
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      sourcePolygonPos,
+      targetPolygonPos,
+      mode,
+      closestIfNotHit,
+      threshold,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      targetMesh.setPolygonAttribute( faceCornerPolygon[i], faceCornerOffset[i], targetCastRef, results[i] );
+    }
+
+  } else if(component == 0 || targetMesh == null) {
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_Vec3Attribute_Simple<<<numTasks>>>(
+      targetCast.values,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+  } else if(component == 1) {
+
+    numTasks = targetMesh.polygonCount();
+    Vec3 results[](numTasks);
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_Vec3Attribute_Simple<<<numTasks>>>(
+      results,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      Size size = targetMesh.getPolygonSize(i);
+      for(Size j=0;j<size;j++)
+        targetMesh.setPolygonAttribute( i, j, targetCastRef, results[i] );
+    }
+
+  } else if(component == 2) {
+
+    numTasks = targetMesh.polygonPointsCount();
+    Vec3 results[](numTasks);
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_Vec3Attribute_Simple<<<numTasks>>>(
+      targetCast.values,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      targetMesh.setPolygonAttribute( faceCornerPolygon[i], faceCornerOffset[i], targetCastRef, results[i] );
+    }
+  }
+
+  targetCast.incrementVersion();
+  return true;
+}
+
+operator _BaseGeom_Transfer_Vec4Attribute_Simple<<<i>>>(
+  io Vec4 results[],
+  Vec3 positions[],
+  Vec3 normals[],
+  SpatialQueryable sourceSpatial,
+  Ref<Vec4Attribute> sourceCast,
+  io PolygonMesh targetMesh,
+  io Ref<Vec4Attribute> targetCastRef,
+  UInt32 faceCornerPolygon[],
+  UInt32 faceCornerOffset[],
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  SInt32 component,
+  Xfo xfo,
+  Vec3 localDir
+) {
+
+  // get the vertex, face or face corner position!
+  Vec3 pos;
+  Vec3 normal = localDir;
+  if(component == 0 || targetMesh == null) {
+    pos = positions[i];
+    normal = normals.size() > i ? normals[i] : localDir;
+  } else if(component == 1) {
+    Size size = targetMesh.getPolygonSize(i);
+    for(Size j=0;j<size;j++) {
+      Size idx = targetMesh.getPolygonAttributeIndex(i, j);
+      pos += positions[idx];
+      normal += normals.size() > i ? normals[i] : localDir;
+    }
+    pos *= 1.0 / Float32(size);
+    normal *= 1.0 / Float32(size);
+  } else if(component == 2) {
+    Size idx = targetMesh.getPolygonAttributeIndex(faceCornerPolygon[i], faceCornerOffset[i]);
+    pos = positions[idx];
+    normal = normals.size() > idx ? normals[idx] : localDir;
+  }
+
+  // project position + normal
+  pos = xfo.transformVector(pos);
+  normal = xfo.ori.rotateVector(normal);
+
+  GeometryLocation loc;
+  switch(mode) {
+    case 0: // closest
+    {
+      loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 1: // raycast along normal
+    {
+      loc = sourceSpatial.raycast(Ray(pos, normal), true, 0.0, SCALAR_INFINITE);
+      GeometryLocation locB = sourceSpatial.raycast(Ray(pos, -normal), true, 0.0, SCALAR_INFINITE);
+      if(loc.isValid() && locB.isValid()) {
+        Vec3 posA = sourceSpatial.getPositionAtLocation(loc);
+        Vec3 posB = sourceSpatial.getPositionAtLocation(locB);
+        if((posB - pos).lengthSquared() < (posA - pos).lengthSquared())
+          loc = locB;
+      } else if(locB.isValid()) {
+        loc = locB;
+      }
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 2: // raycast along direction
+    {
+      Ray ray(pos, localDir);
+      loc = sourceSpatial.raycast(ray, true, 0.0, SCALAR_INFINITE);
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+  }
+
+  if(!loc.isValid()) 
+    return;
+
+  Vec4 result = GetAttributeAtLocation(sourceSpatial, loc, sourceCast);
+  if(targetMesh != null && component == 0) {
+    targetMesh.setPointAttribute(i, targetCastRef, result);
+  } else  {
+    results[i] = result;
+  }
+}
+
+operator _BaseGeom_Transfer_Vec4Attribute_PerFaceCorner<<<i>>>(
+  io Vec4 results[],
+  Vec3 positions[],
+  Vec3 normals[],
+  PolygonMesh sourceMesh,
+  Ref<Vec4Attribute> sourceCast,
+  io PolygonMesh targetMesh,
+  io Ref<Vec4Attribute> targetCastRef,
+  UInt32 faceCornerPolygon[],
+  UInt32 faceCornerOffset[],
+  Vec3 sourcePolygonPositions[],
+  Vec3 targetPolygonPositions[],
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  Xfo xfo,
+  Vec3 localDir
+) {
+
+  // get face corner position!
+  Size targetIdx = targetMesh.getPolygonAttributeIndex(faceCornerPolygon[i], faceCornerOffset[i]);
+  Vec3 pos = positions[targetIdx];
+  Vec3 normal = normals.size() > targetIdx ? normals[targetIdx] : localDir;
+
+  // project position + normal
+  pos = xfo.transformVector(pos);
+  normal = xfo.ori.rotateVector(normal);
+
+  GeometryLocation loc;
+  switch(mode) {
+    case 0: // closest
+    {
+      loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 1: // raycast along normal
+    {
+      loc = sourceMesh.raycast(Ray(pos, normal), true, 0.0, SCALAR_INFINITE);
+      GeometryLocation locB = sourceMesh.raycast(Ray(pos, -normal), true, 0.0, SCALAR_INFINITE);
+      if(loc.isValid() && locB.isValid()) {
+        Vec3 posA = sourceMesh.getPositionAtLocation(loc);
+        Vec3 posB = sourceMesh.getPositionAtLocation(locB);
+        if((posB - pos).lengthSquared() < (posA - pos).lengthSquared())
+          loc = locB;
+      } else if(locB.isValid()) {
+        loc = locB;
+      }
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 2: // raycast along direction
+    {
+      Ray ray(pos, localDir);
+      loc = sourceMesh.raycast(ray, true, 0.0, SCALAR_INFINITE);
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+  }
+
+  if(!loc.isValid()) 
+    return;
+
+  // let's do some special treatment if the polygon
+  // has discontinuities....!
+  Index polygon = sourceMesh.getLocationPolygon(loc);
+  if(!sourceMesh.isPolygonAttributeUniformForAllCorners(polygon, sourceCast)) {
+
+    // skip internal edges
+    Scalar weight = 0.0;
+    UInt32 edge = sourceMesh.getClosestEdgeToLocation(loc, weight);
+    if(weight <= threshold) {
+
+      UInt32 polygonPointIndices[3];
+      Scalar weights[3];
+      sourceMesh.getLocationPolygonPointIndicesAndWeights( loc, polygonPointIndices, weights );
+
+      // check if this is on a vertex
+      if(weights[0] > 1.0 - threshold ||
+        weights[1] > 1.0 - threshold ||
+        weights[2] > 1.0 - threshold
+      ) {
+
+        Index sourcePointIndex = polygonPointIndices[0];
+        if(weights[1] > weights[0] && weights[1] > weights[2])
+          sourcePointIndex = polygonPointIndices[1];
+        else if(weights[2] > weights[0] && weights[2] > weights[1])
+          sourcePointIndex = polygonPointIndices[2];
+        Index sourcePoint = sourceMesh.getPolygonPoint(polygon, sourcePointIndex);
+
+        Vec3 sourcePointPos = sourceMesh.getPointPosition(sourcePoint);
+        Scalar minAngle = SCALAR_INFINITE;
+        Index sourcePolygon = polygon;
+        sourcePointIndex = 0;
+
+        Vec3 targetVector = (targetPolygonPositions[faceCornerPolygon[i]] - positions[targetIdx]).unit();
+        targetVector = xfo.ori.rotateVector(targetVector);
+
+        for(Size j=0;j<sourceMesh.getPointPolygonCount(sourcePoint);j++) {
+          
+          Size wingPolygon;
+          Size wingPolygonPointIndex;
+          sourceMesh.getPointPolygonAndIndex(sourcePoint, j, wingPolygon, wingPolygonPointIndex);
+
+          Vec3 sourceVector = (sourcePolygonPositions[wingPolygon] - sourcePointPos).unit();
+          Scalar angle = sourceVector.unitsAngleTo(targetVector);
+
+          if(angle < minAngle) {
+            minAngle = angle;
+            sourcePolygon = wingPolygon;
+            sourcePointIndex = wingPolygonPointIndex;
+          }
+
+        }
+        
+        Size sourceTriangle = sourcePointIndex > 2 ? (sourcePointIndex - 1) / 2 : 0;
+
+        GeometryLocation newLoc;
+        newLoc.index = sourcePolygon;
+        newLoc.subIndex = sourceTriangle;
+        newLoc.barycentric = Vec3(0, 0, 0);
+
+        UInt32 newPolygonPointIndices[3];
+        Scalar newWeights[3];
+        sourceMesh.getLocationPolygonPointIndicesAndWeights( newLoc, newPolygonPointIndices, newWeights );
+
+        for(Size j=0;j<3;j++) {
+          if(newPolygonPointIndices[j] == sourcePointIndex) {
+            newLoc.barycentric.setComponent(j, 1.0);
+            break;
+          }
+        }
+
+        loc = newLoc;
+
+      } else {
+
+        // let's find the neighbor polygon (if it exists)
+        Size adjacentPolygon;
+        Size adjacentPolygonPointIndex;
+        sourceMesh.getPolygonAdjacentPolygonAndIndex(
+          polygon,
+          polygonPointIndices[edge], 
+          adjacentPolygon, 
+          adjacentPolygonPointIndex
+        );
+
+        if(adjacentPolygon == InvalidIndex) {
+          
+          // leave things are they are
+          // todo: we might want to move the geometry location to the edge,
+          // in other words: make the opposing weight = 0.0
+
+        } else {
+
+          // let's find out which polygon is closer to the target polygon
+          Vec3 targetVector = (targetPolygonPositions[faceCornerPolygon[i]] - positions[targetIdx]).unit();
+          targetVector = xfo.ori.rotateVector(targetVector);
+
+          Vec3 sourcePos = sourceMesh.getPositionAtLocation(loc);
+          Vec3 sourceVectorA = (sourcePolygonPositions[polygon] - sourcePos).unit();
+          Vec3 sourceVectorB = (sourcePolygonPositions[adjacentPolygon] - sourcePos).unit();
+          Scalar angleA = targetVector.unitsAngleTo(sourceVectorA);
+          Scalar angleB = targetVector.unitsAngleTo(sourceVectorB);
+
+          if(angleB < angleA) {
+
+            Size adjacentPolygonSize = sourceMesh.getPolygonSize(adjacentPolygon);
+            Size adjacentPolygonTriangles = adjacentPolygonSize - 2;
+            Size edgeTriangle = polygonPointIndices[edge] > 2 ? (polygonPointIndices[edge] - 1) / 2 : 0;
+
+            GeometryLocation newLoc;
+            newLoc.index = adjacentPolygon;
+            newLoc.subIndex = edgeTriangle;
+            newLoc.barycentric = Vec3(0, 0, 0);
+
+            UInt32 newPolygonPointIndices[3];
+            Scalar newWeights[3];
+            sourceMesh.getLocationPolygonPointIndicesAndWeights( newLoc, newPolygonPointIndices, newWeights );
+
+            for(Size j=0;j<3;j++) {
+              if(newPolygonPointIndices[j] == adjacentPolygonPointIndex) {
+                newLoc.barycentric.setComponent((j+1)%3, weights[edge]);
+                newLoc.barycentric.setComponent((j+0)%3, weights[(edge+1) % 3]);
+                break;
+              }
+            }
+
+            Scalar newLocSum = newLoc.barycentric.x + newLoc.barycentric.y + newLoc.barycentric.z;
+            if(newLocSum != 0.0)
+            {
+              newLoc.barycentric /= newLocSum;
+              loc = newLoc;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  results[i] = GetAttributeAtLocation(sourceMesh, loc, sourceCast);
+}
+
+/// \internal
+private function Boolean BaseGeometry.transferVec4Attribute!(
+  BaseGeometry sourceGeo,
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  SInt32 component,
+  Vec4Attribute sourceCast,
+  String target,
+  Xfo sourceXfo,
+  Xfo targetXfo,
+  Vec3 direction
+) {
+  if(sourceCast == null)
+    return false;
+  Ref<Vec4Attribute> sourceRef = sourceCast;
+
+  // figure out how many lookups we have to do
+  SpatialQueryable sourceSpatial = sourceGeo;
+  if(sourceSpatial == null) {
+    report('Error: Transfer: Source geometry is not a SpatialQueryable.');
+    return false;
+  }
+
+  GeometryAttributes attributes = this.attributes;
+  if(!attributes)
+    return false;
+
+  GeometryAttribute targetAttr = attributes.getAttribute(target);
+  if(targetAttr != null)
+  {
+    if(targetAttr.type() != Vec4Attribute) {
+      report('Error: Transfer: Target attribute "'+target+'" exists, but it\'s not a Vec4Attribute.');
+      return false;
+    }
+  }
+
+  Vec4Attribute targetCast = attributes.getOrCreateVec4Attribute(target);
+  if(targetCast == null)
+    return false;
+  Ref<Vec4Attribute> targetCastRef = targetCast;
+
+  Vec3 positions[];
+  Vec3 normals[];
+  Vec3Attribute positionsAttr = attributes.getAttribute('positions');
+  Vec3Attribute normalsAttr = attributes.getAttribute('normals');
+  if(positionsAttr == null) {
+    report('Error: Transfer: positions don\'t exist on target geometry.');
+    return false;
+  }
+  positions = positionsAttr.values;
+  Size numTasks = positions.size();
+  if(normalsAttr)
+    normals = normalsAttr.values;
+
+  // localize the direction + transforms
+  Vec3 localDir = sourceXfo.ori.inverse().rotateVector(direction);
+  Xfo xfo = sourceXfo.inverse() * targetXfo;
+
+  // setup the spatial queries
+  GenericValueContainer spatialOptions();
+  PrepareForSpatialQueries_setOctree(spatialOptions);
+
+  PolygonMesh targetMesh = this;
+  PolygonMesh sourceMesh = sourceGeo;
+
+  UInt32 faceCornerPolygon[];
+  UInt32 faceCornerOffset[];
+  if(targetMesh != null) {
+    numTasks = targetMesh.pointCount();
+    if(component == 2) {
+      numTasks = targetMesh.polygonPointsCount();
+      faceCornerPolygon.resize(numTasks);
+      faceCornerOffset.resize(numTasks);
+
+      Index offset = 0;
+      for(Size i=0;i<targetMesh.polygonCount();i++) {
+        Size count = targetMesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++) {
+          faceCornerPolygon[offset] = i;
+          faceCornerOffset[offset] = j;
+          offset++;
+        }
+      }
+    }
+  }
+
+  // deal with a special case if both source
+  // and target are of type PolygonMesh
+  if(targetMesh != null && sourceMesh != null && component == 2) {
+
+    Vec3 sourcePolygonPos[] = sourceMesh.getNormalizedPolygonPositions();
+    Vec3 targetPolygonPos[] = targetMesh.getNormalizedPolygonPositions();
+
+    numTasks = targetMesh.polygonPointsCount();
+    Vec4 results[](numTasks);
+
+    sourceMesh.prepareForSpatialQueries(numTasks * 4, spatialOptions);
+
+    _BaseGeom_Transfer_Vec4Attribute_PerFaceCorner<<<numTasks>>>(
+      results,
+      positions,
+      normals,
+      sourceMesh,
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      sourcePolygonPos,
+      targetPolygonPos,
+      mode,
+      closestIfNotHit,
+      threshold,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      targetMesh.setPolygonAttribute( faceCornerPolygon[i], faceCornerOffset[i], targetCastRef, results[i] );
+    }
+
+  } else if(component == 0 || targetMesh == null) {
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_Vec4Attribute_Simple<<<numTasks>>>(
+      targetCast.values,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+  } else if(component == 1) {
+
+    numTasks = targetMesh.polygonCount();
+    Vec4 results[](numTasks);
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_Vec4Attribute_Simple<<<numTasks>>>(
+      results,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      Size size = targetMesh.getPolygonSize(i);
+      for(Size j=0;j<size;j++)
+        targetMesh.setPolygonAttribute( i, j, targetCastRef, results[i] );
+    }
+
+  } else if(component == 2) {
+
+    numTasks = targetMesh.polygonPointsCount();
+    Vec4 results[](numTasks);
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_Vec4Attribute_Simple<<<numTasks>>>(
+      targetCast.values,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      targetMesh.setPolygonAttribute( faceCornerPolygon[i], faceCornerOffset[i], targetCastRef, results[i] );
+    }
+  }
+
+  targetCast.incrementVersion();
+  return true;
+}
+
+operator _BaseGeom_Transfer_QuatAttribute_Simple<<<i>>>(
+  io Quat results[],
+  Vec3 positions[],
+  Vec3 normals[],
+  SpatialQueryable sourceSpatial,
+  Ref<QuatAttribute> sourceCast,
+  io PolygonMesh targetMesh,
+  io Ref<QuatAttribute> targetCastRef,
+  UInt32 faceCornerPolygon[],
+  UInt32 faceCornerOffset[],
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  SInt32 component,
+  Xfo xfo,
+  Vec3 localDir
+) {
+
+  // get the vertex, face or face corner position!
+  Vec3 pos;
+  Vec3 normal = localDir;
+  if(component == 0 || targetMesh == null) {
+    pos = positions[i];
+    normal = normals.size() > i ? normals[i] : localDir;
+  } else if(component == 1) {
+    Size size = targetMesh.getPolygonSize(i);
+    for(Size j=0;j<size;j++) {
+      Size idx = targetMesh.getPolygonAttributeIndex(i, j);
+      pos += positions[idx];
+      normal += normals.size() > i ? normals[i] : localDir;
+    }
+    pos *= 1.0 / Float32(size);
+    normal *= 1.0 / Float32(size);
+  } else if(component == 2) {
+    Size idx = targetMesh.getPolygonAttributeIndex(faceCornerPolygon[i], faceCornerOffset[i]);
+    pos = positions[idx];
+    normal = normals.size() > idx ? normals[idx] : localDir;
+  }
+
+  // project position + normal
+  pos = xfo.transformVector(pos);
+  normal = xfo.ori.rotateVector(normal);
+
+  GeometryLocation loc;
+  switch(mode) {
+    case 0: // closest
+    {
+      loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 1: // raycast along normal
+    {
+      loc = sourceSpatial.raycast(Ray(pos, normal), true, 0.0, SCALAR_INFINITE);
+      GeometryLocation locB = sourceSpatial.raycast(Ray(pos, -normal), true, 0.0, SCALAR_INFINITE);
+      if(loc.isValid() && locB.isValid()) {
+        Vec3 posA = sourceSpatial.getPositionAtLocation(loc);
+        Vec3 posB = sourceSpatial.getPositionAtLocation(locB);
+        if((posB - pos).lengthSquared() < (posA - pos).lengthSquared())
+          loc = locB;
+      } else if(locB.isValid()) {
+        loc = locB;
+      }
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 2: // raycast along direction
+    {
+      Ray ray(pos, localDir);
+      loc = sourceSpatial.raycast(ray, true, 0.0, SCALAR_INFINITE);
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+  }
+
+  if(!loc.isValid()) 
+    return;
+
+  Quat result = GetAttributeAtLocation(sourceSpatial, loc, sourceCast);
+  if(targetMesh != null && component == 0) {
+    targetMesh.setPointAttribute(i, targetCastRef, result);
+  } else  {
+    results[i] = result;
+  }
+}
+
+operator _BaseGeom_Transfer_QuatAttribute_PerFaceCorner<<<i>>>(
+  io Quat results[],
+  Vec3 positions[],
+  Vec3 normals[],
+  PolygonMesh sourceMesh,
+  Ref<QuatAttribute> sourceCast,
+  io PolygonMesh targetMesh,
+  io Ref<QuatAttribute> targetCastRef,
+  UInt32 faceCornerPolygon[],
+  UInt32 faceCornerOffset[],
+  Vec3 sourcePolygonPositions[],
+  Vec3 targetPolygonPositions[],
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  Xfo xfo,
+  Vec3 localDir
+) {
+
+  // get face corner position!
+  Size targetIdx = targetMesh.getPolygonAttributeIndex(faceCornerPolygon[i], faceCornerOffset[i]);
+  Vec3 pos = positions[targetIdx];
+  Vec3 normal = normals.size() > targetIdx ? normals[targetIdx] : localDir;
+
+  // project position + normal
+  pos = xfo.transformVector(pos);
+  normal = xfo.ori.rotateVector(normal);
+
+  GeometryLocation loc;
+  switch(mode) {
+    case 0: // closest
+    {
+      loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 1: // raycast along normal
+    {
+      loc = sourceMesh.raycast(Ray(pos, normal), true, 0.0, SCALAR_INFINITE);
+      GeometryLocation locB = sourceMesh.raycast(Ray(pos, -normal), true, 0.0, SCALAR_INFINITE);
+      if(loc.isValid() && locB.isValid()) {
+        Vec3 posA = sourceMesh.getPositionAtLocation(loc);
+        Vec3 posB = sourceMesh.getPositionAtLocation(locB);
+        if((posB - pos).lengthSquared() < (posA - pos).lengthSquared())
+          loc = locB;
+      } else if(locB.isValid()) {
+        loc = locB;
+      }
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 2: // raycast along direction
+    {
+      Ray ray(pos, localDir);
+      loc = sourceMesh.raycast(ray, true, 0.0, SCALAR_INFINITE);
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+  }
+
+  if(!loc.isValid()) 
+    return;
+
+  // let's do some special treatment if the polygon
+  // has discontinuities....!
+  Index polygon = sourceMesh.getLocationPolygon(loc);
+  if(!sourceMesh.isPolygonAttributeUniformForAllCorners(polygon, sourceCast)) {
+
+    // skip internal edges
+    Scalar weight = 0.0;
+    UInt32 edge = sourceMesh.getClosestEdgeToLocation(loc, weight);
+    if(weight <= threshold) {
+
+      UInt32 polygonPointIndices[3];
+      Scalar weights[3];
+      sourceMesh.getLocationPolygonPointIndicesAndWeights( loc, polygonPointIndices, weights );
+
+      // check if this is on a vertex
+      if(weights[0] > 1.0 - threshold ||
+        weights[1] > 1.0 - threshold ||
+        weights[2] > 1.0 - threshold
+      ) {
+
+        Index sourcePointIndex = polygonPointIndices[0];
+        if(weights[1] > weights[0] && weights[1] > weights[2])
+          sourcePointIndex = polygonPointIndices[1];
+        else if(weights[2] > weights[0] && weights[2] > weights[1])
+          sourcePointIndex = polygonPointIndices[2];
+        Index sourcePoint = sourceMesh.getPolygonPoint(polygon, sourcePointIndex);
+
+        Vec3 sourcePointPos = sourceMesh.getPointPosition(sourcePoint);
+        Scalar minAngle = SCALAR_INFINITE;
+        Index sourcePolygon = polygon;
+        sourcePointIndex = 0;
+
+        Vec3 targetVector = (targetPolygonPositions[faceCornerPolygon[i]] - positions[targetIdx]).unit();
+        targetVector = xfo.ori.rotateVector(targetVector);
+
+        for(Size j=0;j<sourceMesh.getPointPolygonCount(sourcePoint);j++) {
+          
+          Size wingPolygon;
+          Size wingPolygonPointIndex;
+          sourceMesh.getPointPolygonAndIndex(sourcePoint, j, wingPolygon, wingPolygonPointIndex);
+
+          Vec3 sourceVector = (sourcePolygonPositions[wingPolygon] - sourcePointPos).unit();
+          Scalar angle = sourceVector.unitsAngleTo(targetVector);
+
+          if(angle < minAngle) {
+            minAngle = angle;
+            sourcePolygon = wingPolygon;
+            sourcePointIndex = wingPolygonPointIndex;
+          }
+
+        }
+        
+        Size sourceTriangle = sourcePointIndex > 2 ? (sourcePointIndex - 1) / 2 : 0;
+
+        GeometryLocation newLoc;
+        newLoc.index = sourcePolygon;
+        newLoc.subIndex = sourceTriangle;
+        newLoc.barycentric = Vec3(0, 0, 0);
+
+        UInt32 newPolygonPointIndices[3];
+        Scalar newWeights[3];
+        sourceMesh.getLocationPolygonPointIndicesAndWeights( newLoc, newPolygonPointIndices, newWeights );
+
+        for(Size j=0;j<3;j++) {
+          if(newPolygonPointIndices[j] == sourcePointIndex) {
+            newLoc.barycentric.setComponent(j, 1.0);
+            break;
+          }
+        }
+
+        loc = newLoc;
+
+      } else {
+
+        // let's find the neighbor polygon (if it exists)
+        Size adjacentPolygon;
+        Size adjacentPolygonPointIndex;
+        sourceMesh.getPolygonAdjacentPolygonAndIndex(
+          polygon,
+          polygonPointIndices[edge], 
+          adjacentPolygon, 
+          adjacentPolygonPointIndex
+        );
+
+        if(adjacentPolygon == InvalidIndex) {
+          
+          // leave things are they are
+          // todo: we might want to move the geometry location to the edge,
+          // in other words: make the opposing weight = 0.0
+
+        } else {
+
+          // let's find out which polygon is closer to the target polygon
+          Vec3 targetVector = (targetPolygonPositions[faceCornerPolygon[i]] - positions[targetIdx]).unit();
+          targetVector = xfo.ori.rotateVector(targetVector);
+
+          Vec3 sourcePos = sourceMesh.getPositionAtLocation(loc);
+          Vec3 sourceVectorA = (sourcePolygonPositions[polygon] - sourcePos).unit();
+          Vec3 sourceVectorB = (sourcePolygonPositions[adjacentPolygon] - sourcePos).unit();
+          Scalar angleA = targetVector.unitsAngleTo(sourceVectorA);
+          Scalar angleB = targetVector.unitsAngleTo(sourceVectorB);
+
+          if(angleB < angleA) {
+
+            Size adjacentPolygonSize = sourceMesh.getPolygonSize(adjacentPolygon);
+            Size adjacentPolygonTriangles = adjacentPolygonSize - 2;
+            Size edgeTriangle = polygonPointIndices[edge] > 2 ? (polygonPointIndices[edge] - 1) / 2 : 0;
+
+            GeometryLocation newLoc;
+            newLoc.index = adjacentPolygon;
+            newLoc.subIndex = edgeTriangle;
+            newLoc.barycentric = Vec3(0, 0, 0);
+
+            UInt32 newPolygonPointIndices[3];
+            Scalar newWeights[3];
+            sourceMesh.getLocationPolygonPointIndicesAndWeights( newLoc, newPolygonPointIndices, newWeights );
+
+            for(Size j=0;j<3;j++) {
+              if(newPolygonPointIndices[j] == adjacentPolygonPointIndex) {
+                newLoc.barycentric.setComponent((j+1)%3, weights[edge]);
+                newLoc.barycentric.setComponent((j+0)%3, weights[(edge+1) % 3]);
+                break;
+              }
+            }
+
+            Scalar newLocSum = newLoc.barycentric.x + newLoc.barycentric.y + newLoc.barycentric.z;
+            if(newLocSum != 0.0)
+            {
+              newLoc.barycentric /= newLocSum;
+              loc = newLoc;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  results[i] = GetAttributeAtLocation(sourceMesh, loc, sourceCast);
+}
+
+/// \internal
+private function Boolean BaseGeometry.transferQuatAttribute!(
+  BaseGeometry sourceGeo,
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  SInt32 component,
+  QuatAttribute sourceCast,
+  String target,
+  Xfo sourceXfo,
+  Xfo targetXfo,
+  Vec3 direction
+) {
+  if(sourceCast == null)
+    return false;
+  Ref<QuatAttribute> sourceRef = sourceCast;
+
+  // figure out how many lookups we have to do
+  SpatialQueryable sourceSpatial = sourceGeo;
+  if(sourceSpatial == null) {
+    report('Error: Transfer: Source geometry is not a SpatialQueryable.');
+    return false;
+  }
+
+  GeometryAttributes attributes = this.attributes;
+  if(!attributes)
+    return false;
+
+  GeometryAttribute targetAttr = attributes.getAttribute(target);
+  if(targetAttr != null)
+  {
+    if(targetAttr.type() != QuatAttribute) {
+      report('Error: Transfer: Target attribute "'+target+'" exists, but it\'s not a QuatAttribute.');
+      return false;
+    }
+  }
+
+  QuatAttribute targetCast = attributes.getOrCreateQuatAttribute(target);
+  if(targetCast == null)
+    return false;
+  Ref<QuatAttribute> targetCastRef = targetCast;
+
+  Vec3 positions[];
+  Vec3 normals[];
+  Vec3Attribute positionsAttr = attributes.getAttribute('positions');
+  Vec3Attribute normalsAttr = attributes.getAttribute('normals');
+  if(positionsAttr == null) {
+    report('Error: Transfer: positions don\'t exist on target geometry.');
+    return false;
+  }
+  positions = positionsAttr.values;
+  Size numTasks = positions.size();
+  if(normalsAttr)
+    normals = normalsAttr.values;
+
+  // localize the direction + transforms
+  Vec3 localDir = sourceXfo.ori.inverse().rotateVector(direction);
+  Xfo xfo = sourceXfo.inverse() * targetXfo;
+
+  // setup the spatial queries
+  GenericValueContainer spatialOptions();
+  PrepareForSpatialQueries_setOctree(spatialOptions);
+
+  PolygonMesh targetMesh = this;
+  PolygonMesh sourceMesh = sourceGeo;
+
+  UInt32 faceCornerPolygon[];
+  UInt32 faceCornerOffset[];
+  if(targetMesh != null) {
+    numTasks = targetMesh.pointCount();
+    if(component == 2) {
+      numTasks = targetMesh.polygonPointsCount();
+      faceCornerPolygon.resize(numTasks);
+      faceCornerOffset.resize(numTasks);
+
+      Index offset = 0;
+      for(Size i=0;i<targetMesh.polygonCount();i++) {
+        Size count = targetMesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++) {
+          faceCornerPolygon[offset] = i;
+          faceCornerOffset[offset] = j;
+          offset++;
+        }
+      }
+    }
+  }
+
+  // deal with a special case if both source
+  // and target are of type PolygonMesh
+  if(targetMesh != null && sourceMesh != null && component == 2) {
+
+    Vec3 sourcePolygonPos[] = sourceMesh.getNormalizedPolygonPositions();
+    Vec3 targetPolygonPos[] = targetMesh.getNormalizedPolygonPositions();
+
+    numTasks = targetMesh.polygonPointsCount();
+    Quat results[](numTasks);
+
+    sourceMesh.prepareForSpatialQueries(numTasks * 4, spatialOptions);
+
+    _BaseGeom_Transfer_QuatAttribute_PerFaceCorner<<<numTasks>>>(
+      results,
+      positions,
+      normals,
+      sourceMesh,
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      sourcePolygonPos,
+      targetPolygonPos,
+      mode,
+      closestIfNotHit,
+      threshold,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      targetMesh.setPolygonAttribute( faceCornerPolygon[i], faceCornerOffset[i], targetCastRef, results[i] );
+    }
+
+  } else if(component == 0 || targetMesh == null) {
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_QuatAttribute_Simple<<<numTasks>>>(
+      targetCast.values,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+  } else if(component == 1) {
+
+    numTasks = targetMesh.polygonCount();
+    Quat results[](numTasks);
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_QuatAttribute_Simple<<<numTasks>>>(
+      results,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      Size size = targetMesh.getPolygonSize(i);
+      for(Size j=0;j<size;j++)
+        targetMesh.setPolygonAttribute( i, j, targetCastRef, results[i] );
+    }
+
+  } else if(component == 2) {
+
+    numTasks = targetMesh.polygonPointsCount();
+    Quat results[](numTasks);
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_QuatAttribute_Simple<<<numTasks>>>(
+      targetCast.values,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      targetMesh.setPolygonAttribute( faceCornerPolygon[i], faceCornerOffset[i], targetCastRef, results[i] );
+    }
+  }
+
+  targetCast.incrementVersion();
+  return true;
+}
+
+operator _BaseGeom_Transfer_Mat33Attribute_Simple<<<i>>>(
+  io Mat33 results[],
+  Vec3 positions[],
+  Vec3 normals[],
+  SpatialQueryable sourceSpatial,
+  Ref<Mat33Attribute> sourceCast,
+  io PolygonMesh targetMesh,
+  io Ref<Mat33Attribute> targetCastRef,
+  UInt32 faceCornerPolygon[],
+  UInt32 faceCornerOffset[],
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  SInt32 component,
+  Xfo xfo,
+  Vec3 localDir
+) {
+
+  // get the vertex, face or face corner position!
+  Vec3 pos;
+  Vec3 normal = localDir;
+  if(component == 0 || targetMesh == null) {
+    pos = positions[i];
+    normal = normals.size() > i ? normals[i] : localDir;
+  } else if(component == 1) {
+    Size size = targetMesh.getPolygonSize(i);
+    for(Size j=0;j<size;j++) {
+      Size idx = targetMesh.getPolygonAttributeIndex(i, j);
+      pos += positions[idx];
+      normal += normals.size() > i ? normals[i] : localDir;
+    }
+    pos *= 1.0 / Float32(size);
+    normal *= 1.0 / Float32(size);
+  } else if(component == 2) {
+    Size idx = targetMesh.getPolygonAttributeIndex(faceCornerPolygon[i], faceCornerOffset[i]);
+    pos = positions[idx];
+    normal = normals.size() > idx ? normals[idx] : localDir;
+  }
+
+  // project position + normal
+  pos = xfo.transformVector(pos);
+  normal = xfo.ori.rotateVector(normal);
+
+  GeometryLocation loc;
+  switch(mode) {
+    case 0: // closest
+    {
+      loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 1: // raycast along normal
+    {
+      loc = sourceSpatial.raycast(Ray(pos, normal), true, 0.0, SCALAR_INFINITE);
+      GeometryLocation locB = sourceSpatial.raycast(Ray(pos, -normal), true, 0.0, SCALAR_INFINITE);
+      if(loc.isValid() && locB.isValid()) {
+        Vec3 posA = sourceSpatial.getPositionAtLocation(loc);
+        Vec3 posB = sourceSpatial.getPositionAtLocation(locB);
+        if((posB - pos).lengthSquared() < (posA - pos).lengthSquared())
+          loc = locB;
+      } else if(locB.isValid()) {
+        loc = locB;
+      }
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 2: // raycast along direction
+    {
+      Ray ray(pos, localDir);
+      loc = sourceSpatial.raycast(ray, true, 0.0, SCALAR_INFINITE);
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+  }
+
+  if(!loc.isValid()) 
+    return;
+
+  Mat33 result = GetAttributeAtLocation(sourceSpatial, loc, sourceCast);
+  if(targetMesh != null && component == 0) {
+    targetMesh.setPointAttribute(i, targetCastRef, result);
+  } else  {
+    results[i] = result;
+  }
+}
+
+operator _BaseGeom_Transfer_Mat33Attribute_PerFaceCorner<<<i>>>(
+  io Mat33 results[],
+  Vec3 positions[],
+  Vec3 normals[],
+  PolygonMesh sourceMesh,
+  Ref<Mat33Attribute> sourceCast,
+  io PolygonMesh targetMesh,
+  io Ref<Mat33Attribute> targetCastRef,
+  UInt32 faceCornerPolygon[],
+  UInt32 faceCornerOffset[],
+  Vec3 sourcePolygonPositions[],
+  Vec3 targetPolygonPositions[],
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  Xfo xfo,
+  Vec3 localDir
+) {
+
+  // get face corner position!
+  Size targetIdx = targetMesh.getPolygonAttributeIndex(faceCornerPolygon[i], faceCornerOffset[i]);
+  Vec3 pos = positions[targetIdx];
+  Vec3 normal = normals.size() > targetIdx ? normals[targetIdx] : localDir;
+
+  // project position + normal
+  pos = xfo.transformVector(pos);
+  normal = xfo.ori.rotateVector(normal);
+
+  GeometryLocation loc;
+  switch(mode) {
+    case 0: // closest
+    {
+      loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 1: // raycast along normal
+    {
+      loc = sourceMesh.raycast(Ray(pos, normal), true, 0.0, SCALAR_INFINITE);
+      GeometryLocation locB = sourceMesh.raycast(Ray(pos, -normal), true, 0.0, SCALAR_INFINITE);
+      if(loc.isValid() && locB.isValid()) {
+        Vec3 posA = sourceMesh.getPositionAtLocation(loc);
+        Vec3 posB = sourceMesh.getPositionAtLocation(locB);
+        if((posB - pos).lengthSquared() < (posA - pos).lengthSquared())
+          loc = locB;
+      } else if(locB.isValid()) {
+        loc = locB;
+      }
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 2: // raycast along direction
+    {
+      Ray ray(pos, localDir);
+      loc = sourceMesh.raycast(ray, true, 0.0, SCALAR_INFINITE);
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+  }
+
+  if(!loc.isValid()) 
+    return;
+
+  // let's do some special treatment if the polygon
+  // has discontinuities....!
+  Index polygon = sourceMesh.getLocationPolygon(loc);
+  if(!sourceMesh.isPolygonAttributeUniformForAllCorners(polygon, sourceCast)) {
+
+    // skip internal edges
+    Scalar weight = 0.0;
+    UInt32 edge = sourceMesh.getClosestEdgeToLocation(loc, weight);
+    if(weight <= threshold) {
+
+      UInt32 polygonPointIndices[3];
+      Scalar weights[3];
+      sourceMesh.getLocationPolygonPointIndicesAndWeights( loc, polygonPointIndices, weights );
+
+      // check if this is on a vertex
+      if(weights[0] > 1.0 - threshold ||
+        weights[1] > 1.0 - threshold ||
+        weights[2] > 1.0 - threshold
+      ) {
+
+        Index sourcePointIndex = polygonPointIndices[0];
+        if(weights[1] > weights[0] && weights[1] > weights[2])
+          sourcePointIndex = polygonPointIndices[1];
+        else if(weights[2] > weights[0] && weights[2] > weights[1])
+          sourcePointIndex = polygonPointIndices[2];
+        Index sourcePoint = sourceMesh.getPolygonPoint(polygon, sourcePointIndex);
+
+        Vec3 sourcePointPos = sourceMesh.getPointPosition(sourcePoint);
+        Scalar minAngle = SCALAR_INFINITE;
+        Index sourcePolygon = polygon;
+        sourcePointIndex = 0;
+
+        Vec3 targetVector = (targetPolygonPositions[faceCornerPolygon[i]] - positions[targetIdx]).unit();
+        targetVector = xfo.ori.rotateVector(targetVector);
+
+        for(Size j=0;j<sourceMesh.getPointPolygonCount(sourcePoint);j++) {
+          
+          Size wingPolygon;
+          Size wingPolygonPointIndex;
+          sourceMesh.getPointPolygonAndIndex(sourcePoint, j, wingPolygon, wingPolygonPointIndex);
+
+          Vec3 sourceVector = (sourcePolygonPositions[wingPolygon] - sourcePointPos).unit();
+          Scalar angle = sourceVector.unitsAngleTo(targetVector);
+
+          if(angle < minAngle) {
+            minAngle = angle;
+            sourcePolygon = wingPolygon;
+            sourcePointIndex = wingPolygonPointIndex;
+          }
+
+        }
+        
+        Size sourceTriangle = sourcePointIndex > 2 ? (sourcePointIndex - 1) / 2 : 0;
+
+        GeometryLocation newLoc;
+        newLoc.index = sourcePolygon;
+        newLoc.subIndex = sourceTriangle;
+        newLoc.barycentric = Vec3(0, 0, 0);
+
+        UInt32 newPolygonPointIndices[3];
+        Scalar newWeights[3];
+        sourceMesh.getLocationPolygonPointIndicesAndWeights( newLoc, newPolygonPointIndices, newWeights );
+
+        for(Size j=0;j<3;j++) {
+          if(newPolygonPointIndices[j] == sourcePointIndex) {
+            newLoc.barycentric.setComponent(j, 1.0);
+            break;
+          }
+        }
+
+        loc = newLoc;
+
+      } else {
+
+        // let's find the neighbor polygon (if it exists)
+        Size adjacentPolygon;
+        Size adjacentPolygonPointIndex;
+        sourceMesh.getPolygonAdjacentPolygonAndIndex(
+          polygon,
+          polygonPointIndices[edge], 
+          adjacentPolygon, 
+          adjacentPolygonPointIndex
+        );
+
+        if(adjacentPolygon == InvalidIndex) {
+          
+          // leave things are they are
+          // todo: we might want to move the geometry location to the edge,
+          // in other words: make the opposing weight = 0.0
+
+        } else {
+
+          // let's find out which polygon is closer to the target polygon
+          Vec3 targetVector = (targetPolygonPositions[faceCornerPolygon[i]] - positions[targetIdx]).unit();
+          targetVector = xfo.ori.rotateVector(targetVector);
+
+          Vec3 sourcePos = sourceMesh.getPositionAtLocation(loc);
+          Vec3 sourceVectorA = (sourcePolygonPositions[polygon] - sourcePos).unit();
+          Vec3 sourceVectorB = (sourcePolygonPositions[adjacentPolygon] - sourcePos).unit();
+          Scalar angleA = targetVector.unitsAngleTo(sourceVectorA);
+          Scalar angleB = targetVector.unitsAngleTo(sourceVectorB);
+
+          if(angleB < angleA) {
+
+            Size adjacentPolygonSize = sourceMesh.getPolygonSize(adjacentPolygon);
+            Size adjacentPolygonTriangles = adjacentPolygonSize - 2;
+            Size edgeTriangle = polygonPointIndices[edge] > 2 ? (polygonPointIndices[edge] - 1) / 2 : 0;
+
+            GeometryLocation newLoc;
+            newLoc.index = adjacentPolygon;
+            newLoc.subIndex = edgeTriangle;
+            newLoc.barycentric = Vec3(0, 0, 0);
+
+            UInt32 newPolygonPointIndices[3];
+            Scalar newWeights[3];
+            sourceMesh.getLocationPolygonPointIndicesAndWeights( newLoc, newPolygonPointIndices, newWeights );
+
+            for(Size j=0;j<3;j++) {
+              if(newPolygonPointIndices[j] == adjacentPolygonPointIndex) {
+                newLoc.barycentric.setComponent((j+1)%3, weights[edge]);
+                newLoc.barycentric.setComponent((j+0)%3, weights[(edge+1) % 3]);
+                break;
+              }
+            }
+
+            Scalar newLocSum = newLoc.barycentric.x + newLoc.barycentric.y + newLoc.barycentric.z;
+            if(newLocSum != 0.0)
+            {
+              newLoc.barycentric /= newLocSum;
+              loc = newLoc;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  results[i] = GetAttributeAtLocation(sourceMesh, loc, sourceCast);
+}
+
+/// \internal
+private function Boolean BaseGeometry.transferMat33Attribute!(
+  BaseGeometry sourceGeo,
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  SInt32 component,
+  Mat33Attribute sourceCast,
+  String target,
+  Xfo sourceXfo,
+  Xfo targetXfo,
+  Vec3 direction
+) {
+  if(sourceCast == null)
+    return false;
+  Ref<Mat33Attribute> sourceRef = sourceCast;
+
+  // figure out how many lookups we have to do
+  SpatialQueryable sourceSpatial = sourceGeo;
+  if(sourceSpatial == null) {
+    report('Error: Transfer: Source geometry is not a SpatialQueryable.');
+    return false;
+  }
+
+  GeometryAttributes attributes = this.attributes;
+  if(!attributes)
+    return false;
+
+  GeometryAttribute targetAttr = attributes.getAttribute(target);
+  if(targetAttr != null)
+  {
+    if(targetAttr.type() != Mat33Attribute) {
+      report('Error: Transfer: Target attribute "'+target+'" exists, but it\'s not a Mat33Attribute.');
+      return false;
+    }
+  }
+
+  Mat33Attribute targetCast = attributes.getOrCreateMat33Attribute(target);
+  if(targetCast == null)
+    return false;
+  Ref<Mat33Attribute> targetCastRef = targetCast;
+
+  Vec3 positions[];
+  Vec3 normals[];
+  Vec3Attribute positionsAttr = attributes.getAttribute('positions');
+  Vec3Attribute normalsAttr = attributes.getAttribute('normals');
+  if(positionsAttr == null) {
+    report('Error: Transfer: positions don\'t exist on target geometry.');
+    return false;
+  }
+  positions = positionsAttr.values;
+  Size numTasks = positions.size();
+  if(normalsAttr)
+    normals = normalsAttr.values;
+
+  // localize the direction + transforms
+  Vec3 localDir = sourceXfo.ori.inverse().rotateVector(direction);
+  Xfo xfo = sourceXfo.inverse() * targetXfo;
+
+  // setup the spatial queries
+  GenericValueContainer spatialOptions();
+  PrepareForSpatialQueries_setOctree(spatialOptions);
+
+  PolygonMesh targetMesh = this;
+  PolygonMesh sourceMesh = sourceGeo;
+
+  UInt32 faceCornerPolygon[];
+  UInt32 faceCornerOffset[];
+  if(targetMesh != null) {
+    numTasks = targetMesh.pointCount();
+    if(component == 2) {
+      numTasks = targetMesh.polygonPointsCount();
+      faceCornerPolygon.resize(numTasks);
+      faceCornerOffset.resize(numTasks);
+
+      Index offset = 0;
+      for(Size i=0;i<targetMesh.polygonCount();i++) {
+        Size count = targetMesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++) {
+          faceCornerPolygon[offset] = i;
+          faceCornerOffset[offset] = j;
+          offset++;
+        }
+      }
+    }
+  }
+
+  // deal with a special case if both source
+  // and target are of type PolygonMesh
+  if(targetMesh != null && sourceMesh != null && component == 2) {
+
+    Vec3 sourcePolygonPos[] = sourceMesh.getNormalizedPolygonPositions();
+    Vec3 targetPolygonPos[] = targetMesh.getNormalizedPolygonPositions();
+
+    numTasks = targetMesh.polygonPointsCount();
+    Mat33 results[](numTasks);
+
+    sourceMesh.prepareForSpatialQueries(numTasks * 4, spatialOptions);
+
+    _BaseGeom_Transfer_Mat33Attribute_PerFaceCorner<<<numTasks>>>(
+      results,
+      positions,
+      normals,
+      sourceMesh,
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      sourcePolygonPos,
+      targetPolygonPos,
+      mode,
+      closestIfNotHit,
+      threshold,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      targetMesh.setPolygonAttribute( faceCornerPolygon[i], faceCornerOffset[i], targetCastRef, results[i] );
+    }
+
+  } else if(component == 0 || targetMesh == null) {
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_Mat33Attribute_Simple<<<numTasks>>>(
+      targetCast.values,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+  } else if(component == 1) {
+
+    numTasks = targetMesh.polygonCount();
+    Mat33 results[](numTasks);
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_Mat33Attribute_Simple<<<numTasks>>>(
+      results,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      Size size = targetMesh.getPolygonSize(i);
+      for(Size j=0;j<size;j++)
+        targetMesh.setPolygonAttribute( i, j, targetCastRef, results[i] );
+    }
+
+  } else if(component == 2) {
+
+    numTasks = targetMesh.polygonPointsCount();
+    Mat33 results[](numTasks);
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_Mat33Attribute_Simple<<<numTasks>>>(
+      targetCast.values,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      targetMesh.setPolygonAttribute( faceCornerPolygon[i], faceCornerOffset[i], targetCastRef, results[i] );
+    }
+  }
+
+  targetCast.incrementVersion();
+  return true;
+}
+
+operator _BaseGeom_Transfer_Mat44Attribute_Simple<<<i>>>(
+  io Mat44 results[],
+  Vec3 positions[],
+  Vec3 normals[],
+  SpatialQueryable sourceSpatial,
+  Ref<Mat44Attribute> sourceCast,
+  io PolygonMesh targetMesh,
+  io Ref<Mat44Attribute> targetCastRef,
+  UInt32 faceCornerPolygon[],
+  UInt32 faceCornerOffset[],
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  SInt32 component,
+  Xfo xfo,
+  Vec3 localDir
+) {
+
+  // get the vertex, face or face corner position!
+  Vec3 pos;
+  Vec3 normal = localDir;
+  if(component == 0 || targetMesh == null) {
+    pos = positions[i];
+    normal = normals.size() > i ? normals[i] : localDir;
+  } else if(component == 1) {
+    Size size = targetMesh.getPolygonSize(i);
+    for(Size j=0;j<size;j++) {
+      Size idx = targetMesh.getPolygonAttributeIndex(i, j);
+      pos += positions[idx];
+      normal += normals.size() > i ? normals[i] : localDir;
+    }
+    pos *= 1.0 / Float32(size);
+    normal *= 1.0 / Float32(size);
+  } else if(component == 2) {
+    Size idx = targetMesh.getPolygonAttributeIndex(faceCornerPolygon[i], faceCornerOffset[i]);
+    pos = positions[idx];
+    normal = normals.size() > idx ? normals[idx] : localDir;
+  }
+
+  // project position + normal
+  pos = xfo.transformVector(pos);
+  normal = xfo.ori.rotateVector(normal);
+
+  GeometryLocation loc;
+  switch(mode) {
+    case 0: // closest
+    {
+      loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 1: // raycast along normal
+    {
+      loc = sourceSpatial.raycast(Ray(pos, normal), true, 0.0, SCALAR_INFINITE);
+      GeometryLocation locB = sourceSpatial.raycast(Ray(pos, -normal), true, 0.0, SCALAR_INFINITE);
+      if(loc.isValid() && locB.isValid()) {
+        Vec3 posA = sourceSpatial.getPositionAtLocation(loc);
+        Vec3 posB = sourceSpatial.getPositionAtLocation(locB);
+        if((posB - pos).lengthSquared() < (posA - pos).lengthSquared())
+          loc = locB;
+      } else if(locB.isValid()) {
+        loc = locB;
+      }
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 2: // raycast along direction
+    {
+      Ray ray(pos, localDir);
+      loc = sourceSpatial.raycast(ray, true, 0.0, SCALAR_INFINITE);
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+  }
+
+  if(!loc.isValid()) 
+    return;
+
+  Mat44 result = GetAttributeAtLocation(sourceSpatial, loc, sourceCast);
+  if(targetMesh != null && component == 0) {
+    targetMesh.setPointAttribute(i, targetCastRef, result);
+  } else  {
+    results[i] = result;
+  }
+}
+
+operator _BaseGeom_Transfer_Mat44Attribute_PerFaceCorner<<<i>>>(
+  io Mat44 results[],
+  Vec3 positions[],
+  Vec3 normals[],
+  PolygonMesh sourceMesh,
+  Ref<Mat44Attribute> sourceCast,
+  io PolygonMesh targetMesh,
+  io Ref<Mat44Attribute> targetCastRef,
+  UInt32 faceCornerPolygon[],
+  UInt32 faceCornerOffset[],
+  Vec3 sourcePolygonPositions[],
+  Vec3 targetPolygonPositions[],
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  Xfo xfo,
+  Vec3 localDir
+) {
+
+  // get face corner position!
+  Size targetIdx = targetMesh.getPolygonAttributeIndex(faceCornerPolygon[i], faceCornerOffset[i]);
+  Vec3 pos = positions[targetIdx];
+  Vec3 normal = normals.size() > targetIdx ? normals[targetIdx] : localDir;
+
+  // project position + normal
+  pos = xfo.transformVector(pos);
+  normal = xfo.ori.rotateVector(normal);
+
+  GeometryLocation loc;
+  switch(mode) {
+    case 0: // closest
+    {
+      loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 1: // raycast along normal
+    {
+      loc = sourceMesh.raycast(Ray(pos, normal), true, 0.0, SCALAR_INFINITE);
+      GeometryLocation locB = sourceMesh.raycast(Ray(pos, -normal), true, 0.0, SCALAR_INFINITE);
+      if(loc.isValid() && locB.isValid()) {
+        Vec3 posA = sourceMesh.getPositionAtLocation(loc);
+        Vec3 posB = sourceMesh.getPositionAtLocation(locB);
+        if((posB - pos).lengthSquared() < (posA - pos).lengthSquared())
+          loc = locB;
+      } else if(locB.isValid()) {
+        loc = locB;
+      }
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 2: // raycast along direction
+    {
+      Ray ray(pos, localDir);
+      loc = sourceMesh.raycast(ray, true, 0.0, SCALAR_INFINITE);
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+  }
+
+  if(!loc.isValid()) 
+    return;
+
+  // let's do some special treatment if the polygon
+  // has discontinuities....!
+  Index polygon = sourceMesh.getLocationPolygon(loc);
+  if(!sourceMesh.isPolygonAttributeUniformForAllCorners(polygon, sourceCast)) {
+
+    // skip internal edges
+    Scalar weight = 0.0;
+    UInt32 edge = sourceMesh.getClosestEdgeToLocation(loc, weight);
+    if(weight <= threshold) {
+
+      UInt32 polygonPointIndices[3];
+      Scalar weights[3];
+      sourceMesh.getLocationPolygonPointIndicesAndWeights( loc, polygonPointIndices, weights );
+
+      // check if this is on a vertex
+      if(weights[0] > 1.0 - threshold ||
+        weights[1] > 1.0 - threshold ||
+        weights[2] > 1.0 - threshold
+      ) {
+
+        Index sourcePointIndex = polygonPointIndices[0];
+        if(weights[1] > weights[0] && weights[1] > weights[2])
+          sourcePointIndex = polygonPointIndices[1];
+        else if(weights[2] > weights[0] && weights[2] > weights[1])
+          sourcePointIndex = polygonPointIndices[2];
+        Index sourcePoint = sourceMesh.getPolygonPoint(polygon, sourcePointIndex);
+
+        Vec3 sourcePointPos = sourceMesh.getPointPosition(sourcePoint);
+        Scalar minAngle = SCALAR_INFINITE;
+        Index sourcePolygon = polygon;
+        sourcePointIndex = 0;
+
+        Vec3 targetVector = (targetPolygonPositions[faceCornerPolygon[i]] - positions[targetIdx]).unit();
+        targetVector = xfo.ori.rotateVector(targetVector);
+
+        for(Size j=0;j<sourceMesh.getPointPolygonCount(sourcePoint);j++) {
+          
+          Size wingPolygon;
+          Size wingPolygonPointIndex;
+          sourceMesh.getPointPolygonAndIndex(sourcePoint, j, wingPolygon, wingPolygonPointIndex);
+
+          Vec3 sourceVector = (sourcePolygonPositions[wingPolygon] - sourcePointPos).unit();
+          Scalar angle = sourceVector.unitsAngleTo(targetVector);
+
+          if(angle < minAngle) {
+            minAngle = angle;
+            sourcePolygon = wingPolygon;
+            sourcePointIndex = wingPolygonPointIndex;
+          }
+
+        }
+        
+        Size sourceTriangle = sourcePointIndex > 2 ? (sourcePointIndex - 1) / 2 : 0;
+
+        GeometryLocation newLoc;
+        newLoc.index = sourcePolygon;
+        newLoc.subIndex = sourceTriangle;
+        newLoc.barycentric = Vec3(0, 0, 0);
+
+        UInt32 newPolygonPointIndices[3];
+        Scalar newWeights[3];
+        sourceMesh.getLocationPolygonPointIndicesAndWeights( newLoc, newPolygonPointIndices, newWeights );
+
+        for(Size j=0;j<3;j++) {
+          if(newPolygonPointIndices[j] == sourcePointIndex) {
+            newLoc.barycentric.setComponent(j, 1.0);
+            break;
+          }
+        }
+
+        loc = newLoc;
+
+      } else {
+
+        // let's find the neighbor polygon (if it exists)
+        Size adjacentPolygon;
+        Size adjacentPolygonPointIndex;
+        sourceMesh.getPolygonAdjacentPolygonAndIndex(
+          polygon,
+          polygonPointIndices[edge], 
+          adjacentPolygon, 
+          adjacentPolygonPointIndex
+        );
+
+        if(adjacentPolygon == InvalidIndex) {
+          
+          // leave things are they are
+          // todo: we might want to move the geometry location to the edge,
+          // in other words: make the opposing weight = 0.0
+
+        } else {
+
+          // let's find out which polygon is closer to the target polygon
+          Vec3 targetVector = (targetPolygonPositions[faceCornerPolygon[i]] - positions[targetIdx]).unit();
+          targetVector = xfo.ori.rotateVector(targetVector);
+
+          Vec3 sourcePos = sourceMesh.getPositionAtLocation(loc);
+          Vec3 sourceVectorA = (sourcePolygonPositions[polygon] - sourcePos).unit();
+          Vec3 sourceVectorB = (sourcePolygonPositions[adjacentPolygon] - sourcePos).unit();
+          Scalar angleA = targetVector.unitsAngleTo(sourceVectorA);
+          Scalar angleB = targetVector.unitsAngleTo(sourceVectorB);
+
+          if(angleB < angleA) {
+
+            Size adjacentPolygonSize = sourceMesh.getPolygonSize(adjacentPolygon);
+            Size adjacentPolygonTriangles = adjacentPolygonSize - 2;
+            Size edgeTriangle = polygonPointIndices[edge] > 2 ? (polygonPointIndices[edge] - 1) / 2 : 0;
+
+            GeometryLocation newLoc;
+            newLoc.index = adjacentPolygon;
+            newLoc.subIndex = edgeTriangle;
+            newLoc.barycentric = Vec3(0, 0, 0);
+
+            UInt32 newPolygonPointIndices[3];
+            Scalar newWeights[3];
+            sourceMesh.getLocationPolygonPointIndicesAndWeights( newLoc, newPolygonPointIndices, newWeights );
+
+            for(Size j=0;j<3;j++) {
+              if(newPolygonPointIndices[j] == adjacentPolygonPointIndex) {
+                newLoc.barycentric.setComponent((j+1)%3, weights[edge]);
+                newLoc.barycentric.setComponent((j+0)%3, weights[(edge+1) % 3]);
+                break;
+              }
+            }
+
+            Scalar newLocSum = newLoc.barycentric.x + newLoc.barycentric.y + newLoc.barycentric.z;
+            if(newLocSum != 0.0)
+            {
+              newLoc.barycentric /= newLocSum;
+              loc = newLoc;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  results[i] = GetAttributeAtLocation(sourceMesh, loc, sourceCast);
+}
+
+/// \internal
+private function Boolean BaseGeometry.transferMat44Attribute!(
+  BaseGeometry sourceGeo,
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  SInt32 component,
+  Mat44Attribute sourceCast,
+  String target,
+  Xfo sourceXfo,
+  Xfo targetXfo,
+  Vec3 direction
+) {
+  if(sourceCast == null)
+    return false;
+  Ref<Mat44Attribute> sourceRef = sourceCast;
+
+  // figure out how many lookups we have to do
+  SpatialQueryable sourceSpatial = sourceGeo;
+  if(sourceSpatial == null) {
+    report('Error: Transfer: Source geometry is not a SpatialQueryable.');
+    return false;
+  }
+
+  GeometryAttributes attributes = this.attributes;
+  if(!attributes)
+    return false;
+
+  GeometryAttribute targetAttr = attributes.getAttribute(target);
+  if(targetAttr != null)
+  {
+    if(targetAttr.type() != Mat44Attribute) {
+      report('Error: Transfer: Target attribute "'+target+'" exists, but it\'s not a Mat44Attribute.');
+      return false;
+    }
+  }
+
+  Mat44Attribute targetCast = attributes.getOrCreateMat44Attribute(target);
+  if(targetCast == null)
+    return false;
+  Ref<Mat44Attribute> targetCastRef = targetCast;
+
+  Vec3 positions[];
+  Vec3 normals[];
+  Vec3Attribute positionsAttr = attributes.getAttribute('positions');
+  Vec3Attribute normalsAttr = attributes.getAttribute('normals');
+  if(positionsAttr == null) {
+    report('Error: Transfer: positions don\'t exist on target geometry.');
+    return false;
+  }
+  positions = positionsAttr.values;
+  Size numTasks = positions.size();
+  if(normalsAttr)
+    normals = normalsAttr.values;
+
+  // localize the direction + transforms
+  Vec3 localDir = sourceXfo.ori.inverse().rotateVector(direction);
+  Xfo xfo = sourceXfo.inverse() * targetXfo;
+
+  // setup the spatial queries
+  GenericValueContainer spatialOptions();
+  PrepareForSpatialQueries_setOctree(spatialOptions);
+
+  PolygonMesh targetMesh = this;
+  PolygonMesh sourceMesh = sourceGeo;
+
+  UInt32 faceCornerPolygon[];
+  UInt32 faceCornerOffset[];
+  if(targetMesh != null) {
+    numTasks = targetMesh.pointCount();
+    if(component == 2) {
+      numTasks = targetMesh.polygonPointsCount();
+      faceCornerPolygon.resize(numTasks);
+      faceCornerOffset.resize(numTasks);
+
+      Index offset = 0;
+      for(Size i=0;i<targetMesh.polygonCount();i++) {
+        Size count = targetMesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++) {
+          faceCornerPolygon[offset] = i;
+          faceCornerOffset[offset] = j;
+          offset++;
+        }
+      }
+    }
+  }
+
+  // deal with a special case if both source
+  // and target are of type PolygonMesh
+  if(targetMesh != null && sourceMesh != null && component == 2) {
+
+    Vec3 sourcePolygonPos[] = sourceMesh.getNormalizedPolygonPositions();
+    Vec3 targetPolygonPos[] = targetMesh.getNormalizedPolygonPositions();
+
+    numTasks = targetMesh.polygonPointsCount();
+    Mat44 results[](numTasks);
+
+    sourceMesh.prepareForSpatialQueries(numTasks * 4, spatialOptions);
+
+    _BaseGeom_Transfer_Mat44Attribute_PerFaceCorner<<<numTasks>>>(
+      results,
+      positions,
+      normals,
+      sourceMesh,
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      sourcePolygonPos,
+      targetPolygonPos,
+      mode,
+      closestIfNotHit,
+      threshold,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      targetMesh.setPolygonAttribute( faceCornerPolygon[i], faceCornerOffset[i], targetCastRef, results[i] );
+    }
+
+  } else if(component == 0 || targetMesh == null) {
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_Mat44Attribute_Simple<<<numTasks>>>(
+      targetCast.values,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+  } else if(component == 1) {
+
+    numTasks = targetMesh.polygonCount();
+    Mat44 results[](numTasks);
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_Mat44Attribute_Simple<<<numTasks>>>(
+      results,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      Size size = targetMesh.getPolygonSize(i);
+      for(Size j=0;j<size;j++)
+        targetMesh.setPolygonAttribute( i, j, targetCastRef, results[i] );
+    }
+
+  } else if(component == 2) {
+
+    numTasks = targetMesh.polygonPointsCount();
+    Mat44 results[](numTasks);
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_Mat44Attribute_Simple<<<numTasks>>>(
+      targetCast.values,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      targetMesh.setPolygonAttribute( faceCornerPolygon[i], faceCornerOffset[i], targetCastRef, results[i] );
+    }
+  }
+
+  targetCast.incrementVersion();
+  return true;
+}
+
+operator _BaseGeom_Transfer_ColorAttribute_Simple<<<i>>>(
+  io Color results[],
+  Vec3 positions[],
+  Vec3 normals[],
+  SpatialQueryable sourceSpatial,
+  Ref<ColorAttribute> sourceCast,
+  io PolygonMesh targetMesh,
+  io Ref<ColorAttribute> targetCastRef,
+  UInt32 faceCornerPolygon[],
+  UInt32 faceCornerOffset[],
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  SInt32 component,
+  Xfo xfo,
+  Vec3 localDir
+) {
+
+  // get the vertex, face or face corner position!
+  Vec3 pos;
+  Vec3 normal = localDir;
+  if(component == 0 || targetMesh == null) {
+    pos = positions[i];
+    normal = normals.size() > i ? normals[i] : localDir;
+  } else if(component == 1) {
+    Size size = targetMesh.getPolygonSize(i);
+    for(Size j=0;j<size;j++) {
+      Size idx = targetMesh.getPolygonAttributeIndex(i, j);
+      pos += positions[idx];
+      normal += normals.size() > i ? normals[i] : localDir;
+    }
+    pos *= 1.0 / Float32(size);
+    normal *= 1.0 / Float32(size);
+  } else if(component == 2) {
+    Size idx = targetMesh.getPolygonAttributeIndex(faceCornerPolygon[i], faceCornerOffset[i]);
+    pos = positions[idx];
+    normal = normals.size() > idx ? normals[idx] : localDir;
+  }
+
+  // project position + normal
+  pos = xfo.transformVector(pos);
+  normal = xfo.ori.rotateVector(normal);
+
+  GeometryLocation loc;
+  switch(mode) {
+    case 0: // closest
+    {
+      loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 1: // raycast along normal
+    {
+      loc = sourceSpatial.raycast(Ray(pos, normal), true, 0.0, SCALAR_INFINITE);
+      GeometryLocation locB = sourceSpatial.raycast(Ray(pos, -normal), true, 0.0, SCALAR_INFINITE);
+      if(loc.isValid() && locB.isValid()) {
+        Vec3 posA = sourceSpatial.getPositionAtLocation(loc);
+        Vec3 posB = sourceSpatial.getPositionAtLocation(locB);
+        if((posB - pos).lengthSquared() < (posA - pos).lengthSquared())
+          loc = locB;
+      } else if(locB.isValid()) {
+        loc = locB;
+      }
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 2: // raycast along direction
+    {
+      Ray ray(pos, localDir);
+      loc = sourceSpatial.raycast(ray, true, 0.0, SCALAR_INFINITE);
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+  }
+
+  if(!loc.isValid()) 
+    return;
+
+  Color result = GetAttributeAtLocation(sourceSpatial, loc, sourceCast);
+  if(targetMesh != null && component == 0) {
+    targetMesh.setPointAttribute(i, targetCastRef, result);
+  } else  {
+    results[i] = result;
+  }
+}
+
+operator _BaseGeom_Transfer_ColorAttribute_PerFaceCorner<<<i>>>(
+  io Color results[],
+  Vec3 positions[],
+  Vec3 normals[],
+  PolygonMesh sourceMesh,
+  Ref<ColorAttribute> sourceCast,
+  io PolygonMesh targetMesh,
+  io Ref<ColorAttribute> targetCastRef,
+  UInt32 faceCornerPolygon[],
+  UInt32 faceCornerOffset[],
+  Vec3 sourcePolygonPositions[],
+  Vec3 targetPolygonPositions[],
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  Xfo xfo,
+  Vec3 localDir
+) {
+
+  // get face corner position!
+  Size targetIdx = targetMesh.getPolygonAttributeIndex(faceCornerPolygon[i], faceCornerOffset[i]);
+  Vec3 pos = positions[targetIdx];
+  Vec3 normal = normals.size() > targetIdx ? normals[targetIdx] : localDir;
+
+  // project position + normal
+  pos = xfo.transformVector(pos);
+  normal = xfo.ori.rotateVector(normal);
+
+  GeometryLocation loc;
+  switch(mode) {
+    case 0: // closest
+    {
+      loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 1: // raycast along normal
+    {
+      loc = sourceMesh.raycast(Ray(pos, normal), true, 0.0, SCALAR_INFINITE);
+      GeometryLocation locB = sourceMesh.raycast(Ray(pos, -normal), true, 0.0, SCALAR_INFINITE);
+      if(loc.isValid() && locB.isValid()) {
+        Vec3 posA = sourceMesh.getPositionAtLocation(loc);
+        Vec3 posB = sourceMesh.getPositionAtLocation(locB);
+        if((posB - pos).lengthSquared() < (posA - pos).lengthSquared())
+          loc = locB;
+      } else if(locB.isValid()) {
+        loc = locB;
+      }
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 2: // raycast along direction
+    {
+      Ray ray(pos, localDir);
+      loc = sourceMesh.raycast(ray, true, 0.0, SCALAR_INFINITE);
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+  }
+
+  if(!loc.isValid()) 
+    return;
+
+  // let's do some special treatment if the polygon
+  // has discontinuities....!
+  Index polygon = sourceMesh.getLocationPolygon(loc);
+  if(!sourceMesh.isPolygonAttributeUniformForAllCorners(polygon, sourceCast)) {
+
+    // skip internal edges
+    Scalar weight = 0.0;
+    UInt32 edge = sourceMesh.getClosestEdgeToLocation(loc, weight);
+    if(weight <= threshold) {
+
+      UInt32 polygonPointIndices[3];
+      Scalar weights[3];
+      sourceMesh.getLocationPolygonPointIndicesAndWeights( loc, polygonPointIndices, weights );
+
+      // check if this is on a vertex
+      if(weights[0] > 1.0 - threshold ||
+        weights[1] > 1.0 - threshold ||
+        weights[2] > 1.0 - threshold
+      ) {
+
+        Index sourcePointIndex = polygonPointIndices[0];
+        if(weights[1] > weights[0] && weights[1] > weights[2])
+          sourcePointIndex = polygonPointIndices[1];
+        else if(weights[2] > weights[0] && weights[2] > weights[1])
+          sourcePointIndex = polygonPointIndices[2];
+        Index sourcePoint = sourceMesh.getPolygonPoint(polygon, sourcePointIndex);
+
+        Vec3 sourcePointPos = sourceMesh.getPointPosition(sourcePoint);
+        Scalar minAngle = SCALAR_INFINITE;
+        Index sourcePolygon = polygon;
+        sourcePointIndex = 0;
+
+        Vec3 targetVector = (targetPolygonPositions[faceCornerPolygon[i]] - positions[targetIdx]).unit();
+        targetVector = xfo.ori.rotateVector(targetVector);
+
+        for(Size j=0;j<sourceMesh.getPointPolygonCount(sourcePoint);j++) {
+          
+          Size wingPolygon;
+          Size wingPolygonPointIndex;
+          sourceMesh.getPointPolygonAndIndex(sourcePoint, j, wingPolygon, wingPolygonPointIndex);
+
+          Vec3 sourceVector = (sourcePolygonPositions[wingPolygon] - sourcePointPos).unit();
+          Scalar angle = sourceVector.unitsAngleTo(targetVector);
+
+          if(angle < minAngle) {
+            minAngle = angle;
+            sourcePolygon = wingPolygon;
+            sourcePointIndex = wingPolygonPointIndex;
+          }
+
+        }
+        
+        Size sourceTriangle = sourcePointIndex > 2 ? (sourcePointIndex - 1) / 2 : 0;
+
+        GeometryLocation newLoc;
+        newLoc.index = sourcePolygon;
+        newLoc.subIndex = sourceTriangle;
+        newLoc.barycentric = Vec3(0, 0, 0);
+
+        UInt32 newPolygonPointIndices[3];
+        Scalar newWeights[3];
+        sourceMesh.getLocationPolygonPointIndicesAndWeights( newLoc, newPolygonPointIndices, newWeights );
+
+        for(Size j=0;j<3;j++) {
+          if(newPolygonPointIndices[j] == sourcePointIndex) {
+            newLoc.barycentric.setComponent(j, 1.0);
+            break;
+          }
+        }
+
+        loc = newLoc;
+
+      } else {
+
+        // let's find the neighbor polygon (if it exists)
+        Size adjacentPolygon;
+        Size adjacentPolygonPointIndex;
+        sourceMesh.getPolygonAdjacentPolygonAndIndex(
+          polygon,
+          polygonPointIndices[edge], 
+          adjacentPolygon, 
+          adjacentPolygonPointIndex
+        );
+
+        if(adjacentPolygon == InvalidIndex) {
+          
+          // leave things are they are
+          // todo: we might want to move the geometry location to the edge,
+          // in other words: make the opposing weight = 0.0
+
+        } else {
+
+          // let's find out which polygon is closer to the target polygon
+          Vec3 targetVector = (targetPolygonPositions[faceCornerPolygon[i]] - positions[targetIdx]).unit();
+          targetVector = xfo.ori.rotateVector(targetVector);
+
+          Vec3 sourcePos = sourceMesh.getPositionAtLocation(loc);
+          Vec3 sourceVectorA = (sourcePolygonPositions[polygon] - sourcePos).unit();
+          Vec3 sourceVectorB = (sourcePolygonPositions[adjacentPolygon] - sourcePos).unit();
+          Scalar angleA = targetVector.unitsAngleTo(sourceVectorA);
+          Scalar angleB = targetVector.unitsAngleTo(sourceVectorB);
+
+          if(angleB < angleA) {
+
+            Size adjacentPolygonSize = sourceMesh.getPolygonSize(adjacentPolygon);
+            Size adjacentPolygonTriangles = adjacentPolygonSize - 2;
+            Size edgeTriangle = polygonPointIndices[edge] > 2 ? (polygonPointIndices[edge] - 1) / 2 : 0;
+
+            GeometryLocation newLoc;
+            newLoc.index = adjacentPolygon;
+            newLoc.subIndex = edgeTriangle;
+            newLoc.barycentric = Vec3(0, 0, 0);
+
+            UInt32 newPolygonPointIndices[3];
+            Scalar newWeights[3];
+            sourceMesh.getLocationPolygonPointIndicesAndWeights( newLoc, newPolygonPointIndices, newWeights );
+
+            for(Size j=0;j<3;j++) {
+              if(newPolygonPointIndices[j] == adjacentPolygonPointIndex) {
+                newLoc.barycentric.setComponent((j+1)%3, weights[edge]);
+                newLoc.barycentric.setComponent((j+0)%3, weights[(edge+1) % 3]);
+                break;
+              }
+            }
+
+            Scalar newLocSum = newLoc.barycentric.x + newLoc.barycentric.y + newLoc.barycentric.z;
+            if(newLocSum != 0.0)
+            {
+              newLoc.barycentric /= newLocSum;
+              loc = newLoc;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  results[i] = GetAttributeAtLocation(sourceMesh, loc, sourceCast);
+}
+
+/// \internal
+private function Boolean BaseGeometry.transferColorAttribute!(
+  BaseGeometry sourceGeo,
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  SInt32 component,
+  ColorAttribute sourceCast,
+  String target,
+  Xfo sourceXfo,
+  Xfo targetXfo,
+  Vec3 direction
+) {
+  if(sourceCast == null)
+    return false;
+  Ref<ColorAttribute> sourceRef = sourceCast;
+
+  // figure out how many lookups we have to do
+  SpatialQueryable sourceSpatial = sourceGeo;
+  if(sourceSpatial == null) {
+    report('Error: Transfer: Source geometry is not a SpatialQueryable.');
+    return false;
+  }
+
+  GeometryAttributes attributes = this.attributes;
+  if(!attributes)
+    return false;
+
+  GeometryAttribute targetAttr = attributes.getAttribute(target);
+  if(targetAttr != null)
+  {
+    if(targetAttr.type() != ColorAttribute) {
+      report('Error: Transfer: Target attribute "'+target+'" exists, but it\'s not a ColorAttribute.');
+      return false;
+    }
+  }
+
+  ColorAttribute targetCast = attributes.getOrCreateColorAttribute(target);
+  if(targetCast == null)
+    return false;
+  Ref<ColorAttribute> targetCastRef = targetCast;
+
+  Vec3 positions[];
+  Vec3 normals[];
+  Vec3Attribute positionsAttr = attributes.getAttribute('positions');
+  Vec3Attribute normalsAttr = attributes.getAttribute('normals');
+  if(positionsAttr == null) {
+    report('Error: Transfer: positions don\'t exist on target geometry.');
+    return false;
+  }
+  positions = positionsAttr.values;
+  Size numTasks = positions.size();
+  if(normalsAttr)
+    normals = normalsAttr.values;
+
+  // localize the direction + transforms
+  Vec3 localDir = sourceXfo.ori.inverse().rotateVector(direction);
+  Xfo xfo = sourceXfo.inverse() * targetXfo;
+
+  // setup the spatial queries
+  GenericValueContainer spatialOptions();
+  PrepareForSpatialQueries_setOctree(spatialOptions);
+
+  PolygonMesh targetMesh = this;
+  PolygonMesh sourceMesh = sourceGeo;
+
+  UInt32 faceCornerPolygon[];
+  UInt32 faceCornerOffset[];
+  if(targetMesh != null) {
+    numTasks = targetMesh.pointCount();
+    if(component == 2) {
+      numTasks = targetMesh.polygonPointsCount();
+      faceCornerPolygon.resize(numTasks);
+      faceCornerOffset.resize(numTasks);
+
+      Index offset = 0;
+      for(Size i=0;i<targetMesh.polygonCount();i++) {
+        Size count = targetMesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++) {
+          faceCornerPolygon[offset] = i;
+          faceCornerOffset[offset] = j;
+          offset++;
+        }
+      }
+    }
+  }
+
+  // deal with a special case if both source
+  // and target are of type PolygonMesh
+  if(targetMesh != null && sourceMesh != null && component == 2) {
+
+    Vec3 sourcePolygonPos[] = sourceMesh.getNormalizedPolygonPositions();
+    Vec3 targetPolygonPos[] = targetMesh.getNormalizedPolygonPositions();
+
+    numTasks = targetMesh.polygonPointsCount();
+    Color results[](numTasks);
+
+    sourceMesh.prepareForSpatialQueries(numTasks * 4, spatialOptions);
+
+    _BaseGeom_Transfer_ColorAttribute_PerFaceCorner<<<numTasks>>>(
+      results,
+      positions,
+      normals,
+      sourceMesh,
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      sourcePolygonPos,
+      targetPolygonPos,
+      mode,
+      closestIfNotHit,
+      threshold,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      targetMesh.setPolygonAttribute( faceCornerPolygon[i], faceCornerOffset[i], targetCastRef, results[i] );
+    }
+
+  } else if(component == 0 || targetMesh == null) {
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_ColorAttribute_Simple<<<numTasks>>>(
+      targetCast.values,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+  } else if(component == 1) {
+
+    numTasks = targetMesh.polygonCount();
+    Color results[](numTasks);
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_ColorAttribute_Simple<<<numTasks>>>(
+      results,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      Size size = targetMesh.getPolygonSize(i);
+      for(Size j=0;j<size;j++)
+        targetMesh.setPolygonAttribute( i, j, targetCastRef, results[i] );
+    }
+
+  } else if(component == 2) {
+
+    numTasks = targetMesh.polygonPointsCount();
+    Color results[](numTasks);
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_ColorAttribute_Simple<<<numTasks>>>(
+      targetCast.values,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      targetMesh.setPolygonAttribute( faceCornerPolygon[i], faceCornerOffset[i], targetCastRef, results[i] );
+    }
+  }
+
+  targetCast.incrementVersion();
+  return true;
+}
+
+operator _BaseGeom_Transfer_RGBAttribute_Simple<<<i>>>(
+  io RGB results[],
+  Vec3 positions[],
+  Vec3 normals[],
+  SpatialQueryable sourceSpatial,
+  Ref<RGBAttribute> sourceCast,
+  io PolygonMesh targetMesh,
+  io Ref<RGBAttribute> targetCastRef,
+  UInt32 faceCornerPolygon[],
+  UInt32 faceCornerOffset[],
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  SInt32 component,
+  Xfo xfo,
+  Vec3 localDir
+) {
+
+  // get the vertex, face or face corner position!
+  Vec3 pos;
+  Vec3 normal = localDir;
+  if(component == 0 || targetMesh == null) {
+    pos = positions[i];
+    normal = normals.size() > i ? normals[i] : localDir;
+  } else if(component == 1) {
+    Size size = targetMesh.getPolygonSize(i);
+    for(Size j=0;j<size;j++) {
+      Size idx = targetMesh.getPolygonAttributeIndex(i, j);
+      pos += positions[idx];
+      normal += normals.size() > i ? normals[i] : localDir;
+    }
+    pos *= 1.0 / Float32(size);
+    normal *= 1.0 / Float32(size);
+  } else if(component == 2) {
+    Size idx = targetMesh.getPolygonAttributeIndex(faceCornerPolygon[i], faceCornerOffset[i]);
+    pos = positions[idx];
+    normal = normals.size() > idx ? normals[idx] : localDir;
+  }
+
+  // project position + normal
+  pos = xfo.transformVector(pos);
+  normal = xfo.ori.rotateVector(normal);
+
+  GeometryLocation loc;
+  switch(mode) {
+    case 0: // closest
+    {
+      loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 1: // raycast along normal
+    {
+      loc = sourceSpatial.raycast(Ray(pos, normal), true, 0.0, SCALAR_INFINITE);
+      GeometryLocation locB = sourceSpatial.raycast(Ray(pos, -normal), true, 0.0, SCALAR_INFINITE);
+      if(loc.isValid() && locB.isValid()) {
+        Vec3 posA = sourceSpatial.getPositionAtLocation(loc);
+        Vec3 posB = sourceSpatial.getPositionAtLocation(locB);
+        if((posB - pos).lengthSquared() < (posA - pos).lengthSquared())
+          loc = locB;
+      } else if(locB.isValid()) {
+        loc = locB;
+      }
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 2: // raycast along direction
+    {
+      Ray ray(pos, localDir);
+      loc = sourceSpatial.raycast(ray, true, 0.0, SCALAR_INFINITE);
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+  }
+
+  if(!loc.isValid()) 
+    return;
+
+  RGB result = GetAttributeAtLocation(sourceSpatial, loc, sourceCast);
+  if(targetMesh != null && component == 0) {
+    targetMesh.setPointAttribute(i, targetCastRef, result);
+  } else  {
+    results[i] = result;
+  }
+}
+
+operator _BaseGeom_Transfer_RGBAttribute_PerFaceCorner<<<i>>>(
+  io RGB results[],
+  Vec3 positions[],
+  Vec3 normals[],
+  PolygonMesh sourceMesh,
+  Ref<RGBAttribute> sourceCast,
+  io PolygonMesh targetMesh,
+  io Ref<RGBAttribute> targetCastRef,
+  UInt32 faceCornerPolygon[],
+  UInt32 faceCornerOffset[],
+  Vec3 sourcePolygonPositions[],
+  Vec3 targetPolygonPositions[],
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  Xfo xfo,
+  Vec3 localDir
+) {
+
+  // get face corner position!
+  Size targetIdx = targetMesh.getPolygonAttributeIndex(faceCornerPolygon[i], faceCornerOffset[i]);
+  Vec3 pos = positions[targetIdx];
+  Vec3 normal = normals.size() > targetIdx ? normals[targetIdx] : localDir;
+
+  // project position + normal
+  pos = xfo.transformVector(pos);
+  normal = xfo.ori.rotateVector(normal);
+
+  GeometryLocation loc;
+  switch(mode) {
+    case 0: // closest
+    {
+      loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 1: // raycast along normal
+    {
+      loc = sourceMesh.raycast(Ray(pos, normal), true, 0.0, SCALAR_INFINITE);
+      GeometryLocation locB = sourceMesh.raycast(Ray(pos, -normal), true, 0.0, SCALAR_INFINITE);
+      if(loc.isValid() && locB.isValid()) {
+        Vec3 posA = sourceMesh.getPositionAtLocation(loc);
+        Vec3 posB = sourceMesh.getPositionAtLocation(locB);
+        if((posB - pos).lengthSquared() < (posA - pos).lengthSquared())
+          loc = locB;
+      } else if(locB.isValid()) {
+        loc = locB;
+      }
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 2: // raycast along direction
+    {
+      Ray ray(pos, localDir);
+      loc = sourceMesh.raycast(ray, true, 0.0, SCALAR_INFINITE);
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+  }
+
+  if(!loc.isValid()) 
+    return;
+
+  // let's do some special treatment if the polygon
+  // has discontinuities....!
+  Index polygon = sourceMesh.getLocationPolygon(loc);
+  if(!sourceMesh.isPolygonAttributeUniformForAllCorners(polygon, sourceCast)) {
+
+    // skip internal edges
+    Scalar weight = 0.0;
+    UInt32 edge = sourceMesh.getClosestEdgeToLocation(loc, weight);
+    if(weight <= threshold) {
+
+      UInt32 polygonPointIndices[3];
+      Scalar weights[3];
+      sourceMesh.getLocationPolygonPointIndicesAndWeights( loc, polygonPointIndices, weights );
+
+      // check if this is on a vertex
+      if(weights[0] > 1.0 - threshold ||
+        weights[1] > 1.0 - threshold ||
+        weights[2] > 1.0 - threshold
+      ) {
+
+        Index sourcePointIndex = polygonPointIndices[0];
+        if(weights[1] > weights[0] && weights[1] > weights[2])
+          sourcePointIndex = polygonPointIndices[1];
+        else if(weights[2] > weights[0] && weights[2] > weights[1])
+          sourcePointIndex = polygonPointIndices[2];
+        Index sourcePoint = sourceMesh.getPolygonPoint(polygon, sourcePointIndex);
+
+        Vec3 sourcePointPos = sourceMesh.getPointPosition(sourcePoint);
+        Scalar minAngle = SCALAR_INFINITE;
+        Index sourcePolygon = polygon;
+        sourcePointIndex = 0;
+
+        Vec3 targetVector = (targetPolygonPositions[faceCornerPolygon[i]] - positions[targetIdx]).unit();
+        targetVector = xfo.ori.rotateVector(targetVector);
+
+        for(Size j=0;j<sourceMesh.getPointPolygonCount(sourcePoint);j++) {
+          
+          Size wingPolygon;
+          Size wingPolygonPointIndex;
+          sourceMesh.getPointPolygonAndIndex(sourcePoint, j, wingPolygon, wingPolygonPointIndex);
+
+          Vec3 sourceVector = (sourcePolygonPositions[wingPolygon] - sourcePointPos).unit();
+          Scalar angle = sourceVector.unitsAngleTo(targetVector);
+
+          if(angle < minAngle) {
+            minAngle = angle;
+            sourcePolygon = wingPolygon;
+            sourcePointIndex = wingPolygonPointIndex;
+          }
+
+        }
+        
+        Size sourceTriangle = sourcePointIndex > 2 ? (sourcePointIndex - 1) / 2 : 0;
+
+        GeometryLocation newLoc;
+        newLoc.index = sourcePolygon;
+        newLoc.subIndex = sourceTriangle;
+        newLoc.barycentric = Vec3(0, 0, 0);
+
+        UInt32 newPolygonPointIndices[3];
+        Scalar newWeights[3];
+        sourceMesh.getLocationPolygonPointIndicesAndWeights( newLoc, newPolygonPointIndices, newWeights );
+
+        for(Size j=0;j<3;j++) {
+          if(newPolygonPointIndices[j] == sourcePointIndex) {
+            newLoc.barycentric.setComponent(j, 1.0);
+            break;
+          }
+        }
+
+        loc = newLoc;
+
+      } else {
+
+        // let's find the neighbor polygon (if it exists)
+        Size adjacentPolygon;
+        Size adjacentPolygonPointIndex;
+        sourceMesh.getPolygonAdjacentPolygonAndIndex(
+          polygon,
+          polygonPointIndices[edge], 
+          adjacentPolygon, 
+          adjacentPolygonPointIndex
+        );
+
+        if(adjacentPolygon == InvalidIndex) {
+          
+          // leave things are they are
+          // todo: we might want to move the geometry location to the edge,
+          // in other words: make the opposing weight = 0.0
+
+        } else {
+
+          // let's find out which polygon is closer to the target polygon
+          Vec3 targetVector = (targetPolygonPositions[faceCornerPolygon[i]] - positions[targetIdx]).unit();
+          targetVector = xfo.ori.rotateVector(targetVector);
+
+          Vec3 sourcePos = sourceMesh.getPositionAtLocation(loc);
+          Vec3 sourceVectorA = (sourcePolygonPositions[polygon] - sourcePos).unit();
+          Vec3 sourceVectorB = (sourcePolygonPositions[adjacentPolygon] - sourcePos).unit();
+          Scalar angleA = targetVector.unitsAngleTo(sourceVectorA);
+          Scalar angleB = targetVector.unitsAngleTo(sourceVectorB);
+
+          if(angleB < angleA) {
+
+            Size adjacentPolygonSize = sourceMesh.getPolygonSize(adjacentPolygon);
+            Size adjacentPolygonTriangles = adjacentPolygonSize - 2;
+            Size edgeTriangle = polygonPointIndices[edge] > 2 ? (polygonPointIndices[edge] - 1) / 2 : 0;
+
+            GeometryLocation newLoc;
+            newLoc.index = adjacentPolygon;
+            newLoc.subIndex = edgeTriangle;
+            newLoc.barycentric = Vec3(0, 0, 0);
+
+            UInt32 newPolygonPointIndices[3];
+            Scalar newWeights[3];
+            sourceMesh.getLocationPolygonPointIndicesAndWeights( newLoc, newPolygonPointIndices, newWeights );
+
+            for(Size j=0;j<3;j++) {
+              if(newPolygonPointIndices[j] == adjacentPolygonPointIndex) {
+                newLoc.barycentric.setComponent((j+1)%3, weights[edge]);
+                newLoc.barycentric.setComponent((j+0)%3, weights[(edge+1) % 3]);
+                break;
+              }
+            }
+
+            Scalar newLocSum = newLoc.barycentric.x + newLoc.barycentric.y + newLoc.barycentric.z;
+            if(newLocSum != 0.0)
+            {
+              newLoc.barycentric /= newLocSum;
+              loc = newLoc;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  results[i] = GetAttributeAtLocation(sourceMesh, loc, sourceCast);
+}
+
+/// \internal
+private function Boolean BaseGeometry.transferRGBAttribute!(
+  BaseGeometry sourceGeo,
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  SInt32 component,
+  RGBAttribute sourceCast,
+  String target,
+  Xfo sourceXfo,
+  Xfo targetXfo,
+  Vec3 direction
+) {
+  if(sourceCast == null)
+    return false;
+  Ref<RGBAttribute> sourceRef = sourceCast;
+
+  // figure out how many lookups we have to do
+  SpatialQueryable sourceSpatial = sourceGeo;
+  if(sourceSpatial == null) {
+    report('Error: Transfer: Source geometry is not a SpatialQueryable.');
+    return false;
+  }
+
+  GeometryAttributes attributes = this.attributes;
+  if(!attributes)
+    return false;
+
+  GeometryAttribute targetAttr = attributes.getAttribute(target);
+  if(targetAttr != null)
+  {
+    if(targetAttr.type() != RGBAttribute) {
+      report('Error: Transfer: Target attribute "'+target+'" exists, but it\'s not a RGBAttribute.');
+      return false;
+    }
+  }
+
+  RGBAttribute targetCast = attributes.getOrCreateRGBAttribute(target);
+  if(targetCast == null)
+    return false;
+  Ref<RGBAttribute> targetCastRef = targetCast;
+
+  Vec3 positions[];
+  Vec3 normals[];
+  Vec3Attribute positionsAttr = attributes.getAttribute('positions');
+  Vec3Attribute normalsAttr = attributes.getAttribute('normals');
+  if(positionsAttr == null) {
+    report('Error: Transfer: positions don\'t exist on target geometry.');
+    return false;
+  }
+  positions = positionsAttr.values;
+  Size numTasks = positions.size();
+  if(normalsAttr)
+    normals = normalsAttr.values;
+
+  // localize the direction + transforms
+  Vec3 localDir = sourceXfo.ori.inverse().rotateVector(direction);
+  Xfo xfo = sourceXfo.inverse() * targetXfo;
+
+  // setup the spatial queries
+  GenericValueContainer spatialOptions();
+  PrepareForSpatialQueries_setOctree(spatialOptions);
+
+  PolygonMesh targetMesh = this;
+  PolygonMesh sourceMesh = sourceGeo;
+
+  UInt32 faceCornerPolygon[];
+  UInt32 faceCornerOffset[];
+  if(targetMesh != null) {
+    numTasks = targetMesh.pointCount();
+    if(component == 2) {
+      numTasks = targetMesh.polygonPointsCount();
+      faceCornerPolygon.resize(numTasks);
+      faceCornerOffset.resize(numTasks);
+
+      Index offset = 0;
+      for(Size i=0;i<targetMesh.polygonCount();i++) {
+        Size count = targetMesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++) {
+          faceCornerPolygon[offset] = i;
+          faceCornerOffset[offset] = j;
+          offset++;
+        }
+      }
+    }
+  }
+
+  // deal with a special case if both source
+  // and target are of type PolygonMesh
+  if(targetMesh != null && sourceMesh != null && component == 2) {
+
+    Vec3 sourcePolygonPos[] = sourceMesh.getNormalizedPolygonPositions();
+    Vec3 targetPolygonPos[] = targetMesh.getNormalizedPolygonPositions();
+
+    numTasks = targetMesh.polygonPointsCount();
+    RGB results[](numTasks);
+
+    sourceMesh.prepareForSpatialQueries(numTasks * 4, spatialOptions);
+
+    _BaseGeom_Transfer_RGBAttribute_PerFaceCorner<<<numTasks>>>(
+      results,
+      positions,
+      normals,
+      sourceMesh,
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      sourcePolygonPos,
+      targetPolygonPos,
+      mode,
+      closestIfNotHit,
+      threshold,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      targetMesh.setPolygonAttribute( faceCornerPolygon[i], faceCornerOffset[i], targetCastRef, results[i] );
+    }
+
+  } else if(component == 0 || targetMesh == null) {
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_RGBAttribute_Simple<<<numTasks>>>(
+      targetCast.values,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+  } else if(component == 1) {
+
+    numTasks = targetMesh.polygonCount();
+    RGB results[](numTasks);
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_RGBAttribute_Simple<<<numTasks>>>(
+      results,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      Size size = targetMesh.getPolygonSize(i);
+      for(Size j=0;j<size;j++)
+        targetMesh.setPolygonAttribute( i, j, targetCastRef, results[i] );
+    }
+
+  } else if(component == 2) {
+
+    numTasks = targetMesh.polygonPointsCount();
+    RGB results[](numTasks);
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_RGBAttribute_Simple<<<numTasks>>>(
+      targetCast.values,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      targetMesh.setPolygonAttribute( faceCornerPolygon[i], faceCornerOffset[i], targetCastRef, results[i] );
+    }
+  }
+
+  targetCast.incrementVersion();
+  return true;
+}
+
+operator _BaseGeom_Transfer_RGBAAttribute_Simple<<<i>>>(
+  io RGBA results[],
+  Vec3 positions[],
+  Vec3 normals[],
+  SpatialQueryable sourceSpatial,
+  Ref<RGBAAttribute> sourceCast,
+  io PolygonMesh targetMesh,
+  io Ref<RGBAAttribute> targetCastRef,
+  UInt32 faceCornerPolygon[],
+  UInt32 faceCornerOffset[],
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  SInt32 component,
+  Xfo xfo,
+  Vec3 localDir
+) {
+
+  // get the vertex, face or face corner position!
+  Vec3 pos;
+  Vec3 normal = localDir;
+  if(component == 0 || targetMesh == null) {
+    pos = positions[i];
+    normal = normals.size() > i ? normals[i] : localDir;
+  } else if(component == 1) {
+    Size size = targetMesh.getPolygonSize(i);
+    for(Size j=0;j<size;j++) {
+      Size idx = targetMesh.getPolygonAttributeIndex(i, j);
+      pos += positions[idx];
+      normal += normals.size() > i ? normals[i] : localDir;
+    }
+    pos *= 1.0 / Float32(size);
+    normal *= 1.0 / Float32(size);
+  } else if(component == 2) {
+    Size idx = targetMesh.getPolygonAttributeIndex(faceCornerPolygon[i], faceCornerOffset[i]);
+    pos = positions[idx];
+    normal = normals.size() > idx ? normals[idx] : localDir;
+  }
+
+  // project position + normal
+  pos = xfo.transformVector(pos);
+  normal = xfo.ori.rotateVector(normal);
+
+  GeometryLocation loc;
+  switch(mode) {
+    case 0: // closest
+    {
+      loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 1: // raycast along normal
+    {
+      loc = sourceSpatial.raycast(Ray(pos, normal), true, 0.0, SCALAR_INFINITE);
+      GeometryLocation locB = sourceSpatial.raycast(Ray(pos, -normal), true, 0.0, SCALAR_INFINITE);
+      if(loc.isValid() && locB.isValid()) {
+        Vec3 posA = sourceSpatial.getPositionAtLocation(loc);
+        Vec3 posB = sourceSpatial.getPositionAtLocation(locB);
+        if((posB - pos).lengthSquared() < (posA - pos).lengthSquared())
+          loc = locB;
+      } else if(locB.isValid()) {
+        loc = locB;
+      }
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 2: // raycast along direction
+    {
+      Ray ray(pos, localDir);
+      loc = sourceSpatial.raycast(ray, true, 0.0, SCALAR_INFINITE);
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceSpatial.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+  }
+
+  if(!loc.isValid()) 
+    return;
+
+  RGBA result = GetAttributeAtLocation(sourceSpatial, loc, sourceCast);
+  if(targetMesh != null && component == 0) {
+    targetMesh.setPointAttribute(i, targetCastRef, result);
+  } else  {
+    results[i] = result;
+  }
+}
+
+operator _BaseGeom_Transfer_RGBAAttribute_PerFaceCorner<<<i>>>(
+  io RGBA results[],
+  Vec3 positions[],
+  Vec3 normals[],
+  PolygonMesh sourceMesh,
+  Ref<RGBAAttribute> sourceCast,
+  io PolygonMesh targetMesh,
+  io Ref<RGBAAttribute> targetCastRef,
+  UInt32 faceCornerPolygon[],
+  UInt32 faceCornerOffset[],
+  Vec3 sourcePolygonPositions[],
+  Vec3 targetPolygonPositions[],
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  Xfo xfo,
+  Vec3 localDir
+) {
+
+  // get face corner position!
+  Size targetIdx = targetMesh.getPolygonAttributeIndex(faceCornerPolygon[i], faceCornerOffset[i]);
+  Vec3 pos = positions[targetIdx];
+  Vec3 normal = normals.size() > targetIdx ? normals[targetIdx] : localDir;
+
+  // project position + normal
+  pos = xfo.transformVector(pos);
+  normal = xfo.ori.rotateVector(normal);
+
+  GeometryLocation loc;
+  switch(mode) {
+    case 0: // closest
+    {
+      loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 1: // raycast along normal
+    {
+      loc = sourceMesh.raycast(Ray(pos, normal), true, 0.0, SCALAR_INFINITE);
+      GeometryLocation locB = sourceMesh.raycast(Ray(pos, -normal), true, 0.0, SCALAR_INFINITE);
+      if(loc.isValid() && locB.isValid()) {
+        Vec3 posA = sourceMesh.getPositionAtLocation(loc);
+        Vec3 posB = sourceMesh.getPositionAtLocation(locB);
+        if((posB - pos).lengthSquared() < (posA - pos).lengthSquared())
+          loc = locB;
+      } else if(locB.isValid()) {
+        loc = locB;
+      }
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+    case 2: // raycast along direction
+    {
+      Ray ray(pos, localDir);
+      loc = sourceMesh.raycast(ray, true, 0.0, SCALAR_INFINITE);
+      if(!loc.isValid() && closestIfNotHit)
+        loc = sourceMesh.getClosest(pos, Vec3(1, 1, 1), SCALAR_INFINITE);
+      break;
+    }
+  }
+
+  if(!loc.isValid()) 
+    return;
+
+  // let's do some special treatment if the polygon
+  // has discontinuities....!
+  Index polygon = sourceMesh.getLocationPolygon(loc);
+  if(!sourceMesh.isPolygonAttributeUniformForAllCorners(polygon, sourceCast)) {
+
+    // skip internal edges
+    Scalar weight = 0.0;
+    UInt32 edge = sourceMesh.getClosestEdgeToLocation(loc, weight);
+    if(weight <= threshold) {
+
+      UInt32 polygonPointIndices[3];
+      Scalar weights[3];
+      sourceMesh.getLocationPolygonPointIndicesAndWeights( loc, polygonPointIndices, weights );
+
+      // check if this is on a vertex
+      if(weights[0] > 1.0 - threshold ||
+        weights[1] > 1.0 - threshold ||
+        weights[2] > 1.0 - threshold
+      ) {
+
+        Index sourcePointIndex = polygonPointIndices[0];
+        if(weights[1] > weights[0] && weights[1] > weights[2])
+          sourcePointIndex = polygonPointIndices[1];
+        else if(weights[2] > weights[0] && weights[2] > weights[1])
+          sourcePointIndex = polygonPointIndices[2];
+        Index sourcePoint = sourceMesh.getPolygonPoint(polygon, sourcePointIndex);
+
+        Vec3 sourcePointPos = sourceMesh.getPointPosition(sourcePoint);
+        Scalar minAngle = SCALAR_INFINITE;
+        Index sourcePolygon = polygon;
+        sourcePointIndex = 0;
+
+        Vec3 targetVector = (targetPolygonPositions[faceCornerPolygon[i]] - positions[targetIdx]).unit();
+        targetVector = xfo.ori.rotateVector(targetVector);
+
+        for(Size j=0;j<sourceMesh.getPointPolygonCount(sourcePoint);j++) {
+          
+          Size wingPolygon;
+          Size wingPolygonPointIndex;
+          sourceMesh.getPointPolygonAndIndex(sourcePoint, j, wingPolygon, wingPolygonPointIndex);
+
+          Vec3 sourceVector = (sourcePolygonPositions[wingPolygon] - sourcePointPos).unit();
+          Scalar angle = sourceVector.unitsAngleTo(targetVector);
+
+          if(angle < minAngle) {
+            minAngle = angle;
+            sourcePolygon = wingPolygon;
+            sourcePointIndex = wingPolygonPointIndex;
+          }
+
+        }
+        
+        Size sourceTriangle = sourcePointIndex > 2 ? (sourcePointIndex - 1) / 2 : 0;
+
+        GeometryLocation newLoc;
+        newLoc.index = sourcePolygon;
+        newLoc.subIndex = sourceTriangle;
+        newLoc.barycentric = Vec3(0, 0, 0);
+
+        UInt32 newPolygonPointIndices[3];
+        Scalar newWeights[3];
+        sourceMesh.getLocationPolygonPointIndicesAndWeights( newLoc, newPolygonPointIndices, newWeights );
+
+        for(Size j=0;j<3;j++) {
+          if(newPolygonPointIndices[j] == sourcePointIndex) {
+            newLoc.barycentric.setComponent(j, 1.0);
+            break;
+          }
+        }
+
+        loc = newLoc;
+
+      } else {
+
+        // let's find the neighbor polygon (if it exists)
+        Size adjacentPolygon;
+        Size adjacentPolygonPointIndex;
+        sourceMesh.getPolygonAdjacentPolygonAndIndex(
+          polygon,
+          polygonPointIndices[edge], 
+          adjacentPolygon, 
+          adjacentPolygonPointIndex
+        );
+
+        if(adjacentPolygon == InvalidIndex) {
+          
+          // leave things are they are
+          // todo: we might want to move the geometry location to the edge,
+          // in other words: make the opposing weight = 0.0
+
+        } else {
+
+          // let's find out which polygon is closer to the target polygon
+          Vec3 targetVector = (targetPolygonPositions[faceCornerPolygon[i]] - positions[targetIdx]).unit();
+          targetVector = xfo.ori.rotateVector(targetVector);
+
+          Vec3 sourcePos = sourceMesh.getPositionAtLocation(loc);
+          Vec3 sourceVectorA = (sourcePolygonPositions[polygon] - sourcePos).unit();
+          Vec3 sourceVectorB = (sourcePolygonPositions[adjacentPolygon] - sourcePos).unit();
+          Scalar angleA = targetVector.unitsAngleTo(sourceVectorA);
+          Scalar angleB = targetVector.unitsAngleTo(sourceVectorB);
+
+          if(angleB < angleA) {
+
+            Size adjacentPolygonSize = sourceMesh.getPolygonSize(adjacentPolygon);
+            Size adjacentPolygonTriangles = adjacentPolygonSize - 2;
+            Size edgeTriangle = polygonPointIndices[edge] > 2 ? (polygonPointIndices[edge] - 1) / 2 : 0;
+
+            GeometryLocation newLoc;
+            newLoc.index = adjacentPolygon;
+            newLoc.subIndex = edgeTriangle;
+            newLoc.barycentric = Vec3(0, 0, 0);
+
+            UInt32 newPolygonPointIndices[3];
+            Scalar newWeights[3];
+            sourceMesh.getLocationPolygonPointIndicesAndWeights( newLoc, newPolygonPointIndices, newWeights );
+
+            for(Size j=0;j<3;j++) {
+              if(newPolygonPointIndices[j] == adjacentPolygonPointIndex) {
+                newLoc.barycentric.setComponent((j+1)%3, weights[edge]);
+                newLoc.barycentric.setComponent((j+0)%3, weights[(edge+1) % 3]);
+                break;
+              }
+            }
+
+            Scalar newLocSum = newLoc.barycentric.x + newLoc.barycentric.y + newLoc.barycentric.z;
+            if(newLocSum != 0.0)
+            {
+              newLoc.barycentric /= newLocSum;
+              loc = newLoc;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  results[i] = GetAttributeAtLocation(sourceMesh, loc, sourceCast);
+}
+
+/// \internal
+private function Boolean BaseGeometry.transferRGBAAttribute!(
+  BaseGeometry sourceGeo,
+  SInt32 mode,
+  Boolean closestIfNotHit,
+  Scalar threshold,
+  SInt32 component,
+  RGBAAttribute sourceCast,
+  String target,
+  Xfo sourceXfo,
+  Xfo targetXfo,
+  Vec3 direction
+) {
+  if(sourceCast == null)
+    return false;
+  Ref<RGBAAttribute> sourceRef = sourceCast;
+
+  // figure out how many lookups we have to do
+  SpatialQueryable sourceSpatial = sourceGeo;
+  if(sourceSpatial == null) {
+    report('Error: Transfer: Source geometry is not a SpatialQueryable.');
+    return false;
+  }
+
+  GeometryAttributes attributes = this.attributes;
+  if(!attributes)
+    return false;
+
+  GeometryAttribute targetAttr = attributes.getAttribute(target);
+  if(targetAttr != null)
+  {
+    if(targetAttr.type() != RGBAAttribute) {
+      report('Error: Transfer: Target attribute "'+target+'" exists, but it\'s not a RGBAAttribute.');
+      return false;
+    }
+  }
+
+  RGBAAttribute targetCast = attributes.getOrCreateRGBAAttribute(target);
+  if(targetCast == null)
+    return false;
+  Ref<RGBAAttribute> targetCastRef = targetCast;
+
+  Vec3 positions[];
+  Vec3 normals[];
+  Vec3Attribute positionsAttr = attributes.getAttribute('positions');
+  Vec3Attribute normalsAttr = attributes.getAttribute('normals');
+  if(positionsAttr == null) {
+    report('Error: Transfer: positions don\'t exist on target geometry.');
+    return false;
+  }
+  positions = positionsAttr.values;
+  Size numTasks = positions.size();
+  if(normalsAttr)
+    normals = normalsAttr.values;
+
+  // localize the direction + transforms
+  Vec3 localDir = sourceXfo.ori.inverse().rotateVector(direction);
+  Xfo xfo = sourceXfo.inverse() * targetXfo;
+
+  // setup the spatial queries
+  GenericValueContainer spatialOptions();
+  PrepareForSpatialQueries_setOctree(spatialOptions);
+
+  PolygonMesh targetMesh = this;
+  PolygonMesh sourceMesh = sourceGeo;
+
+  UInt32 faceCornerPolygon[];
+  UInt32 faceCornerOffset[];
+  if(targetMesh != null) {
+    numTasks = targetMesh.pointCount();
+    if(component == 2) {
+      numTasks = targetMesh.polygonPointsCount();
+      faceCornerPolygon.resize(numTasks);
+      faceCornerOffset.resize(numTasks);
+
+      Index offset = 0;
+      for(Size i=0;i<targetMesh.polygonCount();i++) {
+        Size count = targetMesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++) {
+          faceCornerPolygon[offset] = i;
+          faceCornerOffset[offset] = j;
+          offset++;
+        }
+      }
+    }
+  }
+
+  // deal with a special case if both source
+  // and target are of type PolygonMesh
+  if(targetMesh != null && sourceMesh != null && component == 2) {
+
+    Vec3 sourcePolygonPos[] = sourceMesh.getNormalizedPolygonPositions();
+    Vec3 targetPolygonPos[] = targetMesh.getNormalizedPolygonPositions();
+
+    numTasks = targetMesh.polygonPointsCount();
+    RGBA results[](numTasks);
+
+    sourceMesh.prepareForSpatialQueries(numTasks * 4, spatialOptions);
+
+    _BaseGeom_Transfer_RGBAAttribute_PerFaceCorner<<<numTasks>>>(
+      results,
+      positions,
+      normals,
+      sourceMesh,
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      sourcePolygonPos,
+      targetPolygonPos,
+      mode,
+      closestIfNotHit,
+      threshold,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      targetMesh.setPolygonAttribute( faceCornerPolygon[i], faceCornerOffset[i], targetCastRef, results[i] );
+    }
+
+  } else if(component == 0 || targetMesh == null) {
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_RGBAAttribute_Simple<<<numTasks>>>(
+      targetCast.values,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+  } else if(component == 1) {
+
+    numTasks = targetMesh.polygonCount();
+    RGBA results[](numTasks);
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_RGBAAttribute_Simple<<<numTasks>>>(
+      results,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      Size size = targetMesh.getPolygonSize(i);
+      for(Size j=0;j<size;j++)
+        targetMesh.setPolygonAttribute( i, j, targetCastRef, results[i] );
+    }
+
+  } else if(component == 2) {
+
+    numTasks = targetMesh.polygonPointsCount();
+    RGBA results[](numTasks);
+
+    sourceSpatial.prepareForSpatialQueries(numTasks, spatialOptions);
+
+    _BaseGeom_Transfer_RGBAAttribute_Simple<<<numTasks>>>(
+      targetCast.values,
+      positions,
+      normals,
+      sourceSpatial, 
+      sourceCast,
+      targetMesh,
+      targetCastRef,
+      faceCornerPolygon,
+      faceCornerOffset,
+      mode,
+      closestIfNotHit,
+      component,
+      xfo,
+      localDir
+    );
+
+    for(Size i=0;i<numTasks;i++) {
+      targetMesh.setPolygonAttribute( faceCornerPolygon[i], faceCornerOffset[i], targetCastRef, results[i] );
+    }
+  }
+
+  targetCast.incrementVersion();
+  return true;
+}

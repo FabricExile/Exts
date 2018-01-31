@@ -1,0 +1,1160 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+
+/// Returns the polygon on which the location is defined.
+/// \param location Input location. The location must be valid, and must have been created by this PolygonMesh or one with the same structure, and no structure changes should have been made.
+/// \category SpatialQueryable
+/// \dfgCreateArrayPreset
+inline Size PolygonMesh.getLocationPolygon( GeometryLocation location ) {
+  return location.index;
+}
+
+/**
+  Returns the polygon point indices and weights that define the location, relative to the polygon returned by :kl-ref:`PolygonMesh.getLocationPolygon`.
+  \param location Input location. The location must be valid, and must have been created by this PolygonMesh or one with the same structure, and no structure changes should have been made.
+  \param polygonPointIndices Triplet of `polygonPointIndex` defining the triangle, each in the [0 .. :kl-ref:`PolygonMesh.getPolygonSize` -1] range.
+  \param weights Triangle barycentric coordinates corresponding to each `polygonPointIndices`
+  \note Other versions of this function return the points or attribute indices instead of the points `polygonPointIndices`.
+  \note A current limitation is that all polygons will be triangulated a simple triangle fan
+  \seealso :ref:`geometrylocationstructure`, :ref:`polygonmeshcomponents`
+  \category SpatialQueryable
+  \dfgCreateArrayPreset
+*/
+inline PolygonMesh.getLocationPolygonPointIndicesAndWeights( GeometryLocation location, out UInt32 polygonPointIndices[3], out Scalar weights[3] ) {
+  polygonPointIndices[0] = 0;
+  polygonPointIndices[1] = location.subIndex+1;
+  polygonPointIndices[2] = location.subIndex+2;
+
+  weights[0] = location.barycentric.x;
+  weights[1] = location.barycentric.y;
+  weights[2] = location.barycentric.z;
+}
+
+/**
+  Returns the points and weights that define the location.
+  \param location Input location. The location must be valid, and must have been created by this PolygonMesh or one with the same structure, and no structure changes should have been made.
+  \param points Triplet of points defining the triangle.
+  \param weights Triangle barycentric coordinates corresponding to each point
+  \note Other versions of this function return the polygon point indices or attribute indices instead of the points.
+  \note A current limitation is that all polygons will be triangulated a simple triangle fan
+  \seealso PolygonMesh.getLocationPolygon, :ref:`geometrylocationstructure`, :ref:`polygonmeshcomponents`
+  \category SpatialQueryable
+  \dfgCreateArrayPreset
+*/
+inline PolygonMesh.getLocationPointsAndWeights( GeometryLocation location, out UInt32 points[3], out Scalar weights[3] ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePolygonOffset( location.index, location.subIndex+2, "getLocationPointsAndWeights" );
+
+  DataIter polyIter = this.topology.getPolygonIter(location.index);
+  points[0] = this.topology.getPolyIterPoint( polyIter, 0 );
+  points[1] = this.topology.getPolyIterPoint( polyIter, location.subIndex+1 );
+  points[2] = this.topology.getPolyIterPoint( polyIter, location.subIndex+2 );
+
+  weights[0] = location.barycentric.x;
+  weights[1] = location.barycentric.y;
+  weights[2] = location.barycentric.z;
+}
+
+/// \internal
+inline PolygonMeshTopology.getLocationAttributeIndicesAndWeights?( GeometryLocation location, out UInt32 attributeIndices[3], out Scalar weights[3] ) {
+
+  DataIter polyIter = this.getPolygonIter(location.index);
+
+  attributeIndices[0] = this.getPolyIterAttributeIndex( polyIter, 0 );
+  attributeIndices[1] = this.getPolyIterAttributeIndex( polyIter, location.subIndex+1 );
+  attributeIndices[2] = this.getPolyIterAttributeIndex( polyIter, location.subIndex+2 );
+
+  weights[0] = location.barycentric.x;
+  weights[1] = location.barycentric.y;
+  weights[2] = location.barycentric.z;
+}
+
+/**
+  Returns the attribute indices and weights that define the location.
+  \param location Input location. The location must be valid, and must have been created by this PolygonMesh or one with the same structure, and no structure changes should have been made.
+  \param attributeIndices Triplet of attribute indices defining the triangle (see :ref:`polygonmeshattributes`).
+  \param weights Triangle barycentric coordinates corresponding to each attribute index
+  \note Other versions of this function return points or polygon point indices instead of the attribute indices.
+  \note A current limitation is that all polygons will be triangulated a simple triangle fan
+  \seealso PolygonMesh.getLocationPolygon, :ref:`geometrylocationstructure`, :ref:`polygonmeshcomponents`
+  \category SpatialQueryable
+  \dfgCreateArrayPreset
+*/
+inline PolygonMesh.getLocationAttributeIndicesAndWeights?( GeometryLocation location, out UInt32 attributeIndices[3], out Scalar weights[3] ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    this.topology.validatePolygonOffset( location.index, location.subIndex+2, "getLocationAttributeIndicesAndWeights" );
+
+  this.topology.getLocationAttributeIndicesAndWeights( location, attributeIndices, weights );
+}
+
+inline PolygonMesh.getLocationAttributeIndicesAndWeights?( GeometryLocation location, out LocalL16UInt32Array attributeIndices, out LocalL16ScalarArray weights ) {
+  UInt32 _attributeIndices[3];
+  Scalar _weights[3];
+  this.getLocationAttributeIndicesAndWeights( location, _attributeIndices, _weights );
+
+  attributeIndices.push(_attributeIndices[0]);
+  attributeIndices.push(_attributeIndices[1]);
+  attributeIndices.push(_attributeIndices[2]);
+
+  weights.push(_weights[0]);
+  weights.push(_weights[1]);
+  weights.push(_weights[2]);
+}
+
+/**
+  From a GeometryLocation, returns the local position as a Vec3.
+  \note If the positions are stored as double precision (Float64), a conversion will be applied.
+  \param location Input location. The location must be valid, and must have been created by this PolygonMesh or one with the same structure, and no structure changes should have been made to the PolygonMesh
+  \category SpatialQueryable
+  \dfgCreateArrayPreset
+*/
+inline Vec3 PolygonMesh.getPositionAtLocation( GeometryLocation location ) {
+  if(!location.isValid())
+    return Vec3();
+  if( this.hasFloat64Positions() )
+    return GetAttributeAtLocation( this, location, this.positionsAttribute_d ).toVec3();
+  else
+    return GetAttributeAtLocation( this, location, this.positionsAttribute );
+}
+
+/**
+  From a GeometryLocation, returns the local position as a Vec3_d (double precision Float64).
+  \note If the positions are stored as single precision (Float32), a conversion will be applied.
+  \param location Input location. The location must be valid, and must have been created by this PolygonMesh or one with the same structure, and no structure changes should have been made to the PolygonMesh
+  \category SpatialQueryable
+  \dfgCreateArrayPreset
+*/
+inline Vec3_d PolygonMesh.getPositionAtLocation_d( GeometryLocation location ) {
+  if(!location.isValid())
+    return Vec3_d();
+  if( this.hasFloat64Positions() )
+    return GetAttributeAtLocation( this, location, this.positionsAttribute_d );
+  else {
+    Vec3_d pos;
+    pos.set( GetAttributeAtLocation( this, location, this.positionsAttribute ) );
+    return pos;
+  }
+}
+
+/// Evaluates the normal attribute at a specific location.
+/// \param location Input location. The location must be valid, and must have been created by this PolygonMesh or one with the same structure, and no structure changes should have been made to the PolygonMesh
+/// \category SpatialQueryable
+/// \dfgCreateArrayPreset
+inline Vec3 PolygonMesh.getNormalAtLocation( GeometryLocation location ) {
+  if(!location.isValid())
+    return Vec3();
+  Ref<Vec3Attribute> normals = this.attributes.getNormals();
+  if( normals )
+    return GetAttributeAtLocation( this, location, normals );
+  else
+    return Vec3(0,1,0);
+}
+
+/// \internal
+/// Make it an object so it's pointer-stable
+object PolygonMeshSpatialQueryCachePerUVsData {
+  Ref<Vec2Attribute> uvs;
+
+  Size lastUVsVersion;
+
+  Box2 uvsBBox;
+  Vec2 uvsWrapMin;
+  Vec2_i uvsWrapSteps;
+
+  SparseGrid sparseGrid;
+  Ref<PolygonMesh> mesh; //Don't keep a hard ref, since this cache can be stored as a Mesh shared user data
+  LightLock updateLock;
+};
+
+PolygonMeshSpatialQueryCachePerUVsData( Ref<PolygonMesh> mesh ) {
+  this.lastUVsVersion = InvalidIndex;
+  this.mesh = mesh;
+}
+
+/// \internal
+object PolygonMeshSpatialQueryCache {
+  Ref<PolygonMesh> mesh; //Don't keep a hard ref, since this cache can be stored as a Mesh shared user data
+  Ref<Vec3_dAttribute> pos_dAttr;
+  Ref<Vec3Attribute> posAttr;
+
+  Size meshVersion;
+  Size positionsVersion;
+  Boolean dirtyPositions;
+
+  SpatialAccelerationChooser acceleration;
+
+  PolygonMeshSpatialQueryCachePerUVsData defaultUVsData;//Avoid locking for default UVs
+  PolygonMeshSpatialQueryCachePerUVsData otherUVsData[];
+  LightLock uvsCreateDataLock;
+
+  SimpleLock updateLock;
+
+  FewObjectsRecyclingAllocator queryAllocator;//PolygonMeshSpatialQuery objects
+};
+
+/// \internal
+object MeshRaycastResult : RaycastResult {
+  Vec3 start;
+  Vec3 unitDir;
+  Boolean doubleSided;
+  Scalar coneThreshold;
+  GeometryLocation location;
+  GeometryLocationAccumulator locationAccumulator;// Used if all locations are kept
+  Ref<PolygonMeshSpatialQueryCache> queryCache;
+};
+
+function MeshRaycastResult(Ref<PolygonMeshSpatialQueryCache> queryCache) {
+  this.queryCache = queryCache;
+}
+
+function MeshRaycastResult.reset!( Vec3 start, Vec3 unitDir, Boolean doubleSided, Scalar coneThreshold ) {
+  this.start = start;
+  this.unitDir = unitDir;
+  this.doubleSided = doubleSided;
+  this.coneThreshold = coneThreshold;//Not used for now
+  this.location = GeometryLocation();//Invalidate
+}
+
+function Boolean MeshRaycastResult.raycastPolygon!( Size polygonIndex, Ref<Vec3_dAttribute> pos_dAttr, Ref<Vec3Attribute> posAttr, io Scalar maxDistance, Boolean bidirectional, Boolean accumulateAll ) {
+
+  LocalIndexArray polyPoints;
+  this.queryCache.mesh.getPolygonPoints( polygonIndex, polyPoints );
+  if( polyPoints.size() < 3 )
+    return false;
+
+  Size triangleCount = polyPoints.size()-2;
+
+  Size point0 = polyPoints.get(0);
+  Size point2 = polyPoints.get(1);
+  Vec3 point0Pos, point2Pos;
+  if( pos_dAttr ) {
+    point0Pos = pos_dAttr.values[point0].toVec3();
+    point2Pos = pos_dAttr.values[point2].toVec3();
+  } else {
+    point0Pos = posAttr.values[point0];
+    point2Pos = posAttr.values[point2];
+  }
+
+  Ray ray(this.start, this.unitDir);
+  Boolean doubleSided = this.doubleSided;
+  Boolean intersected;
+  for( Size i = 0; i < triangleCount; ++i ) {
+    Vec3 point1Pos = point2Pos;
+    point2 = polyPoints.get(i+2);
+
+    if( pos_dAttr )
+      point2Pos = pos_dAttr.values[point2].toVec3();
+    else
+      point2Pos = posAttr.values[point2];
+
+    Vec3 intersPos;
+    Scalar interDist, triU, triV;
+    if(! ray.intersectTriangle( !doubleSided, bidirectional, point0Pos, point1Pos, point2Pos, 
+          intersPos, interDist, triU, triV) )
+      continue;
+
+    if( interDist > maxDistance )
+      continue;
+
+    intersected = true;
+    maxDistance = interDist;
+    this.location.index = polygonIndex;
+    this.location.subIndex = i;
+    this.location.barycentric.x = 1.0 - (triU + triV);
+    this.location.barycentric.y = triU;
+    this.location.barycentric.z = triV;
+
+    if( accumulateAll )
+      this.locationAccumulator.push( this.location, interDist );
+  }
+  return intersected;
+}
+
+function Boolean MeshRaycastResult.compareAndUpdate!( Size objectIndex, out Scalar maxDistance ) {
+  return this.raycastPolygon( objectIndex, this.queryCache.pos_dAttr, this.queryCache.posAttr, maxDistance, false, false );
+}
+
+function MeshRaycastResult.copyResultFrom!( Ref<RaycastResult> other ) {
+  Ref<MeshRaycastResult> otherResult = other;
+  this.location = otherResult.location;
+}
+
+/// \internal
+object MeshClosestResult : ClosestResult {
+  Vec3 position;
+  Vec3 scaling;
+  Boolean hasScaling;
+  GeometryLocation location;
+  Ref<PolygonMeshSpatialQueryCache> queryCache;
+};
+
+function MeshClosestResult(Ref<PolygonMeshSpatialQueryCache> queryCache) {
+  this.queryCache = queryCache;
+}
+
+function MeshClosestResult.reset!( Vec3 position, Vec3 scaling, Boolean hasScaling ) {
+  this.position = position;
+  this.scaling = scaling;
+  this.hasScaling = hasScaling;
+  this.location = GeometryLocation();//Invalidate
+}
+
+//NOTE: bestHit must be initialized to the distance to beat. Returns 'true' if a new closest was found.
+function Boolean MeshClosestResult.getClosestPolygonLocation!( Size polygonIndex, Ref<Vec3_dAttribute> pos_dAttr, Ref<Vec3Attribute> posAttr, out Scalar maxScaledSquaredDistance ) {
+
+  LocalIndexArray polyPoints;
+  this.queryCache.mesh.topology.getPolygonPoints( polygonIndex, polyPoints );
+  if( polyPoints.size() < 3 )
+    return false;
+  Size triangleCount = polyPoints.size()-2;
+
+  Size point0 = polyPoints.get(0);
+  Size point2 = polyPoints.get(1);
+  Vec3 point0Pos, point2Pos;
+  if( pos_dAttr ) {
+    point0Pos = pos_dAttr.values[point0].toVec3();
+    point2Pos = pos_dAttr.values[point2].toVec3();
+  } else {
+    point0Pos = posAttr.values[point0];
+    point2Pos = posAttr.values[point2];
+  }
+
+  Vec3 pt0ToStart = (this.position - point0Pos)*this.scaling;
+
+  Boolean found;
+  for( Size i = 0; i < triangleCount; ++i ) {
+    Vec3 point1Pos = point2Pos;
+    point2 = polyPoints.get(i+2);
+
+    if( pos_dAttr )
+      point2Pos = pos_dAttr.values[point2].toVec3();
+    else
+      point2Pos = posAttr.values[point2];
+
+    Vec3 pt0ToPt1 = point1Pos - point0Pos;
+    Vec3 pt0ToPt2 = point2Pos - point0Pos;
+
+    if(this.hasScaling) {
+      pt0ToPt1 *= this.scaling;
+      pt0ToPt2 *= this.scaling;
+    }
+    Vec3 triCross = pt0ToPt1.cross(pt0ToPt2);
+    Scalar triCrossSqLen = triCross.dot(triCross);
+
+    Scalar denom;
+    Vec3 pt0ToInters;
+    Scalar d00, d01, d11, d20, d21;
+
+    if( triCrossSqLen > 1.0e-16 ) {
+      //Note: we can't take pt0ToStart.dot(normal) as the dist, since this is wrong
+      //if non-uniform scaling. Anyway this distance is not a good way to invalidate
+      //a result, since in general it will be closer than the actual result.
+      pt0ToInters = pt0ToStart - (pt0ToStart.dot(triCross)/triCrossSqLen)*triCross;
+
+      //Check if it is inside the triangle.
+      //Fast method to compute barycentrics: http://gamedev.stackexchange.com/questions/23743/whats-the-most-efficient-way-to-find-barycentric-coordinates
+      d00 = pt0ToPt1.dot(pt0ToPt1);
+      d01 = pt0ToPt1.dot(pt0ToPt2);
+      d11 = pt0ToPt2.dot(pt0ToPt2);
+      d20 = pt0ToInters.dot(pt0ToPt1);
+      d21 = pt0ToInters.dot(pt0ToPt2);
+      denom = d00 * d11 - d01 * d01;
+    }
+
+    Size neg[3];
+    Scalar u,v,w;
+
+    if( abs(denom) < 1.0e-8) {
+      //Small triangle, or far away
+      neg[0] = 1;
+      neg[1] = 1;
+      pt0ToInters = Vec3();//Check segment distance to the starting point
+    } else {
+      Scalar invDenom = 1.0/denom;
+      v = (d11 * d20 - d01 * d21) * invDenom;
+      w = (d00 * d21 - d01 * d20) * invDenom;
+      u = 1.0 - v - w;
+      neg[0] = u < 0 ? 1 : 0;
+      neg[1] = v < 0 ? 1 : 0;
+      neg[2] = w < 0 ? 1 : 0;
+    }
+    Size negSum = neg[0] + neg[1] + neg[2];
+    Vec3 pt0ToClosestPos;//Keep relative in case there is scaling
+    Scalar scaledSqDist;
+    if( negSum ) {
+      Scalar ratio;
+      Boolean hasClosestPos;
+
+      if( neg[0] ) {
+        pt0ToClosestPos = closestSegmentPoint( pt0ToStart, pt0ToPt1, pt0ToPt2, ratio );
+        scaledSqDist = (pt0ToStart-pt0ToClosestPos).lengthSquared();
+        hasClosestPos = true;
+        u = 0;
+        v = 1.0-ratio;
+      } 
+      if( neg[1] ) {
+        Vec3 otherClosestPos = closestSegmentPoint( pt0ToStart, Vec3(), pt0ToPt2, ratio );
+        Scalar otherScaledSqDist = (pt0ToStart-otherClosestPos).lengthSquared();
+        if(!hasClosestPos || otherScaledSqDist < scaledSqDist) {
+          scaledSqDist = otherScaledSqDist;
+          pt0ToClosestPos = otherClosestPos;
+          hasClosestPos = true;
+          u = 1.0-ratio;
+          v = 0;
+        }
+      }
+      if( neg[2] ) {
+        Vec3 otherClosestPos = closestSegmentPoint( pt0ToStart, Vec3(), pt0ToPt1, ratio );
+        Scalar otherScaledSqDist = (pt0ToStart-otherClosestPos).lengthSquared();
+        if(!hasClosestPos || otherScaledSqDist < scaledSqDist) {
+          scaledSqDist = otherScaledSqDist;
+          pt0ToClosestPos = otherClosestPos;
+          u = 1.0-ratio;
+          v = ratio;
+        }
+      }
+    } else {
+      pt0ToClosestPos = pt0ToInters;
+      scaledSqDist = (pt0ToStart-pt0ToClosestPos).lengthSquared();
+    }
+    if( scaledSqDist >= maxScaledSquaredDistance )
+      continue;
+
+    found = true;
+    maxScaledSquaredDistance = scaledSqDist;
+    this.location.index = polygonIndex;
+    this.location.subIndex = i;
+    this.location.barycentric.x = u;
+    this.location.barycentric.y = v;
+    this.location.barycentric.z = 1.0 - (u+v);
+  }
+  return found;
+}
+
+function Boolean MeshClosestResult.compareAndUpdate!( Size objectIndex, out Scalar maxScaledSquaredDistance ) {
+  return this.getClosestPolygonLocation( objectIndex, this.queryCache.pos_dAttr, this.queryCache.posAttr, maxScaledSquaredDistance );
+}
+
+function MeshClosestResult.copyResultFrom!( Ref<ClosestResult> other ) {
+  Ref<MeshClosestResult> otherResult = other;
+  this.location = otherResult.location;
+}
+
+/// \internal
+object PolygonMeshSpatialQuery : SpatialQuery {
+  SpatialQueryData data;
+  MeshRaycastResult raycastResult;
+  MeshClosestResult closestResult;
+  Ref<PolygonMeshSpatialQueryCache> queryCache;
+  Ref<PolygonMeshSpatialQueryCachePerUVsData> currentQueryCachePerUVsData; // amortize locking
+};
+
+function PolygonMeshSpatialQuery( Ref<PolygonMeshSpatialQueryCache> queryCache ) {
+  this.queryCache = queryCache;
+  this.raycastResult = MeshRaycastResult(queryCache);
+  this.closestResult = MeshClosestResult(queryCache);
+}
+
+function PolygonMeshSpatialQueryCache( Ref<PolygonMesh> mesh ) {
+  this.mesh = mesh;
+  this.acceleration = SpatialAccelerationChooser( mesh.autoStats );
+  this.updateLock = SimpleLock();
+  this.queryAllocator = FewObjectsRecyclingAllocator( PolygonMeshSpatialQuery(this), 1000, "Warning: PolygonMesh.beginSpatialQuery: called more than 1000 times, intentional or missing a matching 'endSpatialQuery'?" );
+  this.dirtyPositions = true;
+}
+
+/// \internal
+operator PolygonMesh_computePolygonBBox(Size index, io Ref<PolygonMeshSpatialQueryCache> queryCache, io Vec3 results[]) {
+  LocalBoundingVolume bbox = queryCache.mesh.computePolygonBBox(index);
+  results[index*2] = bbox.pt1;
+  results[index*2+1] = bbox.pt2;
+}
+
+/// \internal
+function Ref<PolygonMeshSpatialQueryCache> PolygonMesh.getQueryCache() {
+  //Note: this is complex to avoid unrequired locking
+  Ref<PolygonMeshSpatialQueryCache> queryCache = null;
+  if( this.spatialAccelerationCache ) {
+    queryCache = this.spatialAccelerationCache;
+  } else {
+    Ref<ThreadsafeMetaDataContainer> mutableMetaData = this.metaData;//Make non-const
+    AutoLock AL(mutableMetaData.simpleLock);
+    //Another thread might have created it
+    queryCache = mutableMetaData.lockedGet("spatialAccel");
+    if( !queryCache ) {
+      PolygonMeshSpatialQueryCache newQueryCache = PolygonMeshSpatialQueryCache(this);
+      newQueryCache.defaultUVsData = PolygonMeshSpatialQueryCachePerUVsData(this);
+      mutableMetaData.lockedSet("spatialAccel", newQueryCache);
+      queryCache = newQueryCache;
+    }
+  }
+  //Check if it is synchronized. Note: another thread might be synchronizing it at the same time.
+  Ref<GeometryAttributes> attr = this.getAttributes();
+  Ref<Vec3_dAttribute> pos_d = attr.getPositions_d();
+  Ref<Vec3Attribute> pos = attr.getPositions();
+
+  if(  this.structureVersion != queryCache.meshVersion ||
+      (Boolean(pos_d) && (queryCache.pos_dAttr !== pos_d || pos_d.getVersion() != queryCache.positionsVersion) ) ||
+      (Boolean(pos) && (queryCache.posAttr !== pos || pos.getVersion() != queryCache.positionsVersion) ) ) {
+    //We assume no mesh changes during spatial queries. TODO: use a readers-writers lock here.
+    AutoLock AL(queryCache.updateLock);
+ 
+    //NOTE: conditions need to be checked again since another thread might have updated it
+    if( synchronizeVersion( this.structureVersion, queryCache.meshVersion ) ) {
+      queryCache.acceleration.setObjectCount( this.polygonCount(), false );
+      queryCache.dirtyPositions = true;
+    }
+
+    if( pos_d !== queryCache.pos_dAttr || pos !== queryCache.posAttr ) {
+      //For thread safety, only update pointers if they change
+      queryCache.pos_dAttr = pos_d;
+      queryCache.posAttr = pos;
+      queryCache.dirtyPositions = true;
+    }
+    if(  ( Boolean(pos_d) && synchronizeVersion( pos_d.getVersion(), queryCache.positionsVersion ) )
+      || ( Boolean(pos) && synchronizeVersion( pos.getVersion(), queryCache.positionsVersion ) ) )
+      queryCache.dirtyPositions = true;
+  }
+  return queryCache;
+}
+
+function PolygonMesh.prepareForSpatialQueries( Size approximateNumberOfQueries, GenericValueContainer options ) {
+  Ref<PolygonMeshSpatialQueryCache> queryCache = this.getQueryCache();
+  if( queryCache.queryAllocator.allocatedCount() )
+    throw("PolygonMesh.prepareForSpatialQueries: preparing before all endSpatialQuery() were called");
+  {
+    AutoLock AL(queryCache.updateLock);//TODO: use readers-writers lock
+    Boolean accelerationChanged = queryCache.acceleration.synchronizeOptions( options );
+
+    if( accelerationChanged || queryCache.dirtyPositions ) {
+      //Compute poly bboxes in parallel
+      Size polygonCount = this.polygonCount();
+      queryCache.acceleration.setObjectCount( polygonCount, true );
+      Vec3 polyBBoxes[];
+      polyBBoxes.resize(polygonCount*2);
+      if( polygonCount > 500 )
+        PolygonMesh_computePolygonBBox<<<polygonCount>>>(queryCache, polyBBoxes);
+      else {
+        for( Size i = 0; i < polygonCount; ++i )
+          PolygonMesh_computePolygonBBox(i, queryCache, polyBBoxes);
+      }
+      for( Size i = 0; i < polygonCount; ++i ) 
+        queryCache.acceleration.updateObjectVolume(i, polyBBoxes[i*2], polyBBoxes[i*2+1] );
+      queryCache.dirtyPositions = false;
+    }
+    queryCache.acceleration.prepare( approximateNumberOfQueries );
+  }
+}
+
+inline PolygonMesh.removeSpatialQueryAcceleration!() {
+  this.metaData.remove("spatialAccel");
+  this.spatialAccelerationCache = null;
+}
+
+inline Ref<SpatialQuery> PolygonMesh.beginSpatialQuery() {
+  return this.getQueryCache().queryAllocator.allocate();
+}
+
+inline PolygonMesh.endSpatialQuery( Ref<SpatialQuery> query ) {
+  Ref<PolygonMeshSpatialQuery> meshQuery = query;
+  if( meshQuery.queryCache.mesh !== this )
+    throw("PolygonMesh.endSpatialQuery: invalid query object for this");
+  this.getQueryCache().queryAllocator.free(query);
+}
+
+inline GeometryLocation PolygonMeshSpatialQuery.raycast!( Ray ray, Boolean doubleSided, Scalar coneThreshold, Scalar maxDistance ) {
+  Ref<RaycastResult> result = this.raycastResult;
+  this.queryCache.acceleration.raycast( !this.queryCache.dirtyPositions, ray, doubleSided, coneThreshold < 0 ? 0 : coneThreshold, maxDistance, this.data, result  );
+  return this.raycastResult.location;
+}
+
+inline GeometryLocation PolygonMesh.raycast( Ray ray, Boolean doubleSided, Scalar coneThreshold, Scalar maxDistance ) {
+  Ref<PolygonMeshSpatialQuery> query = this.beginSpatialQuery();
+  GeometryLocation location = query.raycast( ray, doubleSided, coneThreshold, maxDistance );
+  this.endSpatialQuery(query);
+  return location;
+}
+
+inline GeometryLocation PolygonMeshSpatialQuery.getClosest!( Vec3 position, Vec3 scaling, Scalar maxUnscaledDistance ) {
+  Ref<ClosestResult> result = this.closestResult;
+  this.queryCache.acceleration.getClosest( !this.queryCache.dirtyPositions, position, scaling, maxUnscaledDistance, this.data, result );
+  return this.closestResult.location;
+}
+
+inline GeometryLocation PolygonMesh.getClosest( Vec3 position, Vec3 scaling, Scalar maxUnscaledDistance ) {
+  Ref<PolygonMeshSpatialQuery> query = this.beginSpatialQuery();
+  GeometryLocation location = query.getClosest( position, scaling, maxUnscaledDistance );
+  this.endSpatialQuery(query);
+  return location;
+}
+
+function Size PolygonMeshSpatialQuery.getElementsInBBox!( Vec3 min, Vec3 max ) {
+  return this.queryCache.acceleration.getElementsInBBox( this.queryCache.mesh, !this.queryCache.dirtyPositions, min, max, this.data );
+}
+
+function Size PolygonMeshSpatialQuery.getElementsInBSphere!( Vec3 center, Scalar radius ) {
+  return this.queryCache.acceleration.getElementsInBSphere( this.queryCache.mesh, !this.queryCache.dirtyPositions, center, radius, this.data );
+}
+
+function Size PolygonMeshSpatialQuery.getQueriedElement( Size index ) {
+  return this.data.getQueriedElement(index);
+}
+
+/// \internal
+inline PolygonMesh_SwapIndicesAndWeights( io UInt32 polygonPointIndices[3], io Scalar weights[3], Size idx1, Size idx2 ) {
+  UInt32 tmpPt = polygonPointIndices[idx1];
+  polygonPointIndices[idx1] = polygonPointIndices[idx2];
+  polygonPointIndices[idx2] = tmpPt;
+  Scalar tmpW = weights[idx1];
+  weights[idx1] = weights[idx2];
+  weights[idx2] = tmpW;
+}
+
+/// \internal
+inline PolygonMesh_SortIndicesAndWeights( io UInt32 polygonPointIndices[3], io Scalar weights[3] ) {
+  if( weights[1] > weights[0] && weights[1] > weights[2] )
+    PolygonMesh_SwapIndicesAndWeights( polygonPointIndices, weights, 1, 0 );
+  else if( weights[2] > weights[0] && weights[2] > weights[1] )
+    PolygonMesh_SwapIndicesAndWeights( polygonPointIndices, weights, 2, 0 );
+  if( weights[2] > weights[1] )
+    PolygonMesh_SwapIndicesAndWeights( polygonPointIndices, weights, 2, 1 );
+
+  //If at the middle of an edge, weights will be the same; sort by point index
+  if( abs( weights[1] - weights[0] ) < 1e-5 && polygonPointIndices[1] > polygonPointIndices[0] )
+    PolygonMesh_SwapIndicesAndWeights( polygonPointIndices, weights, 1, 0 );
+}
+
+/// \dfgCreateArrayPreset
+function Boolean PolygonMesh.areGeometryLocationsEquivalent( GeometryLocation location0, GeometryLocation location1 ) {
+  UInt32 pts0[3];
+  Scalar weights0[3];
+  this.getLocationPointsAndWeights( location0, pts0, weights0 );
+  PolygonMesh_SortIndicesAndWeights( pts0, weights0 );
+
+  UInt32 pts1[3];
+  Scalar weights1[3];
+  this.getLocationPointsAndWeights( location1, pts1, weights1 );
+  PolygonMesh_SortIndicesAndWeights( pts1, weights1 );
+  return (    pts0[0] == pts1[0] && abs(weights0[0] - weights1[0]) < 1e-5
+      && ( (pts0[1] == pts1[1] && abs(weights0[1] - weights1[1]) < 1e-5) || (weights0[1] + weights1[1] < 2.0e-5) )
+      && ( (pts0[2] == pts1[2] && abs(weights0[2] - weights1[2]) < 1e-5) || (weights0[2] + weights1[2] < 2.0e-5) ) );
+}
+
+function Size PolygonMeshSpatialQuery.getLineIntersections!( Vec3 start, Vec3 end, UInt8 lineIntersectionType ) {
+  this.raycastResult.locationAccumulator.reset();
+  Size count = this.queryCache.acceleration.getLineIntersectedElements( this.queryCache.mesh, !this.queryCache.dirtyPositions, start, end, lineIntersectionType, this.data );
+  if( !count )
+    return 0;
+
+  //Get locations for all intersected polygons
+  RayQueryData rayData(start, end, lineIntersectionType);
+
+  this.raycastResult.reset( start, rayData.unitDir, true, 0 );
+  for( Size i = 0; i < count; ++i ) {
+    Scalar maxDistance = rayData.distFactor;
+    this.raycastResult.raycastPolygon( this.data.visitedItems.indices[i], this.queryCache.pos_dAttr, this.queryCache.posAttr, maxDistance, rayData.bidirectional, true );
+  }
+  this.raycastResult.locationAccumulator.sortAndFilterAccumulatedLocations( this.queryCache.mesh, 1.0e-4 );
+  return this.raycastResult.locationAccumulator.size();
+}
+
+function GeometryLocation PolygonMeshSpatialQuery.getQueriedLocation( Size index ) {
+  return this.raycastResult.locationAccumulator.getSortedLocation( index );
+}
+
+/// Returns true if the location is on an internal edge
+function Boolean PolygonMesh.isLocationInternalEdge( GeometryLocation location, Index edge ) {
+  if( !location.isValid() )
+    return false;
+
+  Index polygon = this.getLocationPolygon( location );
+  UInt32 polygonPointIndices[3];
+  Scalar weights[3];
+  this.getLocationPolygonPointIndicesAndWeights( location, polygonPointIndices, weights );
+
+  // check if the edge point indices are consecutive
+  Size size = this.getPolygonSize( polygon );
+  UInt32 indexA = polygonPointIndices[edge];
+  UInt32 indexB = polygonPointIndices[(edge+1)%3];
+  return indexB != (indexA + 1) % size;
+}
+
+/// Returns the index of the first polygon point offset
+/// inside the polygon as returned by getLocationPolygonPointIndicesAndWeights
+function UInt32 PolygonMesh.getClosestEdgeToLocation( 
+  GeometryLocation location,
+  out Scalar weight
+) {
+  if( !location.isValid() )
+    return -1;
+
+  Index polygon = this.getLocationPolygon( location );
+  UInt32 polygonPointIndices[3];
+  Scalar weights[3];
+  this.getLocationPolygonPointIndicesAndWeights( location, polygonPointIndices, weights );
+
+  // find the minimum edge + weight
+  weight = SCALAR_INFINITE;
+  UInt32 edge = 3;
+  if(weights[0] < weight && !this.isLocationInternalEdge( location, 1)) {
+    weight = weights[0];
+    edge = 1;
+  }
+  if(weights[1] < weight && !this.isLocationInternalEdge( location, 2)) {
+    weight = weights[1];
+    edge = 2;
+  }
+  if(weights[2] < weight && !this.isLocationInternalEdge( location, 0)) {
+    weight = weights[2];
+    edge = 0;
+  }
+
+  if(edge == 3)
+    return -1;
+
+  return edge;
+}
+
+//*******************************************************************************************
+// UV to location
+//*******************************************************************************************
+
+/// \internal
+Ref<PolygonMeshSpatialQueryCachePerUVsData> PolygonMeshSpatialQueryCache.getQueryCacheForUVs!( Ref<Vec2Attribute> uvAttribute ) {
+  Ref<PolygonMeshSpatialQueryCachePerUVsData> uvCacheData = null;
+  if( uvAttribute === this.mesh.uvs0Attribute ) {
+    uvCacheData = this.defaultUVsData;
+    uvCacheData.uvs = this.mesh.uvs0Attribute;// refresh in case it was not created yet
+  } else {
+    uvCacheData = null;
+
+    // We have to lock in advance; the array could be resized by another thread
+    LightLockBracket resizeBracket( this.uvsCreateDataLock );
+    Size otherUVsDataSize = this.otherUVsData.size();
+    for( Size i = 0; i < otherUVsDataSize; ++i ) {
+      if( this.otherUVsData[i].uvs === uvAttribute )
+        uvCacheData = this.otherUVsData[i];
+    }
+    if( !uvCacheData ) {
+      this.otherUVsData.resize( otherUVsDataSize + 1 );
+      this.otherUVsData[otherUVsDataSize] = PolygonMeshSpatialQueryCachePerUVsData( this.mesh );
+      this.otherUVsData[otherUVsDataSize].uvs = uvAttribute;
+      uvCacheData = this.otherUVsData[otherUVsDataSize];
+    }
+  }
+  return uvCacheData;
+}
+
+/// \internal
+Box2 PolygonMeshTopology.computePolygonUVsBBox( Size polygonIndex, Vec2 uvs<> ) {
+
+  Size polyIter = this.getPolygonIter( polygonIndex );
+  UInt32 size = this.getPolyIterSize( polyIter );
+
+  Box2 box;
+  for( Size i = 0; i < size; ++i ) {
+    Size attrIndex = this.getPolyIterAttributeIndex( polyIter, i );
+    box += uvs[attrIndex];
+  }
+  // Increase by epsilon to support very close locations
+  box.min -= Vec2( 1e-5 );
+  box.max += Vec2( 1e-5 );
+
+  return box;
+}
+
+/// \internal
+operator PolygonMesh_computePolygonUVsBBox( Size polygonIndex, Ref<PolygonMeshSpatialQueryCachePerUVsData> UVsData, io Box3 results[] ) {
+  Box2 box2 = UVsData.mesh.topology.computePolygonUVsBBox( polygonIndex, UVsData.uvs.values );
+  results[polygonIndex].min = Vec3( box2.min.x, box2.min.y, 0 );
+  results[polygonIndex].max = Vec3( box2.max.x, box2.max.y, 0 );
+}
+
+/// \internal
+PolygonMeshSpatialQueryCachePerUVsData.prepareUVToLocation!() {
+  if( this.uvs.version != this.lastUVsVersion ) {
+    LightLockBracket updateBracket( this.updateLock );
+    // check again in case another thread did it
+    if( this.uvs.version != this.lastUVsVersion.atomicGet() ) {
+      this.lastUVsVersion = this.uvs.version;
+
+      if( !this.sparseGrid )
+        this.sparseGrid = SparseGrid();
+
+      Ref<SparseGrid> sparseGrid = this.sparseGrid;
+
+      //Compute uvs bboxes in parallel
+      Size polygonCount = this.mesh.polygonCount();
+      sparseGrid.incrementalUpdateObjectCount( polygonCount );
+
+      Box3 polyBBoxes[];
+      polyBBoxes.resize( polygonCount );
+      if( polygonCount > 500 )
+        PolygonMesh_computePolygonUVsBBox<<<polygonCount>>>( this, polyBBoxes );
+      else {
+        for( Size i = 0; i < polygonCount; ++i )
+          PolygonMesh_computePolygonUVsBBox( i, this, polyBBoxes );
+      }
+      for( Size i = 0; i < polygonCount; ++i )
+        sparseGrid.updateBBoxObject( i, polyBBoxes[i].min, polyBBoxes[i].max );
+      sparseGrid.updateGrid();
+
+      // Get an updated UVs bbox.
+      this.uvsBBox.setEmpty();
+      this.uvsBBox.min.x = sparseGrid.data.currentBBox.pt1.x;
+      this.uvsBBox.min.y = sparseGrid.data.currentBBox.pt1.y;
+      this.uvsBBox.max.x = sparseGrid.data.currentBBox.pt2.x;
+      this.uvsBBox.max.y = sparseGrid.data.currentBBox.pt2.y;
+
+      // Update wrapping params (grid size of required wrapped samples)
+      Float32 start = floor( this.uvsBBox.min.x );
+      Float32 end = ceil( this.uvsBBox.max.x );
+      this.uvsWrapMin.x = start;
+
+      this.uvsWrapSteps.x = Size( end - start );
+      if( this.uvsWrapSteps.x == 0 )
+        this.uvsWrapSteps.x = 1;
+
+      start = floor( this.uvsBBox.min.y );
+      end = ceil( this.uvsBBox.max.y );
+      this.uvsWrapMin.y = start;
+
+      this.uvsWrapSteps.y = Size( end - start );
+      if( this.uvsWrapSteps.y == 0 )
+        this.uvsWrapSteps.y = 1;
+    }
+  }
+}
+
+/// \internal
+inline PolygonMeshSpatialQuery.prepareUVToLocation!( Ref<Vec2Attribute> uvAttribute ) {
+  if( !this.currentQueryCachePerUVsData || this.currentQueryCachePerUVsData.uvs !== uvAttribute )
+    this.currentQueryCachePerUVsData = this.queryCache.getQueryCacheForUVs( uvAttribute );
+  this.currentQueryCachePerUVsData.prepareUVToLocation();
+}
+
+/// \internal
+function GeometryLocation PolygonMesh.getPolygonUVIntersection!( Size polygonIndex, Vec2 uv, Ref<Vec2Attribute> uvsAttr, Boolean accumulateAll, io GeometryLocationAccumulator locationAccumulator ) {
+  GeometryLocation loc;
+
+  LocalIndexArray polyAttrIndices;
+  this.getPolygonAttributeIndices( polygonIndex, polyAttrIndices );
+  if( polyAttrIndices.size() < 3 )
+    return loc;
+
+  Size triangleCount = polyAttrIndices.size() - 2;
+
+  Size point0 = polyAttrIndices.get( 0 );
+  Size point2 = polyAttrIndices.get( 1 );
+  Vec2 point0Pos, point2Pos;
+  point0Pos = uvsAttr.values[point0];
+  point2Pos = uvsAttr.values[point2];
+
+  Boolean intersected;
+
+  for( Size i = 0; i < triangleCount; ++i ) {
+    Vec2 point1Pos = point2Pos;
+    point2 = polyAttrIndices.get( i + 2 );
+    point2Pos = uvsAttr.values[point2];
+
+    // Check if inside the UV triangle
+    Scalar a, b, c;
+    Vec2 bary = uv.getBarycentricCoords( point0Pos, point1Pos, point2Pos );
+//report( "bary " + uv + " -> " + bary  + " for " + point0Pos + " " + point1Pos + " " + point2Pos );
+    if( ( bary.x < -PRECISION ) || ( bary.y < -PRECISION ) || ( bary.x + bary.y > 1 + PRECISION ) )
+      continue;
+
+    intersected = true;
+    loc.index = polygonIndex;
+    loc.subIndex = i;
+    loc.barycentric.x = bary.x;
+    loc.barycentric.y = bary.y;
+    loc.barycentric.z = 1.0 - ( bary.x + bary.y );
+
+    if( accumulateAll )
+      locationAccumulator.push( loc, 0 );
+    else
+      return loc;
+  }
+  return loc;
+}
+
+/// \internal
+GeometryLocation PolygonMeshSpatialQuery.uvToLocationInternal!(
+  Ref<Vec2Attribute> uvAttribute,
+  Vec2 uv,
+  Boolean wrapUVs,
+  Boolean accumulateAll
+) {
+  this.prepareUVToLocation( uvAttribute );
+
+  Ref<SparseGrid> sparseGrid = this.currentQueryCachePerUVsData.sparseGrid;
+  GeometryLocation loc;
+
+  Vec2 currentUV = uv;
+  Size uSteps = 1, vSteps = 1;
+  Ref<PolygonMesh> mesh = this.currentQueryCachePerUVsData.mesh;
+
+  if( wrapUVs ) {
+    uSteps = this.currentQueryCachePerUVsData.uvsWrapSteps.x;
+    vSteps = this.currentQueryCachePerUVsData.uvsWrapSteps.y;
+
+    currentUV.x = this.currentQueryCachePerUVsData.uvsWrapMin.x + (uv.x - floor( uv.x ));
+    currentUV.y = this.currentQueryCachePerUVsData.uvsWrapMin.y + (uv.y - floor( uv.y ));
+
+//report( "WRAP : currentUV " + currentUV + " steps " + uSteps + " " + vSteps );
+  }
+  Scalar startV = currentUV.y;
+
+  for( Size i = 0; i < uSteps; ++i ) {
+    currentUV.y = startV;
+    for( Size j = 0; j < vSteps; ++j ) {
+      if( this.currentQueryCachePerUVsData.uvsBBox.contains( currentUV ) ) {
+        Size count;
+        sparseGrid.getObjectsAtPosition( Vec3( currentUV.x, currentUV.y, 0 ), this.data.visitedItems );
+        count = this.data.visitedItems.size();
+
+        for( Size k = 0; k < count; ++k ) {
+          Size polygonIndex = this.data.visitedItems.indices[k];
+          loc = mesh.getPolygonUVIntersection( polygonIndex, currentUV, uvAttribute, accumulateAll, this.raycastResult.locationAccumulator );
+          if( !accumulateAll && loc.isValid() )
+            return loc;
+        }
+      }
+      currentUV.y += 1.0f;
+    }
+    currentUV.x += 1.0f;
+  }
+  if( accumulateAll )
+    this.raycastResult.locationAccumulator.filterSortedAccumulatedLocations( mesh, 1.0e-4 );
+
+  return loc;
+}
+
+/**
+  Returns a mesh GeometryLocation such that its value for uvAttribute equals uv.
+  If none exist, an invalid GeometryLocation is returned (see :kl-ref:`GeometryLocation.isValid`).
+  Note that there could be many such GeometryLocation. To get them all, use method :kl-ref:`PolygonMeshSpatialQuery.uvToLocations`.
+
+  \param uvAttribute The attribute to be searched for the uv location.
+  \param uv The uv value to lookup.
+  \param wrapUVs If true, uv is considered equivalent to uv+(n,m) where n and m are integers.\
+    In more practical terms, if UVs are used for a repeated texture, wrapUVs allows to get locations \
+    corresponding to a texture pixel, even if some UV values are outside of the [0,1] range.
+
+  \seealso PolygonMeshSpatialQuery.uvToLocations, PolygonMesh.uvsToLocation
+*/
+inline GeometryLocation PolygonMeshSpatialQuery.uvToLocation!(
+  Ref<Vec2Attribute> uvAttribute,
+  Vec2 uv,
+  Boolean wrapUVs
+) {
+  return this.uvToLocationInternal( uvAttribute, uv, wrapUVs, false );
+}
+
+/**
+  Returns a mesh GeometryLocation such that its value for default UVs (attribute "uvs0") equals uv.
+  If none exist, an invalid GeometryLocation is returned (see :kl-ref:`GeometryLocation.isValid`).
+  Note that there could be many such GeometryLocation. To get them all, use method :kl-ref:`PolygonMeshSpatialQuery.uvToLocations`.
+
+  \param uv The uv value to lookup.
+  \param wrapUVs If true, uv is considered equivalent to uv+(n,m) where n and m are integers.\
+    In more practical terms, if UVs are used for a repeated texture, wrapUVs allows to get locations \
+    corresponding to a texture pixel, even if some UV values are outside of the [0,1] range.
+
+  \seealso PolygonMeshSpatialQuery.uvToLocations, PolygonMesh.uvsToLocation
+  \dfgPresetTitle DefaultUvToLocation
+*/
+inline GeometryLocation PolygonMeshSpatialQuery.uvToLocation!(
+  Vec2 uv,
+  Boolean wrapUVs
+) {
+  Ref<Vec2Attribute> uvAttribute = this.queryCache.mesh.uvs0Attribute;
+  if( uvAttribute )
+    return this.uvToLocation( uvAttribute, uv, wrapUVs );
+  else
+    return GeometryLocation();
+}
+
+
+/**
+  Gets all mesh GeometryLocation such that their value for uvAttribute equals uv.
+  The number of intersections is returned, and individual GeometryLocation can be retrieved using :kl-ref:`SpatialQuery.getQueriedLocation`.
+
+  \param uvAttribute The attribute to be searched for the uv location.
+  \param uv The uv value to lookup.
+  \param wrapUVs If true, uv is considered equivalent to uv+(n,m) where n and m are integers.\
+    In more practical terms, if UVs are used for a repeated texture, wrapUVs allows to get all locations \
+    corresponding to a texture pixel, even if some UV values are outside of the [0,1] range.
+
+   \seealso PolygonMeshSpatialQuery.uvToLocation, PolygonMesh.uvsToLocation
+*/
+Size PolygonMeshSpatialQuery.uvToLocations!(
+  Ref<Vec2Attribute> uvAttribute,
+  Vec2 uv,
+  Boolean wrapUVs
+) {
+  this.uvToLocationInternal( uvAttribute, uv, wrapUVs, true );
+  return this.raycastResult.locationAccumulator.size();
+}
+
+/**
+  Gets all mesh GeometryLocation such that their value for uvAttribute equals uv.
+  The number of intersections is returned, and individual GeometryLocation can be retrieved using :kl-ref:`SpatialQuery.getQueriedLocation`.
+
+  \param uvAttribute The attribute to be searched for the uv location.
+  \param uv The uv value to lookup.
+  \param wrapUVs If true, uv is considered equivalent to uv+(n,m) where n and m are integers.\
+    In more practical terms, if UVs are used for a repeated texture, wrapUVs allows to get all locations \
+    corresponding to a texture pixel, even if some UV values are outside of the [0,1] range.
+
+  \seealso PolygonMeshSpatialQuery.uvToLocation, PolygonMesh.uvsToLocation
+  \dfgPresetTitle DefaultUvToLocations
+*/
+inline Size PolygonMeshSpatialQuery.uvToLocations!(
+  Vec2 uv,
+  Boolean wrapUVs
+) {
+  Ref<Vec2Attribute> uvAttribute = this.queryCache.mesh.uvs0Attribute;
+  if( uvAttribute )
+    return this.uvToLocations( uvAttribute, uv, wrapUVs );
+  else
+    return 0;
+}
+
+/**
+  Returns a mesh GeometryLocation such that its value for uvAttribute equals uv.
+  If none exist, an invalid GeometryLocation is returned (see :kl-ref:`GeometryLocation.isValid`).
+  Note that there could be many such GeometryLocation. To get them all, use method :kl-ref:`PolygonMeshSpatialQuery.uvToLocations`.
+
+  \param uvAttribute The attribute to be searched for the uv location.
+  \param uv The uv value to lookup.
+  \param wrapUVs If true, uv is considered equivalent to uv+(n,m) where n and m are integers.\
+    In more practical terms, if UVs are used for a repeated texture, wrapUVs allows to get locations \
+    corresponding to a texture pixel, even if some UV values are outside of the [0,1] range.
+
+  \category SpatialQueryable
+  \seealso PolygonMeshSpatialQuery.uvToLocations, PolygonMesh.uvsToLocation
+*/
+inline GeometryLocation PolygonMesh.uvToLocation(
+  Ref<Vec2Attribute> uvAttribute,
+  Vec2 uv,
+  Boolean wrapUVs
+) {
+  Ref<PolygonMeshSpatialQuery> query = this.beginSpatialQuery();
+  GeometryLocation location = query.uvToLocation( uvAttribute, uv, wrapUVs );
+  this.endSpatialQuery( query );
+  return location;
+}
+
+/**
+  Returns a mesh GeometryLocation such that its value for default UVs (attribute "uvs0") equals uv.
+  If none exist, an invalid GeometryLocation is returned (see :kl-ref:`GeometryLocation.isValid`).
+  Note that there could be many such GeometryLocation. To get them all, use method :kl-ref:`PolygonMeshSpatialQuery.uvToLocations`.
+
+  \param uv The uv value to lookup.
+  \param wrapUVs If true, uv is considered equivalent to uv+(n,m) where n and m are integers.\
+    In more practical terms, if UVs are used for a repeated texture, wrapUVs allows to get locations \
+    corresponding to a texture pixel, even if some UV values are outside of the [0,1] range.
+
+  \category SpatialQueryable
+  \seealso PolygonMeshSpatialQuery.uvToLocations, PolygonMesh.uvsToLocation
+  \dfgPresetTitle DefaultUvToLocation
+*/
+inline GeometryLocation PolygonMesh.uvToLocation(
+  Vec2 uv,
+  Boolean wrapUVs
+) {
+  Ref<Vec2Attribute> uvAttribute = this.uvs0Attribute;
+  if( uvAttribute )
+    return this.uvToLocation( uvAttribute, uv, wrapUVs );
+  else
+    return GeometryLocation();
+}
+
+/// \internal
+operator ParallelUVsToLocation<<<index>>>( Ref<PolygonMesh> mesh, Size batchSize,
+                       Ref<Vec2Attribute> uvAttribute,
+                       Vec2 uvs<>,
+                       Boolean wrapUVs,
+                       io GeometryLocation locations[] ) {
+  UInt32 start = index*batchSize;
+  UInt32 end = ( index + 1 )*batchSize;
+  if( end > uvs.size() )
+    end = uvs.size();
+
+  Ref<PolygonMeshSpatialQuery> query = mesh.beginSpatialQuery();
+  for( Size i = start; i < end; ++i )
+    locations[i] = query.uvToLocation( uvAttribute, uvs[i], wrapUVs );
+
+  mesh.endSpatialQuery( query );
+}
+
+/**
+  Computes an array of mesh GeometryLocation such that their values for uvAttribute equals corresponding uvs.
+  If none exist, an invalid GeometryLocation is set (see :kl-ref:`GeometryLocation.isValid`).
+  Note that there could be many such GeometryLocation per UVs. To get them all, use method :kl-ref:`PolygonMeshSpatialQuery.uvToLocations`.
+
+  \param uvAttribute The attribute to be searched for the uv location.
+  \param uv The uv value to lookup.
+  \param wrapUVs If true, uv is considered equivalent to uv+(n,m) where n and m are integers.\
+    In more practical terms, if UVs are used for a repeated texture, wrapUVs allows to get locations \
+    corresponding to a texture pixel, even if some UV values are outside of the [0,1] range.
+
+  \category SpatialQueryable
+  \seealso PolygonMeshSpatialQuery.uvToLocations, PolygonMesh.uvsToLocation
+
+  \dfgPresetType uvs Vec2[]
+*/
+PolygonMesh.uvsToLocation(
+  Ref<Vec2Attribute> uvAttribute,
+  Vec2 uvs<>,
+  Boolean wrapUVs,
+  io GeometryLocation locations[]
+) {
+  Ref<PolygonMeshSpatialQueryCache> queryCache = this.getQueryCache();
+  Ref<PolygonMeshSpatialQueryCachePerUVsData> uvsData = queryCache.getQueryCacheForUVs( uvAttribute );
+  uvsData.prepareUVToLocation();
+
+  locations.resize( uvs.size() );
+
+  Size numBatches, batchSize;
+  GetBatchSizeAndCountForParallel( uvs.size(), 5, 200, numBatches, batchSize );
+  ParallelUVsToLocation<<<numBatches>>>( this, batchSize, uvAttribute, uvs, wrapUVs, locations );
+}
+
+/**
+  Computes an array of mesh GeometryLocation such that their values for uvAttribute equals corresponding uvs.
+  If none exist, an invalid GeometryLocation is set (see :kl-ref:`GeometryLocation.isValid`).
+  Note that there could be many such GeometryLocation per UVs. To get them all, use method :kl-ref:`PolygonMeshSpatialQuery.uvToLocations`.
+
+  \param uvAttribute The attribute to be searched for the uv location.
+  \param uv The uv value to lookup.
+  \param wrapUVs If true, uv is considered equivalent to uv+(n,m) where n and m are integers.\
+    In more practical terms, if UVs are used for a repeated texture, wrapUVs allows to get locations \
+    corresponding to a texture pixel, even if some UV values are outside of the [0,1] range.
+
+  \category SpatialQueryable
+  \seealso PolygonMeshSpatialQuery.uvToLocations, PolygonMesh.uvsToLocation
+
+  \dfgPresetType uvs Vec2[]
+  \dfgPresetTitle DefaultUvsToLocation
+*/
+PolygonMesh.uvsToLocation(
+  Vec2 uvs<>,
+  Boolean wrapUVs,
+  io GeometryLocation locations[]
+) {
+  locations.resize( uvs.size() );
+  Ref<Vec2Attribute> uvAttribute = this.uvs0Attribute;
+  if( uvAttribute )
+    this.uvsToLocation( uvAttribute, uvs, wrapUVs, locations );
+  else {
+    for( Size i = 0; i < uvs.size(); ++i )
+      locations[i] = GeometryLocation();
+  }
+}
+

@@ -1,0 +1,74 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "reads a sample at a given time and project to global space.\nthis will properly interpolate between samples.\n\nSupported types:\n  this: AlembicXformReader\n  time: Float64\n  result: Xfo\n"
+    },
+  "title" : "ReadSampleGlobal[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicXformReader[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "time",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float64[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float64[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 249,\n  \"g\" : 157,\n  \"b\" : 28\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Xfo[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "80754FDB863E17BCD99468419D2E7C15",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicXformReader_readSampleGlobal_task<<<index>>>(
+  io Xfo[] result
+, io AlembicXformReader[] this
+, in Float64[] time
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].readSampleGlobal(time[index < time.size() ? index : time.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( time.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < time.size()) task_size = time.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      AlembicWrapper_AlembicXformReader_readSampleGlobal_task(index, result, this, time);
+    }
+  } else {
+    AlembicWrapper_AlembicXformReader_readSampleGlobal_task<<<task_size>>>(result, this, time);
+  }
+}
+"
+  }

@@ -1,0 +1,202 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+struct FewObjectsStableListIterator;
+
+/// \internal
+struct FewObjectsStableList_data {
+  Object owned;
+  Ref<Object> obj;
+};
+
+/**
+  The FewObjectsStableList implements an Object list.
+  It is called "FewObjects" because adding, searching and removing objects is a linear operation, hence not scalable for large amounts of objects.
+  If is called "Stable" because list iterators (FewObjectsStableListIterator) are robust over items that are added or removed while iterating.
+*/
+object FewObjectsStableList permits FewObjectsStableListIterator{
+  private FewObjectsStableList_data objects[];
+
+  // Surviving list changes while iterating
+  Size iteratorBracket;//To do iteration post cleanup
+  Size pushFrontCountWhileIteratorBracket;
+};
+
+Size FewObjectsStableList.count_slow() {
+  Size count;
+  for( Size i = 0; i < this.objects.size(); ++i ) {
+    if( this.objects[i].obj )
+      ++count;
+  }
+  return count;
+}
+
+Boolean FewObjectsStableList.isEmpty() {
+  for( Size i = 0; i < this.objects.size(); ++i ) {
+    if( this.objects[i].obj )
+      return false;
+  }
+  return true;
+}
+
+Size FewObjectsStableList.indexEnd() {
+  return this.objects.size();
+}
+
+/// For advanced usage only; this can return null while iterating.
+inline Ref<Object> FewObjectsStableList.get( Size index ) {
+  return this.objects[index].obj;
+}
+
+/// For advanced usage only; this can return null while iterating.
+Boolean FewObjectsStableList.has( Ref<Object> obj ) {
+  for( Size i = 0; i < this.objects.size(); ++i ) {
+    if( this.objects[i].obj === obj )
+      return true;
+  }
+  return false;
+}
+
+FewObjectsStableList.pushFront!( Ref<Object> obj, Boolean owned ) {
+  Size prevSize = this.objects.size();
+  this.objects.resize( prevSize+1 );
+  for( Size i = prevSize; i--; )
+    this.objects[i+1] = this.objects[i];
+  this.objects[0].obj = obj;
+  if( owned )
+    this.objects[0].owned = obj;
+
+  if( this.iteratorBracket )
+    ++this.pushFrontCountWhileIteratorBracket;
+}
+
+inline FewObjectsStableList.pushFront!( Ref<Object> obj ) {
+  this.pushFront( obj, true );
+}
+
+FewObjectsStableList.pushBack!( Ref<Object> obj, Boolean owned ) {
+  if( !obj )
+    throw( "FewObjectsStableList doesn't support null objects" );
+
+  FewObjectsStableList_data objData;
+  objData.obj = obj;
+  if( owned )
+    objData.owned = obj;
+
+  this.objects.push( objData );
+}
+
+inline FewObjectsStableList.pushBack!( Ref<Object> obj ) {
+  this.pushBack( obj, true );
+}
+
+FewObjectsStableList.remove!( Ref<Object> obj, Boolean throwOnError ) {
+  Object keepAlive = obj;// Might be destroyed; make sure it is only after this function has ended (we want to support double removals)
+
+  Index index = InvalidIndex;
+  for( Size i = 0; i < this.objects.size(); ++i ) {
+    Ref<Object> curr = this.objects[i].obj;
+    if( curr === obj ) {
+      index = i;
+    }
+  }
+  if( index == InvalidIndex ) {
+    if( throwOnError )
+      throw( "FewObjectsStableList.remove: object not found" );
+    else
+      return;//silently
+  }
+
+  // Set to null for now so "remove" can be called during iteration
+  this.objects[index].obj = null;
+  this.objects[index].owned = null;
+
+  if( !this.iteratorBracket )
+    this.cleanup();//Recompact right away if no iterators
+}
+
+inline FewObjectsStableList.remove!( Ref<Object> obj ) {
+  this.remove( obj, true );
+}
+
+inline FewObjectsStableList.remove_nothrow!( Ref<Object> obj ) {
+  this.remove( obj, false );
+}
+
+FewObjectsStableList.clear!() {
+  for( Size i = 0; i < this.objects.size(); ++i ) {
+    this.objects[i].obj = null;
+    this.objects[i].owned = null;
+  }
+  if( !this.iteratorBracket )
+    this.cleanup();//Recompact right away if no iterators
+}
+
+private FewObjectsStableList.cleanup!() {
+  Index target;
+  for( Size i = 0; i < this.objects.size(); ++i ) {
+    if( this.objects[i].obj ) {
+      if( target != i )
+        this.objects[target] = this.objects[i];
+      ++target;
+    }
+  }
+  this.objects.resize( target );
+  this.pushFrontCountWhileIteratorBracket = 0;
+}
+
+struct FewObjectsStableListIterator {
+  Ref<FewObjectsStableList> list;
+  Index index;
+  Size lastPushFrontCount;// Robustness over list changes while iterating
+  Size listEnd;// Robustness over list changes while iterating
+};
+
+FewObjectsStableListIterator( Ref<FewObjectsStableList> list ) {
+  this.list = list;
+  this.lastPushFrontCount = list.pushFrontCountWhileIteratorBracket;
+  this.listEnd = list.objects.size();
+  ++this.list.iteratorBracket;
+}
+
+~FewObjectsStableListIterator() {
+  if( this.list ) {
+    if( --this.list.iteratorBracket == 0 )
+      this.list.cleanup();//Iteration done: do post cleanup (if some list items were removed)
+  }
+}
+
+
+/**
+  Returns the next object in the list. Usage:
+
+.. code-block:: kl
+
+    FewObjectsStableListIterator it(list);
+    Ref<Object> obj = null;
+    while( obj = it.next() ) {
+      ...
+    }
+
+*/
+Ref<Object> FewObjectsStableListIterator.next!() {
+  //NOTE: important to not inline this call, since array may reallocate while iterating (avoid aliasing issues)
+  if( !this.list )
+    return null;
+
+  // Survive to push fronts and push backs while iterating
+  if( this.lastPushFrontCount < this.list.pushFrontCountWhileIteratorBracket ) {
+    Size delta = this.list.pushFrontCountWhileIteratorBracket - this.lastPushFrontCount;
+    this.index += delta;
+    this.listEnd += delta;
+  }
+
+  while( this.index < this.listEnd ) {
+    if( this.list.objects[this.index].obj )// Survive to removes while iterating
+      return this.list.objects[this.index++].obj;
+    ++this.index;
+  }
+  return null;
+}
+

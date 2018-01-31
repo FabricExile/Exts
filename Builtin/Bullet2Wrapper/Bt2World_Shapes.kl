@@ -1,0 +1,320 @@
+//
+// Copyright 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+private Bt2Shape Bt2World.addShape!(String key, btCollisionShape shape, Boolean passive)
+{
+  // todo: add a lock
+  Bt2Shape result;
+  result.world = this;
+  result.index = this.shapes.size();
+  result.shape = shape;
+  result.shape.setUserIndex(result.index);
+  result.passiveOnly = passive;
+  this.shapes.push(result);
+  this.shapeKeyToIndex[key] = result.index;
+  return result;
+}
+
+/// \dfgPresetFolder Shapes
+Bt2Shape Bt2World.getShape(SInt32 index)
+{
+  if(index < 0 || index >= this.shapes.size())
+    return Bt2Shape();
+  return this.shapes[index];
+}
+
+/// \dfgPresetFolder Shapes
+/// \dfgPresetDefault normal {"x": 0.0, "y": 1.0, "z": 0.0}
+/// \dfgPresetDefault constant 0.0
+function Bt2Shape Bt2World.getOrAddStaticPlane!(Vec3 normal, Float32 constant)
+{
+  String key = 'PLANE_' + SInt32(normal.x * 1000.0) + '_' + SInt32(normal.y * 1000.0) + '_' + SInt32(normal.z * 1000.0) + '_' + SInt32(constant * 1000.0);
+  SInt32 index = this.shapeKeyToIndex.get(key, -1);
+  if(index > -1)
+    return this.shapes[index];
+
+  return this.addShape(key, btStaticPlaneShape(normal, constant), true);
+}
+
+/// \dfgPresetFolder Shapes
+/// \dfgPresetDefault halfExtents {"x": 0.5, "y": 0.5, "z": 0.5}
+function Bt2Shape Bt2World.getOrAddBox!(Vec3 halfExtents)
+{
+  String key = 'BOX_' + SInt32(halfExtents.x * 1000.0) + '_' + SInt32(halfExtents.y * 1000.0) + '_' + SInt32(halfExtents.z * 1000.0);
+  SInt32 index = this.shapeKeyToIndex.get(key, -1);
+  if(index > -1)
+    return this.shapes[index];
+
+  Bt2Shape shape =  this.addShape(key, btBoxShape(halfExtents), false);
+
+  // debug drawing
+  if(shape.isValid() && this.handle != null)
+  {
+    key = this.uid() + '_shape_' + shape.index;
+    PolygonMesh mesh(key);
+    mesh.addCuboid(Xfo(), halfExtents.x * 2.0, , halfExtents.y * 2.0 , halfExtents.z * 2.0, true, true);
+    InlineDrawing drawing = this.handle.getDrawing();
+    InlineShape drawShape = InlineMeshShape(key, mesh);
+    drawing.registerShape(drawShape);
+    this.drawShapes[shape.index] = drawShape;
+  }
+
+  return shape;
+}
+
+/// \dfgPresetFolder Shapes
+/// \dfgPresetDefault radius 1.0
+function Bt2Shape Bt2World.getOrAddSphere!(Float32 radius)
+{
+  String key = 'SPHERE_' + SInt32(radius * 1000.0);
+  SInt32 index = this.shapeKeyToIndex.get(key, -1);
+  if(index > -1)
+    return this.shapes[index];
+
+  Bt2Shape shape = this.addShape(key, btSphereShape(radius), false);
+
+  // debug drawing
+  if(shape.isValid() && this.handle != null)
+  {
+    key = this.uid() + '_shape_' + shape.index;
+    PolygonMesh mesh(key);
+    mesh.addSphere(Xfo(), radius, 10, true, true);
+    InlineDrawing drawing = this.handle.getDrawing();
+    InlineShape drawShape = InlineMeshShape(key, mesh);
+    drawing.registerShape(drawShape);
+    this.drawShapes[shape.index] = drawShape;
+  }
+
+  return shape;
+}
+
+/// \dfgPresetFolder Shapes
+/// \dfgPresetDefault halfExtents {"x": 0.5, "y": 1.0, "z": 0.5}
+function Bt2Shape Bt2World.getOrAddCylinder!(Vec3 halfExtents)
+{
+  String key = 'CYLINDER_' + SInt32(halfExtents.x * 1000.0) + '_' + SInt32(halfExtents.y * 1000.0) + '_' + SInt32(halfExtents.z * 1000.0);
+  SInt32 index = this.shapeKeyToIndex.get(key, -1);
+  if(index > -1)
+    return this.shapes[index];
+
+  Bt2Shape shape = this.addShape(key, btCylinderShape(halfExtents), false);
+
+  // debug drawing
+  if(shape.isValid() && this.handle != null)
+  {
+    key = this.uid() + '_shape_' + shape.index;
+    PolygonMesh mesh(key);
+    Xfo xfo;
+    xfo.sc = halfExtents;
+    mesh.addCylinder(xfo, 1, 2, true, 8, 2, true, true);
+    InlineDrawing drawing = this.handle.getDrawing();
+    InlineShape drawShape = InlineMeshShape(key, mesh);
+    drawing.registerShape(drawShape);
+    this.drawShapes[shape.index] = drawShape;
+  }
+
+  return shape;
+}
+
+/// \dfgPresetFolder Shapes
+/// \dfgPresetDefault radius 1.0
+/// \dfgPresetDefault height 2.0
+function Bt2Shape Bt2World.getOrAddCone!(Float32 radius, Float32 height)
+{
+  String key = 'CONE_' + SInt32(radius * 1000.0);
+  SInt32 index = this.shapeKeyToIndex.get(key, -1);
+  if(index > -1)
+    return this.shapes[index];
+
+  Bt2Shape shape = this.addShape(key, btConeShape(radius, height), false);
+
+  // debug drawing
+  if(shape.isValid() && this.handle != null)
+  {
+    key = this.uid() + '_shape_' + shape.index;
+    PolygonMesh mesh(key);
+    mesh.addCone(Xfo(), radius, height, true, 10, true, true);
+    InlineDrawing drawing = this.handle.getDrawing();
+    InlineShape drawShape = InlineMeshShape(key, mesh);
+    drawing.registerShape(drawShape);
+    this.drawShapes[shape.index] = drawShape;
+  }
+
+  return shape;
+}
+
+/// \dfgPresetFolder Shapes
+/// \dfgPresetDefault radius 0.25
+/// \dfgPresetDefault height 2.0
+function Bt2Shape Bt2World.getOrAddCapsule!(Float32 radius, Float32 height)
+{
+  String key = 'CAPSULE_' + SInt32(radius * 1000.0);
+  SInt32 index = this.shapeKeyToIndex.get(key, -1);
+  if(index > -1)
+    return this.shapes[index];
+
+  Bt2Shape shape = this.addShape(key, btCapsuleShape(radius, height), false);
+
+  // debug drawing
+  if(shape.isValid() && this.handle != null)
+  {
+    key = this.uid() + '_shape_' + shape.index;
+    PolygonMesh mesh(key);
+    mesh.addCylinder(Xfo(), radius, height - 2.0 * radius, false, 8, 2, true, true);
+    mesh.addSphere(Xfo(Vec3(0, height * 0.5 - radius, 0)), radius, 8, true, false);
+    mesh.addSphere(Xfo(Vec3(0, radius - height * 0.5, 0)), radius, 8, true, false);
+    InlineDrawing drawing = this.handle.getDrawing();
+    InlineShape drawShape = InlineMeshShape(key, mesh);
+    drawing.registerShape(drawShape);
+    this.drawShapes[shape.index] = drawShape;
+  }
+
+  return shape;
+}
+
+/// \dfgPresetFolder Shapes
+/// \dfgPresetDefault name "convex"
+function Bt2Shape Bt2World.getOrAddConvexHull!(String name, Vec3 points[], SInt32 limit, SInt32 version)
+{
+  SInt32 count = limit;
+  if(count == 0 || count > points.size())
+    count = points.size();
+
+  if(count == 0)
+    return Bt2Shape();
+
+  String key = 'CONVEXHULL_' + name + '_' + points.size() + '_' + limit + '_' + version;
+  SInt32 index = this.shapeKeyToIndex.get(key, -1);
+  if(index > -1)
+    return this.shapes[index];
+
+  CxxFloat32ConstPtr ptr(points.data());
+  btConvexHullShape hull(ptr, points.size(), 12 /* 4 floats */);
+  return this.addShape(key, hull, false);
+}
+
+/// \dfgPresetFolder Shapes
+function Bt2Shape Bt2World.getOrAddConvexHullFromGeo!(Geometry geometry)
+{
+  if(!geometry)
+    return Bt2Shape();
+  GeometryAttributes attributes = geometry.getAttributes();
+  Vec3Attribute positions = attributes.getAttribute('positions');
+  return this.getOrAddConvexHull(geometry.uid(), positions.values, attributes.size(), positions.version);
+}
+
+/// \dfgPresetFolder Shapes
+function Bt2Shape Bt2World.getOrAddConvexHullFromMesh!(PolygonMesh mesh)
+{
+  if(!mesh)
+    return Bt2Shape();
+  GeometryAttributes attributes = mesh.getAttributes();
+  Vec3Attribute positions = attributes.getAttribute('positions');
+  Bt2Shape shape = this.getOrAddConvexHull(mesh.uid(), positions.values, mesh.pointCount(), positions.version);
+
+  // debug drawing
+  if(shape.isValid() && this.handle != null)
+  {
+    String key = this.uid() + '_shape_' + shape.index;
+    InlineDrawing drawing = this.handle.getDrawing();
+    InlineShape drawShape = InlineMeshShape(key, mesh);
+    drawing.registerShape(drawShape);
+    this.drawShapes[shape.index] = drawShape;
+  }
+
+  return shape;
+}
+
+/// \dfgPresetFolder Shapes
+/// \dfgPresetDefault name "convex"
+function Bt2Shape Bt2World.getOrAddGImpactShape!(PolygonMesh mesh, PolygonMesh drawMesh)
+{
+  if(!this.gimpactEnabled)
+    return Bt2Shape();
+  if(!mesh)
+    return Bt2Shape();
+  if(mesh.pointCount() == 0)
+    return Bt2Shape();
+  if(mesh.polygonCount() == 0)
+    return Bt2Shape();
+
+  String key = 'GIMPACT_' + mesh.uid() + '_' + mesh.getVersion();
+  SInt32 index = this.shapeKeyToIndex.get(key, -1);
+  if(index > -1)
+    return this.shapes[index];
+
+  GeometryAttributes attributes = mesh.getAttributes();
+  Vec3Attribute positions = attributes.getAttribute('positions');
+
+  UInt32 triangles[] = mesh.generateTriangleList();
+  SInt32 triangesSInt32[](triangles.size());
+  for(Size i=0;i<triangles.size();i++)
+    triangesSInt32[i] = triangles[i];
+
+  CxxSInt32Ptr trianglesPtr(triangesSInt32.data());
+  CxxFloat32Ptr positionsPtr(positions.values.data());
+  btStridingMeshInterface triMesh = btTriangleIndexVertexArray(triangles.size() / 3, trianglesPtr, 12, mesh.pointCount(), positionsPtr, 12);
+  btGImpactMeshShape gimpactShape(triMesh);
+  gimpactShape.updateBound();
+
+  Bt2Shape shape = this.addShape(key, gimpactShape, false);
+
+  // debug drawing
+  if(shape.isValid() && this.handle != null)
+  {
+    key = this.uid() + '_shape_' + shape.index;
+    InlineDrawing drawing = this.handle.getDrawing();
+    PolygonMesh meshToDraw = mesh;
+    if(drawMesh)
+      meshToDraw = drawMesh;
+    InlineShape drawShape = InlineMeshShape(key, meshToDraw);
+    drawing.registerShape(drawShape);
+    this.drawShapes[shape.index] = drawShape;
+  }
+
+  return shape;
+}
+
+/// \dfgPresetFolder Shapes
+/// \dfgPresetDefault name "convex"
+function Bt2Shape Bt2World.getOrAddStaticMeshShape!(PolygonMesh mesh)
+{
+  if(!mesh)
+    return Bt2Shape();
+  if(mesh.pointCount() == 0)
+    return Bt2Shape();
+  if(mesh.polygonCount() == 0)
+    return Bt2Shape();
+
+  String key = 'STATICMESH_' + mesh.uid() + '_' + mesh.getVersion();
+  SInt32 index = this.shapeKeyToIndex.get(key, -1);
+  if(index > -1)
+    return this.shapes[index];
+
+  GeometryAttributes attributes = mesh.getAttributes();
+  Vec3Attribute positions = attributes.getAttribute('positions');
+
+  UInt32 triangles[] = mesh.generateTriangleList();
+  SInt32 triangesSInt32[](triangles.size());
+  for(Size i=0;i<triangles.size();i++)
+    triangesSInt32[i] = triangles[i];
+
+  CxxSInt32Ptr trianglesPtr(triangesSInt32.data());
+  CxxFloat32Ptr positionsPtr(positions.values.data());
+  btStridingMeshInterface triMesh = btTriangleIndexVertexArray(triangles.size() / 3, trianglesPtr, 12, mesh.pointCount(), positionsPtr, 12);
+
+  Bt2Shape shape = this.addShape(key, btBvhTriangleMeshShape(triMesh, true, true), true);
+
+  // debug drawing
+  if(shape.isValid() && this.handle != null)
+  {
+    key = this.uid() + '_shape_' + shape.index;
+    InlineDrawing drawing = this.handle.getDrawing();
+    InlineShape drawShape = InlineMeshShape(key, mesh);
+    drawing.registerShape(drawShape);
+    this.drawShapes[shape.index] = drawShape;
+  }
+
+  return shape;
+}

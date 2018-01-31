@@ -1,0 +1,72 @@
+namespace AnimX
+{
+  object KeyIds
+  {
+    private Index ids[];
+    private Index idToIndex[];
+  };
+  
+  inline Size KeyIds.size() { return this.ids.size(); }
+
+  inline KeyIds.set!( Index i, Index id ) { this.ids[i] = id; this.idToIndex[id] = i; }
+
+  inline Index KeyIds.getId( Index i ) { return this.ids[i]; }
+  inline Index KeyIds.getIndex( Index id ) { return this.idToIndex[id]; }
+
+  inline KeyIds.resize!( Size s ) { this.ids.resize( s ); this.idToIndex.resize( s ); }
+
+  inline KeyIds.push!()
+  {
+    Index newId = this.size();
+    this.resize( this.size()+1 );
+    this.set( this.size()-1, newId );
+  }
+
+  inline KeyIds.swap!( Index a, Index b )
+  {
+    Index tmpId = this.ids[a];
+    this.set( a, this.ids[b] );
+    this.set( b, tmpId );
+  }
+
+  inline KeyIds.reset!( Size s )
+  {
+    this.resize( s );
+    for( Index i = 0; i < this.size(); i++ )
+      this.set( i, i );
+  }
+
+  function KeyIds.remove!( Index index )
+  {
+    //this.reset( this.size()-1 );
+
+    Index removedId = this.ids[index];
+    // Shifting the Ids in the array
+    for( Index i = index; i < this.size()-1; i++ )
+      this.set( i, this.ids[i+1] );
+    // Decrementing the Ids after the removed one
+    for( Index id = removedId; id < this.size()-1; id++ )
+      this.set( this.idToIndex[id+1], id );
+    this.resize( this.size()-1 );
+  }
+
+  inline KeyIds.remove!( Index indices<> )
+  {
+    this.reset( this.size() - indices.size() ); 
+  }
+
+  function KeyIds.setId!( Index i, Index newId )
+  {
+    Index oldId = this.ids[i];
+    if( oldId != newId )
+    {
+      // Incrementing all the indices between the new and the old Id
+      for( Index id = oldId; id > newId; id-- ) // if newId < oldId
+        this.set( this.idToIndex[id-1], id );
+      // Decrementing all the indices between the old and the new Id
+      for( Index id = oldId; id < newId; id++ ) // if oldId < newId
+        this.set( this.idToIndex[id+1], id );
+      this.set( i, newId );
+    }
+  }
+}

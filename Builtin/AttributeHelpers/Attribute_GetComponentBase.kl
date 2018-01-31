@@ -1,0 +1,65 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Geometry;
+
+/// \internal
+function GeometryAttribute BaseGeometry.getAttributeComponent!(
+  String source,
+  String target,
+  UInt32 index
+) {
+  GeometryAttributes attributes = this.attributes;
+  if(!attributes)
+    return null;
+
+  GeometryAttribute sourceAttr = attributes.getAttribute(source);
+  if(sourceAttr == null)
+  {
+    report('Error: GetComponent: Attribute '+source+' does not exist.');
+    return null;
+  }
+
+  GeometryAttribute targetAttr = attributes.getAttribute(target);
+  if(targetAttr != null && targetAttr.type() != ScalarAttribute) {
+    report('Error: GetComponent Attribute '+target+' already exists, but types differ. Existing '+targetAttr.type()+', requested: ScalarAttribute.');
+    return null;
+  }
+  ScalarAttribute targetCast = attributes.getOrCreateScalarAttribute(target);
+
+  switch(sourceAttr.type())
+  {
+    case Vec2Attribute:
+    {
+      if(!this.getVec2AttributeComponent(sourceAttr, targetCast, index))
+        return null;
+      break;
+    }
+    case Vec3Attribute:
+    {
+      if(!this.getVec3AttributeComponent(sourceAttr, targetCast, index))
+        return null;
+      break;
+    }
+    case Vec4Attribute:
+    {
+      if(!this.getVec4AttributeComponent(sourceAttr, targetCast, index))
+        return null;
+      break;
+    }
+    case ColorAttribute:
+    {
+      if(!this.getColorAttributeComponent(sourceAttr, targetCast, index))
+        return null;
+      break;
+    }
+    default:
+    {
+      report('Error: Turbulence: Unsupported attribute type '+sourceAttr.type());
+      return null;
+    }
+  }
+
+  return targetCast;
+}

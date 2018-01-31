@@ -1,0 +1,1293 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  Appends a transformed disc to this mesh.
+  \param xfo Created points will be transformed by this Xfo
+  \param radius Radius of the disc
+  \param arcAngle Disc portion (pie), in radians (full disc = `TWO_PI`)
+  \param detail Number of disc sides - 3
+  \param setNormals If true, point normals will be set
+  \param setUVs If true, some UVs will be set in the `uvs0` attribute
+  \category primitives
+  \dfgPresetDefault radius 2.0
+  \dfgPresetDefault arcAngle 5.0
+  \dfgPresetDefault detail 2
+  \dfgPresetDefault setNormals true
+  \dfgPresetDefault setUVs true
+  \dfgPresetRange radius (0.0, 8.0)
+  \dfgPresetRange arcAngle (0.0, 6.29)
+  \dfgPresetRange detail (2, 12)
+*/
+function PolygonMesh.addDisc!(Xfo xfo, Scalar radius, Scalar arcAngle, Size detail, Boolean setNormals, Boolean setUVs) {
+
+  Size nbSides = (detail >= 0) ? (detail + 3) : 3;
+  Size numVertices = nbSides + 1;
+
+  Size firstPoly = this.polygonCount();
+  Size firstPoint = this.createPoints(numVertices);
+
+    // Set the point positions
+  this.setPointPosition(firstPoint, xfo.transformVector(Vec3(0.0, 0.0, 0.0)));
+  for (Integer i = 0; i < nbSides; i++) {
+    Scalar theta = (i / Scalar(nbSides)) * arcAngle;
+    this.setPointPosition(firstPoint+i+1, xfo.transformVector(Vec3(radius * cos(theta), 0.0, radius * sin(theta))));
+  }
+
+  this.beginStructureChanges();
+  // build the topology
+  for (Integer i = 0; i < nbSides; i++) {
+    Integer j = (i + 1) % nbSides;
+    this.addPolygon(firstPoint, firstPoint+i, firstPoint+i+1);
+  }
+  this.endStructureChanges();
+
+  if(setUVs){
+    // set positions and normals
+    Ref<Vec2Attribute> uvs = this.getOrCreateVec2Attribute("uvs0");
+
+    for (Integer i = 0; i < nbSides; i++) {
+      this.setPolygonAttribute(i, 0, uvs, Vec2(Scalar(i) / Scalar(nbSides), 0.0));
+      this.setPolygonAttribute(i, 1, uvs, Vec2(Scalar(i+1) / Scalar(nbSides), 0.0));
+      this.setPolygonAttribute(i, 2, uvs, Vec2((Scalar(i)+0.5) / Scalar(nbSides), 1.0));
+    }
+  }
+
+  if(setNormals){
+    Ref<Vec3Attribute> normals = this.getOrCreateNormals();
+
+    Vec3 normal(0.0, 1.0, 0.0);
+    for (Integer i = 0; i < nbSides; i++) {
+      this.setPolygonAttribute(i, 0, normals, xfo.ori.rotateVector(normal));
+      this.setPolygonAttribute(i, 1, normals, xfo.ori.rotateVector(normal));
+      this.setPolygonAttribute(i, 2, normals, xfo.ori.rotateVector(normal));
+    }
+  }
+}
+
+/**
+  Appends a transformed cone to this mesh.
+  Before applying the transformation, cone's base will be centered at Y = -`height` / 2, and the tip will be at Y = `height` / 2.
+
+  \param xfo Created points will be transformed by this Xfo
+  \param radius Radius of cone's base
+  \param height Height of the cone
+  \param cap If true, a disc will be added at the base of the cone
+  \param detail Number of cone sides - 3
+  \param setNormals If true, point normals will be set
+  \param setUVs If true, some UVs will be set in the `uvs0` attribute
+  \category primitives
+  \dfgPresetDefault radius 2.0
+  \dfgPresetDefault height 4.0
+  \dfgPresetDefault cap true
+  \dfgPresetDefault detail 12
+  \dfgPresetDefault setNormals true
+  \dfgPresetDefault setUVs true
+  \dfgPresetRange radius (0.0, 8.0)
+  \dfgPresetRange height (0.0, 8.0)
+  \dfgPresetRange detail (2, 12)
+*/
+function PolygonMesh.addCone!(Xfo xfo, Scalar radius, Scalar height, Boolean cap, Size detail, Boolean setNormals, Boolean setUVs) {
+
+  Size nbSides = (detail >= 0) ? (detail + 3) : 3;
+  Size numVertices = nbSides + 1;
+  if (cap) {
+    numVertices += 1;
+  }
+  Size firstPoly = this.polygonCount();
+  Size firstPoint = this.createPoints(numVertices);
+  Size tipPoint = firstPoint+nbSides;
+  Size basePoint = tipPoint+1;
+
+  // Set the point positions
+  this.setPointPosition(tipPoint, xfo.transformVector(Vec3(0.0,(height / 2.0), 0.0)));
+  for (Integer i = 0; i < nbSides; i++) {
+    Scalar theta = (i / Scalar(nbSides)) * 2.0 * PI;
+    this.setPointPosition(firstPoint+i, xfo.transformVector(Vec3(radius * cos(theta), -height / 2.0, radius * sin(theta))));
+  }
+  if (cap) {
+    this.setPointPosition(basePoint, xfo.transformVector(Vec3(0.0,(-height / 2.0), 0.0)));
+  }
+
+  this.beginStructureChanges();
+  // build the topology
+  for (Integer i = 0; i < nbSides; i++) {
+    Integer j = (i + 1) % nbSides;
+    this.addPolygon(firstPoint+j, firstPoint+i, tipPoint);
+  }
+  if(cap) {
+    for (Integer i = 0; i < nbSides; i++) {
+      Integer j = (i + 1) % nbSides;
+      this.addPolygon(firstPoint+i, firstPoint+j, basePoint);
+    }
+  }
+  this.endStructureChanges();
+
+  
+  if(setUVs){
+    // set positions and normals
+    Ref<Vec2Attribute> uvs = this.getOrCreateVec2Attribute("uvs0");
+
+    // Now set the attrbute values
+    for (Integer i = 0; i < nbSides; i++) {
+      this.setPolygonAttribute(firstPoly+i, 0, uvs, Vec2(Scalar(i+1) / Scalar(nbSides), 0.0));
+      this.setPolygonAttribute(firstPoly+i, 1, uvs, Vec2(Scalar(i) / Scalar(nbSides), 0.0));
+      this.setPolygonAttribute(firstPoly+i, 2, uvs, Vec2((Scalar(i)+0.5) / Scalar(nbSides), 1.0));
+    }
+    if (cap) {
+      for (Integer i = 0; i < nbSides; i++) {
+        this.setPolygonAttribute(firstPoly+i+nbSides, 0, uvs, Vec2(Scalar(i) / Scalar(nbSides), 0.0));
+        this.setPolygonAttribute(firstPoly+i+nbSides, 1, uvs, Vec2(Scalar(i+1) / Scalar(nbSides), 0.0));
+        this.setPolygonAttribute(firstPoly+i+nbSides, 2, uvs, Vec2((Scalar(i)+0.5) / Scalar(nbSides), 1.0));
+      }
+    }
+  }
+
+  if(setNormals){
+    Ref<Vec3Attribute> normals = this.getOrCreateNormals();
+
+    Scalar normalElevation;
+    Scalar divider = height;
+    if( abs(height) < 1.0e-12 )
+      normalElevation = height < 0 ? -1.0e-12 : 1.0e-12;
+    normalElevation = radius / divider;
+
+    // Now set the attrbute values
+    for (Integer i = 0; i < nbSides; i++) {
+      Scalar theta1 = ((i+1) / Scalar(nbSides)) * 2.0 * PI;
+      this.setPolygonAttribute(firstPoly+i, 0, normals, xfo.ori.rotateVector(Vec3(cos(theta1), normalElevation, sin(theta1)).unit()));
+
+      Scalar theta2 = (i / Scalar(nbSides)) * 2.0 * PI;
+      this.setPolygonAttribute(firstPoly+i, 1, normals, xfo.ori.rotateVector(Vec3(cos(theta2), normalElevation, sin(theta2)).unit()));
+
+      Scalar theta = (theta1 + theta2) * 0.5;
+      this.setPolygonAttribute(firstPoly+i, 2, normals, xfo.ori.rotateVector(Vec3(cos(theta), normalElevation, sin(theta)).unit()));
+    }
+    if (cap) {
+      Vec3 normal(0.0, -1.0, 0.0);
+      for (Integer i = 0; i < nbSides; i++) {
+        this.setPolygonAttribute(firstPoly+i+nbSides, 0, normals, xfo.ori.rotateVector(normal));
+        this.setPolygonAttribute(firstPoly+i+nbSides, 1, normals, xfo.ori.rotateVector(normal));
+        this.setPolygonAttribute(firstPoly+i+nbSides, 2, normals, xfo.ori.rotateVector(normal));
+      }
+    }
+  }
+}
+
+/**
+  Appends a transformed cone to this mesh, with no normals nor UVs.
+  Before applying the transformation, cone's base is centered at Y = -`height` / 2, and the tip will be at Y = `height` / 2.
+
+  \param xfo Created points will be transformed by this Xfo
+  \param radius Radius of cone's base
+  \param height Height of the cone
+  \param cap If true, a disc will be added at the base of the cone
+  \param detail Number of cone sides - 3
+  \category primitives
+*/
+function PolygonMesh.addCone!(Xfo xfo, Scalar radius, Scalar height, Boolean cap, Size detail) {
+  this.addCone(xfo, radius, height, cap, detail, false, false);
+}
+
+
+/**
+  Appends a transformed cuboid (cube with specified size) to this mesh.
+  Before applying the transformation, the cuboid is centered at the origin,
+  and has a range of [-x/2 .. x/2, -y/2 .. y/2, -z/2 .. z/2].
+
+  \param xfo Created points will be transformed by this Xfo
+  \param x Length of the cube, in x
+  \param y Length of the cube, in y
+  \param z Length of the cube, in z
+  \param setNormals If true, point normals will be set
+  \param setUVs If true, some UVs will be set in the `uvs0` attribute
+  \category primitives
+  \dfgPresetDefault x 2.0
+  \dfgPresetDefault y 2.0
+  \dfgPresetDefault z 2.0
+  \dfgPresetDefault setNormals true
+  \dfgPresetDefault setUVs true
+  \dfgPresetRange x (0.0, 8.0)
+  \dfgPresetRange y (0.0, 8.0)
+  \dfgPresetRange z (0.0, 8.0)
+*/
+function PolygonMesh.addCuboid!(Xfo xfo, Scalar x, Scalar y, Scalar z, Boolean setNormals, Boolean setUVs) {
+  
+  Size firstPoly = this.polygonCount();
+  Size firstPoint = this.createPoints(8);
+  this.setPointPosition(firstPoint+0, xfo.transformVector(Vec3(0.5 * x, -0.5 * y, 0.5 * z)));
+  this.setPointPosition(firstPoint+1, xfo.transformVector(Vec3(-0.5 * x, -0.5 * y, 0.5 * z)));
+  this.setPointPosition(firstPoint+2, xfo.transformVector(Vec3(0.5 * x, 0.5 * y, 0.5 * z)));
+  this.setPointPosition(firstPoint+3, xfo.transformVector(Vec3(-0.5 * x, 0.5 * y, 0.5 * z)));
+  this.setPointPosition(firstPoint+4, xfo.transformVector(Vec3(-0.5 * x, -0.5 * y, -0.5 * z)));
+  this.setPointPosition(firstPoint+5, xfo.transformVector(Vec3(0.5 * x, -0.5 * y, -0.5 * z)));
+  this.setPointPosition(firstPoint+6, xfo.transformVector(Vec3(-0.5 * x, 0.5 * y, -0.5 * z)));
+  this.setPointPosition(firstPoint+7, xfo.transformVector(Vec3(0.5 * x, 0.5 * y, -0.5 * z)));
+
+  this.beginStructureChanges();
+  this.addPolygon(firstPoint+0, firstPoint+2, firstPoint+3, firstPoint+1);
+  this.addPolygon(firstPoint+4, firstPoint+6, firstPoint+7, firstPoint+5);
+  this.addPolygon(firstPoint+2, firstPoint+7, firstPoint+6, firstPoint+3);
+  this.addPolygon(firstPoint+0, firstPoint+1, firstPoint+4, firstPoint+5);
+  this.addPolygon(firstPoint+0, firstPoint+5, firstPoint+7, firstPoint+2);
+  this.addPolygon(firstPoint+1, firstPoint+3, firstPoint+6, firstPoint+4);
+  this.endStructureChanges();
+
+  if(setNormals){
+    Ref<Vec3Attribute> normals = this.getOrCreateNormals();
+
+    // Set Points Normals
+    Vec3 normal;
+
+    // Face 0 (+Z)
+    normal = Vec3(0.0,0.0,1.0);
+    this.setPolygonAttribute(firstPoly+0, 0, normals, xfo.ori.rotateVector(normal));
+    this.setPolygonAttribute(firstPoly+0, 1, normals, xfo.ori.rotateVector(normal));
+    this.setPolygonAttribute(firstPoly+0, 2, normals, xfo.ori.rotateVector(normal));
+    this.setPolygonAttribute(firstPoly+0, 3, normals, xfo.ori.rotateVector(normal));
+
+    // Face 1 (-Z)
+    normal = Vec3(0.0,0.0,-1.0);
+    this.setPolygonAttribute(firstPoly+1, 0, normals, xfo.ori.rotateVector(normal));
+    this.setPolygonAttribute(firstPoly+1, 1, normals, xfo.ori.rotateVector(normal));
+    this.setPolygonAttribute(firstPoly+1, 2, normals, xfo.ori.rotateVector(normal));
+    this.setPolygonAttribute(firstPoly+1, 3, normals, xfo.ori.rotateVector(normal));
+
+    // Face 2 (+Y)
+    normal = Vec3(0.0,1.0,0.0);
+    this.setPolygonAttribute(firstPoly+2, 0, normals, xfo.ori.rotateVector(normal));
+    this.setPolygonAttribute(firstPoly+2, 1, normals, xfo.ori.rotateVector(normal));
+    this.setPolygonAttribute(firstPoly+2, 2, normals, xfo.ori.rotateVector(normal));
+    this.setPolygonAttribute(firstPoly+2, 3, normals, xfo.ori.rotateVector(normal));
+
+    // Face 3 (-Y)
+    normal = Vec3(0.0,-1.0,0.0);
+    this.setPolygonAttribute(firstPoly+3, 0, normals, xfo.ori.rotateVector(normal));
+    this.setPolygonAttribute(firstPoly+3, 1, normals, xfo.ori.rotateVector(normal));
+    this.setPolygonAttribute(firstPoly+3, 2, normals, xfo.ori.rotateVector(normal));
+    this.setPolygonAttribute(firstPoly+3, 3, normals, xfo.ori.rotateVector(normal));
+
+    // Face 4 (+X)
+    normal = Vec3(1.0,0.0,0.0);
+    this.setPolygonAttribute(firstPoly+4, 0, normals, xfo.ori.rotateVector(normal));
+    this.setPolygonAttribute(firstPoly+4, 1, normals, xfo.ori.rotateVector(normal));
+    this.setPolygonAttribute(firstPoly+4, 2, normals, xfo.ori.rotateVector(normal));
+    this.setPolygonAttribute(firstPoly+4, 3, normals, xfo.ori.rotateVector(normal)); 
+
+     // Face 5 (-X)
+    normal = Vec3(-1.0,0.0,0.0);
+    this.setPolygonAttribute(firstPoly+5, 0, normals, xfo.ori.rotateVector(normal));
+    this.setPolygonAttribute(firstPoly+5, 1, normals, xfo.ori.rotateVector(normal));
+    this.setPolygonAttribute(firstPoly+5, 2, normals, xfo.ori.rotateVector(normal));
+    this.setPolygonAttribute(firstPoly+5, 3, normals, xfo.ori.rotateVector(normal));
+  }
+
+  if(setUVs){
+    // Set Uvs
+    Ref<Vec2Attribute> uvs = this.getOrCreateVec2Attribute("uvs0");
+
+    // Face 0 (+Z)
+    this.setPolygonAttribute(firstPoly+0, 0, uvs, Vec2(1.0,1.0));
+    this.setPolygonAttribute(firstPoly+0, 1, uvs, Vec2(1.0,0.0));
+    this.setPolygonAttribute(firstPoly+0, 2, uvs, Vec2(0.0,0.0));
+    this.setPolygonAttribute(firstPoly+0, 3, uvs, Vec2(0.0,1.0));
+
+    // Face 1 (-Z)
+    this.setPolygonAttribute(firstPoly+1, 0, uvs, Vec2(1.0,1.0));
+    this.setPolygonAttribute(firstPoly+1, 1, uvs, Vec2(1.0,0.0));
+    this.setPolygonAttribute(firstPoly+1, 2, uvs, Vec2(0.0,0.0));
+    this.setPolygonAttribute(firstPoly+1, 3, uvs, Vec2(0.0,1.0));
+
+    // Face 2 (+Y)
+    this.setPolygonAttribute(firstPoly+2, 0, uvs, Vec2(1.0,1.0));
+    this.setPolygonAttribute(firstPoly+2, 1, uvs, Vec2(1.0,0.0));
+    this.setPolygonAttribute(firstPoly+2, 2, uvs, Vec2(0.0,0.0));
+    this.setPolygonAttribute(firstPoly+2, 3, uvs, Vec2(0.0,1.0));
+
+    // Face 3 (-Y)
+    this.setPolygonAttribute(firstPoly+3, 0, uvs, Vec2(1.0,0.0));
+    this.setPolygonAttribute(firstPoly+3, 1, uvs, Vec2(1.0,1.0));
+    this.setPolygonAttribute(firstPoly+3, 2, uvs, Vec2(0.0,1.0));
+    this.setPolygonAttribute(firstPoly+3, 3, uvs, Vec2(0.0,0.0));
+
+    // Face 4 (+X)
+    this.setPolygonAttribute(firstPoly+4, 0, uvs, Vec2(0.0,1.0));
+    this.setPolygonAttribute(firstPoly+4, 1, uvs, Vec2(1.0,1.0));
+    this.setPolygonAttribute(firstPoly+4, 2, uvs, Vec2(1.0,0.0));
+    this.setPolygonAttribute(firstPoly+4, 3, uvs, Vec2(0.0,0.0));
+
+    // Face 5 (-X)
+    this.setPolygonAttribute(firstPoly+5, 0, uvs, Vec2(1.0,1.0));
+    this.setPolygonAttribute(firstPoly+5, 1, uvs, Vec2(1.0,0.0));
+    this.setPolygonAttribute(firstPoly+5, 2, uvs, Vec2(0.0,0.0));
+    this.setPolygonAttribute(firstPoly+5, 3, uvs, Vec2(0.0,1.0));
+  }
+}
+
+/**
+  Appends a transformed cuboid (cube with specified size) to this mesh.
+  Before applying the transformation, the cuboid is centered at the origin,
+  and has a range of [-x/2 .. x/2, -y/2 .. y/2, -z/2 .. z/2].
+
+  \param xfo Created points will be transformed by this Xfo
+  \param x Length of the cube, in x
+  \param y Length of the cube, in y
+  \param z Length of the cube, in z
+  \category primitives
+*/
+function PolygonMesh.addCuboid!(Xfo xfo, Scalar x, Scalar y, Scalar z) {
+  this.addCuboid(xfo, x, y, z, false, false);
+}
+
+/// See :kl-ref:`PolygonMesh.addCuboid`
+/// \category primitives
+/// \dfgPresetOmit
+function PolygonMesh.addCube!(Xfo xfo, Scalar x, Scalar y, Scalar z) {
+  this.addCuboid(xfo, x, y, z, false, false);
+}
+
+/**
+  Appends a transformed cylinder to this mesh.
+  Before applying the transformation, the base will be centered at Y = -`height` / 2, and its top will be at Y = `height` / 2.
+
+  \param xfo Created points will be transformed by this Xfo
+  \param radius Radius of the cylinder
+  \param height Height of the cylinder
+  \param caps If true, a disc will be added at the base and the top of the cylinder (closed)
+  \param sides Number of cylinder sides
+  \param loops Number of cylinder loops along its height
+  \param setNormals If true, point normals will be set
+  \param setUVs If true, some UVs will be set in the `uvs0` attribute
+  \category primitives
+  \dfgPresetDefault radius 1.0
+  \dfgPresetDefault height 4.0
+  \dfgPresetDefault caps true
+  \dfgPresetDefault sides 8
+  \dfgPresetDefault loops 4
+  \dfgPresetDefault setNormals true
+  \dfgPresetDefault setUVs true
+  \dfgPresetRange radius (0.0, 8.0)
+  \dfgPresetRange height (0.0, 8.0)
+  \dfgPresetRange sides (3, 24)
+  \dfgPresetRange loops (2, 24)
+*/
+function PolygonMesh.addCylinder!(Xfo xfo, Scalar radius, Scalar height, Boolean caps, Integer sides, Integer loops, Boolean setNormals, Boolean setUVs) {
+
+  Size nb_sides = sides > 3 ? sides : 3;
+  Size nb_loops = loops > 2 ? loops : 2;
+  Size nb_pts = nb_sides * nb_loops;
+  if (caps) {
+    nb_pts += 2;
+  }
+
+  Size firstPoly = this.polygonCount();
+  Size firstPoint = this.createPoints(nb_pts);
+  
+  Ref<Vec2Attribute> uvs = null;
+  if(setUVs)
+    uvs = this.getOrCreateVec2Attribute("uvs0");
+
+  Ref<Vec3Attribute> normals = null;
+  if(setNormals)
+    normals = this.getOrCreateNormals();
+
+  this.beginStructureChanges();
+
+  // build the topology for the body of the cylinder
+
+  for (UInt32 i = 0; i < (nb_loops-1); i++) {
+    for (UInt32 j = 0; j < nb_sides; j++) {
+      UInt32 v0, v1, v2, v3;
+      v0 = (nb_sides * i) + j;
+      v1 = (nb_sides * i) + ((j + 1) % nb_sides);
+      v2 = (nb_sides * (i+1)) + ((j + 1) % nb_sides);
+      v3 = (nb_sides * (i+1)) + j;
+      UInt32 polyId = this.addPolygon( firstPoint+v0, firstPoint+v1, firstPoint+v2, firstPoint+v3 );
+
+      if(setUVs){
+        Vec2 uv0(1.0 - (Scalar(j) / Scalar(nb_sides)), Scalar(i) / Scalar(nb_loops-1));
+        this.setPolygonAttribute(polyId, 0, uvs, uv0 );
+        Vec2 uv1(1.0 - (Scalar(j+1) / Scalar(nb_sides)), Scalar(i) / Scalar(nb_loops-1));
+        this.setPolygonAttribute(polyId, 1, uvs, uv1 );
+        Vec2 uv2(1.0 - (Scalar(j+1) / Scalar(nb_sides)), Scalar(i+1) / Scalar(nb_loops-1));
+        this.setPolygonAttribute(polyId, 2, uvs, uv2 );
+        Vec2 uv3(1.0 - (Scalar(j) / Scalar(nb_sides)), Scalar(i+1) / Scalar(nb_loops-1));
+        this.setPolygonAttribute(polyId, 3, uvs, uv3 );
+      }
+      if(setNormals){
+        Scalar phi = (j / Scalar(nb_sides)) * 2.0 * PI;
+        Vec3 normal1 = xfo.ori.rotateVector( Vec3( sin(phi), 0.0, cos(phi) ) );
+        this.setPolygonAttribute(polyId, 0, normals, normal1 );
+        this.setPolygonAttribute(polyId, 3, normals, normal1 );
+
+        phi = ((j+1) / Scalar(nb_sides)) * 2.0 * PI;
+        Vec3 normal2 = xfo.ori.rotateVector( Vec3( sin(phi), 0.0, cos(phi) ) );
+        this.setPolygonAttribute(polyId, 1, normals, normal2 );
+        this.setPolygonAttribute(polyId, 2, normals, normal2 );
+      }
+    }
+  }
+
+  if (caps) {
+    // Bottom cap topology 
+    for (UInt32 j = 0; j < nb_sides; j++) {
+      UInt32 v0, v1, v2;
+      v0 = nb_pts - 1;
+      v1 = ((j + 1) % nb_sides);
+      v2 = j;
+      UInt32 polyId = this.addPolygon( firstPoint+v0, firstPoint+v1, firstPoint+v2 );
+
+      if(setUVs){
+        Vec2 uv0(0.5, 0.0);
+        this.setPolygonAttribute(polyId, 0, uvs, uv0 );
+        Vec2 uv1(1.0 - (Scalar(j+1) / Scalar(nb_sides)), 1.0);
+        this.setPolygonAttribute(polyId, 1, uvs, uv1 );
+        Vec2 uv2(1.0 - (Scalar(j) / Scalar(nb_sides)), 1.0);
+        this.setPolygonAttribute(polyId, 2, uvs, uv2 );
+      }
+      if(setNormals){
+        Vec3 normal = xfo.ori.rotateVector( Vec3( 0.0, -1.0, 0.0 ) );
+        this.setPolygonAttribute(polyId, 0, normals, normal );
+        this.setPolygonAttribute(polyId, 1, normals, normal );
+        this.setPolygonAttribute(polyId, 2, normals, normal );
+      }
+    }
+    // Top cap topology
+    for (UInt32 j = 0; j < nb_sides; j++) {
+      UInt32 v0, v1, v2;
+
+      v0 = (nb_sides * (nb_loops-1)) + j;
+      v1 = (nb_sides * (nb_loops-1)) + ((j + 1) % nb_sides);
+      v2 = nb_pts - 2;
+      UInt32 polyId = this.addPolygon( firstPoint+v0, firstPoint+v1, firstPoint+v2 );
+      if(setUVs){
+        Vec2 uv0(1.0 - (Scalar(j) / Scalar(nb_sides)), 0.0);
+        this.setPolygonAttribute(polyId, 0, uvs, uv0 );
+        Vec2 uv1(1.0 - (Scalar(j+1) / Scalar(nb_sides)), 0.0);
+        this.setPolygonAttribute(polyId, 1, uvs, uv1 );
+        Vec2 uv2(0.5, 1.0);
+        this.setPolygonAttribute(polyId, 2, uvs, uv2 );
+      }
+      if(setNormals){
+        Vec3 normal = xfo.ori.rotateVector( Vec3( 0.0, 1.0, 0.0 ) );
+        this.setPolygonAttribute(polyId, 0, normals, normal );
+        this.setPolygonAttribute(polyId, 1, normals, normal );
+        this.setPolygonAttribute(polyId, 2, normals, normal );
+      }
+    }
+  }
+  this.endStructureChanges();
+
+  // Set positions
+  Integer voff = firstPoint;
+  for (UInt32 i = 0; i < nb_loops; i++) {
+    Scalar y = ((i / Scalar(nb_loops-1)) * height) - (height * 0.5);
+    for (UInt32 j = 0; j < nb_sides; j++) {
+      Scalar phi = (j / Scalar(nb_sides)) * 2.0 * PI;
+      this.setPointPosition(voff, xfo.transformVector(Vec3( sin(phi) * radius, y, cos(phi) * radius )));
+      voff++;
+    }
+  }
+  if (caps) {
+    // Top cap
+    this.setPointPosition(firstPoint + nb_pts - 1, xfo.transformVector(Vec3(0.0, height * -0.5, 0.0)));
+    this.setPointPosition(firstPoint + nb_pts - 2, xfo.transformVector(Vec3(0, height * 0.5, 0)));
+  }
+}
+
+/**
+  Appends a transformed cylinder to this mesh, with no normals nor UVs.
+  Before applying the transformation, the base will be centered at Y = -`height` / 2, and its top will be at Y = `height` / 2.
+
+  \param xfo Created points will be transformed by this Xfo
+  \param radius Radius of the cylinder
+  \param height Height of the cylinder
+  \param caps If true, a disc will be added at the base and the top of the cylinder (closed)
+  \param sides Number of cylinder sides
+  \param loops Number of cylinder loops along its height
+  \category primitives
+*/
+function PolygonMesh.addCylinder!(Xfo xfo, Scalar radius, Scalar height, Boolean caps, Integer sides, Integer loops) {
+  this.addCylinder(xfo, radius, height, caps, sides, loops, false, false);
+}
+
+/**
+  Appends a transformed plane to this mesh.
+  Before applying the transformation, it will be in the XZ plane, centered at the origin.
+
+  \param xfo Created points will be transformed by this Xfo
+  \param length Length of the plane (in Z)
+  \param width Width of the plane (in X)
+  \param lengthSections Number of polygon rows along the length
+  \param widthSections Number of polygon rows along the width
+  \param setNormals If true, point normals will be set
+  \param setUVs If true, some UVs will be set in the `uvs0` attribute
+  \category primitives
+  \dfgPresetDefault length 4.0
+  \dfgPresetDefault width 4.0
+  \dfgPresetDefault lengthSections 4
+  \dfgPresetDefault widthSections 4
+  \dfgPresetDefault setNormals true
+  \dfgPresetDefault setUVs true
+  \dfgPresetRange length (0.0, 8.0)
+  \dfgPresetRange width (0.0, 8.0)
+  \dfgPresetRange lengthSections (2, 24)
+  \dfgPresetRange widthSections (2, 24)
+*/
+function PolygonMesh.addPlane!(Xfo xfo, Scalar length, Scalar width, Size lengthSections, Size widthSections, Boolean setNormals, Boolean setUVs) {
+  Size firstPoint = this.createPoints(Size((lengthSections + 1) * (widthSections + 1)) );
+  this.beginStructureChanges();
+  for (Size i = 0; i < lengthSections; i++) {
+    for (Size j = 0; j < widthSections; j++) {
+      Size v0, v1, v2, v3;
+      v0 = firstPoint+((widthSections + 1) * i) + (j + 1);
+      v1 = firstPoint+((widthSections + 1) * i) + j;
+      v2 = firstPoint+((widthSections + 1) * (i+1)) + j;
+      v3 = firstPoint+((widthSections + 1) * (i+1)) + (j + 1);
+      this.addPolygon( v0, v1, v2, v3 );
+    }
+  }
+  this.endStructureChanges();
+
+  Size voff = firstPoint;
+  for (Size i = 0; i <= lengthSections; i++) {
+    Scalar z = ((i / Scalar(lengthSections))-0.5) * length;
+    for (Size j = 0; j <= widthSections; j++) {
+      Scalar x = ((j / Scalar(widthSections))-0.5) * width;
+      this.setPointPosition( voff, xfo.transformVector(Vec3( x, 0.0, z )));
+      voff++;
+    }
+  }
+  if(setNormals){
+    Ref<Vec3Attribute> normals = this.getOrCreateNormals();
+    voff = firstPoint;
+    for (Size i = 0; i <= lengthSections; i++) {
+      for (Size j = 0; j <= widthSections; j++) {
+        this.setPointAttribute( voff, normals, xfo.ori.rotateVector(Vec3(0.0, 1.0, 0.0)));
+        voff++;
+      }
+    }
+  }
+  if(setUVs){
+    Ref<Vec2Attribute> uvs = this.getOrCreateVec2Attribute("uvs0");
+    voff = firstPoint;
+    for (Size i = 0; i <= lengthSections; i++) {
+      for (Size j = 0; j <= widthSections; j++) {
+        this.setPointAttribute( voff, uvs, Vec2(Scalar(j) / Scalar(widthSections), Scalar(i) / Scalar(lengthSections)) );
+        voff++;
+      }
+    }
+  }
+}
+
+/**
+  Appends a transformed plane to this mesh, with no normals nor UVs.
+  Before applying the transformation, it will be in the XZ plane, centered at the origin.
+
+  \param xfo Created points will be transformed by this Xfo
+  \param length Length of the plane (in Z)
+  \param width Width of the plane (in X)
+  \param lengthSections Number of polygon rows along the length
+  \param widthSections Number of polygon rows along the width
+  \category primitives
+*/
+function PolygonMesh.addPlane!(Xfo xfo, Scalar length, Scalar width, Size lengthSections, Size widthSections) {
+  this.addPlane(xfo, length, width, lengthSections, widthSections, false, false);
+}
+
+
+/**
+  Appends a transformed sphere to this mesh.
+  Before applying the transformation, it will be centered at the origin.
+
+  \param xfo Created points will be transformed by this Xfo
+  \param radius Radius of the sphere
+  \param loops The number of latitudinal loops of the sphere
+  \param sides The number of longitudinal sides of the sphere
+  \param setNormals If true, point normals will be set
+  \param setUVs If true, some UVs will be set in the `uvs0` attribute
+  \category primitives
+  \dfgPresetDefault radius 4.0
+  \dfgPresetDefault loops 8
+  \dfgPresetDefault sides 8
+  \dfgPresetDefault setNormals true
+  \dfgPresetDefault setUVs true
+  \dfgPresetRange radius (0.0, 8.0)
+  \dfgPresetRange loops (3, 24)
+  \dfgPresetRange sides (3, 24)
+*/
+function PolygonMesh.addSphere!(Xfo xfo, Scalar radius, UInt32 loops, UInt32 sides, Boolean setNormals, Boolean setUVs) {
+  UInt32 nb_pts = 2 + (loops * sides);
+  UInt32 nb_polys = (loops+1) * sides;
+
+  UInt32 firstPoly = this.polygonCount();
+  UInt32 firstPoint = this.createPoints( nb_pts );
+
+  // build the topology
+  this.beginStructureChanges();
+
+  // build the fan at the first pole. 
+  for (UInt32 j = 0; j < sides; j++) {
+    UInt32 v0, v1, v2;
+    v0 = 0;
+    v1 = ((j + 1) % sides) + 1;
+    v2 = j + 1;
+    this.addPolygon( firstPoint+v0, firstPoint+v1, firstPoint+v2 );
+  }
+  for (UInt32 i = 0; i < loops-1; i++) {
+    for (UInt32 j = 0; j < sides; j++) {
+      UInt32 v0, v1, v2, v3;
+      v0 = (sides * i) + j + 1;
+      v1 = (sides * i) + ((j + 1) % sides) + 1;
+      v2 = (sides * (i+1)) + ((j + 1) % sides) + 1;
+      v3 = (sides * (i+1)) + j + 1;
+      this.addPolygon( firstPoint+v0, firstPoint+v1, firstPoint+v2, firstPoint+v3 );
+    }
+  }
+
+  // build the fan at the second pole. 
+  for (UInt32 j = 0; j < sides; j++) {
+    UInt32 v0, v1, v2;
+    v0 = nb_pts - 1;
+    v1 = (sides * (loops-1)) + j + 1;
+    v2 = (sides * (loops-1)) + ((j + 1) % sides) + 1;
+    this.addPolygon( firstPoint+v0, firstPoint+v1, firstPoint+v2 );
+  }
+  this.endStructureChanges();
+
+  // set positions and normals
+  Ref<Vec3Attribute> normals = null;
+  if(setNormals)
+    normals = this.getOrCreateNormals();
+
+  Vec3 normal;
+  UInt32 voff = firstPoint;
+
+  normal.set( 0.0, 1.0, 0.0 );
+  this.setPointPosition(voff, xfo.transformVector(normal * radius));
+  if(setNormals)
+    this.setPointAttribute( voff, normals, xfo.ori.rotateVector(normal));
+  voff++;
+  for (UInt32 i = 0; i < loops; i++) {
+    Scalar theta = ((i+1) / Scalar(loops+1)) * PI;
+    for (UInt32 j = 0; j < sides; j++) {
+      Scalar phi = (j / Scalar(sides)) * 2.0 * PI;
+      normal.set( sin(theta) * cos(phi), cos(theta), sin(theta) * sin(phi) );
+      this.setPointPosition(voff, xfo.transformVector(normal * radius));
+      if(setNormals)
+        this.setPointAttribute( voff, normals, xfo.ori.rotateVector(normal));
+      voff++;
+    }
+  }
+  normal.set( 0.0, -1.0, 0.0 );
+  this.setPointPosition(voff, xfo.transformVector(normal * radius));
+  if(setNormals)
+    this.setPointAttribute( voff, normals, xfo.ori.rotateVector(normal));
+  voff++;
+
+  // set uvs
+  if(setUVs){
+    Ref<Vec2Attribute> uvs = this.getOrCreateVec2Attribute("uvs0");
+
+    // set the uvs on the the fan at the first pole.
+    for (UInt32 j = 0; j < sides; j++) {
+      UInt32 polyId = firstPoly + j;
+      Vec2 uv0(0.5, 0.0);
+      this.setPolygonAttribute(polyId, 0, uvs, uv0 );
+      Vec2 uv1(1.0 - (Scalar(j+1) / Scalar(sides)), 0.0);
+      this.setPolygonAttribute(polyId, 1, uvs, uv1 );
+      Vec2 uv2(1.0 - (Scalar(j) / Scalar(sides)), Scalar(1) / Scalar(loops+1));
+      this.setPolygonAttribute(polyId, 2, uvs, uv2 );
+    }
+
+    for (UInt32 i = 0; i < loops-1; i++) {
+      for (UInt32 j = 0; j < sides; j++) {
+        UInt32 polyId = firstPoly + sides + (sides * i) + j;
+        Vec2 uv0(1.0 - (Scalar(j) / Scalar(sides)), Scalar(i+1) / Scalar(loops+1));
+        this.setPolygonAttribute(polyId, 0, uvs, uv0 );
+        Vec2 uv1(1.0 - (Scalar(j+1) / Scalar(sides)), Scalar(i+1) / Scalar(loops+1));
+        this.setPolygonAttribute(polyId, 1, uvs, uv1 );
+        Vec2 uv2(1.0 - (Scalar(j+1) / Scalar(sides)), Scalar(i+2) / Scalar(loops+1));
+        this.setPolygonAttribute(polyId, 2, uvs, uv2 );
+        Vec2 uv3(1.0 - (Scalar(j) / Scalar(sides)), Scalar(i+2) / Scalar(loops+1));
+        this.setPolygonAttribute(polyId, 3, uvs, uv3 );
+      }
+    }
+
+    for (UInt32 j = 0; j < sides; j++) {
+      UInt32 polyId = firstPoly + (sides * loops) + j;
+      Vec2 uv0(1.0 - (Scalar(j) / Scalar(sides)), Scalar(loops) / Scalar(loops+1));
+      this.setPolygonAttribute(polyId, 0, uvs, uv0 );
+      Vec2 uv1(1.0 - (Scalar(j+1) / Scalar(sides)), Scalar(loops) / Scalar(loops+1));
+      this.setPolygonAttribute(polyId, 1, uvs, uv1 );
+      Vec2 uv2(0.5, 1.0);
+      this.setPolygonAttribute(polyId, 2, uvs, uv2 );
+    }
+
+    uvs.incrementVersion();
+  }
+}
+
+/**
+  Appends a transformed sphere to this mesh.
+  Before applying the transformation, it will be centered at the origin.
+
+  \param xfo Created points will be transformed by this Xfo
+  \param radius Radius of the sphere
+  \param detail Increasing this number will add more sections to the sphere
+  \param setNormals If true, point normals will be set
+  \param setUVs If true, some UVs will be set in the `uvs0` attribute
+  \category primitives
+*/
+function PolygonMesh.addSphere!(Xfo xfo, Scalar radius, UInt32 detail, Boolean setNormals, Boolean setUVs) {
+  UInt32 sides = detail * 2 + 3; // minimum 3 sides
+  UInt32 loops = detail + 1; // minimum 1 loop
+  this.addSphere(xfo, radius, loops, sides, setNormals, setUVs);
+}
+
+/**
+  Appends a transformed sphere to this mesh, with no normals nor UVs.
+  Before applying the transformation, it will be centered at the origin.
+
+  \param xfo Created points will be transformed by this Xfo
+  \param radius Radius of the sphere
+  \param detail Increasing this number will add more sections to the sphere
+  \category primitives
+*/
+function PolygonMesh.addSphere!(Xfo xfo, Scalar radius, Size detail) {
+  this.addSphere(xfo, radius, detail, false, false);
+}
+
+
+/**
+  Appends a transformed torus to this mesh.
+  Before applying the transformation, it will be in the XZ plane, centered at the origin.
+
+  \param xfo Created points will be transformed by this Xfo
+  \param innerRadius The radius of torus's sections (torus's height)
+  \param outerRadius The radius of the torus's ring center
+  \param detail Increasing this number will add sections to the torus
+  \param setNormals If true, point normals will be set
+  \param setUVs If true, some UVs will be set in the `uvs0` attribute
+  \category primitives
+  \dfgPresetDefault innerRadius 1.0
+  \dfgPresetDefault outerRadius 4
+  \dfgPresetDefault detail 4
+  \dfgPresetDefault setNormals true
+  \dfgPresetDefault setUVs true
+  \dfgPresetRange innerRadius (0.0, 8.0)
+  \dfgPresetRange outerRadius (0.0, 12.0)
+  \dfgPresetRange detail (2, 12)
+*/
+function PolygonMesh.addTorus!(Xfo xfo, Scalar innerRadius, Scalar outerRadius, Size detail, Boolean setNormals, Boolean setUVs) {
+
+  Ref<Vec3Attribute> normals = null;
+  Ref<Vec2Attribute> uvs = null;
+
+  if(setNormals)
+    normals = this.getOrCreateNormals();
+  if(setUVs)
+    uvs = this.getOrCreateVec2Attribute("uvs0");
+
+  Size slices = (detail >= 0) ? (detail + 3) : 3;
+  Size loops = (detail >= 0) ? ((detail * 2) + 3) : 3;
+  Size nb_pts = slices * loops;
+
+  this.beginStructureChanges();
+  UInt32 firstPoint = this.createPoints( nb_pts );
+
+  for (Size i = 0; i < loops; i++) {
+    for (Size j = 0; j < slices; j++) {
+
+      Size v0, v1, v2, v3;
+      Size ip = (i + 1) % loops;
+      Size jp = (j + 1) % slices;
+      v0 = slices * i + j;
+      v1 = slices * i + jp;
+      v2 = slices * ip + jp;
+      v3 = slices * ip + j;
+      Size polIndex = this.addPolygon( firstPoint+v0, firstPoint+v1, firstPoint+v2, firstPoint+v3 );
+
+      if(setUVs){
+        this.setPolygonAttribute( polIndex, 0, uvs, Vec2( Scalar(i) / loops, Scalar(j) / loops ) );
+        this.setPolygonAttribute( polIndex, 1, uvs, Vec2( Scalar(i) / loops, Scalar(j+1) / loops ) );
+        this.setPolygonAttribute( polIndex, 2, uvs, Vec2( Scalar(i+1) / loops, Scalar(j+1) / loops ) );
+        this.setPolygonAttribute( polIndex, 3, uvs, Vec2( Scalar(i+1) / loops, Scalar(j) / loops ) );
+      }
+    }
+  }
+  this.endStructureChanges();
+
+  Size index = firstPoint;
+
+  for (Size i = 0; i < loops; i++) {
+    Scalar theta = (i / Scalar(loops)) * 2.0 * PI;
+    Scalar ctheta = cos(theta);
+    Scalar stheta = sin(theta);
+
+    for (Size j = 0; j < slices; j++) {
+      Scalar phi = (j / Scalar(slices)) * 2.0 * PI;
+
+      Scalar sphi = sin(phi);
+      Scalar cphi = cos(phi);
+      Scalar d = outerRadius + cphi * innerRadius;
+
+      this.setPointPosition( index, xfo.transformVector(Vec3(ctheta * d, innerRadius * sphi, stheta * d )) );
+      if(setNormals)
+        this.setPointAttribute( index, normals, xfo.ori.rotateVector(Vec3(ctheta * cphi, sphi, stheta * cphi)) );
+
+      index++;
+    }
+  }
+
+  this.incrementPointPositionsVersion();
+  if(setNormals)
+    normals.incrementVersion();
+}
+
+/**
+  Appends a transformed torus to this mesh, with no normals nor UVs.
+  Before applying the transformation, it will be in the XZ plane, centered at the origin.
+
+  \param xfo Created points will be transformed by this Xfo
+  \param innerRadius The radius of torus's sections (torus's height)
+  \param outerRadius The radius of the torus's ring center
+  \param detail Increasing this number will add sections to the torus
+  \category primitives
+*/
+function PolygonMesh.addTorus!(Xfo xfo, Scalar innerRadius, Scalar outerRadius, Size detail) {
+  this.addTorus(xfo, innerRadius, outerRadius, detail, false, false);
+}
+
+
+/////////////////////////////////////////////
+// Teapot
+
+/// \internal
+struct BezierPatch {
+  Integer indices[4][4];
+};
+
+/// \internal
+function BezierPatch(
+  in Integer a00, in Integer a01, in Integer a02, in Integer a03,
+  in Integer a10, in Integer a11, in Integer a12, in Integer a13,
+  in Integer a20, in Integer a21, in Integer a22, in Integer a23,
+  in Integer a30, in Integer a31, in Integer a32, in Integer a33
+) {
+  this.indices[0][0] = a00; this.indices[0][1] = a01; this.indices[0][2] = a02; this.indices[0][3] = a03;
+  this.indices[1][0] = a10; this.indices[1][1] = a11; this.indices[1][2] = a12; this.indices[1][3] = a13;
+  this.indices[2][0] = a20; this.indices[2][1] = a21; this.indices[2][2] = a22; this.indices[2][3] = a23;
+  this.indices[3][0] = a30; this.indices[3][1] = a31; this.indices[3][2] = a32; this.indices[3][3] = a33;
+}
+
+/// \internal
+struct PatchIndicesQuad {
+  Integer indices[2][2];
+  Vec3 normal;
+};
+
+/// \internal
+function PatchIndicesQuad(in Vec3 positions[], in Integer i00, in Integer i01, in Integer i10, in Integer i11) {
+  this.indices[0][0] = i00;
+  this.indices[0][1] = i01;
+  this.indices[1][0] = i10;
+  this.indices[1][1] = i11;
+
+  // Compute the face normal from the diagonals
+  Vec3 d0, d1;
+
+  d0 = positions[i11] - positions[i00];
+  d1 = positions[i10] - positions[i01];
+
+  this.normal = d0.cross(d1).unit();
+}
+
+/// \internal
+struct PatchAdjacency {
+  Integer qidx[];
+};
+
+/// \internal
+function computeTeapotNormals(
+  io BezierPatch p[],
+  io Vec3 positions[],
+  io Vec3 normals[]
+) {
+  PatchIndicesQuad q[];
+
+  // Break patches into quads
+  for (Size i = 0; i < p.size(); i++) {
+    for (Size j = 0; j < 3; j++) {
+      for (Size k = 0; k < 3; k++) {
+        q.push(PatchIndicesQuad(positions, p[i].indices[j][k], p[i].indices[j][k + 1], p[i].indices[j + 1][k], p[i].indices[j + 1][k + 1]));
+      }
+    }
+  }
+
+  PatchAdjacency a[];
+  a.resize(positions.size());
+
+  // Build adjacency information
+  for (Size i = 0; i < q.size(); i++) {
+    for (Size j = 0; j < 2; j++) {
+      for (Size k = 0; k < 2; k++) {
+        a[q[i].indices[j][k]].qidx.push(Integer(i));
+      }
+    }
+  }
+  // Compute vertex normals from surrounding face normals
+  normals.resize(positions.size());
+  for (Size i = 0; i < a.size(); i++) {
+    Vec3 avgn(0.0, 0.0, 0.0);
+
+    for (Size j = 0; j < a[i].qidx.size(); j++)
+      avgn += q[a[i].qidx[j]].normal;
+
+    if (avgn.length() > 0.0)
+      avgn.setUnit();
+
+    normals[i] = avgn;
+  }
+}
+
+/// \internal
+function getTeapotHull(
+  io BezierPatch p[],
+  io Vec3 positions[],
+  io Vec3 normals[]
+) {
+  p.resize(0);
+  p.push(BezierPatch(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15));
+  p.push(BezierPatch(3, 16, 17, 18, 7, 19, 20, 21, 11, 22, 23, 24, 15, 25, 26, 27));
+  p.push(BezierPatch(18, 28, 29, 30, 21, 31, 32, 33, 24, 34, 35, 36, 27, 37, 38, 39));
+  p.push(BezierPatch(30, 40, 41, 0, 33, 42, 43, 4, 36, 44, 45, 8, 39, 46, 47, 12));
+  p.push(BezierPatch(12, 13, 14, 15, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59));
+  p.push(BezierPatch(15, 25, 26, 27, 51, 60, 61, 62, 55, 63, 64, 65, 59, 66, 67, 68));
+  p.push(BezierPatch(27, 37, 38, 39, 62, 69, 70, 71, 65, 72, 73, 74, 68, 75, 76, 77));
+  p.push(BezierPatch(39, 46, 47, 12, 71, 78, 79, 48, 74, 80, 81, 52, 77, 82, 83, 56));
+  p.push(BezierPatch(56, 57, 58, 59, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95));
+  p.push(BezierPatch(59, 66, 67, 68, 87, 96, 97, 98, 91, 99, 100, 101, 95, 102, 103, 104));
+  p.push(BezierPatch(68, 75, 76, 77, 98, 105, 106, 107, 101, 108, 109, 110, 104, 111, 112, 113));
+  p.push(BezierPatch(77, 82, 83, 56, 107, 114, 115, 84, 110, 116, 117, 88, 113, 118, 119, 92));
+  p.push(BezierPatch(120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135));
+  p.push(BezierPatch(123, 136, 137, 120, 127, 138, 139, 124, 131, 140, 141, 128, 135, 142, 143, 132));
+  p.push(BezierPatch(132, 133, 134, 135, 144, 145, 146, 147, 148, 149, 150, 151, 68, 152, 153, 154));
+  p.push(BezierPatch(135, 142, 143, 132, 147, 155, 156, 144, 151, 157, 158, 148, 154, 159, 160, 68));
+  p.push(BezierPatch(161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176));
+  p.push(BezierPatch(164, 177, 178, 161, 168, 179, 180, 165, 172, 181, 182, 169, 176, 183, 184, 173));
+  p.push(BezierPatch(173, 174, 175, 176, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196));
+  p.push(BezierPatch(176, 183, 184, 173, 188, 197, 198, 185, 192, 199, 200, 189, 196, 201, 202, 193));
+  p.push(BezierPatch(203, 203, 203, 203, 206, 207, 208, 209, 210, 210, 210, 210, 211, 212, 213, 214));
+  p.push(BezierPatch(203, 203, 203, 203, 209, 216, 217, 218, 210, 210, 210, 210, 214, 219, 220, 221));
+  p.push(BezierPatch(203, 203, 203, 203, 218, 223, 224, 225, 210, 210, 210, 210, 221, 226, 227, 228));
+  p.push(BezierPatch(203, 203, 203, 203, 225, 229, 230, 206, 210, 210, 210, 210, 228, 231, 232, 211));
+  p.push(BezierPatch(211, 212, 213, 214, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244));
+  p.push(BezierPatch(214, 219, 220, 221, 236, 245, 246, 247, 240, 248, 249, 250, 244, 251, 252, 253));
+  p.push(BezierPatch(221, 226, 227, 228, 247, 254, 255, 256, 250, 257, 258, 259, 253, 260, 261, 262));
+  p.push(BezierPatch(228, 231, 232, 211, 256, 263, 264, 233, 259, 265, 266, 237, 262, 267, 268, 241));
+  p.push(BezierPatch(269, 269, 269, 269, 278, 279, 280, 281, 274, 275, 276, 277, 270, 271, 272, 273));
+  p.push(BezierPatch(269, 269, 269, 269, 281, 288, 289, 290, 277, 285, 286, 287, 273, 282, 283, 284));
+  p.push(BezierPatch(269, 269, 269, 269, 290, 297, 298, 299, 287, 294, 295, 296, 284, 291, 292, 293));
+  p.push(BezierPatch(269, 269, 269, 269, 299, 304, 305, 278, 296, 302, 303, 274, 293, 300, 301, 270));
+
+  positions.resize(0);
+  positions.push(Vec3(1.40000, 2.40000, - 0.00000)); positions.push(Vec3(1.40000, 2.40000, 0.78400)); positions.push(Vec3(0.78400, 2.40000, 1.40000)); positions.push(Vec3(0.00000, 2.40000, 1.40000)); positions.push(Vec3(1.33750, 2.53125, - 0.00000)); positions.push(Vec3(1.33750, 2.53125, 0.74900)); positions.push(Vec3(0.74900, 2.53125, 1.33750)); positions.push(Vec3(0.00000, 2.53125, 1.33750)); positions.push(Vec3(1.43750, 2.53125, - 0.00000)); positions.push(Vec3(1.43750, 2.53125, 0.80500));
+  positions.push(Vec3(0.80500, 2.53125, 1.43750)); positions.push(Vec3(0.00000, 2.53125, 1.43750)); positions.push(Vec3(1.50000, 2.40000, - 0.00000)); positions.push(Vec3(1.50000, 2.40000, 0.84000)); positions.push(Vec3(0.84000, 2.40000, 1.50000)); positions.push(Vec3(0.00000, 2.40000, 1.50000)); positions.push(Vec3(-0.78400, 2.40000, 1.40000)); positions.push(Vec3(-1.40000, 2.40000, 0.78400)); positions.push(Vec3(-1.40000, 2.40000, - 0.00000)); positions.push(Vec3(-0.74900, 2.53125, 1.33750));
+  positions.push(Vec3(-1.33750, 2.53125, 0.74900)); positions.push(Vec3(-1.33750, 2.53125, - 0.00000)); positions.push(Vec3(-0.80500, 2.53125, 1.43750)); positions.push(Vec3(-1.43750, 2.53125, 0.80500)); positions.push(Vec3(-1.43750, 2.53125, - 0.00000)); positions.push(Vec3(-0.84000, 2.40000, 1.50000)); positions.push(Vec3(-1.50000, 2.40000, 0.84000)); positions.push(Vec3(-1.50000, 2.40000, - 0.00000)); positions.push(Vec3(-1.40000, 2.40000, - 0.78400)); positions.push(Vec3(-0.78400, 2.40000, - 1.40000));
+  positions.push(Vec3(0.00000, 2.40000, - 1.40000)); positions.push(Vec3(-1.33750, 2.53125, - 0.74900)); positions.push(Vec3(-0.74900, 2.53125, - 1.33750)); positions.push(Vec3(0.00000, 2.53125, - 1.33750)); positions.push(Vec3(-1.43750, 2.53125, - 0.80500)); positions.push(Vec3(-0.80500, 2.53125, - 1.43750)); positions.push(Vec3(0.00000, 2.53125, - 1.43750)); positions.push(Vec3(-1.50000, 2.40000, - 0.84000)); positions.push(Vec3(-0.84000, 2.40000, - 1.50000)); positions.push(Vec3(0.00000, 2.40000, - 1.50000));
+  positions.push(Vec3(0.78400, 2.40000, - 1.40000)); positions.push(Vec3(1.40000, 2.40000, - 0.78400)); positions.push(Vec3(0.74900, 2.53125, - 1.33750)); positions.push(Vec3(1.33750, 2.53125, - 0.74900)); positions.push(Vec3(0.80500, 2.53125, - 1.43750)); positions.push(Vec3(1.43750, 2.53125, - 0.80500)); positions.push(Vec3(0.84000, 2.40000, - 1.50000)); positions.push(Vec3(1.50000, 2.40000, - 0.84000)); positions.push(Vec3(1.75000, 1.87500, - 0.00000)); positions.push(Vec3(1.75000, 1.87500, 0.98000));
+  positions.push(Vec3(0.98000, 1.87500, 1.75000)); positions.push(Vec3(0.00000, 1.87500, 1.75000)); positions.push(Vec3(2.00000, 1.35000, - 0.00000)); positions.push(Vec3(2.00000, 1.35000, 1.12000)); positions.push(Vec3(1.12000, 1.35000, 2.00000)); positions.push(Vec3(0.00000, 1.35000, 2.00000)); positions.push(Vec3(2.00000, 0.90000, - 0.00000)); positions.push(Vec3(2.00000, 0.90000, 1.12000)); positions.push(Vec3(1.12000, 0.90000, 2.00000)); positions.push(Vec3(0.00000, 0.90000, 2.00000));
+  positions.push(Vec3(-0.98000, 1.87500, 1.75000)); positions.push(Vec3(-1.75000, 1.87500, 0.98000)); positions.push(Vec3(-1.75000, 1.87500, - 0.00000)); positions.push(Vec3(-1.12000, 1.35000, 2.00000)); positions.push(Vec3(-2.00000, 1.35000, 1.12000)); positions.push(Vec3(-2.00000, 1.35000, - 0.00000)); positions.push(Vec3(-1.12000, 0.90000, 2.00000)); positions.push(Vec3(-2.00000, 0.90000, 1.12000)); positions.push(Vec3(-2.00000, 0.90000, - 0.00000)); positions.push(Vec3(-1.75000, 1.87500, - 0.98000));
+  positions.push(Vec3(-0.98000, 1.87500, - 1.75000)); positions.push(Vec3(0.00000, 1.87500, - 1.75000)); positions.push(Vec3(-2.00000, 1.35000, - 1.12000)); positions.push(Vec3(-1.12000, 1.35000, - 2.00000)); positions.push(Vec3(0.00000, 1.35000, - 2.00000)); positions.push(Vec3(-2.00000, 0.90000, - 1.12000)); positions.push(Vec3(-1.12000, 0.90000, - 2.00000)); positions.push(Vec3(0.00000, 0.90000, - 2.00000)); positions.push(Vec3(0.98000, 1.87500, - 1.75000)); positions.push(Vec3(1.75000, 1.87500, - 0.98000));
+  positions.push(Vec3(1.12000, 1.35000, - 2.00000)); positions.push(Vec3(2.00000, 1.35000, - 1.12000)); positions.push(Vec3(1.12000, 0.90000, - 2.00000)); positions.push(Vec3(2.00000, 0.90000, - 1.12000)); positions.push(Vec3(2.00000, 0.45000, - 0.00000)); positions.push(Vec3(2.00000, 0.45000, 1.12000)); positions.push(Vec3(1.12000, 0.45000, 2.00000)); positions.push(Vec3(0.00000, 0.45000, 2.00000)); positions.push(Vec3(1.50000, 0.22500, - 0.00000)); positions.push(Vec3(1.50000, 0.22500, 0.84000));
+  positions.push(Vec3(0.84000, 0.22500, 1.50000)); positions.push(Vec3(0.00000, 0.22500, 1.50000)); positions.push(Vec3(1.50000, 0.15000, - 0.00000)); positions.push(Vec3(1.50000, 0.15000, 0.84000)); positions.push(Vec3(0.84000, 0.15000, 1.50000)); positions.push(Vec3(0.00000, 0.15000, 1.50000)); positions.push(Vec3(-1.12000, 0.45000, 2.00000)); positions.push(Vec3(-2.00000, 0.45000, 1.12000)); positions.push(Vec3(-2.00000, 0.45000, - 0.00000)); positions.push(Vec3(-0.84000, 0.22500, 1.50000));
+  positions.push(Vec3(-1.50000, 0.22500, 0.84000)); positions.push(Vec3(-1.50000, 0.22500, - 0.00000)); positions.push(Vec3(-0.84000, 0.15000, 1.50000)); positions.push(Vec3(-1.50000, 0.15000, 0.84000)); positions.push(Vec3(-1.50000, 0.15000, - 0.00000)); positions.push(Vec3(-2.00000, 0.45000, - 1.12000)); positions.push(Vec3(-1.12000, 0.45000, - 2.00000)); positions.push(Vec3(0.00000, 0.45000, - 2.00000)); positions.push(Vec3(-1.50000, 0.22500, - 0.84000)); positions.push(Vec3(-0.84000, 0.22500, - 1.50000));
+  positions.push(Vec3(0.00000, 0.22500, - 1.50000)); positions.push(Vec3(-1.50000, 0.15000, - 0.84000)); positions.push(Vec3(-0.84000, 0.15000, - 1.50000)); positions.push(Vec3(0.00000, 0.15000, - 1.50000)); positions.push(Vec3(1.12000, 0.45000, - 2.00000)); positions.push(Vec3(2.00000, 0.45000, - 1.12000)); positions.push(Vec3(0.84000, 0.22500, - 1.50000)); positions.push(Vec3(1.50000, 0.22500, - 0.84000)); positions.push(Vec3(0.84000, 0.15000, - 1.50000)); positions.push(Vec3(1.50000, 0.15000, - 0.84000));
+  positions.push(Vec3(-1.60000, 2.02500, - 0.00000)); positions.push(Vec3(-1.60000, 2.02500, 0.30000)); positions.push(Vec3(-1.50000, 2.25000, 0.30000)); positions.push(Vec3(-1.50000, 2.25000, - 0.00000)); positions.push(Vec3(-2.30000, 2.02500, - 0.00000)); positions.push(Vec3(-2.30000, 2.02500, 0.30000)); positions.push(Vec3(-2.50000, 2.25000, 0.30000)); positions.push(Vec3(-2.50000, 2.25000, - 0.00000)); positions.push(Vec3(-2.70000, 2.02500, - 0.00000)); positions.push(Vec3(-2.70000, 2.02500, 0.30000));
+  positions.push(Vec3(-3.00000, 2.25000, 0.30000)); positions.push(Vec3(-3.00000, 2.25000, - 0.00000)); positions.push(Vec3(-2.70000, 1.80000, - 0.00000)); positions.push(Vec3(-2.70000, 1.80000, 0.30000)); positions.push(Vec3(-3.00000, 1.80000, 0.30000)); positions.push(Vec3(-3.00000, 1.80000, - 0.00000)); positions.push(Vec3(-1.50000, 2.25000, - 0.30000)); positions.push(Vec3(-1.60000, 2.02500, - 0.30000)); positions.push(Vec3(-2.50000, 2.25000, - 0.30000)); positions.push(Vec3(-2.30000, 2.02500, - 0.30000));
+  positions.push(Vec3(-3.00000, 2.25000, - 0.30000)); positions.push(Vec3(-2.70000, 2.02500, - 0.30000)); positions.push(Vec3(-3.00000, 1.80000, - 0.30000)); positions.push(Vec3(-2.70000, 1.80000, - 0.30000)); positions.push(Vec3(-2.70000, 1.57500, - 0.00000)); positions.push(Vec3(-2.70000, 1.57500, 0.30000)); positions.push(Vec3(-3.00000, 1.35000, 0.30000)); positions.push(Vec3(-3.00000, 1.35000, - 0.00000)); positions.push(Vec3(-2.50000, 1.12500, - 0.00000)); positions.push(Vec3(-2.50000, 1.12500, 0.30000));
+  positions.push(Vec3(-2.65000, 0.93750, 0.30000)); positions.push(Vec3(-2.65000, 0.93750, - 0.00000)); positions.push(Vec3(-2.00000, 0.90000, 0.30000)); positions.push(Vec3(-1.90000, 0.60000, 0.30000)); positions.push(Vec3(-1.90000, 0.60000, - 0.00000)); positions.push(Vec3(-3.00000, 1.35000, - 0.30000)); positions.push(Vec3(-2.70000, 1.57500, - 0.30000)); positions.push(Vec3(-2.65000, 0.93750, - 0.30000)); positions.push(Vec3(-2.50000, 1.12500, - 0.30000)); positions.push(Vec3(-1.90000, 0.60000, - 0.30000));
+  positions.push(Vec3(-2.00000, 0.90000, - 0.30000)); positions.push(Vec3(1.70000, 1.42500, - 0.00000)); positions.push(Vec3(1.70000, 1.42500, 0.66000)); positions.push(Vec3(1.70000, 0.60000, 0.66000)); positions.push(Vec3(1.70000, 0.60000, - 0.00000)); positions.push(Vec3(2.60000, 1.42500, - 0.00000)); positions.push(Vec3(2.60000, 1.42500, 0.66000)); positions.push(Vec3(3.10000, 0.82500, 0.66000)); positions.push(Vec3(3.10000, 0.82500, - 0.00000)); positions.push(Vec3(2.30000, 2.10000, - 0.00000));
+  positions.push(Vec3(2.30000, 2.10000, 0.25000)); positions.push(Vec3(2.40000, 2.02500, 0.25000)); positions.push(Vec3(2.40000, 2.02500, - 0.00000)); positions.push(Vec3(2.70000, 2.40000, - 0.00000)); positions.push(Vec3(2.70000, 2.40000, 0.25000)); positions.push(Vec3(3.30000, 2.40000, 0.25000)); positions.push(Vec3(3.30000, 2.40000, - 0.00000)); positions.push(Vec3(1.70000, 0.60000, - 0.66000)); positions.push(Vec3(1.70000, 1.42500, - 0.66000)); positions.push(Vec3(3.10000, 0.82500, - 0.66000));
+  positions.push(Vec3(2.60000, 1.42500, - 0.66000)); positions.push(Vec3(2.40000, 2.02500, - 0.25000)); positions.push(Vec3(2.30000, 2.10000, - 0.25000)); positions.push(Vec3(3.30000, 2.40000, - 0.25000)); positions.push(Vec3(2.70000, 2.40000, - 0.25000)); positions.push(Vec3(2.80000, 2.47500, - 0.00000)); positions.push(Vec3(2.80000, 2.47500, 0.25000)); positions.push(Vec3(3.52500, 2.49375, 0.25000)); positions.push(Vec3(3.52500, 2.49375, - 0.00000)); positions.push(Vec3(2.90000, 2.47500, - 0.00000));
+  positions.push(Vec3(2.90000, 2.47500, 0.15000)); positions.push(Vec3(3.45000, 2.51250, 0.15000)); positions.push(Vec3(3.45000, 2.51250, - 0.00000)); positions.push(Vec3(2.80000, 2.40000, - 0.00000)); positions.push(Vec3(2.80000, 2.40000, 0.15000)); positions.push(Vec3(3.20000, 2.40000, 0.15000)); positions.push(Vec3(3.20000, 2.40000, - 0.00000)); positions.push(Vec3(3.52500, 2.49375, - 0.25000)); positions.push(Vec3(2.80000, 2.47500, - 0.25000)); positions.push(Vec3(3.45000, 2.51250, - 0.15000));
+  positions.push(Vec3(2.90000, 2.47500, - 0.15000)); positions.push(Vec3(3.20000, 2.40000, - 0.15000)); positions.push(Vec3(2.80000, 2.40000, - 0.15000)); positions.push(Vec3(0.00000, 3.15000, - 0.00000)); positions.push(Vec3(0.00000, 3.15000, 0.00200)); positions.push(Vec3(0.00200, 3.15000, - 0.00000)); positions.push(Vec3(0.80000, 3.15000, - 0.00000)); positions.push(Vec3(0.80000, 3.15000, 0.45000)); positions.push(Vec3(0.45000, 3.15000, 0.80000)); positions.push(Vec3(0.00000, 3.15000, 0.80000));
+  positions.push(Vec3(0.00000, 2.85000, - 0.00000)); positions.push(Vec3(0.20000, 2.70000, - 0.00000)); positions.push(Vec3(0.20000, 2.70000, 0.11200)); positions.push(Vec3(0.11200, 2.70000, 0.20000)); positions.push(Vec3(0.00000, 2.70000, 0.20000)); positions.push(Vec3(-0.00200, 3.15000, - 0.00000)); positions.push(Vec3(-0.45000, 3.15000, 0.80000)); positions.push(Vec3(-0.80000, 3.15000, 0.45000)); positions.push(Vec3(-0.80000, 3.15000, - 0.00000)); positions.push(Vec3(-0.11200, 2.70000, 0.20000));
+  positions.push(Vec3(-0.20000, 2.70000, 0.11200)); positions.push(Vec3(-0.20000, 2.70000, - 0.00000)); positions.push(Vec3(0.00000, 3.15000, - 0.00200)); positions.push(Vec3(-0.80000, 3.15000, - 0.45000)); positions.push(Vec3(-0.45000, 3.15000, - 0.80000)); positions.push(Vec3(0.00000, 3.15000, - 0.80000)); positions.push(Vec3(-0.20000, 2.70000, - 0.11200)); positions.push(Vec3(-0.11200, 2.70000, - 0.20000)); positions.push(Vec3(0.00000, 2.70000, - 0.20000)); positions.push(Vec3(0.45000, 3.15000, - 0.80000));
+  positions.push(Vec3(0.80000, 3.15000, - 0.45000)); positions.push(Vec3(0.11200, 2.70000, - 0.20000)); positions.push(Vec3(0.20000, 2.70000, - 0.11200)); positions.push(Vec3(0.40000, 2.55000, - 0.00000)); positions.push(Vec3(0.40000, 2.55000, 0.22400)); positions.push(Vec3(0.22400, 2.55000, 0.40000)); positions.push(Vec3(0.00000, 2.55000, 0.40000)); positions.push(Vec3(1.30000, 2.55000, - 0.00000)); positions.push(Vec3(1.30000, 2.55000, 0.72800)); positions.push(Vec3(0.72800, 2.55000, 1.30000));
+  positions.push(Vec3(0.00000, 2.55000, 1.30000)); positions.push(Vec3(1.30000, 2.40000, - 0.00000)); positions.push(Vec3(1.30000, 2.40000, 0.72800)); positions.push(Vec3(0.72800, 2.40000, 1.30000)); positions.push(Vec3(0.00000, 2.40000, 1.30000)); positions.push(Vec3(-0.22400, 2.55000, 0.40000)); positions.push(Vec3(-0.40000, 2.55000, 0.22400)); positions.push(Vec3(-0.40000, 2.55000, - 0.00000)); positions.push(Vec3(-0.72800, 2.55000, 1.30000)); positions.push(Vec3(-1.30000, 2.55000, 0.72800));
+  positions.push(Vec3(-1.30000, 2.55000, - 0.00000)); positions.push(Vec3(-0.72800, 2.40000, 1.30000)); positions.push(Vec3(-1.30000, 2.40000, 0.72800)); positions.push(Vec3(-1.30000, 2.40000, - 0.00000)); positions.push(Vec3(-0.40000, 2.55000, - 0.22400)); positions.push(Vec3(-0.22400, 2.55000, - 0.40000)); positions.push(Vec3(0.00000, 2.55000, - 0.40000)); positions.push(Vec3(-1.30000, 2.55000, - 0.72800)); positions.push(Vec3(-0.72800, 2.55000, - 1.30000)); positions.push(Vec3(0.00000, 2.55000, - 1.30000));
+  positions.push(Vec3(-1.30000, 2.40000, - 0.72800)); positions.push(Vec3(-0.72800, 2.40000, - 1.30000)); positions.push(Vec3(0.00000, 2.40000, - 1.30000)); positions.push(Vec3(0.22400, 2.55000, - 0.40000)); positions.push(Vec3(0.40000, 2.55000, - 0.22400)); positions.push(Vec3(0.72800, 2.55000, - 1.30000)); positions.push(Vec3(1.30000, 2.55000, - 0.72800)); positions.push(Vec3(0.72800, 2.40000, - 1.30000)); positions.push(Vec3(1.30000, 2.40000, - 0.72800)); positions.push(Vec3(0.00000, 0.00000, - 0.00000));
+  positions.push(Vec3(1.50000, 0.15000, - 0.00000)); positions.push(Vec3(1.50000, 0.15000, - 0.84000)); positions.push(Vec3(0.84000, 0.15000, - 1.50000)); positions.push(Vec3(0.00000, 0.15000, - 1.50000)); positions.push(Vec3(1.50000, 0.07500, - 0.00000)); positions.push(Vec3(1.50000, 0.07500, - 0.84000)); positions.push(Vec3(0.84000, 0.07500, - 1.50000)); positions.push(Vec3(0.00000, 0.07500, - 1.50000)); positions.push(Vec3(1.42500, 0.00000, - 0.00000)); positions.push(Vec3(1.42500, 0.00000, - 0.79800));
+  positions.push(Vec3(0.79800, 0.00000, - 1.42500)); positions.push(Vec3(0.00000, 0.00000, - 1.42500)); positions.push(Vec3(-0.84000, 0.15000, - 1.50000)); positions.push(Vec3(-1.50000, 0.15000, - 0.84000)); positions.push(Vec3(-1.50000, 0.15000, - 0.00000)); positions.push(Vec3(-0.84000, 0.07500, - 1.50000)); positions.push(Vec3(-1.50000, 0.07500, - 0.84000)); positions.push(Vec3(-1.50000, 0.07500, - 0.00000)); positions.push(Vec3(-0.79800, 0.00000, - 1.42500)); positions.push(Vec3(-1.42500, 0.00000, - 0.79800));
+  positions.push(Vec3(-1.42500, 0.00000, - 0.00000)); positions.push(Vec3(-1.50000, 0.15000, 0.84000)); positions.push(Vec3(-0.84000, 0.15000, 1.50000)); positions.push(Vec3(0.00000, 0.15000, 1.50000)); positions.push(Vec3(-1.50000, 0.07500, 0.84000)); positions.push(Vec3(-0.84000, 0.07500, 1.50000)); positions.push(Vec3(0.00000, 0.07500, 1.50000)); positions.push(Vec3(-1.42500, 0.00000, 0.79800)); positions.push(Vec3(-0.79800, 0.00000, 1.42500)); positions.push(Vec3(0.00000, 0.00000, 1.42500));
+  positions.push(Vec3(0.84000, 0.15000, 1.50000)); positions.push(Vec3(1.50000, 0.15000, 0.84000)); positions.push(Vec3(0.84000, 0.07500, 1.50000)); positions.push(Vec3(1.50000, 0.07500, 0.84000)); positions.push(Vec3(0.79800, 0.00000, 1.42500)); positions.push(Vec3(1.42500, 0.00000, 0.79800));
+
+  // Center on teapot's bbox center
+  Vec3 vmid;
+  Box3 bbox;
+  for (Size i = 0; i < positions.size(); i++)
+    bbox.merge(positions[i]);
+
+  vmid = (bbox.min + bbox.max) * 0.5;
+  for (Size i = 0; i < positions.size(); i++)
+    positions[i] -= vmid;
+
+  computeTeapotNormals(p, positions, normals);
+}
+
+/// \internal
+operator PolygonMeshSubdividePatch(
+  io PolygonMesh mesh,
+  in BezierPatch p,
+  io Vec3 pv[],
+  io Vec3 pn[],
+  io Ref<Vec3Attribute> positionsAttr,
+  io Ref<Vec3Attribute> normalsAttr,
+  io Ref<Vec2Attribute> uvsAttr,
+  io Size voff,
+  io Size idxoff,
+  in Integer nb_points
+) {
+  // Compute the basis function
+  Scalar b[][4];
+  b.resize(nb_points);
+
+  for (Integer i = 0; i < nb_points; i++) {
+    Scalar u = Scalar(i) / Scalar(nb_points - 1);
+    b[i][0] = (1 - u) * (1 - u) * (1 - u);
+    b[i][1] = 3.0 * u * (1 - u) * (1 - u);
+    b[i][2] = 3.0 * u * u * (1 - u);
+    b[i][3] = u * u * u;
+  }
+
+  Vec2 pt[4][4];
+  for (Integer i = 0; i < 4; i++) {
+    for (Integer j = 0; j < 4; j++) {
+      pt[i][j] = Vec2(1.0 - (Scalar(j) / 3.0), Scalar(i) / 3.0);
+    }
+  }
+
+  Vec3 rv[][4], rn[][4];
+  Vec2 rt[][4];
+  rv.resize(nb_points);
+  rn.resize(nb_points);
+  rt.resize(nb_points);
+
+  // Create smoothed control curves along the U iso lines
+  for (Integer i = 0; i < nb_points; i++) {
+    for (Integer j = 0; j < 4; j++) {
+      rv[i][j] =
+        b[i][0] * pv[p.indices[j][0]] +
+        b[i][1] * pv[p.indices[j][1]] +
+        b[i][2] * pv[p.indices[j][2]] +
+        b[i][3] * pv[p.indices[j][3]];
+      rn[i][j] =
+        b[i][0] * pn[p.indices[j][0]] +
+        b[i][1] * pn[p.indices[j][1]] +
+        b[i][2] * pn[p.indices[j][2]] +
+        b[i][3] * pn[p.indices[j][3]];
+
+      rt[i][j] =
+        b[i][0] * pt[j][0] +
+        b[i][1] * pt[j][1] +
+        b[i][2] * pt[j][2] +
+        b[i][3] * pt[j][3];
+    }
+  }
+
+  // Create a smooth surface from the smoothed control
+  // curves along the V iso lines.
+  Integer offset = voff;
+  for (Integer i = 0; i < nb_points; i++) {
+    for (Integer j = 0; j < nb_points; j++) {
+
+      positionsAttr.values[voff] =
+        b[i][0] * rv[j][0] +
+        b[i][1] * rv[j][1] +
+        b[i][2] * rv[j][2] +
+        b[i][3] * rv[j][3];
+      normalsAttr.values[voff] =
+        (b[i][0] * rn[j][0] +
+         b[i][1] * rn[j][1] +
+         b[i][2] * rn[j][2] +
+         b[i][3] * rn[j][3]).unit();
+
+      uvsAttr.values[voff] =
+        b[i][0] * rt[j][0] +
+        b[i][1] * rt[j][1] +
+        b[i][2] * rt[j][2] +
+        b[i][3] * rt[j][3];
+      voff++;
+    }
+  }
+
+  for (Integer i = 0; i < (nb_points - 1); i++) {
+    for (Integer j = 0; j < (nb_points - 1); j++) {
+      Integer c0, c1, c2, c3;
+      c0 = i * nb_points + j;
+      c1 = i * nb_points + j + 1;
+      c2 = (i + 1) * nb_points + j + 1;
+      c3 = (i + 1) * nb_points + j;
+      mesh.addPolygon( offset + c0, offset + c1, offset + c2, offset + c3 );
+    }
+  }
+}
+
+/**
+  Appends a transformed teapot to this mesh, with normals and UVs.
+  Before applying the transformation, it will be centered at the origin.
+
+  \param xfo Created points will be transformed by this Xfo
+  \param size A size multiplier for the teapot
+  \param detail Increasing this number will add more sections to the teapot
+  \category primitives
+  \dfgPresetDefault size 1.0
+  \dfgPresetDefault detail 8
+  \dfgPresetRange size (0.0, 5.0)
+  \dfgPresetRange detail (2, 12)
+  \dfgPresetTooltip
+    Appends a transformed teapot to this mesh, with normals and UVs.
+    Before applying the transformation, it will be centered at the origin.
+  \enddfgPresetTooltip
+*/
+function PolygonMesh.addTeapot!(Xfo xfo, in Scalar size, in Integer detail) {
+
+  Ref<Vec3Attribute> positions = this.getAttributes().getPositions();
+  Ref<Vec3Attribute> normals = this.getOrCreateNormals();
+  Ref<Vec2Attribute> uvs = this.getOrCreateVec2Attribute("uvs0");
+
+  Integer nb_points = (detail >= 0) ? (detail + 2) : 2;
+
+  BezierPatch tp[];
+  Vec3 tv[], tn[];
+
+  getTeapotHull(tp, tv, tn);
+
+  this.beginStructureChanges();
+  this.createPoints(Size(tp.size() * nb_points * nb_points));
+
+  Size voff = 0.0, idxoff = 0;
+  // Workaround to kl compilation error. 
+  // 'this' is considered readonly when calling the following method
+  // but by creating a local variable 'mesh' it call works. 
+  PolygonMesh mesh = this;
+  for (Size i = 0; i < tp.size(); i++) {
+    PolygonMeshSubdividePatch(
+      mesh, tp[i], tv, tn,
+      positions,
+      normals, 
+      uvs,
+      voff, idxoff, nb_points
+    );
+  }
+  this.endStructureChanges();
+
+  Scalar maxV = 0.0;
+  for (Size i = 0; i < positions.size(); i++) {
+    if (positions.values[i].length() > maxV) {
+      maxV = positions.values[i].length();
+    }
+  }
+  Scalar scale = (size / maxV) * 2.0;
+  for (Size i = 0; i < positions.size(); i++) {
+    positions.values[i] = xfo.transformVector(positions.values[i] * scale);
+    normals.values[i] = xfo.ori.rotateVector(normals.values[i]);
+  }
+
+  this.incrementPointPositionsVersion();
+  normals.incrementVersion();
+  uvs.incrementVersion();
+}
+
+/**
+  Appends a transformed bone primitive to this mesh.
+  Before applying the transformation, its length is in the +X axis, starting from the origin.
+
+  \param xfo Created points will be transformed by this Xfo
+  \param length Length of the bone
+  \param radius Radius of the bone (Y and Z radius)
+  \param setNormals If true, normals will be added (faceted)
+  \category primitives
+  \dfgPresetDefault length 4.0
+  \dfgPresetDefault radius 0.5
+  \dfgPresetDefault setNormals true
+  \dfgPresetRange length (0.0, 8.0)
+  \dfgPresetRange radius (0.0, 8.0)
+*/
+function PolygonMesh.drawBone!(Xfo xfo, Scalar length, Scalar radius, Boolean setNormals) {
+  
+  Vec3 boneVec = Vec3(length, 0.0, 0.0);
+  Vec3 yVec = Vec3(0.0, radius, 0.0);
+  Vec3 zVec = Vec3(0.0, 0.0, radius);
+
+  Size firstPoly = this.polygonCount();
+  Size firstPoint = this.createPoints(6);
+  Size pointId = firstPoint;
+
+  Vec3 p0 = xfo.tr;
+  Vec3 p1 = xfo.transformVector((boneVec * 0.2) + yVec + zVec);
+  Vec3 p2 = xfo.transformVector((boneVec * 0.2) - yVec + zVec);
+  Vec3 p3 = xfo.transformVector((boneVec * 0.2) - yVec - zVec);
+  Vec3 p4 = xfo.transformVector((boneVec * 0.2) + yVec - zVec);
+  Vec3 p5 = xfo.transformVector(boneVec);
+
+  this.setPointPosition(pointId, p0); pointId++;
+  this.setPointPosition(pointId, p1); pointId++;
+  this.setPointPosition(pointId, p2); pointId++;
+  this.setPointPosition(pointId, p3); pointId++;
+  this.setPointPosition(pointId, p4); pointId++;
+  this.setPointPosition(pointId, p5); pointId++;
+  this.beginStructureChanges(); 
+  this.addPolygon(firstPoint+2, firstPoint+1, firstPoint+0);
+  this.addPolygon(firstPoint+3, firstPoint+2, firstPoint+0);
+  this.addPolygon(firstPoint+4, firstPoint+3, firstPoint+0);
+  this.addPolygon(firstPoint+1, firstPoint+4, firstPoint+0);
+
+  this.addPolygon(firstPoint+3, firstPoint+4, firstPoint+5);
+  this.addPolygon(firstPoint+2, firstPoint+3, firstPoint+5);
+  this.addPolygon(firstPoint+1, firstPoint+2, firstPoint+5);
+  this.addPolygon(firstPoint+4, firstPoint+1, firstPoint+5);
+  this.endStructureChanges();
+  if(setNormals){ 
+    Ref<Vec3Attribute> normals = this.getOrCreateNormals();
+    // Set Points Normals 
+    Vec3 normal;
+    normal = (p2 - p0).cross(p1 - p0).unit();
+    this.setPolygonAttribute(firstPoly+0, 0, normals, normal);
+    this.setPolygonAttribute(firstPoly+0, 1, normals, normal);
+    this.setPolygonAttribute(firstPoly+0, 2, normals, normal);
+    normal = (p3 - p0).cross(p2 - p0).unit();
+    this.setPolygonAttribute(firstPoly+1, 0, normals, normal);
+    this.setPolygonAttribute(firstPoly+1, 1, normals, normal);
+    this.setPolygonAttribute(firstPoly+1, 2, normals, normal);
+    normal = (p4 - p0).cross(p3 - p0).unit();
+    this.setPolygonAttribute(firstPoly+2, 0, normals, normal);
+    this.setPolygonAttribute(firstPoly+2, 1, normals, normal);
+    this.setPolygonAttribute(firstPoly+2, 2, normals, normal);
+    normal = (p1 - p0).cross(p4 - p0).unit();
+    this.setPolygonAttribute(firstPoly+3, 0, normals, normal);
+    this.setPolygonAttribute(firstPoly+3, 1, normals, normal);
+    this.setPolygonAttribute(firstPoly+3, 2, normals, normal);
+    normal = (p3 - p5).cross(p4 - p5).unit();
+    this.setPolygonAttribute(firstPoly+4, 0, normals, normal);
+    this.setPolygonAttribute(firstPoly+4, 1, normals, normal);
+    this.setPolygonAttribute(firstPoly+4, 2, normals, normal);
+    normal = (p2 - p5).cross(p3 - p5).unit();
+    this.setPolygonAttribute(firstPoly+5, 0, normals, normal);
+    this.setPolygonAttribute(firstPoly+5, 1, normals, normal);
+    this.setPolygonAttribute(firstPoly+5, 2, normals, normal);
+    normal = (p1 - p5).cross(p2 - p5).unit();
+    this.setPolygonAttribute(firstPoly+6, 0, normals, normal);
+    this.setPolygonAttribute(firstPoly+6, 1, normals, normal);
+    this.setPolygonAttribute(firstPoly+6, 2, normals, normal);
+    normal = (p4 - p5).cross(p1 - p5).unit();
+    this.setPolygonAttribute(firstPoly+7, 0, normals, normal);
+    this.setPolygonAttribute(firstPoly+7, 1, normals, normal);
+    this.setPolygonAttribute(firstPoly+7, 2, normals, normal);
+  }
+}
+
+

@@ -1,0 +1,459 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Alembic;
+require Geometry;
+
+/**
+  The :kl-ref:`AlembicCurvesWriter` specializes the :kl-ref:`AlembicObjectWriter` interface for writing :kl-ref:`AlembicOCurves` data. 
+  It can be created using the :kl-ref:`AlembicArchiveWriter.addCurves` methods.
+  \example
+
+  require AlembicWrapper;
+  require FileIO;
+
+  operator entry() {
+    
+    FilePath path = FilePath('${TEMP}/curves.abc').expandEnvVars();
+
+    AlembicArchiveWriter archive(path.string());
+    AlembicXformWriter xfo = archive.addXform('/xfo', Alembic_kConstantTimeSampling);
+    AlembicCurvesWriter curves = archive.addCurves('/xfo/curves', Alembic_kConstantTimeSampling);
+
+    xfo.writeSample(Mat44());
+
+    Lines lines = Lines();
+    lines.addPoints( 6 );
+
+    lines.setPosition( 0, Vec3(1,0,0) );
+    lines.setPosition( 1, Vec3(-1,0,0) );
+    lines.addSegment( 0, 1 );
+
+    lines.setPosition( 2, Vec3(0,1,0) );
+    lines.setPosition( 3, Vec3(0,-1,0) );
+    lines.addSegment( 2, 3 );
+
+    lines.setPosition( 4, Vec3(0,0,1) );
+    lines.setPosition( 5, Vec3(0,0,-1) );
+    lines.addSegment( 4, 5 );
+
+    curves.writeSample(lines);
+
+    archive.reset();
+
+    report(path.exists());
+    report('Alembic file created: '+path.string());
+  }
+
+  \endexample
+  \seealso AlembicCurvesReader
+  \dfgArrayPexDisable true
+*/
+object AlembicCurvesWriter : AlembicObjectWriter{
+  /// \internal
+  private AlembicOCurves _curves;
+  /// \internal
+  private AlembicOCurvesSchema _schema;
+  /// \internal
+  private AlembicOCurvesSample _sample;
+  /// \internal
+  /// Mapping from the Lines' vertices to Alembic Curve's vertices
+  /// This is used because Lines.indices can contain several
+  /// times the same vertex indices.
+  private Index _vertexMapping[];
+  /// \internal
+  private SInt32 _numVertices[];
+  /// \internal
+  private Vec3 _positions[];
+  /// \internal
+  private Vec3 _velocities[];
+  /// \internal
+  private Float32 _widths[];
+  /// \internal
+  private AlembicOFloat32GeomParamSample _widthsSample;
+  /// \internal
+  private Vec2 _uvs[];
+  /// \internal
+  private AlembicOVec2VfGeomParamSample _uvsSample;
+  /// \internal
+  private UInt32 _numSamples;
+  /// \internal
+  private UInt32 _storedSamples;
+  /// \internal
+  private SInt32 _timeSamplingIndex;
+  /// \internal
+  private UInt32 _versions[String];
+  /// \internal
+  private AlembicGeometryAttributesWriter _attributeWriter;
+  /// \internal
+  private UInt64 _geometryUid;
+};
+
+/// \internal
+private function AlembicCurvesWriter(AlembicOObject parent, String name, SInt32 timeSampling) {
+  this._curves = AlembicOCurves(parent, name, timeSampling);
+  this._schema = this._curves.getSchema();
+  this._sample = AlembicOCurvesSample();
+  this._widthsSample = AlembicOFloat32GeomParamSample(this._widths, Alembic_kFacevaryingScope);
+  this._uvsSample = AlembicOVec2VfGeomParamSample(this._uvs, Alembic_kFacevaryingScope);
+  this._numSamples = this._schema.getTimeSampling().getNumStoredTimes();
+  if(this._numSamples == 0)
+    this._numSamples = 1;
+  this._storedSamples = 0;
+  this._timeSamplingIndex = timeSampling;
+  this._attributeWriter = AlembicGeometryAttributesWriter();
+}
+
+/// returns the full path of the wrapped AlembicOCurves
+function String AlembicCurvesWriter.getPath() {
+  return this._curves.asOObject().getFullName();
+}
+
+/// returns true if this writer wraps a valid AlembicOCurves
+function Boolean AlembicCurvesWriter.valid() {
+  return this._curves.valid();
+}
+
+/// clears all pointers and releases all alembic containers
+function AlembicCurvesWriter.reset!() {
+  this._curves.reset();
+  this._schema.reset();
+  this._sample = null;
+  this._widthsSample = null;
+  this._uvsSample = null;
+  this._attributeWriter.reset();
+}
+
+/// returns the wrapped AlembicOObject
+function AlembicOObject AlembicCurvesWriter.getOObject() {
+  return this._curves.asOObject();
+}
+
+/// provide access to the wrapped AlembicGeometryAttributesWriter.
+function Ref<AlembicGeometryAttributesWriter> AlembicCurvesWriter.getGeometryAttributesWriter() {
+  return this._attributeWriter;
+}
+
+/// Store a new AlembicGeometryParamReader based on an existing attribute
+function AlembicCurvesWriter.addParamWriter!(GeometryAttribute attribute, AlembicGeometryScope scope, SInt32 timeSampling) {
+  AlembicOCompoundProperty props = this._schema.getArbGeomParams();
+  this._attributeWriter.addParamWriter(props, attribute.getName(), scope, timeSampling, attribute);
+}
+
+function Boolean AlembicCurvesWriter.writeSample!( Ref<Curves> geom, SInt32 featureMask )
+{
+  if(this == null)
+    return false;
+  if(geom == null)
+    return false;
+  if(this._storedSamples == this._numSamples) {
+    // setError('AlembicCurvesWriter: Max number of samples reached.');
+    return false;
+  }
+  
+  Ref<GeometryAttributes> attributes = geom.getAttributes();
+
+  Boolean theSameGeo = geom.uid() == this._geometryUid;
+  this._geometryUid = geom.uid();
+  
+  UInt8 orders[];
+  Float32 alembicKnots[];
+  
+
+  // updating the topology
+  if(featureMask == 0 || (featureMask & AlembicExportFeature_Topology) == AlembicExportFeature_Topology) {
+    if(
+      this._storedSamples == 0
+      || geom.structureVersion != this._versions.get('_curvesTopology', 0)
+      || !theSameGeo
+    )
+    {
+      if( geom.curveCount() > 0 ) {
+        UInt8 curveType = geom.getCurveType( 0 );
+        Boolean periodic = geom.isPeriodic( 0 );
+        Boolean variableOrder = false;
+        orders.push( geom.getOrder( 0 ) );
+
+        // checking that all the curves have the same type (Alembic limitation)
+        for( Index i = 1; i < geom.curveCount(); i++ ) {
+          UInt8 curveType2 = geom.getCurveType( i );
+          Boolean periodic2 = geom.isPeriodic( i );
+          orders.push( geom.getOrder( i ) );
+          if( geom.getOrder( i ) != orders[0] )
+            variableOrder = true;
+
+          // if the Curves have different types, converting them
+          // to the highest common denominator
+          if( curveType2 != curveType || periodic2 != periodic ) {
+            // converting Linear to Bezier or Bezier to NURBS if needed
+            if( curveType == curveType_NURBS || curveType2 == curveType_NURBS )
+              curveType = curveType_NURBS;
+            else
+              if( curveType == curveType_bezier || curveType2 == curveType_bezier )
+                curveType = curveType_bezier;
+              else
+                curveType = curveType_linear;
+
+            // convert periodic curves to open curves if needed
+            periodic = periodic && periodic2;
+          }
+        }
+
+        AlembicCurveType alembicCurveType;
+        AlembicBasisType alembicBasisType;
+        if( curveType == curveType_linear ) 
+        {
+          alembicCurveType = Alembic_kLinear;
+          alembicBasisType = Alembic_kBsplineBasis; // TODO : remove ?
+        } else {
+          alembicCurveType = ( variableOrder || orders[0] != 4 ) ? Alembic_kVariableOrder : Alembic_kCubic;
+
+          if( curveType == curveType_NURBS )
+            alembicBasisType = Alembic_kBsplineBasis;
+          else if( curveType == curveType_bezier )
+            alembicBasisType = Alembic_kBezierBasis;
+          else
+            throw ( "Invalid Curve Type = " + curveType + " when writing to object \"" + this.getPath() + "\"" );
+        }
+
+        this._sample.setType( alembicCurveType );
+        if( alembicCurveType == Alembic_kVariableOrder )
+          this._sample.setOrders( orders );
+
+        this._sample.setWrap( periodic ? Alembic_kPeriodic : Alembic_kNonPeriodic );
+        this._sample.setBasis( alembicBasisType );
+
+        // Export points and knots, apply curve type conversion if required.
+        this._numVertices.resize( 0 );
+        this._positions.resize( 0 );
+        this._vertexMapping.resize( 0 );
+        alembicKnots.resize( 0 );
+
+        UInt32 pointToComponentMapping[];
+
+        for( Index i = 0; i < geom.curveCount(); i++ ) {
+          UInt8 curveType2 = geom.getCurveType( i );
+          UInt8 degree = geom.getDegree( i );
+          // Point count: including repeated points
+          Size curveSize = geom.getPointCount( i, true );
+
+          if( curveType == curveType_NURBS ) {
+            // Various conversions might apply here.
+
+            // Note: Alembic uses "order" knots on each end, instead of "degree" knots
+            // like in Fabric and Maya.
+
+            // 1) One curve is linear: create default knots + repeated knot.
+            if( curveType2 == curveType_linear ) {
+              alembicKnots.push( 0 );
+              for( Size j = 0; j < curveSize; ++j )
+                alembicKnots.push( j );
+              alembicKnots.push( alembicKnots[alembicKnots.size()-1] );
+            } 
+            else if( curveType2 == curveType_bezier )
+            {
+              // 2) Bezier: convert to degree knot multiplicity.
+              // Also, truncate unused piece points if any
+              UInt32 pieceCount = curveSize / degree;
+              curveSize = pieceCount * degree + 1;
+
+              Float32 domainStart = geom.getDomain( i ).x;
+              UInt32 offset;
+              alembicKnots.push( domainStart );
+              for( Size j = 0; j < pieceCount+1; ++j ) {
+                for( Size k = 0; k < degree; ++k )
+                  alembicKnots.push( j + domainStart );
+              }
+              alembicKnots.push( alembicKnots[alembicKnots.size() - 1] );
+            }
+            else if( curveType2 == curveType_NURBS ) {
+              Float32 knots[] = geom.getNURBSKnots( i );
+              Boolean periodic2 = geom.isPeriodic( i );
+
+              if( periodic2 && !periodic ) {
+                // We need to clamp to non-periodic. Simply make extremity knots as degree multiplicity.
+                for( Size k = 0; k < degree-1; ++k ) {
+                  knots[k] = knots[degree-1];
+                  knots[knots.size() - 1 - k] = knots[knots.size() - degree];
+                }
+              }
+
+              Float32 delta = knots[1] - knots[0];
+              alembicKnots.push( knots[0] - delta );
+              for( Index k = 0; k < knots.size(); k++ )
+                alembicKnots.push( knots[k] );
+              delta = knots[knots.size() - 1] - knots[knots.size() - 2];
+              alembicKnots.push( knots[knots.size() - 1] + delta );
+            }
+          }
+
+          this._numVertices.push( curveSize );
+          for( Index p = 0; p<curveSize; p++ ) {
+            Index pI = geom.getPointIndex( i, p );
+            this._vertexMapping.push( pI );
+          }
+        }
+
+        this._sample.setKnots( alembicKnots );
+        this._sample.setCurvesNumVertices( this._numVertices );
+
+        this._versions['_curvesTopology'] = geom.structureVersion;
+      }
+    }
+  } else {
+    SInt32 curveVertices[];
+    this._sample.setCurvesNumVertices(curveVertices);
+    this._sample.setType(Alembic_kLinear);
+    this._sample.setWrap(Alembic_kNonPeriodic);
+    this._sample.setBasis(Alembic_kNoBasis);
+  }
+  
+  this.writeAttributes( geom, attributes, !theSameGeo, featureMask );
+  this._schema.set(this._sample);
+
+  this._storedSamples++;
+  return true;
+}
+
+/// writes a single sample into the file based on the provided GeometryAttributes.
+function Boolean AlembicCurvesWriter.writeSample!(Ref<Lines> lines, SInt32 featureMask) {
+  if(this == null)
+    return false;
+  if(lines == null)
+    return false;
+  if(this._storedSamples == this._numSamples) {
+    // setError('AlembicCurvesWriter: Max number of samples reached.');
+    return false;
+  }
+
+  Boolean theSameGeo = lines.uid() == this._geometryUid;
+  this._geometryUid = lines.uid();
+
+  Ref<GeometryAttributes> attributes = lines.getAttributes();
+
+  // Lines' indices must be converted to an array of vertices for Alembic Curves
+  if((lines.structureVersion != this._versions.get('_topology', 0) && lines.indices.size() > 0)  || !theSameGeo) {
+    // Computing the mapping from Lines' vertices, to Alembic Curve's vertices (using lines.indices)
+    this._vertexMapping.resize( 0 );
+    UInt32 curves[][]; curves = lines.getIndicesPerCurve();
+    this._numVertices.resize(0);
+    for(Index curveI=0; curveI<curves.size(); curveI++) {
+      UInt32 curve[]; curve = curves[curveI];
+      for(Index i=0; i<curve.size(); i++) {
+        this._vertexMapping.push(curve[i]);
+      }
+      this._numVertices.push(curve.size());
+    }
+    // TODO : If the last and first vertices are the same, use the "periodic wrap" property
+    this._sample.setCurvesNumVertices(this._numVertices);
+    this._versions['_topology'] = lines.structureVersion;
+  }
+
+  // init on first frame
+  if(featureMask == 0 || (featureMask & AlembicExportFeature_Topology) == AlembicExportFeature_Topology) {
+    if(this._storedSamples == 0) {
+
+      if(!attributes.has('positions')) {
+        setError('AlembicCurvesWriter: Provided Lines does not contain positions.');
+        return false;
+      }
+
+      // for now we only support linear curves
+      this._sample.setType(Alembic_kLinear);
+      this._sample.setWrap(Alembic_kNonPeriodic);
+      this._sample.setBasis(Alembic_kNoBasis);
+    } 
+  } else {
+    SInt32 curveVertices[];
+    this._sample.setType(Alembic_kLinear);
+    this._sample.setWrap(Alembic_kNonPeriodic);
+    this._sample.setBasis(Alembic_kNoBasis);
+  }
+
+  this.writeAttributes( lines, attributes, !theSameGeo, featureMask );
+  this._schema.set(this._sample);
+
+  this._storedSamples++;
+  return true;
+}
+
+/// \internal
+function AlembicCurvesWriter.writeAttributes!( Ref<Geometry> geometry, Ref<GeometryAttributes> attributes, Boolean forceWrite, SInt32 featureMask )
+{
+  Vec3Attribute positionsAttr = attributes.getAttribute('positions', Vec3Attribute);
+  if(positionsAttr.getVersion() != this._versions.get('positions', 0) || forceWrite ) {
+    Box3 bounds;
+    this._positions.resize(this._vertexMapping.size());
+    for(Size i=0;i<this._positions.size();i++) {
+      this._positions[i] = positionsAttr.values[this._vertexMapping[i]];
+      bounds.merge(this._positions[i]);
+    }
+    this._sample.setSelfBounds(bounds);
+    this._sample.setPositions(this._positions);
+    this._versions['positions'] = positionsAttr.getVersion();
+  }
+
+  if((featureMask == 0 || (featureMask & AlembicExportFeature_Velocities) == AlembicExportFeature_Velocities) && attributes.has('velocities')) {
+    Vec3Attribute attr = attributes.getAttribute('velocities', Vec3Attribute);
+    if(attr.getVersion() != this._versions.get('velocities', 0) || forceWrite ) {
+      this._velocities.resize(this._vertexMapping.size());
+      for(Size i=0;i<this._velocities.size();i++)
+        this._velocities[i] = attr.values[this._vertexMapping[i]];
+      this._sample.setVelocities(this._velocities);
+      this._versions['velocities'] = attr.getVersion();
+    }
+  }
+
+  if((featureMask == 0 || (featureMask & AlembicExportFeature_Sizes) == AlembicExportFeature_Sizes) && attributes.has('sizes')) {
+    ScalarAttribute attr = attributes.getAttribute('sizes', ScalarAttribute);
+    if(attr.getVersion() != this._versions.get('sizes', 0) || forceWrite ) {
+
+      this._widthsSample.setScope(Alembic_kVertexScope);
+      this._widths.resize(this._vertexMapping.size());
+      for(Size i=0;i<this._widths.size();i++)
+        this._widths[i] = attr.values[this._vertexMapping[i]];
+
+      this._widthsSample.setVals(this._widths);
+      this._sample.setWidths(this._widthsSample);
+      this._versions['sizes'] = attr.getVersion();
+    }
+  }
+
+  if((featureMask == 0 || (featureMask & AlembicExportFeature_Uvs) == AlembicExportFeature_Uvs) && attributes.has('uvs0')) {
+    Vec2Attribute attr = attributes.getAttribute('uvs0', Vec2Attribute);
+    if(attr.getVersion() != this._versions.get('uvs0', 0) || forceWrite ) {
+
+      this._uvsSample.setScope(Alembic_kVertexScope);
+      this._uvs.resize(this._vertexMapping.size());
+      for(Size i=0;i<this._uvs.size();i++)
+        this._uvs[i] = attr.values[this._vertexMapping[i]];
+
+      this._uvsSample.setVals(this._uvs);
+      this._sample.setUVs(this._uvsSample);
+      this._versions['uvs0'] = attr.getVersion();
+    }
+  }
+
+  if((featureMask == 0 || (featureMask & AlembicExportFeature_VertexColors) == AlembicExportFeature_VertexColors) && attributes.has('vertexColors')) {
+    this._attributeWriter.addParamWriter(
+      this._schema.getArbGeomParams()
+      , ".colors"
+      , Alembic_kVertexScope
+      , this._timeSamplingIndex,
+      , attributes.getAttribute( "vertexColors" )
+    );
+  }
+
+  this._attributeWriter.writeSample( geometry, attributes, this._vertexMapping );
+}
+
+function Boolean AlembicCurvesWriter.writeSample!(Ref<Lines> lines) {
+  return this.writeSample(lines, AlembicExportFeature_Complete);
+}
+
+/// writes a single sample into the file based on the provided PolygonMesh.
+function Boolean AlembicCurvesWriter.writeSample!(Ref<Curves> curves)
+{
+  return this.writeSample(curves, AlembicExportFeature_Complete);
+}

@@ -1,0 +1,197 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+require InlineDrawing;
+
+/**
+\versionadded 1.12.0
+
+The :kl-ref:`TransformManipulator` combines a :kl-ref:`PositionGizmosManager` 
+and a :kl-ref:`OrientationGizmosManager` to support translation and rotation in 3d.
+
+The Transform manipulator displays a collection of different gizmos, each for 
+manipulating the transforms in a different way.
+
+When a TransformManipulator is constructed, it automatically constructs the :kl-ref:`PositionGizmosManager` 
+and :kl-ref:`OrientationGizmosManager`, which in turn construct Gizmo manages for each axis and plane of manipulation.
+
+The TransformManipulator can be used to manipulate a group of transforms via the 
+:kl-ref:`GizmoManipulationCallback`. As the gizmos are manipulated, the computed
+delta transforms that are then sent to the :kl-ref:`GizmoManipulationCallback` callback for handling. 
+It is the callbacks responsibility to apply the delta to the targets and generate 
+the undo/redo objects. 
+
+\rst
+  .. kl-example:: TransformManipulator-Example
+
+    require InlineDrawing;
+
+    operator entry() {
+
+      // this is a singleton
+      InlineDrawing drawing = OGLInlineDrawing_GetInstance();
+
+
+      InlineTransform groupTransform = StaticInlineTransform('groupTransform', Xfo(Vec3(0.0, 0.0, 0.0)));
+      drawing.getRoot().addChild(groupTransform);
+
+      // Setup the manipulator
+      {
+          Ref<EventDispatcher> eventDispatcher = EventDispatcher_GetInstance();
+
+          TransformManipulationCallback callback();
+          callback.addTarget(groupTransform);
+
+          TransformManipulator transformManipulator = TransformManipulator(groupTransform, 140.0, callback);
+          eventDispatcher.registerManipulator(transformManipulator);
+      }
+      {
+        InlineShader surfaceShader = OGLSurfaceShader('surface');
+        drawing.registerShader(surfaceShader);
+
+        InlineMaterial phongMaterial = surfaceShader.getOrCreateMaterial("phong");
+
+        Size offset;
+
+        // create some spheres
+
+        {
+          PolygonMesh sphere();
+          Size detail = 24;
+          Scalar radius = 1.0;
+          sphere.addSphere(Xfo(), radius, detail, true, true);
+
+          InlineMeshShape shape = InlineMeshShape('sphere', sphere);
+          drawing.registerShape(shape);
+
+          {
+            InlineTransform transform = StaticInlineTransform('sphereTransform', Xfo(Vec3(4.0, 0.0, 0.0)));
+            groupTransform.addChild(transform);
+
+            InlineInstance instance = InlineInstance('sphere1', transform, shape);
+            instance.setInstanceUniform(InlineUniform('u_diffuseColor', Color(1.0, 0.0, 0.0)));
+
+            instance.addMaterial(phongMaterial);
+          }
+
+          {
+            InlineTransform transform = StaticInlineTransform('sphereTransform', Xfo(Vec3(0.0, 4.0, 0.0)));
+            groupTransform.addChild(transform);
+
+            InlineInstance instance = InlineInstance('sphere2', transform, shape);
+            instance.setInstanceUniform(InlineUniform('u_diffuseColor',  Color(0.0, 1.0, 0.0)));
+
+            instance.addMaterial(phongMaterial);
+
+          }
+          {
+            InlineTransform transform = StaticInlineTransform('sphereTransform', Xfo(Vec3(0.0, 0.0, 4.0)));
+            groupTransform.addChild(transform);
+
+            InlineInstance instance = InlineInstance('sphere3', transform, shape);
+            instance.setInstanceUniform(InlineUniform('u_diffuseColor', Color(0.0, 0.0, 1.0)));
+
+            instance.addMaterial(phongMaterial);
+          }
+        }
+      }
+      {
+        // activate the transform manipulator
+        Ref<EventDispatcher> eventDispatcher = EventDispatcher_GetInstance();
+        eventDispatcher.pushManipulator('TransformManipulator');
+      }
+
+    }
+
+\endrst
+
+\seealso Manipulator, GizmoManipulator, GizmoManipulationCallback
+\dfgPresetOmit
+*/
+
+object TransformManipulator : GizmoManipulator {
+  /// The manager for the position gizmos
+  PositionGizmosManager positionGizmosManager;
+  /// The manager for the orientation gizmos
+  OrientationGizmosManager orientationGizmosManager;
+
+  /// The mode determining which gizmos are currently visible. 
+  ManipulationMode mode;
+};
+
+function TransformManipulator(io InlineTransform parent, Scalar size, GizmoManipulationCallback callback){
+
+  Xfo xfo();
+  xfo.sc *= size;
+  InlineTransform transform = StaticInlineTransform('TransformManipulatorTransform', xfo);
+  parent.addChild(transform);
+
+  this.positionGizmosManager = PositionGizmosManager( transform, callback );
+  this.orientationGizmosManager = OrientationGizmosManager( transform, callback );
+
+  // Default the TransformManipulator to display position gizmos.
+  this.setManipulationMode(ManipulationMode_Position);
+}
+
+/// Hide gizmos based on the current manipulation mode.
+/// \internal
+function TransformManipulator.hide!(){
+  this.positionGizmosManager.hide();
+  this.orientationGizmosManager.hide();
+}
+
+/// Show gizmos based on the current manipulation mode.
+/// \internal
+function TransformManipulator.show!(){
+  this.setManipulationMode(this.mode);
+}
+
+/// Sets the current manipulation mode, hiding/showing the appropriate gizmos
+/// \param mode the bit set defining the visible manipulation gizmos 
+function TransformManipulator.setManipulationMode!(ManipulationMode mode){
+  this.mode = mode;
+  this.positionGizmosManager.setManipulationMode(mode);
+  this.orientationGizmosManager.setManipulationMode(mode);
+}
+
+/// Returns the set of InlineInstances used as gizmos.
+/// \internal
+function InlineInstance[] TransformManipulator.getGizmos(){
+  InlineInstance gizmos[];
+  gizmos = gizmos + this.positionGizmosManager.getGizmos();
+  gizmos = gizmos + this.orientationGizmosManager.getGizmos();
+  return gizmos;
+}
+
+/// When the manipulator is enabled, this callback function is invoked. 
+function TransformManipulator.onEnable!(){
+  this.show();
+  // Note: Don't call this.parent.onEnable because that uses the gizmo collector
+  // to collect all gizmos in the scene. The TransformManipulator only uses the
+  // gizmos setup by the positionGizmosManager and orientationGizmosManager
+  this.gizmos = this.getGizmos();
+  this.setManipulationMode(this.mode);
+}
+
+/// When the manipulator is disabled, this callback function is invoked. 
+function TransformManipulator.onDisable!(){
+  this.hide();
+}
+
+function TransformManipulator.onEvent!(io Event event){
+  if(event.type() == MouseEvent){
+    // Leave the GizmoManipulator to handle the mouse events
+    // It will raycast the gizmos, and pick an active gizmo.
+    this.parent.onEvent(event);
+  }
+  else if(event.type() == KeyEvent){
+    KeyEvent keyEvent = event;
+    if(keyEvent.key == Key_Z)
+      this.setManipulationMode(ManipulationMode_Position);
+    if(keyEvent.key == Key_X)
+      this.setManipulationMode(ManipulationMode_Orientation);
+
+    event.getHost().requestRedraw();
+    event.accept();
+  }
+}

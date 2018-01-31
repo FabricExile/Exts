@@ -1,0 +1,138 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/// \internal
+struct FewObjectsRecyclingAllocator_PerThreadEntries {
+  Object allocated[];
+  UInt32 freeIndices[];
+  UInt32 freeIndicesCount;//Avoid resize
+};
+
+/**
+  The FewObjectsRecyclingAllocator is a simple per-thread allocator that simply
+  allocates and recycles objects of a given type using a thread local pool.
+
+  This allows to efficiently allocate thread-specific objects by avoiding locking.
+  These objects are recycled and never released, in order to lower heap allocation
+  overhead. Consequently, the FewObjectsRecyclingAllocator should be used for objects
+  that use a relatively small amount of memory.
+  Because objects are recycled, it is possible that allocated objects are
+  already initialized since they might have been used before.
+  Also, it is required that objects get released from the same thread that they were
+  allocated, otherwise an error will be logged.
+
+  In order to detect potential leaking errors, the `maxCountBeforeWarning`
+  constructor parameter allows to specify a per-thread allocation count limit after which 
+  an error message will get printed.
+*/
+object FewObjectsRecyclingAllocator {
+  /// \internal
+  Object cloneableSource;
+
+  /// \internal
+  FewObjectsRecyclingAllocator_PerThreadEntries perThreadEntries[];
+
+  /// \internal
+  UInt32 totalAllocated;
+  /// allocated count limit (per thread) after which an error will be logged
+  UInt32 maxCountBeforeWarning;
+  /// the error to be logged if the `maxCountBeforeWarning` allocation limit is reached
+  String maxCountWarning;
+  /// \internal
+  String inconsistentWarning;
+};
+
+/**
+  Constructs a FewObjectsRecyclingAllocator.
+  \param cloneableSource The source instance of the object. Allocated objects will be a copy of this one (`cloneableSource.clone()`)
+  \param maxCountBeforeWarning Allocated count limit (per thread) after which the `maxCountWarning` error will be logged
+  \param maxCountWarning The error to be logged if the `maxCountBeforeWarning` allocation limit is reached
+*/
+function FewObjectsRecyclingAllocator( Object cloneableSource, UInt32 maxCountBeforeWarning, String maxCountWarning ) {
+  this.cloneableSource = cloneableSource;
+  this.maxCountBeforeWarning = maxCountBeforeWarning;
+  this.maxCountWarning = maxCountWarning;
+  this.perThreadEntries.resize(getThreadCount());
+  this.inconsistentWarning = "FewObjectsRecyclingAllocator: objects must be released from the same thread they were allocated";
+}
+
+/// Returns the total allocated count, for all threads. This excludes instances that are not being used.
+/// \seealso FewObjectsRecyclingAllocator.freeCount
+function Size FewObjectsRecyclingAllocator.allocatedCount() {
+  Size total;
+  for( Size i = 0; i < this.perThreadEntries.size(); ++i )
+    total += this.perThreadEntries[i].allocated.size() - this.perThreadEntries[i].freeIndicesCount;
+  return total;
+}
+
+/// Returns the total unused instances count, for all threads.
+/// \seealso FewObjectsRecyclingAllocator.allocatedCount
+function Size FewObjectsRecyclingAllocator.freeCount() {
+  Size total;
+  for( Size i = 0; i < this.perThreadEntries.size(); ++i )
+    total += this.perThreadEntries[i].freeIndicesCount;
+  return total;
+}
+
+/// \internal
+function Ref<Object> FewObjectsRecyclingAllocator._allocate!( UInt32 threadID, io FewObjectsRecyclingAllocator_PerThreadEntries threadEntries ) {
+  if( threadEntries.freeIndicesCount ) {
+    --threadEntries.freeIndicesCount;
+    UInt32 index = threadEntries.freeIndices[threadEntries.freeIndicesCount];
+    return threadEntries.allocated[index];
+  }
+
+  UInt32 index = threadEntries.allocated.size();
+  threadEntries.allocated.resize(index+1);
+  if( threadEntries.allocated.size() == this.maxCountWarning )
+    report( this.maxCountWarning );
+
+  threadEntries.allocated[index] = this.cloneableSource.clone();
+  return threadEntries.allocated[index];
+}
+
+/**
+  Returns an allocated object. This object must be released from the
+  same thread by calling :kl-ref:`FewObjectsRecyclingAllocator.free`,
+  otherwise an error will be logged.
+  
+  Because objects are recycled, it is possible that the returned object is
+  already initialized since it was previously used.
+*/
+inline Ref<Object> FewObjectsRecyclingAllocator.allocate!() {
+  UInt32 threadId = getThreadIndex();
+  return this._allocate(threadId, this.perThreadEntries[threadId]);
+}
+
+/// \internal
+function FewObjectsRecyclingAllocator._free!( Ref<Object> reference, UInt32 threadID, io FewObjectsRecyclingAllocator_PerThreadEntries threadEntries ) {
+
+  UInt32 allocatedCount = threadEntries.allocated.size();
+  for( Size i = 0; i < allocatedCount; ++i ) {
+    if( reference === threadEntries.allocated[i] ) {
+      //Push to our local free list
+      if( threadEntries.freeIndicesCount == threadEntries.freeIndices.size() )
+        threadEntries.freeIndices.resize(threadEntries.freeIndicesCount+1);
+      threadEntries.freeIndices[threadEntries.freeIndicesCount++] = i;
+      return;
+    }
+  }
+  report(this.inconsistentWarning);
+}
+
+/**
+  Frees an allocated object by transferring the ownership to the FewObjectsRecyclingAllocator. 
+  This object must have been allocated from the
+  same thread by a call to :kl-ref:`FewObjectsRecyclingAllocator.allocate`,
+  otherwise an error will be logged.
+
+  This object will not be destroyed, and will be returned
+  by a future call to :kl-ref:`FewObjectsRecyclingAllocator.allocate`
+  for the same thread (recycled).
+*/
+inline FewObjectsRecyclingAllocator.free!( Ref<Object> reference ) {
+  UInt32 threadId = getThreadIndex();
+  this._free(reference, threadId, this.perThreadEntries[threadId]);
+}
+

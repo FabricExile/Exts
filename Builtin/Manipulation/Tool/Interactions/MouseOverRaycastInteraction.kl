@@ -1,0 +1,109 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+namespace Tool {
+
+  const String MouseOverRaycastInteraction_EnterEvent = "enterOver";
+  const String MouseOverRaycastInteraction_SuccessEvent = "onOver";
+  const String MouseOverRaycastInteraction_LeaveEvent = "leaveOver";
+
+  /**
+    The MouseOverRaycastInteraction sends events when the mouse is over the target shape.
+    The mouse button can be specified (MouseButton_LeftButton by default). The target
+    shape, if not specified, is the owner BaseTool. Else, an explicit shape can be specified
+    with :kl-ref:`Tool::BaseRaycastInteraction.setRaycastShape`, :kl-ref:`Tool::BaseRaycastInteraction.addRaycastShape`,
+    :kl-ref:`Tool::BaseRaycastInteraction.setRaycastHierarchy` or :kl-ref:`Tool::BaseRaycastInteraction.addRaycastHierarchy`.
+
+    If "mouse over" conditions are matched, MouseOverRaycastInteraction will send:
+
+    - A MouseOverRaycastInteraction_EnterEvent event when the mouse is first over the shape area
+
+    - A MouseOverRaycastInteraction_SuccessEvent event for each mouse move
+
+    - A MouseOverRaycastInteraction_LeaveEvent event when the mouse leaves the shape area
+
+    See :ref:`TPG.interactive-tools` for more information and examples related to tool interactions.
+  */
+  object MouseOverRaycastInteraction : BaseRaycastInteraction{
+    MouseOverRaycastEventHandler raycastHandler;
+    Boolean interactionStarted;
+    ModiferKey allowedModifiers;
+  };
+
+  /// \note By default, the parent's shape hierarchy will be added as a raycast shape.
+  MouseOverRaycastInteraction() {
+    this.init( 0, true );
+  }
+
+  /// \param parentIsShapeHierarchy If true, the parent's shape hierarchy will be added as a raycast shape.
+  MouseOverRaycastInteraction( ModiferKey allowedModifiers, Boolean parentIsShapeHierarchy ) {
+    this.init( allowedModifiers, parentIsShapeHierarchy );
+  }
+
+  /// \internal
+  MouseOverRaycastInteraction.init!( ModiferKey allowedModifiers, Boolean parentIsShapeHierarchy ) {
+    this.parentIsShapeHierarchy = parentIsShapeHierarchy;
+    this.raycastHandler = GetMouseOverRaycastEventHandler();
+    this.raycastHandler.addRaycastTarget( this );
+    this.allowedModifiers = allowedModifiers;
+  }
+
+  /// \internal
+  Boolean MouseOverRaycastInteraction.allowRaycast( RaycastContext context ) {
+    // Apply button filtering logic if applicable
+    Ref<MouseEvent> mouseEvent = context.event;
+    if( Boolean( mouseEvent ) && ( ( mouseEvent.getModifiers() & ~this.allowedModifiers ) != 0 ) )
+      return false;
+    return this.parent.allowRaycast( context );
+  }
+
+
+  /// \internal
+  /// Non-virtual version that can be safely called from the destructor
+  /// This can be removed once KL is fixed to not call specialized methods in destructors
+  MouseOverRaycastInteraction.invalidateInternal!( ) {
+    if( this.interactionStarted ) {
+      this.sendEventToParentAndListeners( MouseOverRaycastInteraction_LeaveEvent );
+      this.interactionStarted = false;
+    }
+    if( this.raycastHandler ) {
+      this.raycastHandler.removeRaycastTarget( this );
+      this.raycastHandler = null;
+    }
+    this.parent.invalidate();
+  }
+
+  MouseOverRaycastInteraction.invalidate!( ) {
+    this.invalidateInternal();
+  }
+
+  ~MouseOverRaycastInteraction() {
+    this.invalidateInternal();
+  }
+
+  /// \internal
+  /// Implementation of RaycastTarget
+  MouseOverRaycastInteraction.onRaycastSucceeded!( io RaycastContext context, RaycastResult result ) {
+    BaseRaycastInteractionSendEventBracket bracket( this, context, result );
+    this.parent.onRaycastSucceeded( context, result );
+
+    if( !this.interactionStarted ) {
+      this.interactionStarted = true;
+      this.sendEventToListeners( MouseOverRaycastInteraction_EnterEvent, EventPropagationType_none, String(), this );
+    }
+    this.sendEventToListeners( MouseOverRaycastInteraction_SuccessEvent, EventPropagationType_none, String(), this );
+    ToolChanged();// request redraw
+  }
+
+  /// \internal
+  /// Implementation of RaycastTarget
+  MouseOverRaycastInteraction.onRaycastFail!( io RaycastContext context ) {
+    this.parent.onRaycastFail( context );
+
+    if( this.interactionStarted ) {
+      this.sendEventToListeners( MouseOverRaycastInteraction_LeaveEvent );
+      this.interactionStarted = false;
+      ToolChanged();// request redraw
+    }
+  }
+}// namespace Tool

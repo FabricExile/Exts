@@ -1,0 +1,62 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "helper function to draw a points object given a color + a single transform.\nThis method can be called several times by the same DrawingHandle\nwithout overwriting the previous content.\n\nSupported types:\n  this: DrawingHandle\n  transform: Xfo\n  points: Points\n  instance: InlineInstance\n"
+    },
+  "title" : "AccumulateDrawPoints",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "DrawingHandle"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 249,\n  \"g\" : 157,\n  \"b\" : 28\n  }"
+        },
+      "name" : "transform",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Xfo"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "points",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Points"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "instance",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "InlineInstance"
+      }
+    ],
+  "extDeps" : {
+    "InlineDrawing" : "*"
+    },
+  "presetGUID" : "B436B7275F0F3D6677FA43EC46FDEE5E",
+  "code" : "require InlineDrawing;
+
+dfgEntry {
+  if( !Boolean(this) )
+    return;
+  this.accumulateDrawPoints(transform, points, instance);
+}
+"
+  }

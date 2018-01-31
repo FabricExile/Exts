@@ -1,0 +1,341 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+
+require Math, FabricStatistics;
+
+/**
+
+The Points object implements a point cloud geometry. All its data is contained in its GeometryAttributes 
+container that can be retrieved by calling :kl-ref:`Points.getAttributes`.
+
+\rst
+
+.. _pointsizes:
+
+Point sizes
+-----------
+
+A `size` attribute can be defined by :kl-ref:`Points.getOrCreateSizesAttribute` or :kl-ref:`Points.setSizesAttribute`. 
+This attribute will then be used by helpers such as :kl-ref:`Points.getSize`, and the point 
+bounding spheres defined by the `size` will be used to compute points' volume for SpatialQueryable functions such
+as :kl-ref:`Points.raycast`. 
+
+If no size attribute is defined, the `Points.defaultPointSize` constant will be used as the size for all points.
+
+\endrst
+
+\example
+
+  Points points = Points();
+  points.getOrCreateSizesAttribute();
+
+  points.resize( 5 );
+  for( Size i = 0; i < 5; ++i ) {
+    points.setPointPosition( i, Vec3( 0, i, 0 ) );
+    points.setSize( i, (i+1) * 0.1f );
+  }
+  report( points.getDesc(true, false) );
+\endexample
+\dfgTypeColor Color(51, 1, 106)
+*/
+object Points : BaseGeometry, Geometry, SpatialQueryable {
+
+  /// used for get/setSize if `sizesAttribute` is not specified (see :ref:`pointsizes`)
+  Scalar defaultPointSize;
+  /// used for get/setSize if specified (see :ref:`pointsizes`)
+  Ref<ScalarAttribute> sizesAttribute;
+
+  /// \internal Created on demand. Cache from the meta-data dictionary to avoid locks.
+  Object spatialAccelerationCache;
+};
+
+function Points() {
+  this.parent._init("Points");
+  this.defaultPointSize = 1e-4;
+}
+
+/// Constructor taking the string to be used as the name. 
+/// \param debugName the name displayed in debugging
+function Points(String debugName) {
+  this.parent._init(debugName);
+  this.defaultPointSize = 1e-4;
+}
+
+/// Returns the debug name used when constructing the geometry.
+function String Points.getDebugName() {
+  return this.debugName;
+}
+
+/// Returns the version of the geometry including attribute values
+inline UInt32 Points.getVersion() {
+  return this.parent.getVersion();
+}
+
+/// Returns the version of the geometry structure including the the attribute set (but not attribute values).
+inline UInt32 Points.getStructureVersion() {
+  return this.parent.getStructureVersion();
+}
+
+function Points.convertToGPU!() {
+}
+
+function Points.convertToCPU!() {
+}
+
+/// Returns the memory location id. CPU = 0, GPU = 1, VSM = 2;
+inline UInt32 Points.getMemType( ) {
+  return 0; // The Points Geomtry has no memory to move to the GPU. (unlike PolygonMesh and Lines which have topology data)
+}
+
+/// Copies the content from the source Points.
+function Points.copy!( Points src ) {
+  this.attributes.copy(src.attributes);
+  if( src.sizesAttribute )
+    this.sizesAttribute = this.attributes.getAttribute( src.sizesAttribute.getName(), ScalarAttribute );
+}
+
+/// Copies the content from the source Geometry.
+function Points.copy!( Geometry src ) {
+  Points srcPoints = src;
+  if(!srcPoints)
+    throw("Points Cannot copy data from a non-Points. Src Geometry is a :"+src.type());
+  this.copy(srcPoints);
+}
+
+/// \dfgPresetCreate
+Points.cloneMembersTo(io Points that) {
+  //The difference with default clone() is that new.parent.autoStat will point to 'new' (from constructor)
+  that.copy( Points(this) );
+  that.debugName = this.debugName;
+}
+
+/// Clears all data, including points and attributes. Version will be incremented.
+function Points.clear!() {
+  this.parent.clear();
+  Ref<ScalarAttribute> nullSizeAttr = null;
+  this.sizesAttribute = nullSizeAttr;
+}
+
+inline Ref<GeometryAttributes> Points.getAttributes() { 
+  return this.attributes; 
+}
+
+
+/// Returns the metaData container for this Geometry.
+function Ref<ThreadsafeMetaDataContainer> Points.getMetaData() {
+  return this.metaData;
+}
+
+/// Adds N points and returns the index of the first of the consecutive indices.
+inline Size Points.addPoints!( Size count ) {
+  ++this.structureVersion;
+  Size prevSize = this.attributes.size();
+  this.attributes.resize( prevSize + count );
+  return prevSize;
+}
+
+/// Changes the number of points, adding or truncating the last ones.
+inline Points.resize!( Size newSize ) {
+  if( newSize != this.attributes.size() ) {
+    ++this.structureVersion;
+    this.attributes.resize( newSize );
+  }
+}
+
+/// Returns the number of points.
+inline Size Points.size() {
+  return this.attributes.size();
+}
+
+/// Returns the number of points.
+inline Size Points.pointCount() {
+  return this.parent.pointCount();
+}
+
+/// Default attribute name to be used for points' size (to be created when calling :kl-ref:`Points.getOrCreateSizesAttribute`).
+const String PointsDefaultSizesAttributeName = "pointSizes";
+
+/// Returns the point size attribute, or creates it if not there (see :ref:`pointsizes`).
+function Ref<ScalarAttribute> Points.getOrCreateSizesAttribute!() {
+  if( !this.sizesAttribute )
+    this.setSizesAttribute( this.attributes.getOrCreateScalarAttribute( PointsDefaultSizesAttributeName ) );
+  return this.sizesAttribute;
+}
+
+/// Defines the attribute that will be used for 'setSize' and 'getSize' (see :ref:`pointsizes`)
+function Points.setSizesAttribute!( Ref<ScalarAttribute> sizesAttribute ) {
+  if( Boolean(sizesAttribute) && !this.attributes.hasAttribute( sizesAttribute ) )
+    throw("Points.setSizesAttribute: size attribute not part of Points' attributes");
+  if( this.sizesAttribute !== sizesAttribute ) {
+    this.sizesAttribute = sizesAttribute;
+    ++this.structureVersion;
+  }
+}
+
+/// Returns the position of a point.
+/// \dfgCreateArrayPreset
+inline Vec3 Points.getPointPosition( Size point ) {
+  return this.parent.getPosition( point );
+}
+
+/// Sets the positions of a point.
+/// \note Once positions have been set, call :kl-ref:`Points.incrementPositionsVersion` (see :ref:`attributeversioning`)
+/// \dfgCreateArrayPreset
+inline Points.setPointPosition!( Size point, Vec3 position ) {
+  this.parent.setPosition( point, position );
+}
+
+/// Helper for incrementing the version of the positions attribute after value changes.
+/// See :ref:`attributeversioning` for more information.
+inline Points.incrementPositionsVersion!() {
+  this.attributes.positionsAttribute.incrementVersion();
+}
+
+/// Returns the size of a point (see :ref:`pointsizes`)
+inline Scalar Points.getSize( Size point ) {
+  if( this.sizesAttribute )
+    return this.sizesAttribute.values[ point ];
+  else
+    return this.defaultPointSize;
+}
+
+/// Sets the size of a point, if a size attribute has been set with :kl-ref:`Points.getOrCreateSizesAttribute` or :kl-ref:`Points.setSizesAttribute`.
+/// \note Once sizes have been set, call :kl-ref:`Points.incrementSizesVersion` (see :ref:`attributeversioning`)
+inline Points.setSize!( Size point, Scalar size ) {
+  if( !this.sizesAttribute )
+    throw( "Points.setSize: size attribute was not setup by calling setSizesAttribute" );
+
+  this.sizesAttribute.values[ point ] = size;
+}
+
+/// Helper for incrementing the version of the sizes attribute after value changes (see :ref:`pointsizes`).
+/// See :ref:`attributeversioning` for more information.
+inline Points.incrementSizesVersion!() {
+  this.sizesAttribute.incrementVersion();
+}
+
+/// \internal
+function StatisticRecord[] Points.getStatistics() {
+  StatisticRecord stats[] = this.parent.getStatistics();
+  stats.push( StatisticRecord( "Points", this.attributes.size() ) );
+  return stats;
+}
+
+function LocalBoundingVolume Points.getBoundingVolume() {
+  if( this.sizesAttribute )
+    return this.getBoundingVolume( this.sizesAttribute );
+
+  LocalBoundingVolume bBox = this.parent.getBoundingVolume();
+  Vec3 sizeVec = Vec3( this.defaultPointSize, this.defaultPointSize, this.defaultPointSize );
+  bBox.bBoxSetMin( bBox.bBoxGetMin() - sizeVec );
+  bBox.bBoxSetMax( bBox.bBoxGetMax() + sizeVec );
+  return bBox;
+}
+
+/// Geometry interface: returns the number of points
+function Size Points.elementCount() {
+  return this.pointCount();
+}
+
+/// Geometry interface: return the bounding volume of a point (takes into account the size if applicable: see :ref:`pointsizes`)
+function LocalBoundingVolume Points.getElementBoundingVolume(Size index) {
+  Vec3 center = this.getPointPosition(index);
+  Scalar radius;
+  if( this.sizesAttribute )
+    radius = this.sizesAttribute.values[index]*0.5; //Assuming "size" is the diameter..??
+  else
+    radius = this.defaultPointSize*0.5;
+  LocalBoundingVolume bVol;
+  bVol.bSphereInit(center, radius);
+  return bVol;
+}
+
+/// \internal Bounding volume taking into account the 'sizes' attribute
+object PointsWithSizesBoundingVolumeCache {
+  LocalBoundingVolume bbox;
+
+  UInt32 prevPosAttrVersion;
+  Ref<GeometryAttribute> prevPosAttr;
+
+  UInt32 prevSizeAttrVersion;
+  Ref<GeometryAttribute> prevSizeAttr;
+
+  SimpleLock simpleLock;
+};
+
+/// \internal 
+/// Returns the bounding volume of the points, from the positions attribute and sizes attribute.
+/// This function is complex since we want the bounding box to be computed lazily, in a thread-safe fashion.
+function LocalBoundingVolume Points.getBoundingVolume( Ref<ScalarAttribute> sizes ) {
+  Ref<PointsWithSizesBoundingVolumeCache> boundingVolumeCache = null;
+  {
+    //Get from meta-data; add if not present
+    Ref<ThreadsafeMetaDataContainer> mutableMetaData = this.metaData;//Make non-const
+    AutoLock AL(mutableMetaData.simpleLock);
+    boundingVolumeCache = mutableMetaData.lockedGet("sizedPointsBBox");
+    if( !boundingVolumeCache ) {
+      PointsWithSizesBoundingVolumeCache newBoundingVolumeCache = PointsWithSizesBoundingVolumeCache();
+      newBoundingVolumeCache.simpleLock = SimpleLock("PointsWithSizesBoundingVolumeCache");
+      mutableMetaData.lockedSet("sizedPointsBBox", newBoundingVolumeCache);
+      boundingVolumeCache = newBoundingVolumeCache;
+    }
+  }
+  AutoLock AL(boundingVolumeCache.simpleLock);
+
+  //Update if required
+  Boolean dirty;
+  if( synchronizeVersion( this.attributes.positionsAttribute.getVersion(), boundingVolumeCache.prevPosAttrVersion ) || this.attributes.positionsAttribute != boundingVolumeCache.prevPosAttr )
+    dirty = true;
+
+  if( synchronizeVersion( sizes.getVersion(), boundingVolumeCache.prevSizeAttrVersion ) || sizes != boundingVolumeCache.prevSizeAttr )
+    dirty = true;
+
+  if( dirty ) {
+    boundingVolumeCache.prevPosAttr = this.attributes.positionsAttribute;
+    boundingVolumeCache.prevSizeAttr = sizes;
+
+    boundingVolumeCache.bbox.bBoxInit();
+    for( UInt32 i = 0; i < this.attributes.size(); ++i ) {
+      Vec3 position = this.attributes.getPosition(i);
+      Scalar size = sizes.values[i];
+      Vec3 sizeVec(size, size, size);
+      boundingVolumeCache.bbox.bBoxAdd( position - sizeVec );
+      boundingVolumeCache.bbox.bBoxAdd( position + sizeVec );
+    }
+  }
+  return boundingVolumeCache.bbox;
+}
+
+/// Geometry interface: transforms the positions of the geometry (and normals if applicable)
+Points.applyTransform!( Mat44 transform ) {
+  this.parent.applyTransform( transform );
+}
+
+/// Geometry interface: transforms the positions of the geometry (and normals if applicable)
+Points.applyTransform!( Xfo transform ) {
+  this.parent.applyTransform( transform );
+}
+
+/// Returns a String description of the Points. 
+/// \param withAttributes include the attribute values in the desc.
+/// \prarm useUnitTestPrint use the unitTestPrint method to ensure that the values are consistent accross platforms(used in unit testing).
+function String Points.getDesc?( Boolean withAttributes, Boolean useUnitTestPrint ) {
+  String desc;
+  desc += "Points: "+ this.debugName + " pointCount: " + this.pointCount() + " nbAttributeVectors: " + this.attributes.attributeCount() + '\n';
+  if( withAttributes )
+    desc += this.attributes.getDesc(useUnitTestPrint) + '\n';
+
+  return desc;
+}
+
+/// Geometry interface: returns all point positions
+Vec3[] Points.getAllPointPositions() {
+  return this.parent.getAllPointPositions();
+}
+
+/// Geometry interface: sets all point positions
+Points.setAllPointPositions!( Vec3 positions[] ) {
+  this.parent.setAllPointPositions( positions );
+}

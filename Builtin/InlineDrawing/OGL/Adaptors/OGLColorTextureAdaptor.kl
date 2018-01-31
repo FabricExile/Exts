@@ -1,0 +1,213 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Images;
+
+/// \internal
+object OGLTexture2DAdaptorMetaData {
+  /// \internal
+  Ref<InlineTextureAdaptor> adaptor;
+  /// \internal
+  OGLTexture2D texture;
+  /// \internal
+  Integer textureVersion;
+  /// \internal
+  Integer textureLocation;
+  /// \internal
+  Integer textureUnit;
+  /// \internal
+  Integer textureSizeLocation;
+};
+
+/// \internal
+function OGLTexture2DAdaptorMetaData(){
+  this.textureSizeLocation = -1;
+}
+
+/**
+\versionadded 1.12.0
+
+The OGLColorTextureAdaptor is used to render objects such as the InlineFileBasedTexture and the InlineProceduralTexture.
+\dfgPresetOmit
+*/
+object OGLColorTextureAdaptor : InlineTextureAdaptor {};
+
+/// returns the types this adaptor is capable of drawing
+function String[] OGLColorTextureAdaptor.getTextureTypes() {
+  String result[];
+  result.push('InlineFileBasedTexture');
+  result.push('InlineProceduralTexture');
+  result.push('InlineAtlasTexture');
+  return result;
+}
+
+/// standard constructor
+function OGLColorTextureAdaptor() {}
+
+/// \internal
+function Boolean OGLColorTextureAdaptor.draw!(io DrawContext context, io InlineTexture texture, Object metaData, Boolean bindUniform) {
+
+  OGLTexture2DAdaptorMetaData localMetaData = metaData;
+  if(localMetaData == null){
+    setError("OGLTexture2DAdaptorMetaData metaData not provided.");
+    return false;
+  }
+
+  Size imageWidth = 0;
+  Size imageHeight = 0;
+  Color pixels[];
+  Float32 fpixels[];
+  Byte bpixels[];
+  Data atlasData;
+
+  if(localMetaData.textureVersion != texture.getVersion()) {
+    if(texture.type() == InlineFileBasedTexture) {
+
+      // undefined textures will not cause an error,
+      // when the user updates the texture (for example loads a file)
+      // the texture's version will be increased, thus the cases
+      // further down will be invoked.
+      if(texture.getName() == "") {
+        localMetaData.textureVersion = texture.getVersion();
+        return true;
+      }
+
+      Image2DColor colorImage();
+      if( !colorImage.readFromFile( texture.getName() ) ) {
+        // set the texture version, since we don't want to try to open the image all the time
+        localMetaData.textureVersion = texture.getVersion();
+      } else {
+        imageWidth = colorImage.width;
+        imageHeight = colorImage.height;
+        pixels = colorImage.pixels;
+      }
+
+    } else if(texture.type() == InlineProceduralTexture) {
+      InlineProceduralTexture procTex = texture;
+      imageWidth = procTex.width;
+      imageHeight = procTex.height;
+      pixels = procTex.colorPixels;
+      fpixels = procTex.float32Pixels;
+
+    } else if(texture.type() == InlineAtlasTexture) {
+      InlineAtlasTexture atlasTexture = texture;
+      atlasTexture.getAtlas().getDimensions(imageWidth, imageHeight);
+      atlasTexture.getAtlas().getData(atlasData);
+    } else {
+      setError(texture.type()+' not supported by OGLColorTextureAdaptor.');
+      return false;
+    }
+  }
+
+  // upload if we have received pixels
+  if(pixels.size() > 0 && pixels.size() >= imageWidth * imageHeight) {
+
+    if(localMetaData.texture != null)
+    {
+      Boolean pixelsUseGPU = pixels.getElementsMemType() == Fabric_MemType_GLBuffer;
+      Boolean textureUseGPU = localMetaData.texture.bufferObjectID != 0; 
+      if(pixelsUseGPU != textureUseGPU)
+        localMetaData.texture = null;
+    }
+
+    if(localMetaData.texture == null)
+      localMetaData.texture = OGLTexture2D();
+    localMetaData.texture.name = texture.getName();
+    localMetaData.texture.glTextureType = GL_TEXTURE_2D;
+    localMetaData.texture.glInternalFormat = GL_RGBA32F;
+    localMetaData.texture.glFormat = GL_RGBA;
+    localMetaData.texture.glType = GL_FLOAT;
+    localMetaData.texture.textureMinFilter = GL_LINEAR;
+    localMetaData.texture.textureMagFilter = GL_LINEAR;
+    localMetaData.texture.wrapS = GL_REPEAT;
+    localMetaData.texture.wrapT = GL_REPEAT;
+    localMetaData.texture.buildMipmaps = true;
+
+    UInt32 bufferObjectID = 0;
+    if(pixels.getElementsMemType() == Fabric_MemType_GLBuffer)
+      bufferObjectID = pixels.getBufferId();
+
+    localMetaData.texture.configure(imageWidth, imageHeight, pixels.data(), bufferObjectID);
+
+    localMetaData.textureVersion = texture.getVersion();
+  } else if(fpixels.size() > 0 && fpixels.size() >= imageWidth * imageHeight) {
+
+    if(localMetaData.texture != null)
+    {
+      Boolean pixelsUseGPU = fpixels.getElementsMemType() == Fabric_MemType_GLBuffer;
+      Boolean textureUseGPU = localMetaData.texture.bufferObjectID != 0; 
+      if(pixelsUseGPU != textureUseGPU)
+        localMetaData.texture = null;
+    }
+
+    if(localMetaData.texture == null)
+      localMetaData.texture = OGLTexture2D();
+    localMetaData.texture.name = texture.getName();
+    localMetaData.texture.glTextureType = GL_TEXTURE_2D;
+
+    if(fpixels.size() >= imageWidth * imageHeight * 4) {
+      localMetaData.texture.glInternalFormat = GL_RGBA32F;
+      localMetaData.texture.glFormat = GL_RGBA;
+    } else if(fpixels.size() >= imageWidth * imageHeight * 3) {
+      localMetaData.texture.glInternalFormat = GL_RGB32F;
+      localMetaData.texture.glFormat = GL_RGB;
+    } else if(fpixels.size() >= imageWidth * imageHeight * 2) {
+      localMetaData.texture.glInternalFormat = GL_RG32F;
+      localMetaData.texture.glFormat = GL_RG;
+    } else if(fpixels.size() >= imageWidth * imageHeight) {
+      localMetaData.texture.glInternalFormat = GL_R32F;
+      localMetaData.texture.glFormat = GL_RED;
+    }
+    localMetaData.texture.glType = GL_FLOAT;
+    localMetaData.texture.textureMinFilter = GL_LINEAR;
+    localMetaData.texture.textureMagFilter = GL_LINEAR;
+    localMetaData.texture.wrapS = GL_REPEAT;
+    localMetaData.texture.wrapT = GL_REPEAT;
+    localMetaData.texture.buildMipmaps = true;
+
+    UInt32 bufferObjectID = 0;
+    if(fpixels.getElementsMemType() == Fabric_MemType_GLBuffer)
+      bufferObjectID = fpixels.getBufferId();
+
+    localMetaData.texture.configure(imageWidth, imageHeight, fpixels.data(), bufferObjectID);
+
+    localMetaData.textureVersion = texture.getVersion();
+  } else if(Boolean(atlasData)) {
+
+    localMetaData.texture = OGLTexture2D();
+    localMetaData.texture.name = texture.getName();
+    localMetaData.texture.glTextureType = GL_TEXTURE_2D;
+
+    localMetaData.texture.glInternalFormat = GL_RED;
+    localMetaData.texture.glFormat = GL_RED;
+    
+    localMetaData.texture.glType = GL_UNSIGNED_BYTE;
+    localMetaData.texture.textureMinFilter = GL_LINEAR;
+    localMetaData.texture.textureMagFilter = GL_LINEAR;
+    localMetaData.texture.wrapS = GL_CLAMP_TO_EDGE;
+    localMetaData.texture.wrapT = GL_CLAMP_TO_EDGE;
+
+    UInt32 bufferObjectID = 0;
+    localMetaData.texture.configure(imageWidth, imageHeight, atlasData, bufferObjectID);
+    localMetaData.textureVersion = texture.getVersion();
+  }
+
+  if(localMetaData.texture == null){
+    // Silently fail. the texture will be rendered as black.
+    return true;
+  }
+
+  localMetaData.texture.bind(localMetaData.textureUnit);
+
+  // Bind the texture unit to the texture location.
+  if(bindUniform)
+    glUniform1i( localMetaData.textureLocation, localMetaData.textureUnit );
+
+  return true;
+}
+
+/// \internal
+function Boolean OGLColorTextureAdaptor.draw!(io DrawContext context, io InlineTexture texture, Object metaData) {
+  return this.draw(context, texture, metaData, true);
+}

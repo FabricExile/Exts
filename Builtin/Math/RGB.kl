@@ -1,0 +1,217 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+/**
+The :kl-ref:`RGB` type represents a 8 bit 3 channel color value, storing the components ordered as red, green and blue as Byte values.
+
+\rst
+  .. kl-example:: RGB
+
+    RGB red(255, 0, 0);
+
+\endrst
+\dfgTypeColor Color(255, 0, 0)
+\dfgPresetColor Color(99, 129, 92)
+*/
+
+// forward declarations
+struct RGBA;
+struct Color;
+
+struct RGB
+{
+  Byte r;
+  Byte g;
+  Byte b;
+};
+
+/// Default constructor from component wise bytes
+inline RGB(Byte r, Byte g, Byte b) {
+  this.r = r;
+  this.g = g;
+  this.b = b;
+}
+
+/// Constructor from component wise integers
+inline RGB(Integer r, Integer g, Integer b) {
+  this.r = Byte(r);
+  this.g = Byte(g);
+  this.b = Byte(b);
+}
+
+/// Constructor from RGBA
+inline RGB(RGBA r) {
+  this.r = r.r;
+  this.g = r.g;
+  this.b = r.b;
+}
+
+/// Constructor from Color
+inline RGB(Color c) {
+  this = c.toRGB();
+}
+
+/// Returns true if this RGB is the same as another one
+inline Boolean RGB.equal(RGB other) {
+  return this.r == other.r && this.g == other.g && this.b == other.b;
+}
+
+/// Equal operator
+inline Boolean == (RGB a, RGB b) {
+  return a.r == b.r && a.g == b.g && a.b == b.b;
+}
+
+/// Not equal operator
+inline Boolean != (RGB a, RGB b) {
+  return a.r != b.r || a.g != b.g || a.b != b.b;
+}
+
+/// Hash for this value
+inline UInt32 RGB.hash() {
+  return (this.r << 24) | (this.g << 16) | (this.b << 8);
+}
+
+/// Adds two RGB colors
+inline RGB + (RGB a, RGB b) {
+  Integer rval = Integer(a.r) + Integer(b.r);
+  Integer gval = Integer(a.g) + Integer(b.g);
+  Integer bval = Integer(a.b) + Integer(b.b);
+  return RGB(rval, gval, bval);
+}
+
+/// Adds another RGB color to this one
+inline RGB. += (RGB other) {
+  this = this + other;
+}
+
+/// Subtracts two RGB colors
+inline RGB - (RGB a, RGB b) {
+  Integer rval = Integer(a.r) - Integer(b.r);
+  Integer gval = Integer(a.g) - Integer(b.g);
+  Integer bval = Integer(a.b) - Integer(b.b);
+  if(rval < 0) rval = 0;
+  if(gval < 0) gval = 0;
+  if(bval < 0) bval = 0;
+  return RGB(rval, gval, bval);
+}
+
+/// Subtracts another RGB color from this one
+inline RGB. -= (RGB other) {
+  this = this - other;
+}
+
+/// Multiplies a scalar with a RGB color
+/// \dfgPresetDefault a 1.0
+inline RGB * (Scalar a, RGB b) {
+  return RGB(
+    Integer(Scalar(Integer(b.r)) * a),
+    Integer(Scalar(Integer(b.g)) * a),
+    Integer(Scalar(Integer(b.b)) * a)
+    );
+}
+
+/// Multiplies a RGB color with a scalar
+/// \dfgPresetDefault b 1.0
+inline RGB * (RGB a, Scalar b) {
+  // \note casting Byte -> Scalar generated incorrect results.
+  return RGB(
+    Integer(Scalar(Integer(a.r)) * b),
+    Integer(Scalar(Integer(a.g)) * b),
+    Integer(Scalar(Integer(a.b)) * b)
+    );
+}
+
+/// Multiplies two RGB colors
+/// \dfgPresetDefault b {"r": 1, "g": 1, "b": 1}
+inline RGB * (RGB a, RGB b) {
+  return RGB(
+    Integer(Scalar(Integer(a.r)) * Scalar(Integer(b.r))),
+    Integer(Scalar(Integer(a.g)) * Scalar(Integer(b.g))),
+    Integer(Scalar(Integer(a.b)) * Scalar(Integer(b.b)))
+    );
+}
+
+/// Multiplies a scalar with this RGB color
+/// \dfgPresetDefault other 1.0
+inline RGB. *= (Scalar other) {
+  this = this * other;
+}
+
+/// Multiplies a this RGB color with another one
+/// \dfgPresetDefault other {"r": 1, "g": 1, "b": 1}
+inline RGB. *= (RGB other) {
+  this = this * other;
+}
+
+/// Overload method for the add operator
+inline RGB RGB.add(RGB other) {
+  return this + other;
+}
+
+/// Overload method for the subtract operator
+inline RGB RGB.subtract(RGB other) {
+  return this - other;
+}
+
+/// Overload method for the multiply operator
+/// \dfgPresetDefault other {"r": 1, "g": 1, "b": 1}
+inline RGB RGB.multiply(RGB other) {
+  return this * other;
+}
+
+/// Returns the product of this RGB color and a scalar
+/// \dfgPresetDefault other 1.0
+inline RGB RGB.multiplyScalar(Scalar other) {
+  return this * other;
+}
+
+/// interpolates two RGB colors given a scalar blend value (0.0 to 1.0)
+inline RGB RGB.linearInterpolate(in RGB other, in Scalar t) {
+  // Byte values cannot be negative, so here we have inlined the sbutraction inline so that we can interpollate down towards zero
+  return RGB( Integer(this.r) + Integer((Scalar(Integer(other.r) - Integer(this.r)) * t)),
+              Integer(this.g) + Integer((Scalar(Integer(other.g) - Integer(this.g)) * t)),
+              Integer(this.b) + Integer((Scalar(Integer(other.b) - Integer(this.b)) * t)));
+}
+
+/// Returns the minimum of two RGB values
+/// \dfgPresetColor Color(99, 129, 92)
+inline RGB Math_min(in RGB val1, in RGB val2){
+  RGB result;
+  result.r = Math_min(val1.r, val2.r);
+  result.g = Math_min(val1.g, val2.g);
+  result.b = Math_min(val1.b, val2.b);
+  return result;
+}
+
+/// Returns the minimum of two RGB values
+/// \dfgPresetColor Color(99, 129, 92)
+inline RGB Math_max(in RGB val1, in RGB val2){
+  RGB result;
+  result.r = Math_max(val1.r, val2.r);
+  result.g = Math_max(val1.g, val2.g);
+  result.b = Math_max(val1.b, val2.b);
+  return result;
+}
+
+/// Clamps a RGB value by min and max
+/// \dfgPresetColor Color(99, 129, 92)
+inline RGB Math_clamp(in RGB val, in Scalar minval, in Scalar maxval){
+  RGB result;
+  result.r = Math_clamp(val.r, minval * 255, maxval * 255);
+  result.g = Math_clamp(val.g, minval * 255, maxval * 255);
+  result.b = Math_clamp(val.b, minval * 255, maxval * 255);
+  return result;
+}
+
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgPresetFolder Random
+/// \dfgCreateArrayPreset false
+/// \dfgPresetDefault min 0.0
+/// \dfgPresetDefault min 1.0
+inline RGB mathRandomRGB(Size seed, Size index, Float32 min, Float32 max) {
+  RGB result;
+  result.r = 255 * mathRandomScalar(seed, index+0, min, max);
+  result.g = 255 * mathRandomScalar(seed, index+1, min, max);
+  result.b = 255 * mathRandomScalar(seed, index+2, min, max);
+  return result;
+}

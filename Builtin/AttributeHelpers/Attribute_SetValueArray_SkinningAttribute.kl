@@ -1,0 +1,127 @@
+
+/// \internal
+function Boolean BaseGeometry.setSkinningAttributeValueArray(
+  GeometryAttribute attr,
+  SInt32 mode,
+  UInt32 indices[],
+  UInt16 skinIdValues[][],
+  Float32 skinWeightValues[][]
+) {
+
+  Size vertexCount;
+  Size faceCount;
+  Size faceCornerTotalCount;
+  Size resultSize;
+  UInt32 idxs[] = indices;
+  if(!this.setAttributeValueArray_CheckIndex(mode, idxs,
+    vertexCount, faceCount, faceCornerTotalCount, resultSize))
+    return false;
+
+  if(skinIdValues.size() < resultSize && skinWeightValues.size() < resultSize)
+    return false;
+
+  SkinningAttribute cast = attr;
+  if(cast == null)
+    return false;
+  Ref<SkinningAttribute> castRef = cast;
+
+  LocalL16UInt32Array skinIdValueL;
+  LocalL16ScalarArray skinWeightValueL;
+
+  Index idx = 0;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      PolygonMesh mesh = this;
+      if(mesh)
+      {
+        for(Size i=0;i<resultSize;i++) {
+          idx = idxs.size() > 0 ? idxs[i] : i;
+          if(idx >= vertexCount)
+            continue;
+
+          skinIdValueL.resize(skinIdValues[i].size());
+          for(Size k=0;k<skinIdValues[i].size();k++)
+            skinIdValueL.set(k, skinIdValues[i][k]);
+          skinWeightValueL.resize(skinWeightValues[i].size());
+          for(Size k=0;k<skinWeightValues[i].size();k++)
+            skinWeightValueL.set(k, skinWeightValues[i][k]);
+
+          mesh.setPointAttribute(idx, castRef, skinIdValueL, skinWeightValueL);
+        }
+      }
+      else
+      {
+        for(Size i=0;i<resultSize;i++) {
+          idx = idxs.size() > 0 ? idxs[i] : i;
+          if(idx >= vertexCount)
+            continue;
+
+          skinIdValueL.resize(skinIdValues[i].size());
+          for(Size k=0;k<skinIdValues[i].size();k++)
+            skinIdValueL.set(k, skinIdValues[i][k]);
+          skinWeightValueL.resize(skinWeightValues[i].size());
+          for(Size k=0;k<skinWeightValues[i].size();k++)
+            skinWeightValueL.set(k, skinWeightValues[i][k]);
+
+          cast.setPairs(idx, skinIdValueL, skinWeightValueL);
+        }
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      PolygonMesh mesh = this;
+      for(Size i=0;i<resultSize;i++) {
+        idx = idxs.size() > 0 ? idxs[i] : i;
+        if(idx > faceCount)
+          continue;
+
+        skinIdValueL.resize(skinIdValues[i].size());
+        for(Size k=0;k<skinIdValues[i].size();k++)
+          skinIdValueL.set(k, skinIdValues[i][k]);
+        skinWeightValueL.resize(skinWeightValues[i].size());
+        for(Size k=0;k<skinWeightValues[i].size();k++)
+          skinWeightValueL.set(k, skinWeightValues[i][k]);
+
+        Size size = mesh.getPolygonSize(idx);
+        for(Size j=0;j<size;j++)
+          mesh.setPolygonAttribute( idx, j, castRef, skinIdValueL, skinWeightValueL );
+      }
+      break;
+    }
+    case 2: // per face corner
+    {
+      PolygonMesh mesh = this;
+      resultSize = idxs.size() > 0 ? idxs.size() : faceCount;
+      Index offset = 0;
+      for(Size i=0;i<resultSize && offset<skinIdValueL.size();i++) {
+        idx = idxs.size() > 0 ? idxs[i] : i;
+        if(idx > faceCount)
+          continue;
+        Size size = mesh.getPolygonSize(idx);
+        for(Size j=0;j<size && offset<skinIdValueL.size();j++,offset++) {
+
+          skinIdValueL.resize(skinIdValues[i].size());
+          for(Size k=0;k<skinIdValues[i].size();k++)
+            skinIdValueL.set(k, skinIdValues[i][k]);
+          skinWeightValueL.resize(skinWeightValues[i].size());
+          for(Size k=0;k<skinWeightValues[i].size();k++)
+            skinWeightValueL.set(k, skinWeightValues[i][k]);
+
+          mesh.setPolygonAttribute( idx, j, castRef, skinIdValueL, skinWeightValueL );
+        }
+      }
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport SetValueArray mode for SkinningAttribute.");
+      return false;
+    }
+  }  
+
+  cast.incrementVersion();
+  return true;
+}

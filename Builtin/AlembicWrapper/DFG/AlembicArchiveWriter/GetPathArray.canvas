@@ -1,0 +1,52 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "returns the path of the open archive\n\nSupported types:\n  this: AlembicArchiveWriter\n  result: String\n"
+    },
+  "title" : "GetPath[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "AlembicArchiveWriter[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "String[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "E0729A4AA9F0F3AC8A8C82D9533FFC9A",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicArchiveWriter_getPath_task<<<index>>>(
+  io String[] result
+, in AlembicArchiveWriter[] this
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].getPath();
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  Size task_size = this.size();
+  result.resize(task_size);
+  for(Size index = 0; index < task_size; index++) {
+    AlembicWrapper_AlembicArchiveWriter_getPath_task(index, result, this);
+  }
+}
+"
+  }

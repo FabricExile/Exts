@@ -1,0 +1,299 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+
+require Singletons;
+require InlineDrawing;
+
+/// A collector for collecting gizmo instances from the InlineDrawing tree.
+/// \internal
+object GizmoCollector : InstanceCollector {
+};
+
+/// \internal
+function Boolean GizmoCollector.isCollectable!(InlineInstance instance){
+  // Check if the instance has metadata containing a GizmoHandler
+  GizmoHandler handler = instance.getMetaData('gizmoHandler');
+  return handler != null;
+}
+
+
+/**
+\versionadded 1.12.0
+
+The :kl-ref:`GizmoManipulator` is used to propagate events to gizmos in the scene. 
+A "Gizmo" is any InlineInstance that has a 'GizmoHandler' attached as meta data. 
+
+Often only a single GizmoManipulator is registered for all visible gizmos. The 
+GizmoManipulator then handles raycasting the visible gizmos in the scene to determine 
+which should become the target of the manipulation
+
+When the mouse is clicked down, the gizmos in the scene are raycast, and the hit 
+gizmo becomes the active gizmo for the duration of the mouse action. 
+All mouse move events are sent to the gizmo for processing. On mouse up, the gizmo 
+is released and is no longer the active gizmo. How a gizmos handler reacts to mouse 
+vents is completely up to the implementation 
+of the gizmo handler. 
+
+
+\rst
+  .. kl-example:: GizmoManipulator
+
+    // Setup the gizmo manipulator
+    Ref<EventDispatcher> eventDispatcher = EventDispatcher_GetInstance();
+    eventDispatcher.registerManipulator(GizmoManipulator());
+
+    // activate the manipulator
+    eventDispatcher.pushManipulator('GizmoManipulator');
+
+    // setup the scene.
+    InlineDrawing drawing = OGLInlineDrawing_GetInstance();
+
+    InlineShader surfaceShader = drawing.registerShader(OGLSurfaceShader());
+    InlineMaterial phongMaterial = surfaceShader.getOrCreateMaterial("phong");
+
+    // create a shape    
+    PolygonMesh gizmoMesh = PolygonMesh();
+    gizmoMesh.addCuboid(Xfo(), 1.0, 1.0, 1.0, true, false);
+    InlineShape shape = InlineMeshShape('gizmoMesh', gizmoMesh);
+    
+
+    // The following code generates several different geometries to be used as
+    // gizmos, and 
+    Integer index;
+
+    // Position Axis Gizmo X
+    {
+      InlineTransform transform = StaticInlineTransform('PositionAxisGizmoTransformX', drawing.getRoot(), Xfo(Vec3(Scalar(index)*4.0, 0.0, 0.0)));
+      InlineInstance instance = InlineInstance('PositionAxisGizmoX', transform, shape, phongMaterial);
+      instance.setInstanceUniform(InlineUniform('u_diffuseColor', Color(1.0, 0.0, 0.0)));
+
+      TransformManipulationCallback callback();
+      callback.addTarget(transform);// the gizmo only manipulates itself
+      PositionAxisGizmoHandler handler(instance, Vec3(1.0, 0.0, 0.0), callback);
+      index++;
+    }
+
+    // Position Axis Gizmo Y
+    {
+      InlineTransform transform = StaticInlineTransform('PositionAxisGizmoTransformY', drawing.getRoot(), Xfo(Vec3(Scalar(index)*4.0, 0.0, 0.0)));
+      InlineInstance instance = InlineInstance('PositionAxisGizmoY', transform, shape, phongMaterial);
+      instance.setInstanceUniform(InlineUniform('u_diffuseColor', Color(0.0, 1.0, 0.0)));
+
+      TransformManipulationCallback callback();
+      callback.addTarget(transform);// the gizmo only manipulates itself
+      PositionAxisGizmoHandler handler(instance, Vec3(0.0, 1.0, 0.0), callback);
+      index++;
+    }
+
+    // Position Axis Gizmo Z
+    {
+      InlineTransform transform = StaticInlineTransform('PositionAxisGizmoTransformZ', drawing.getRoot(), Xfo(Vec3(Scalar(index)*4.0, 0.0, 0.0)));
+      InlineInstance instance = InlineInstance('PositionAxisGizmoZ', transform, shape, phongMaterial);
+      instance.setInstanceUniform(InlineUniform('u_diffuseColor', Color(0.0, 0.0, 1.0)));
+
+      TransformManipulationCallback callback();
+      callback.addTarget(transform);// the gizmo only manipulates itself
+      PositionAxisGizmoHandler handler(instance, Vec3(0.0, 0.0, 1.0), callback);
+      index++;
+    }
+
+
+    // Position Planar Gizmo XY
+    {
+      InlineTransform transform = StaticInlineTransform('PositionPlanarGizmoHandlerXY', drawing.getRoot(), Xfo(Vec3(Scalar(index)*4.0, 0.0, 0.0)));
+      InlineInstance instance = InlineInstance('PositionAxisGizmoXY', transform, shape, phongMaterial);
+      instance.setInstanceUniform(InlineUniform('u_diffuseColor', Color(1.0, 1.0, 0.0)));
+
+      TransformManipulationCallback callback();
+      callback.addTarget(transform);// the gizmo only manipulates itself
+      PositionPlanarGizmoHandler handler(instance, Vec3(0.0, 1.0, 0.0), callback);
+      index++;
+    }
+
+
+    // Orientation Axis Gizmo X
+    {
+      InlineTransform transform = StaticInlineTransform('OrientationAxisGizmoTransformX', drawing.getRoot(), Xfo(Vec3(Scalar(index)*4.0, 0.0, 0.0)));
+      InlineInstance instance = InlineInstance('OrientationAxisGizmoX', transform, shape, phongMaterial);
+      instance.setInstanceUniform(InlineUniform('u_diffuseColor', Color(1.0, 0.0, 0.0)));
+
+      TransformManipulationCallback callback();
+      callback.addTarget(transform);// the gizmo only manipulates itself
+      OrientationAxisGizmoHandler handler(instance, Vec3(1.0, 0.0, 0.0), callback);
+      index++;
+    }
+
+    // Orientation Axis Gizmo Y
+    {
+      InlineTransform transform = StaticInlineTransform('OrientationAxisGizmoTransformY', drawing.getRoot(), Xfo(Vec3(Scalar(index)*4.0, 0.0, 0.0)));
+      InlineInstance instance = InlineInstance('OrientationAxisGizmoY', transform, shape, phongMaterial);
+      instance.setInstanceUniform(InlineUniform('u_diffuseColor', Color(0.0, 1.0, 0.0)));
+
+      TransformManipulationCallback callback();
+      callback.addTarget(transform);// the gizmo only manipulates itself
+      OrientationAxisGizmoHandler handler(instance, Vec3(0.0, 1.0, 0.0), callback);
+      index++;
+    }
+
+    // Orientation Spherical Gizmo
+    {
+      InlineTransform transform = StaticInlineTransform('OrientationSphericalGizmoTransform', drawing.getRoot(), Xfo(Vec3(Scalar(index)*4.0, 0.0, 0.0)));
+      InlineInstance instance = InlineInstance('OrientationSphericalGizmo', transform, shape, phongMaterial);
+      instance.setInstanceUniform(InlineUniform('u_diffuseColor', Color(0.7, 0.7, 0.7)));
+
+      TransformManipulationCallback callback();
+      callback.addTarget(transform);// the gizmo only manipulates itself
+      OrientationSphericalGizmoHandler handler(instance, 0.001, callback);
+      index++;
+    }
+
+\endrst
+
+\seealso Manipulator, InlineInstance, InstanceCollector, GizmoHandler
+\dfgPresetOmit
+*/
+
+object GizmoManipulator : Manipulator {
+  Scalar coneThreshold;
+  GizmoHandler activeGizmoHandler;
+  GizmoHandler mouseOverGizmoHandler;
+  GizmoCollector collector;
+  InlineInstance gizmos[];
+};
+
+function GizmoManipulator() {
+  this.collector = GizmoCollector();
+  this.coneThreshold = 0.01;
+}
+
+/// The callback fired when the GizmoManipulator is enabled
+/// \note The gizmos in the scene are collected at this point in preparation for interaction.
+function GizmoManipulator.onEnable!(){
+  this.gizmos = this.collector.collect();
+}
+
+/// The callback fired when the GizmoManipulator is disabled
+function GizmoManipulator.onDisable!(){}
+
+/// Raycasts the specified gizmo instance to determine if it is currently under the mouse. 
+/// \internal
+function GizmoManipulator.raycastInstance!(MouseEvent mouseEvent, Ray ray, InlineInstance instance, io Scalar distance, io GizmoHandler handler){
+
+  // Skip invisible gizmos.
+  if(instance.getNumMaterials() == 0)
+    return;
+
+  GeometryLocation locations[];
+  InlineTransform transform = instance.getTransform();
+  InlineShape shape = instance.getShape();
+  SpatialQueryable queryable = shape.getGeometry();
+  if(queryable != null){
+    for(Integer i=0; i<transform.getGlobalCount(); i++){
+      Xfo xfo = transform.getGlobalXfo(i);
+
+      // Constant sized transfroms compute a scale based on the viewports.
+      if(transform.type() == ConstantScreenSizeTransform){
+        ConstantScreenSizeTransform constantScreenSizeTransform = transform;
+        // If the Gizmos are being scaled during rendering, we need to compute the 
+        // same scale here.
+        Boolean orthographic = mouseEvent.getViewport().getCamera().isOrthographic();
+        if(orthographic){
+          // this constant value renders the geometry approximately the same size inthe orthographic viewport to the perspective. 
+          Scalar sizeFudge = 0.003;
+          xfo.sc *= mouseEvent.getViewport().getCamera().getOrthographicFrustumHeight() * sizeFudge;
+        }
+        else{
+          Vec3 cameraPos = mouseEvent.getViewport().getCamera().getMat44().translation();
+          Scalar fovY = mouseEvent.getViewport().getCamera().getFovY();
+          Scalar dist = cameraPos.distanceTo(xfo.tr);
+          Scalar scaleFactor = dist * fovY * (1.0/mouseEvent.getViewport().getDimensions().y);
+          xfo.sc *= scaleFactor;
+        }
+      }
+
+      Xfo invXfo = xfo.inverse();
+      Ray objRay = invXfo.transformRay(ray);
+      GeometryLocation location = queryable.raycast(objRay, true, this.coneThreshold, SCALAR_INFINITE );
+      if(location.isValid()){
+        Vec3 objectSpacePoint = queryable.getPositionAtLocation(location);
+        Vec3 worldSpacePoint = xfo.transformVector(objectSpacePoint);
+        Scalar dist = (worldSpacePoint - ray.start).length();
+        if(dist < distance){
+          handler = instance.getMetaData('gizmoHandler');
+          distance = dist;
+        }
+      }
+    }
+  }
+}
+
+/// Raycasts all collected gizmo objects to determine which is currently under the mouse. 
+/// \internal
+function GizmoHandler GizmoManipulator.raycastGizmos!(MouseEvent mouseEvent){
+
+  Ref<InlineViewport> viewport = mouseEvent.getViewport();
+  Ray ray = viewport.calcRayFromScreenPos(mouseEvent.pos);
+  Scalar distance = BIGSCALAR_POSITIVE;
+  GizmoHandler handler = null;
+  for(Integer i=0; i< this.gizmos.size(); i++){
+    this.raycastInstance( mouseEvent, ray, this.gizmos[i], distance, handler);
+  }
+  return handler;
+}
+
+/// The event handler function for the GizmoManipulator.
+/// In this function the gizmos are raycast on mouse down, and if a gizmo is hit
+/// it becomes the active gizmo until the mouse is released. While a gizmo is
+/// active, all mouse events are sent to its gizmo event handler.
+/// \param event The event propagated from the host DCC application 
+function GizmoManipulator.onEvent!(io Event event){
+  if(event.eventType() == Event_MouseButtonPress){
+    MouseEvent mouseEvent = event;
+
+    // On MouseMove/Mousedown.
+    if(mouseEvent.button == MouseButton_LeftButton){
+      // Raycast the Gizmos and get the closest hit.
+      GizmoHandler handler = this.raycastGizmos(mouseEvent);
+      if(handler){
+        handler.onEvent(mouseEvent);
+        if(mouseEvent.isAccepted())
+          this.activeGizmoHandler = handler;
+      }
+    }
+  }
+  else if(event.eventType() == Event_MouseMove){
+    MouseEvent mouseEvent = event;
+    // On drag
+    if(this.activeGizmoHandler){
+      this.activeGizmoHandler.onEvent(mouseEvent);
+    }
+    else{
+      // As the mouse moves over the screen, we raycast the gizmos to 
+      // see if a gizmo is under the mouse. We then highlight the gizmo
+      // usign the highlight method on the handler. This gives the artist
+      // visual feedback before a gizmo is interacted with, that it will be
+      // the subject of the interaction.
+      GizmoHandler handler = this.raycastGizmos(mouseEvent);
+      if(this.mouseOverGizmoHandler != null && this.mouseOverGizmoHandler != handler){
+        this.mouseOverGizmoHandler.highlight(false);
+        this.mouseOverGizmoHandler = null;
+        event.getHost().requestRedraw();
+      }
+      if(handler != null && this.mouseOverGizmoHandler != handler){
+        handler.highlight(true);
+        this.mouseOverGizmoHandler = handler;
+        event.getHost().requestRedraw();
+      }
+     }
+  }
+  else if(event.eventType() == Event_MouseButtonRelease){
+    MouseEvent mouseEvent = event;
+    // On release
+    if(this.activeGizmoHandler){
+       this.activeGizmoHandler.onEvent(mouseEvent);
+       this.activeGizmoHandler = null;
+    }
+  }
+}

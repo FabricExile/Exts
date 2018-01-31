@@ -1,0 +1,73 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+  namespace InlineDrawingRender {
+
+    /// \internal
+    /// Flat shader mapping the Tool parameter naming conventions.
+    object IDEnableSelectionMaterial : OGLInlineShader{
+
+    };
+
+    /// default constructor
+    IDEnableSelectionMaterial() {
+      this.init( this.type() );
+    }
+
+    /// default constructor taking a name
+    IDEnableSelectionMaterial( String name ) {
+      this.init( name );
+    }
+
+    /// initialize the shader using a name.
+    /// \internal
+    IDEnableSelectionMaterial.init!( String name ) {
+      // Create a dummy shader what requires the positions and renderTransform without actually drawing something.
+      // Note: params have to be "really" used in OGL, else OGL will optimize out these.
+      this.name = name;
+      this.setVertexCode( "
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+
+      uniform mat4 renderTransform;
+      attribute vec4 positions;
+
+      void main() {
+        gl_Position = renderTransform * positions;
+      }
+      ");
+
+        this.setFragmentCode( "
+        #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+
+        void main() {
+        gl_FragColor = vec4( 0 );
+      }
+      ");  
+        this.defineUniform( InlineUniform( "renderTransform", Mat44() ) );
+      this.defineAttribute( 'positions', "Vec3" );
+    }
+
+    /// TODO: this should not be shader specific, but applicable to any shader with pass = OnTopWithRelativeDepthRenderPass
+    function Boolean IDEnableSelectionMaterial.draw!( io ::DrawContext context ) {
+      // Just create buffers, don't draw for real.
+      // Obviously this is not optimal but we try to avoid InlineDrawing changes just for this.
+      glDepthMask( GL_FALSE );
+      glColorMask( GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE );
+      Boolean result = this.parent.draw( context );
+      glColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
+      glDepthMask( GL_TRUE );
+      return result;
+    }
+
+    /// \internal
+    object EnableSelectionMaterialToID : MaterialToID{
+    };
+
+    /// \internal
+    Type EnableSelectionMaterialToID.getIDShaderType!( DrawContext context, Ref<InlineShape> contextualShape ) {
+      return IDEnableSelectionMaterial;
+    }
+  }// namespace InlineDrawingRender
+}// namespace Tool

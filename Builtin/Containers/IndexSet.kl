@@ -1,0 +1,301 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Util;
+
+/**
+  The IndexSet can be used to express a set of indices, where the index range is relatively contiguous.
+  This can be useful to create a set of indices pointing to a larger array, for example.
+  An IndexSet is particularly useful for efficiently removing duplicate indices, as it only allocates
+  a few buffers as opposed to using a Dictionary.
+
+  \example
+    IndexSet indexSet;
+    indexSet.add(3);
+    indexSet.add(9);
+    indexSet.add(3);
+    indexSet.add(4);
+    indexSet.add(9);
+
+    report("Contains '2': " + indexSet.has(2));
+    report("Contains '3': " + indexSet.has(3));
+
+    report("Indices:");
+    for( Size i = 0; i < indexSet.size(); ++i )
+      report( indexSet.get(i) );
+  \endexample
+*/
+
+struct IndexSet {
+  /// \internal
+  BitVector memberBits;
+
+  /// \internal
+  UInt32 indices[];
+
+  /// \internal Used portion of the indices[] array (avoids memory reallocs)
+  UInt32 indicesSize;
+};
+
+/// returns the size of the set
+inline Size IndexSet.size() {
+  return this.indicesSize;
+}
+
+/// returns the potential range for the indices
+inline Size IndexSet.potentialIndexRange() {
+  return this.memberBits.size();
+}
+
+/// empties the set
+/// \note In order to reduce memory usage, the indices array is not released, and will be reused to avoid reallocs.
+inline IndexSet.clear!() {
+  if( this.indicesSize < ( this.memberBits.size() / 128 ) ) {// 1/4th if UInt32s used
+    for( Size i = 0; i < this.indicesSize; ++i )
+      this.memberBits.clear(this.indices[i]);
+  } else
+    this.memberBits.clearAll();
+  this.indicesSize = 0;
+}
+
+/// empties the set and frees all internal containers
+inline IndexSet.free!() {
+  this.memberBits.resize(0);
+  this.indices.resize(0);
+  this.indicesSize = 0;
+}
+
+/// adds a new index to the set. returns true if the index wasn't in the set yet
+Boolean IndexSet.add!( UInt32 index ) {
+  if( index >= this.memberBits.size() )
+    this.memberBits.resize( index + 1 );
+  if( !this.memberBits.getThenSet(index) ) {
+    if( this.indicesSize == this.indices.size() )
+      this.indices.push( index );
+    else
+      this.indices[this.indicesSize] = index;
+    ++this.indicesSize;
+    return true;
+  }
+  return false;
+}
+
+IndexSet.add!( UInt32 indices[] ) {
+  for( Size i = 0; i < indices.size(); ++i )
+    this.add( indices[i] );
+}
+
+/// Removes the element at this.indices[offset] and shuffles the last element to replace it.
+/// Be careful: "offset" is not the element index itself, but rather its position in the indices array.
+inline IndexSet.removeAtOffset!( UInt32 offset ) {
+  UInt32 index = this.indices[offset];
+  --this.indicesSize;
+  this.indices[offset] = this.indices[this.indicesSize];
+  this.memberBits.clear(index);
+}
+
+/// merges another set into this one
+function IndexSet.add!( IndexSet other ) {
+  if( this.memberBits.size() < other.memberBits.size() )
+    this.memberBits.resize( other.memberBits.size() );
+
+  for( Size i = 0; i < other.indices.size(); ++i ) {
+    UInt32 index = other.indices[i];
+    if( !this.memberBits.getThenSet( index ) ) {
+      if( this.indicesSize == this.indices.size() )
+        this.indices.push( index );
+      else
+        this.indices[this.indicesSize] = index;
+      ++this.indicesSize;
+    }
+  }
+}
+
+/// returns true if a given index is part of the set
+inline Boolean IndexSet.has?( UInt32 index ) {
+  if( index >= this.memberBits.size() )
+    return false;
+  return this.memberBits.get(index);
+}
+
+IndexSet.sortIndices!() {
+  Size sortedIndices[];
+  sortedIndices.reserve( this.size() );
+
+  BitVectorIterator it = this.memberBits.begin();
+  while( this.memberBits.getNext( it ) )
+    sortedIndices.push( it.index );
+
+  this.indices = sortedIndices;
+}
+
+/// \internal returns the memory usage of this container
+function Size IndexSet.getMemUsage?() {
+  return this.indices.size()*4 + this.memberBits.getMemUsage();
+}
+
+
+/// returns the index of element, at an offset between 0 and IndexSet.size-1.
+/// \seealso IndexSet.getIndices
+inline UInt32 IndexSet.get( Size offset ) {
+  return this.indices[offset];
+}
+
+/// returns the index list buffer.
+/// Note: this array is volatile: it can be invalid if elements are added.
+inline UInt32<> IndexSet.getIndices ? () {
+  Data data = this.indices.data();
+  return CastDataToUInt32Array( data, this.indicesSize );
+}
+
+/// returns true the two IndexSet contain the same elements
+Boolean IndexSet.isEquivalent( IndexSet other ) {
+  for( Size i = 0; i < this.size(); ++i )
+    if( !other.has( i ) )
+      return false;
+
+  for( Size i = 0; i < other.size(); ++i )
+    if( !this.has( i ) )
+      return false;
+
+  return true;
+}
+
+/// returns true the two IndexSet contain the same elements
+UInt32 IndexSet.hash() {
+  UInt32 hash;
+  for( Size i = 0; i < this.size(); ++i )
+    hash = hash ^ this.get( i );
+  return hash;
+}
+
+/// Persistance to String: saves in the form of a compressed ordered range list: [2, 4-10, 12-24]
+String IndexSet.toRangeListString() {
+  String s = '[';
+
+  Size start = InvalidIndex;
+  Boolean first = true;
+  for( Size i = 0; i < this.memberBits.size()+1; ++i ) {
+    Boolean has = i < this.memberBits.size() && this.memberBits.get( i );
+    if( !has ) {
+      if( start != InvalidIndex ) {
+        if( !first )
+          s += ", ";
+        UInt32 end = i - 1;
+        if( start == end ) {
+          // single element
+          s += start;
+        } else {
+          // range element
+          s += start + "-" + end;
+        }
+        first = false;
+      }
+      start = InvalidIndex;
+    } else if( start == InvalidIndex )
+      start = i;
+  }
+  s += ']';
+  return s;
+}
+
+
+
+/// Persistance to String: reads from the form of a compressed range list: [2, 4-10, 12-24, 1]
+/// Unordered items are supported. Will return false if not in the expected form.
+/// Note: the function is permissive on slightly malformed cases, by allowing to omit commas, have various escape chars, inverted ranges, repeated values: " [  3  \n5 5 \t 1 - 12  5-3, 23]"
+Boolean IndexSet.fromRangeListString!( String s ) {
+  this.clear();
+  Byte stringData<> = s;
+
+  // find start
+  Size start = InvalidIndex;
+  for( Size i = 0; i < stringData.size(); ++i ) {
+    Byte value = stringData[i];
+    if( IsAsciiDelimiter( value ) )
+      continue;
+    else if( value == asciiOpenBracket ) {
+      start = i+1;
+      break;
+    }
+  }
+
+  if( start == InvalidIndex )
+    return false;
+
+  // find end
+  Size end = InvalidIndex;
+  for( Size i = stringData.size(); i--; ) {
+    Byte value = stringData[i];
+    if( IsAsciiDelimiter( value ) )
+      continue;
+    else if( value == asciiCloseBracket ) {
+      end = i;
+      break;
+    }
+  }
+
+  if( end == InvalidIndex )
+    return false;
+
+  Size rangeStart = InvalidIndex;
+  Size current = InvalidIndex;
+  Boolean currentDone;
+
+  for( Size i = start; i < end+1; ++i ) {
+    Byte value = stringData[i];
+
+    Boolean endOfRange = i == end || value == asciiComma;
+    Boolean endOfNumber = current != InvalidIndex && !currentDone && ( endOfRange || IsAsciiDelimiter( value ) );
+
+    Size digit = GetAsciiDigit( value );
+    Boolean isDigit = digit != InvalidIndex;
+    Boolean newNumberStart = isDigit && currentDone;
+
+    if( newNumberStart && currentDone ) // Non-comma separated number: [12 124 12]
+      endOfRange = true;
+
+    if( endOfNumber )
+      currentDone = true;
+
+    if( endOfRange ) {
+      if( rangeStart != InvalidIndex ) {
+        // range
+        if( current < rangeStart ) {
+          Size temp = rangeStart;
+          rangeStart = current;
+          current = temp;
+        }
+
+        for( Size j = rangeStart; j <= current; ++j )
+          this.add( j );
+
+        rangeStart = InvalidIndex;
+        current = InvalidIndex;
+      } else if( current != InvalidIndex ) {
+        // single
+        this.add( current );
+        current = InvalidIndex;
+      }
+      currentDone = false;
+    }
+
+    if( value == asciiDash ) {
+      if( rangeStart != InvalidIndex || current == InvalidIndex )// double dash: 12-16-19, dash [-]
+        return false;
+      rangeStart = current;
+      current = InvalidIndex;
+      currentDone = false;
+    }
+    
+    if( isDigit ) {
+      if( current == InvalidIndex )// new number
+        current = digit;
+      else
+        current = current * 10 + digit;
+    } else if( !IsAsciiDelimiter( value ) && !endOfRange && value != asciiDash )
+      return false;
+  }
+  return true;
+}

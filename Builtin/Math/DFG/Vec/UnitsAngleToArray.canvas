@@ -1,0 +1,84 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Vec2.html",
+    "uiTooltip" : "Returns the angle (in radians) of this vector\nto another one\n\n Supported by Vec2,Vec3,Vec4"
+    },
+  "title" : "UnitsAngleTo[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec2[]" : [
+          {
+            "x" : 0,
+            "y" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "$TYPE$[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "other",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec2[]" : [
+          {
+            "x" : 0,
+            "y" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "$TYPE$[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "08BA7B5917ADE1F52183589EC315C1CD",
+  "code" : "require Math;
+
+operator Math_Vec2_unitsAngleTo_task<<<index>>>(
+  io Scalar[] result
+, in $TYPE$[] this
+, in $TYPE$[] other
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].unitsAngleTo(other[index < other.size() ? index : other.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( other.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < other.size()) task_size = other.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Vec2_unitsAngleTo_task(index, result, this, other);
+    }
+  } else {
+    Math_Vec2_unitsAngleTo_task<<<task_size>>>(result, this, other);
+  }
+}
+"
+  }

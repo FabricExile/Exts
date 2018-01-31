@@ -1,0 +1,111 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  interface ToolDrawModifier;
+
+  /// \internal
+  object WPerStateComponents_component{
+    Object component;
+    Boolean isDrawModifier;
+    // TODO: support attached / detached state???
+  };
+
+  WPerStateComponents_component.invalidate!( ) {
+    if( this.component ) {
+      Ref<Component> component = this.component;
+      if( component )
+        component.invalidate();// Invalidate first so it undoes its action if applicable, once on the parent
+
+      Ref<BaseTool> ownerTool = component.getParent();
+      if( ownerTool ) {
+        if( this.isDrawModifier )
+          ownerTool.removeDrawModifier( component );
+        else
+          ownerTool.removeComponent( component );
+      }
+      this.component = null;
+    }
+  }
+
+  ~WPerStateComponents_component() {
+    this.invalidate();
+  }
+
+  /// \internal
+  struct PerStateComponents_data {
+    WPerStateComponents_component[] components;
+  };
+
+  /// \internal
+  /// Data structure used by the BaseTool to hold state-specific components.
+  object PerStateComponents{
+    PerStateComponents_data perStateData[String];
+  };
+
+  /// \internal
+  PerStateComponents.addStateSpecificComponentInternal!( io PerStateComponents_data data, Ref<Object> component, Boolean isDrawModifier, Boolean pushFront, io Ref<BaseTool> targetTool ) {
+    WPerStateComponents_component stateComponent();
+    stateComponent.component = component;
+    stateComponent.isDrawModifier = isDrawModifier;
+    data.components.push( stateComponent );
+    if( isDrawModifier )
+      targetTool.addDrawModifier( component, pushFront );
+    else
+      targetTool.attachComponent( component );
+  }
+
+  PerStateComponents.addStateSpecificComponent!( String stateName, Ref<Component> component, io Ref<BaseTool> targetTool ) {
+    if( !component || !targetTool )
+      setError( "PerStateComponents.addStateSpecificComponent: unexpected: null component or targetTool" );
+    else
+      this.addStateSpecificComponentInternal( this.perStateData[stateName], component, false, false, targetTool );
+    //report( "Added state=" + stateName + " specific component: " + component.getPath() );
+  }
+
+  PerStateComponents.addStateSpecificDrawModifier!( String stateName, Ref<ToolDrawModifier> drawModifier, Boolean pushFront, io Ref<BaseTool> targetTool ) {
+    if( !drawModifier || !targetTool )
+      setError( "PerStateComponents.addStateSpecificDrawModifier: unexpected: null drawModifier or targetTool" );
+    else
+      this.addStateSpecificComponentInternal( this.perStateData[stateName], drawModifier, true, pushFront, targetTool );
+  }
+
+  /// \internal
+  PerStateComponents.invalidateStateData!( io PerStateComponents_data data ) {
+    for( Size i = 0; i < data.components.size(); ++i )
+      data.components[i].invalidate();
+    data.components.resize( 0 );
+  }
+
+  PerStateComponents.removeStateComponents!( String stateName ) {
+    //report( "removeStateComponents " + stateName );
+    if( this.perStateData.has( stateName ) ) {
+      this.invalidateStateData( this.perStateData[stateName] );
+      this.perStateData.delete( stateName );
+    }
+  }
+
+  PerStateComponents.removeAllOtherStatesComponents!( String stateNameToPreserve ) {
+    String otherStates[];
+    for( k in this.perStateData ) {
+      if( k != stateNameToPreserve )
+        otherStates.push( k );
+    }
+    for( Size i = 0; i < otherStates.size(); ++i )
+      this.removeStateComponents( otherStates[i] );
+  }
+
+  PerStateComponents.removeAllStatesComponents!( ) {
+    this.perStateData.clear();
+  }
+
+  PerStateComponents.invalidate!( ) {
+    this.removeAllStatesComponents();
+  }
+
+  ~PerStateComponents() {
+    this.invalidate();
+  }
+}// namespace Tool

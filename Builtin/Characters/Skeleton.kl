@@ -1,0 +1,266 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+
+
+/**
+The Skeleton stores an array of bones encoding the hiearchy into this simple data structure. 
+
+*/
+require Math;
+
+/**
+  The Skeleton object defines a skeleton hierarchy made up of an array of bones.
+  The bones arrays is assumed to be sorted in order of hierarchical traversal
+  meaning that no bones parent can occur after it in the array.
+  \brief The Skeleton object defines a skeleton hierarchy made up of an array of bones.
+  \seealso Bone, Character
+
+\rst
+  .. kl-fileexample:: ${FABRIC_SCENE_GRAPH_DIR}/Test/Exts/Characters/skeleton.kl
+\endrst
+*/
+object Skeleton : ISkeleton {
+
+  ///  The name of the skeleton.
+  String name;
+
+  ///  The array of bones in the skeleton.
+  Bone bones[];
+
+  ///  A cache of the local reference poses for the skeleton. Solvers often use these values to compute offsets during animation.
+  Xfo referenceLocalPoses[];
+
+  ///  /private.
+  UInt64 version;
+
+  ///  a cache of the bone indices used as deformers. 
+  Size deformerIndices[];
+};
+
+/// Constructs a skeleton using the given name. 
+function Skeleton(String name){
+  this.name = name;
+}
+
+/// Constructs a skeleton using the given name and bones array.
+function Skeleton(String name, Bone bones[]){
+  this.name = name;
+  this.bones = bones;
+  this.recomputeHierarchy();
+}
+
+/// Returns the name of the skeleton
+function String Skeleton.getName(){
+  return this.name;
+}
+
+/// Increments the version of the skeleton. 
+/// \note this will cause any caches based on the 
+/// skeleton to become invalid. 
+function Skeleton.incrementVersion!(){
+  this.version += 1;
+}
+
+/// Returns the current version of the skeleton
+function UInt64 Skeleton.getVersion(){
+  return this.version;
+}
+
+/// Returns the number of bones in the bones array. 
+function Size Skeleton.getNumBones(){
+  return this.bones.size();
+}
+
+/// Adds a new bone to the skeleton.
+function Skeleton.addBone!(Bone bone){
+  this.bones.resize(this.bones.size()+1);
+  this.bones[this.bones.size()-1] = bone;
+  this.recomputeHierarchy();
+}
+
+/// Returns a bone based on the given index.
+function Bone Skeleton.getBone(Index index){
+  return this.bones[index];
+}
+
+/// Returns a bone based on the given index.
+function Bone[] Skeleton.getAllBones(){
+  return this.bones;
+}
+
+/// Returns the reference pose for a bone based on the given index.
+function Xfo Skeleton.getReferencePose(Index index){
+  return this.bones[index].referencePose;
+}
+
+/// Returns the reference local pose for a bone based on the given index.
+function Xfo Skeleton.getReferenceLocalPose(Index index){
+  return this.referenceLocalPoses[index];
+}
+
+/// Recomputes the relationships between bones in the hierarchy.
+/// The child indices for each bone are updated bases on the bones
+/// listing each bone as a parent. 
+/// The referenceLocalPoses are updated based on the referencePoses
+/// of the bones and thier hierarchical relationships. 
+function Skeleton.recomputeHierarchy!(){
+  this.referenceLocalPoses.resize(this.bones.size());
+  this.deformerIndices.resize(0);
+  for(Index i=0; i<this.bones.size(); i++) {
+    if(this.bones[i].parentIndex == -1){
+      this.referenceLocalPoses[i] = this.bones[i].referencePose;
+    }
+    else{
+      this.referenceLocalPoses[i] = this.bones[this.bones[i].parentIndex].referencePose.inverse() * this.bones[i].referencePose;
+    }
+    this.bones[i].childIndices.resize(0);
+    for(Index j=i+1; j<this.bones.size(); j++) {
+      if(this.bones[j].parentIndex == i){
+        this.bones[i].childIndices.push(j);
+      }
+    }
+
+    this.bones[i].calcInvRefPose();
+
+    if(this.bones[i].testFlag(BONEFLAG_DEFORMER)){
+      this.deformerIndices.push(i);
+    }
+  }
+  this.incrementVersion();
+}
+
+/// Finds a bone in the skeleton by name, and a starting point.
+function Integer Skeleton.findBone(String boneName, Index startingPoint){
+  for(Integer i=startingPoint; i < this.bones.size(); i++){
+    if(this.bones[i].name == boneName){
+      return i;
+    }
+  }
+  return -1;
+}
+
+/// Finds a bone in the skeleton by name.
+function Integer Skeleton.findBone(String boneName){
+  return this.findBone(boneName, 0);
+}
+
+/// Finds a bone in the skeleton by name.
+function Bone[] Skeleton.getBones(){
+  return this.bones;
+}
+
+/// Returns the array of indices of bones which have the BONEFLAG_DEFORMER flag set.
+function Size[] Skeleton.getDeformerIndices(){
+  return this.deformerIndices;
+}
+
+/// Returns an array of bones which have the BONEFLAG_DEFORMER flag set.
+function Bone[] Skeleton.getDeformers(){
+  Bone deformers[];
+  for(Integer i=0; i < this.deformerIndices.size(); i++){
+    if(this.bones[this.deformerIndices[i]].testFlag(BONEFLAG_DEFORMER)){
+      deformers.push(this.bones[this.deformerIndices[i]]);
+    }
+  }
+  return deformers;
+}
+
+/// Updates the symmetry information in the skeleton by comparing the reference transform 
+/// of bones in the hierarchy. 
+/// \note this method is unreliable, as multiple joints are often overlaid at the same reference position. 
+function Skeleton.computeSymmetry!(){
+  /////////////////////////////////////////////
+  // Compute Skeleton Symmetry
+  for(Integer i=0; i < this.bones.size(); i++){
+    // We can only mirror bones that have a length, and a radius.
+    // This is a way to filter out bones that were collected by
+    // the FbxCharacterSkeleton that were not seed bones.
+    if(this.bones[i].mirrorBoneID == -1 && this.bones[i].length > 0.0 && this.bones[i].radius > 0.0){
+      Vec3 boneCenter = this.bones[i].referencePose.transformVector(Vec3(this.bones[i].length * 0.5, 0, 0));
+      Vec3 mirrorBoneCenter = boneCenter;
+      mirrorBoneCenter.x = -mirrorBoneCenter.x;
+      Integer closestMirror = -1;
+      Scalar closestMirrorBoneDist = 9999999.0;
+      for(Integer j=0; j<this.bones.size(); j++){
+        if(i!=j && this.bones[j].length > 0.0 && this.bones[j].radius > 0.0){
+          Vec3 otherBoneCenter = this.bones[j].referencePose.transformVector(Vec3(this.bones[j].length * 0.5, 0, 0));
+          Scalar dist = mirrorBoneCenter.distanceTo(otherBoneCenter);
+          // The mirror bone must be the closes bone on the opposite side of the character.
+          // We also filter this.bones taht are not within a reasonable range of the search bone.
+          if(((mirrorBoneCenter.x < 0.0 && otherBoneCenter.x < 0.0) || (mirrorBoneCenter.x > 0.0 && otherBoneCenter.x > 0.0)) && 
+            dist < (this.bones[i].length * 0.2) &&
+            dist < closestMirrorBoneDist){
+            closestMirror = j;
+            closestMirrorBoneDist = dist;
+          }
+        }
+      }
+      if(closestMirror >= 0){
+        this.bones[i].mirrorBoneID = closestMirror;
+        this.bones[closestMirror].mirrorBoneID = i;
+      }
+    }
+  }
+}
+  
+
+/// Generates a Description string of this skeleton. Used when debugging skeleton hierarchies.
+/// \param indent The indentation to use when generating the string. 
+function String Skeleton.getDesc(String indent, Boolean includeBones) {
+  String desc;
+  desc += indent + "Skeleton { \n";
+  desc += indent + "  name: " + this.name + " \n";
+  if(includeBones){
+    desc += indent + "  bones:[ \n";
+    for(Integer i=0; i<this.bones.size(); i++){
+      desc += this.bones[i].getDesc(indent+"    ") + " \n";
+    }
+    desc += indent + "  ]\n";
+  }
+  desc += indent + "}";
+  return desc;
+}
+
+/// Generates a Description string of this skeleton. Used when debugging skeleton hierarchies.
+function String Skeleton.getDesc() {
+  return this.getDesc("", true);
+}
+
+
+require InlineDrawing;
+
+
+
+/// Generates a set of inline shapes nested under the provided rootTransform. 
+/// \dfgPresetCreate
+function drawSkeleton(ISkeleton skeleton, io IPose pose, io InlineTransform rootTransform) {
+  if(!pose)
+    return;
+  if(!rootTransform)
+    return;
+  InlineDrawing drawing = OGLInlineDrawing_GetInstance();
+  InlineShader shader = drawing.registerShader(OGLSurfaceShader('surface'));
+  InlineMaterial phong = shader.getOrCreateMaterial("phong");
+  Bone bones[] = skeleton.getBones();
+  for(Integer i=0; i<bones.size(); i++){
+    InlineTransform boneTransform = null;
+    if(i < rootTransform.getChildCount())
+      boneTransform = rootTransform.getChild(i);
+
+    if(boneTransform == null){
+      Bone bone = bones[i];
+      boneTransform = StaticInlineTransform(skeleton.getName() + bone.name, pose.getBoneXfo(i));
+      rootTransform.addChild(boneTransform);
+
+      InlineShape boneShape = constructBoneShape(i, bones);
+      InlineInstance boneInstance = SimpleInlineInstance(skeleton.getName() + bone.name + 'Instance', boneTransform, boneShape, phong);
+      boneInstance.setInstanceUniform(InlineUniform('u_diffuseColor', bone.color));
+    }
+    else{
+      boneTransform.setLocalXfo(0, pose.getBoneXfo(i));
+    }
+  }
+}
+

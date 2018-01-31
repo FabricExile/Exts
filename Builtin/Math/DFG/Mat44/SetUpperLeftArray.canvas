@@ -1,0 +1,86 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Mat44.html",
+    "uiTooltip" : "replaces the upper left 3 x 3 components from a Mat33.\n\n Supported by Mat44"
+    },
+  "title" : "SetUpperLeft[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 249,\n  \"g\" : 157,\n  \"b\" : 28\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Mat44[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 249,\n  \"g\" : 157,\n  \"b\" : 28\n  }"
+        },
+      "name" : "m",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Mat33[]" : [
+          {
+            "row0" : {
+              "x" : 1,
+              "y" : 0,
+              "z" : 0
+              },
+            "row1" : {
+              "x" : 0,
+              "y" : 1,
+              "z" : 0
+              },
+            "row2" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 1
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Mat33[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "B3CC7FD659A756EEB6D7E7757B9B503B",
+  "code" : "require Math;
+
+operator Math_Mat44_setUpperLeft_task<<<index>>>(
+  io Mat44[] this
+, in Mat33[] m
+) {
+  this[index < this.size() ? index : this.size() - 1].setUpperLeft(m[index < m.size() ? index : m.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( m.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < m.size()) task_size = m.size();
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Mat44_setUpperLeft_task(index, this, m);
+    }
+  } else {
+    Math_Mat44_setUpperLeft_task<<<task_size>>>(this, m);
+  }
+}
+"
+  }

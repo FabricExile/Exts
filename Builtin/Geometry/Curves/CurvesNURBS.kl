@@ -1,0 +1,932 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/******************************************************************************
+NURBS CURVES
+******************************************************************************/
+
+// ************************* STRUCTURE **********************************
+
+UInt32 CurvesStructure.initNURBSCurve!( UInt32 curveIndex, UInt8 order, UInt8 curveForm, UInt32 pointCount ) {
+  Boolean closed = curveForm == curveForm_closed || curveForm == curveForm_periodic;
+  this.initCurve( curveIndex, curveType_NURBS, order, closed, pointCount );
+  if( curveForm == curveForm_periodic ) {
+    setFlag( this.curvesData[curveIndex].flags, curveFlags_periodic );
+    this.curvesData[curveIndex].wrappedCVCount = order - 1;//Overlap of degree CVs
+  } else if( curveForm == curveForm_closed )
+    this.curvesData[curveIndex].wrappedCVCount = 1;
+
+  this.NURBS_updateDomainAndSpanCount( this.curvesData[curveIndex] );
+  return curveIndex;
+}
+
+/// Returns the CV count including repeated ones (which we don't store), as in the "classical" implementation
+inline UInt32 CurvesStructure.getNURBSCVCountWithRepeats( Curves_data curveData ) {
+  return curveData.pointCount + curveData.wrappedCVCount;
+}
+
+inline UInt32 CurvesStructure.getNURBSKnotCount( Curves_data curveData ) {
+  return this.getNURBSCVCountWithRepeats( curveData ) + curveData.order - 2;
+}
+
+inline Boolean Curves_data.NURBS_hasImplicitUniformKnots() {
+  return this.extraDataOffset == InvalidIndex;
+}
+
+inline Boolean CurvesStructure.isEmptyNURBSSpan( Curves_data curveData, UInt32 spanIndex ) {
+  if( curveData.NURBS_hasImplicitUniformKnots() )
+    return false;
+
+  Vec2 range = this.NURBS_getSpanRange( curveData, spanIndex );
+  return IsEmptyCurvesSpanRange( range );
+}
+
+/// Returns the implicit uniform knot value
+Float32 CurvesStructure.getNURBSUniformKnotValue( Curves_data curveData, UInt32 knotIndex ) {
+  // Most frequent case: implicit knot values from uniform curves
+  if( curveData.isPeriodic() )
+    return ( SInt32( knotIndex ) - SInt32( curveData.order - 2 ) ) + curveData.domainStart;
+  else {
+    UInt32 degree = curveData.order - 1;
+    if( knotIndex < degree )// <= start multiciplity
+      return curveData.domainStart;
+    UInt32 value = knotIndex - ( degree - 1 );
+    UInt32 maxValue = (curveData.pointCount + curveData.wrappedCVCount) - degree;// >= end multiciplity
+    return ( value > maxValue ? maxValue : value ) + curveData.domainStart;
+  }
+}
+
+/// Returns the implicit or stored knot value
+inline Float32 CurvesStructure.getNURBSKnot( Curves_data curveData, UInt32 knotIndex ) {
+  if( curveData.NURBS_hasImplicitUniformKnots() )
+    return this.getNURBSUniformKnotValue( curveData, knotIndex );
+  else
+    return this.getExtraDataFloat( curveData, knotIndex );
+}
+
+inline Vec2 CurvesStructure.NURBS_getSpanRange( Curves_data curveData, UInt32 spanIndex ) {
+  UInt32 firstKnotIndex = spanIndex + ( curveData.order - 2 );
+  return Vec2( this.getNURBSKnot( curveData, firstKnotIndex ), this.getNURBSKnot( curveData, firstKnotIndex + 1 ) );
+}
+
+inline Float32 CurvesStructure.NURBS_getParamFromSpanParam( Curves_data curveData, UInt32 spanIndex, Float32 param ) {
+  Vec2 spanRange = this.NURBS_getSpanRange( curveData, spanIndex );
+  return spanRange.x + param * ( spanRange.y - spanRange.x );
+}
+
+/// Adds more knots, with spans of 1 unit, and sets end knots depending on periodic (mirrors intervals) or not (multiple knots)
+CurvesStructure.increaseNURBSStoredKnots!( io Curves_data curveData, UInt32 knotsCount ) {
+  UInt32 prevSize = this.getExtraDataSize( curveData );
+  if( knotsCount <= prevSize )
+    return;
+
+  setFlag( curveData.flags, curveFlags_explicitKnots );
+  this.resizeExtraData( curveData, knotsCount );
+
+  if( !prevSize ) {
+    // Fill from implicit values
+    for( Size i = 0; i < knotsCount; ++i )
+      this.setExtraData( curveData, i, this.getNURBSUniformKnotValue( curveData, i ) );
+  } else {
+    // Add default knot values. For now we only support resizing up
+    Float32 lastKnotValue = this.getExtraDataFloat( curveData, prevSize-1 );
+    UInt32 knotIndexToWrite = prevSize - ( curveData.order - 1 );
+    // Add unit intervals, then fix end knots
+    for( Size i = knotIndexToWrite; i < knotsCount; ++i ) {
+      this.setExtraData( curveData, i, lastKnotValue );
+      lastKnotValue += 1.0f;
+    }
+    this.NURBS_fixEndKnotsValues( curveData );
+  }
+  // Update domain bounds
+  this.NURBS_updateDomainAndSpanCount( curveData );
+}
+
+/// Returns true if it changed
+Boolean CurvesStructure.setNURBSKnot!( io Curves_data curveData, UInt32 knotIndex, Float32 knotValue ) {
+  Float32 currentValue = this.getNURBSKnot( curveData, knotIndex );
+  if( abs( currentValue - knotValue ) < abs( currentValue * 1e-5f ) + 1e-5f )// Be robust for negative values, and near-zero values, and large values (relative epsilon).
+    return false;
+
+  // Set the value.
+  // First, make non-implicit, if required.
+  this.increaseNURBSStoredKnots( curveData, this.getNURBSKnotCount( curveData ) );
+  this.setExtraData( curveData, knotIndex, knotValue );
+
+  // Update domain bounds
+  this.NURBS_updateDomainAndSpanCount( curveData );
+  return true;
+}
+
+CurvesStructure.NURBS_updateDomainAndSpanCount!( io Curves_data curveData ) {
+  UInt32 ptCount = this.getNURBSCVCountWithRepeats( curveData );
+  if( ptCount > ( curveData.order - 1 ) )
+    curveData.spanCount = ptCount - ( curveData.order - 1 );
+  else
+    curveData.spanCount = 0;
+
+  // Domain: don't include the extremity knots (multiplicity or repeats if periodic)
+  UInt32 knotCount = this.getNURBSKnotCount( curveData );
+  Vec2 domain( this.getNURBSKnot( curveData, curveData.order - 2 ), this.getNURBSKnot( curveData, knotCount - (curveData.order - 1) ) );
+  this.setDomain( curveData, domain );
+}
+
+CurvesStructure.NURBS_forceAsNonPeriodic!( io Curves_data curveData ) {
+  // In that case ideally we should insert knots/CVs to keep the shape, but we will simply redefine the curve with existing CVs.
+  if( curveData.isPeriodic() ) {
+    clearFlag( curveData.flags, curveFlags_periodic );
+    curveData.wrappedCVCount = 1;//Closed
+
+    if( curveData.NURBS_hasImplicitUniformKnots() )
+      return;// No knot values to change
+
+    UInt32 knotsCount = this.getNURBSKnotCount( curveData );
+    this.resizeExtraData( curveData, knotsCount );
+
+    // Set start knot multiplicity
+    Float32 start = curveData.domainStart;
+    for( Size i = 0; i < curveData.order - 2; ++i )
+        this.setExtraData( curveData, i, start );
+
+    this.NURBS_fixEndKnotsValues( curveData );
+    this.NURBS_updateDomainAndSpanCount( curveData );
+  }
+}
+
+UInt32 CurvesStructure.NURBS_openOrCloseCurve_getReservedPointCount!( io Curves_data curveData, Boolean open ) {
+  // We remove the closing span when opening, and add one when closing.
+  // The actual number of points doesn't change.
+  this.NURBS_forceAsNonPeriodic( curveData );
+  return curveData.pointCount;
+}
+
+CurvesStructure.NURBS_openOrCloseCurve_reservedPoints!( io Curves_data curveData, Boolean open, io LocalL8UInt32Array copyAttrFrom, io LocalL8UInt32Array copyAttrTo ) {
+  // We remove the closing span when opening, and add one when closing.
+  // The actual number of points doesn't change.
+  curveData.wrappedCVCount = UInt8( open ? 0 : 1 );
+  UInt32 newKnotCount = this.getNURBSKnotCount( curveData );
+
+  if( open ) {
+    clearFlag( curveData.flags, curveFlags_closed );
+    // Remove last knot
+    if( !curveData.NURBS_hasImplicitUniformKnots() ) {
+      this.resizeExtraData( curveData, newKnotCount );
+      this.NURBS_fixEndKnotsValues( curveData );
+    }
+  } else {
+    setFlag( curveData.flags, curveFlags_closed );
+    //Closing: add one unit span
+    if( !curveData.NURBS_hasImplicitUniformKnots() )
+      this.increaseNURBSStoredKnots( curveData, newKnotCount );
+  }
+  this.NURBS_updateDomainAndSpanCount( curveData );
+}
+
+
+CurvesStructure.NURBS_fixEndKnotsValues!( io Curves_data curveData ) {
+  if( curveData.NURBS_hasImplicitUniformKnots() )
+    return;// No knot values to change
+
+  UInt32 knotsCount = this.getNURBSKnotCount( curveData );
+
+  // Set end knots
+  UInt32 endIndex = knotsCount - ( curveData.order - 1 );
+
+  for( Size i = 0; i < curveData.order - 2; ++i ) {
+    // Mirror intervals, works for all cases: open/closed/periodic
+    Float32 interval = this.getNURBSKnot( curveData, i+1 ) - this.getNURBSKnot( curveData, i );
+
+    Float32 prevEnd = this.getNURBSKnot( curveData, endIndex );
+    this.setExtraData( curveData, endIndex + 1, prevEnd + interval );
+    ++endIndex;
+  }
+}
+
+CurvesStructure.NURBS_resizedPoints!( io Curves_data curveData, UInt32 prevPointCount ) {
+  if( !curveData.NURBS_hasImplicitUniformKnots() ) {
+    // adjust explicit knots accordingly.
+
+    UInt32 knotsCount = this.getNURBSKnotCount( curveData );
+    this.resizeExtraData( curveData, knotsCount );
+
+    if( prevPointCount < curveData.pointCount ) {
+      UInt32 addedCount = curveData.pointCount - prevPointCount;
+      UInt32 domainEndKnotIndex = knotsCount - ( curveData.order - 1 ) - addedCount;
+      Float32 end = this.getNURBSKnot( curveData, domainEndKnotIndex );
+
+      for( Size i = domainEndKnotIndex+1; i < domainEndKnotIndex + addedCount + 1; ++i ) {
+        // By default, add unit intervals
+        end += 1.0f;
+        this.setExtraData( curveData, i, end );
+      }
+    }
+    this.NURBS_fixEndKnotsValues( curveData );
+  }
+  this.NURBS_updateDomainAndSpanCount( curveData );
+}
+
+CurvesStructure.NURBS_insertedPoint!( io Curves_data curveData, UInt32 offset ) {
+  if( !curveData.NURBS_hasImplicitUniformKnots() ) {
+    // adjust explicit knots accordingly; add a delta knot of 1
+
+    UInt32 knotsCount = this.getNURBSKnotCount( curveData );
+    this.resizeExtraData( curveData, knotsCount );
+
+    UInt32 nextKnot = (curveData.order - 1) + offset;
+    UInt32 endKnot = knotsCount - ( curveData.order - 1 );
+    if( nextKnot > endKnot )
+      nextKnot = endKnot;
+
+    for( Size i = knotsCount-1; i >= nextKnot; --i )
+      this.setExtraData( curveData, i, this.getExtraDataFloat( curveData, i - 1 ) + 1.0f );
+
+    this.NURBS_fixEndKnotsValues( curveData );
+  }
+  this.NURBS_updateDomainAndSpanCount( curveData );
+}
+
+CurvesStructure.NURBS_deletedPoint!( io Curves_data curveData, UInt32 offset ) {
+  if( !curveData.NURBS_hasImplicitUniformKnots() ) {
+    // remove following span
+    UInt32 prevKnotsCount = this.getNURBSKnotCount( curveData ) + 1;
+    UInt32 deletedKnot = (curveData.order - 2) + offset;
+    UInt32 prevEndKnot = prevKnotsCount - ( curveData.order - 1 );
+    Float32 spanDelta = this.getExtraDataFloat( curveData, deletedKnot ) - this.getExtraDataFloat( curveData, deletedKnot + 1 );
+    for( Size i = deletedKnot + 1; i <= prevEndKnot; ++i )
+      this.setExtraData( curveData, i - 1, this.getExtraDataFloat( curveData, i ) + spanDelta );
+
+    this.resizeExtraData( curveData, prevKnotsCount - 1 );
+    this.NURBS_fixEndKnotsValues( curveData );
+  }
+  this.NURBS_updateDomainAndSpanCount( curveData );
+}
+
+// ************************* EVALUATION **********************************
+
+inline CurvesStructure.NURBS_getPoints( Curves_data curveData, UInt32 spanIndex, io UInt32 count, io UInt32 pointIndices<> ) {
+  count = curveData.order;
+  UInt32 start = curveData.firstPoint + spanIndex;
+  UInt32 last = curveData.firstPoint + curveData.pointCount;
+
+  for( UInt8 i = 0; i < curveData.order; ++i ) {
+    pointIndices[i] = start++;
+    if( start == last )// Wrap
+      start = curveData.firstPoint;
+  }
+}
+
+// For NURBS, the spanParam == param, we only compute the span index.
+CurvesStructure.NURBS_getSpanParam( Curves_data curveData, Float32 param, io UInt32 spanIndex, io Float32 spanParam ) {
+  spanParam = param < curveData.domainStart ? curveData.domainStart : param;
+
+  if( curveData.NURBS_hasImplicitUniformKnots() ) {
+    // Set as relative
+    spanParam = param < curveData.domainStart ? curveData.domainStart : param;
+    spanIndex = UInt32( spanParam - curveData.domainStart );
+    if( spanIndex >= curveData.spanCount ) {
+      spanIndex = curveData.spanCount ? curveData.spanCount - 1 : 0;
+      spanParam = curveData.domainEnd;
+    }
+  } else {
+    // Do an upper bound search between (order-1) and (order-1 + spanCount)
+   spanParam = param < curveData.domainStart ? curveData.domainStart : param;
+   UInt32 offset = this.getExtraDataOffset( curveData );
+
+    UInt32 first = offset + curveData.order - 1;// Skip start knots
+    UInt32 end = first + curveData.spanCount;
+
+    SInt32 low = first;
+    SInt32 high = end;
+
+    while( low < high ) {
+      SInt32 mid = ( low + high ) / 2;
+      Float32 value = bitcastUIntToFloat( this.packedCurvesExtraData.data[mid] );
+      if( spanParam >= value ) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
+    }
+//report( "PARAM " + param + " FIRST " + first + " LAST " + end + " LOW " + low );
+    if( low >= end ) {
+      // Out of range. Go to last valid span.
+      spanIndex = curveData.spanCount ? curveData.spanCount - 1 : 0;
+      spanParam = curveData.domainEnd;
+
+      // Skip last empty spans. Note that other cases of empty spans have already been skipped if any
+      low -= 2;
+      while( spanIndex > 0 && bitcastUIntToFloat( this.packedCurvesExtraData.data[low] ) == curveData.domainEnd ) {
+        --low;
+        --spanIndex;
+      }
+    } else
+      spanIndex = low - first;
+  }
+}
+
+/**
+Translation of OpenNURBS's ON_EvaluateNurbsBasis (simplified).
+
+Modification: 
+- t_k and k_t use the last entries of N, so N is expected to be of size order*(order+2) instead of size order*order.
+- We assume N to be already zeroed (KL initializes memory)
+
+////////////////////////////////////////////////
+Evaluate B-spline basis functions
+
+INPUT:
+order >= 1
+d = degree = order - 1
+knot[]
+array of length 2*d.
+Generally, knot[0] <= ... <= knot[d-1] < knot[d] <= ... <= knot[2*d-1].
+N[]
+array of length order*order
+
+OUTPUT:
+If "N" were declared as double N[order][order], then
+
+k
+N[d-k][i] = N (t) = value of i-th degree k basis function.
+i
+where 0 <= k <= d and k <= i <= d.
+
+In particular, N[0], ..., N[d] - values of degree d basis functions.
+The "lower left" triangle is not initialized.
+
+Actually, the above is true when knot[d-1] <= t < knot[d].  Otherwise, the
+value returned is the value of the polynomial that agrees with N_i^k on the
+half open domain [ knot[d-1], knot[d] )
+*/
+EvaluateNurbsBasis( UInt8 order, Float32 knots<>, Float32 t, io Float32 N<> ) {
+  UInt8 d = order - 1;
+  UInt8 orderP2 = order*order;
+  UInt32 t_k = orderP2;
+  UInt32 k_t = orderP2 + order;
+
+  if( knots[d - 1] == knots[d] ) // value is defined to be zero on empty spans
+    return;
+  UInt32 n = orderP2 - 1;
+  N[n] = 1.0f;
+  UInt32 knot = d;
+  UInt32 k0 = knot - 1;
+
+  SInt32 r;
+  for( Size j = 0; j < d; j++ ) {
+    UInt32 n0 = n;
+    n -= order + 1;
+    N[t_k+j] = t - knots[k0--];
+    N[k_t+j] = knots[knot++] - t;
+
+    Float32 x;
+    for( r = 0; r <= j; r++ ) {
+      Float32 a0 = N[t_k + j - r];
+      Float32 a1 = N[k_t + r];
+      Float32 y = N[n0 + r] / ( a0 + a1 );
+//report( "j=" + j + " r=" + r + " delta " + (a0+a1) + " isum=" + 1.0f/( a0 + a1 ) + " a0 " + a0 + " a1 " + a1);
+
+      N[n+r] = x + a1*y;
+      x = a0*y;
+    }
+
+    N[n+r] = x;
+  }
+}
+
+
+const Float32 _NURBS_InvDivTable[] = [ 0.0f, 1.0f / 1.0f, 1.0f / 2.0f, 1.0f / 3.0f, 1.0f / 4.0f, 1.0f / 5.0f, 1.0f / 6.0f, 1.0f / 7.0f, 1.0f / 8.0f ];
+const Float32 _NURBS_IToFTable[] = [0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f];
+
+/// EvaluateNurbsBasis_uniformKnots: optimizes EvaluateNurbsBasis for uniform knot cases, where knot span deltas are either 1 or 0 (at start/end).
+///
+/// minSpanIndex and maxSpanIndex: in the range [0..degree*2-1], the indices from which the knot spans are 0 (min=0 and max=degree*2-1 if none)
+///
+/// Timings showed that this version gives a 40% speed increase over EvaluateNurbsBasis in optimized KL
+EvaluateNurbsBasis_uniformKnots( UInt8 order, Float32 t, SInt32 minSpanIndex, SInt32 maxSpanIndex, io Float32 N<> ) {
+  UInt8 d = order - 1;
+  UInt8 orderP2 = order*order;
+
+  UInt32 n = orderP2 - 1;
+  N[n] = 1.0f;
+  Float32 initialA1 = 1.0f - t;
+
+  SInt32 endKnot = order-1;
+  SInt32 startKnot = order-2;
+
+  SInt32 r;
+  for( Size j = 0; j < d; j++ ) {
+    UInt32 n0 = n;
+    n -= order + 1;
+
+    SInt32 jStartKnot = startKnot;
+    SInt32 jEndKnot = endKnot;
+    Float32 a1 = initialA1;
+
+    Float32 x;
+    for( r = 0; r <= j; ++r ) {
+      SInt32 rStartKnot = jStartKnot < minSpanIndex ? minSpanIndex : jStartKnot;
+      UInt32 delta = jEndKnot - rStartKnot;
+      Float32 a0a1InvSum = _NURBS_InvDivTable[delta & 7];//&7: tell the compiler this can't be out of bound (<8)
+
+      Float32 y = N[n0 + r] * a0a1InvSum;
+      N[n + r] = x + a1*y;
+
+      Float32 deltaF = _NURBS_IToFTable[delta & 7];//&7: tell the compiler this can't be out of bound (<8)
+      x = (deltaF-a1)*y;
+//report( "j=" + j + " r=" + r + " startK " + rStartKnot + " endK " + jEndKnot + " delta " + deltaF + " isum=" + a0a1InvSum + " a0 " + ( deltaF - a1 ) + " a1 " + a1 );
+
+      ++jStartKnot;
+      if( jEndKnot < maxSpanIndex ) {
+        ++jEndKnot;
+        a1 += 1.0f;
+      }
+    }
+
+    N[n + r] = x;
+    --startKnot;
+  }
+}
+
+
+/*
+Based on OpenNURBS's ON_EvaluateNurbsBasisDerivatives.
+Modifications: 
+
+- our N buffer already has order*(order+2) storage, so a0 and a1 use the last 2 "order" vectors.
+- dkArr: working buffer. Size >= order*order/2 (and not order+(order/2+2) like in their sz since we use N for a0 and a1)
+
+* INPUT:
+*   Results of the call
+*      TL_EvNurbBasis( order, knot, t, N );  (initializes N[] )
+*   are sent to
+*      TL_EvNurbBasisDer( order, knot, der_count, N ),
+*   where 1 <= der_count < order
+*
+* OUTPUT:
+*  If "N" were declared as double N[order][order], then
+*
+*                                    d
+*    N[d-k][i] = k-th derivative of N (t)
+*                                    i
+*
+*  where 0 <= k <= d and 0 <= i <= d.
+*
+* In particular,
+*   N[0], ..., N[d] - values of degree d basis functions.
+*   N[order], ..., N[order_d] - values of first derivative.
+*
+* Actually, the above is true when knot[d-1] <= t < knot[d].  Otherwise, the
+* values returned are the values of the polynomials that agree with N_i^k on the
+* half open domain [ knot[d-1], knot[d] )
+*/
+EvaluateNurbsBasisDerivatives( UInt8 order, 
+                               Boolean implicitKnots, UInt32 implicitKnots_minSpanIndex, UInt32 implicitKnots_maxSpanIndex,//FABRIC: for uniform knots: optimizations
+                               Float32 knots<>,
+                               UInt8 der_count, io Float32 N<>, io Float32 dkArr<> ) {
+  SInt32 i, j, k;
+
+  UInt8 d = order - 1;
+
+  UInt8 orderP2 = order*order;
+  UInt32 a0 = orderP2;// FABRIC: Indexing in N, which differs from OpenNURBS
+  UInt32 a1 = orderP2 + order;// FABRIC: Indexing in N, which differs from OpenNURBS
+
+  // FABRIC: In our case, since we only need to support der_count <= 2, "dk" only needs 3 entries.
+  // Plus one dummy entry since it does "dk--" after the initialization loop.
+
+  UInt32 dk[4];//Indexes into dkArr
+  UInt32 knot;
+  if( implicitKnots ) {
+    // FABRIC: optimizing 1.0f/(knot delta) as these are round numbers
+    for( k = 0; k < der_count; k++ ) {
+      j = d - k;
+      UInt32 k0 = knot++;
+      UInt32 k1 = k0 + j;
+      for( i = 0; i < j; i++ ) {
+        UInt32 k0Val = k0 < implicitKnots_minSpanIndex ? implicitKnots_minSpanIndex : k0;
+        UInt32 k1Val = k1 > implicitKnots_maxSpanIndex ? implicitKnots_maxSpanIndex : k1;
+        Float32 invDiff = _NURBS_InvDivTable[( k1Val - k0Val ) & 7];//&7: tell the compiler this can't be out of bound (<8)
+        ++k0;
+        ++k1;
+
+        dkArr[dk[k + 1] + i] = invDiff;
+      }
+      dk[k + 2] = dk[k + 1] + j;
+    }
+
+  } else {
+    /* initialize reciprocal of knot differences */
+    for( k = 0; k < der_count; k++ ) {
+      j = d - k;
+      UInt32 k0 = knot++;
+      UInt32 k1 = k0 + j;
+      for( i = 0; i < j; i++ )
+        dkArr[dk[k + 1] + i] = 1.0f / ( knots[k1++] - knots[k0++] );
+      dk[k + 2] = dk[k + 1] + j;
+    }
+  }
+  /* dkArr[dk[1]] = 1/{t[d]-t[0], t[d+1]-t[1], ..., t[2d-2] - t[d-2], t[2d-1] - t[d-1]}
+  *       = diffs needed for 1rst derivative
+  * dkArr[dk[2]] = 1/{t[d]-t[1], t[d+1]-t[2], ..., t[2d-2] - t[d-1]}
+  *       = diffs needed for 2nd derivative
+  * ...
+  * dkArr[dk[d]] = 1/{t[d] - t[d-1]}
+  *       = diff needed for d-th derivative
+  *
+  * d[k][n] = 1.0/( t[d+n] - t[k-1+n] )
+  */
+
+  UInt32 n = order;
+  /* set N[0] ,..., N[d] = 1rst derivatives,
+  * N[order], ..., N[order+d] = 2nd, etc.
+  */
+  for( i = 0; i<order; i++ ) {
+    N[a0] = 1.0;
+    // FABRIC: here we add "&3" to hint the compiler that k <= 3, so no range check required to index in dk
+    for( k = 1; k <= (der_count&3); k++ ) {
+      /* compute k-th derivative of N_i^d up to d!/(d-k)! scaling factor */
+      Float32 dN;
+      j = k - i;
+      if( j <= 0 ) {
+        Float32 val = N[a0] * dkArr[dk[k] + i - k];
+        N[a1] = val;
+        dN = val*N[n + i];
+        j = 1;
+      }
+      SInt32 jmax = d - i;
+      if( jmax < k ) {
+        while( j <= jmax ) {
+          Float32 val = ( N[a0 + j] - N[a0 + j - 1] )*dkArr[dk[k] + i + j - k];
+          N[a1 + j] = val;
+          dN += val*N[n + i + j];
+          j++;
+        }
+      } else {
+        /* sum j all the way to j = k */
+        while( j < k ) {
+          Float32 val = ( N[a0 + j] - N[a0 + j - 1] )*dkArr[dk[k] + i + j - k];
+          N[a1+j] = val;
+          dN += val*N[n + i + j];
+          j++;
+        }
+        Float32 val = -N[a0 + k - 1] * dkArr[dk[k]+i];
+        N[a1+k] = val;
+        dN += val*N[n + i + k];
+      }
+
+      /* d!/(d-k)!*dN = value of k-th derivative */
+      N[n + i] = dN;
+      n += order;
+      /* a1[] s for next derivative = linear combination
+      * of a[]s used to compute this derivative.
+      */
+      UInt32 ptr = a0; a0 = a1; a1 = ptr;
+    }
+    n = order;
+  }
+
+  /* apply d!/(d-k)! scaling factor */
+  Float32 c = _NURBS_IToFTable[d];
+  Float32 dN = c;
+  k = der_count;
+  while( k-- ) {
+    i = order;
+    while( i-- )
+      N[n++] *= c;
+    dN -= 1.0f;
+    c *= dN;
+  }
+}
+
+
+CurvesStructure.NURBS_getEvalKnots( Curves_data curveData, UInt32 spanIndex, io Float32 knots<> ) {
+  UInt32 count = ( curveData.order - 1 ) * 2;
+
+  if( curveData.NURBS_hasImplicitUniformKnots() ) {
+    // Equivalent to CurvesStructure.getNURBSUniformKnotValue, but optimized for a loop
+    SInt32 starKnot = SInt32( spanIndex ) - SInt32( curveData.order - 2 );
+    if( curveData.isPeriodic() ) {
+      for( Size i = 0; i < count; ++i )
+        knots[i] = starKnot++ + curveData.domainStart;
+    } else {
+      SInt32 maxValue = ( curveData.pointCount + curveData.wrappedCVCount ) - ( curveData.order - 1 );
+      for( Size i = 0; i < count; ++i ) {
+        knots[i] = ( starKnot < 0 ? 0 : ( starKnot > maxValue ? maxValue : starKnot ) ) + curveData.domainStart;
+        ++starKnot;
+      }
+    }
+  } else {
+    UInt32 offset = this.getExtraDataOffset( curveData ) + spanIndex;
+    for( Size i = 0; i < count; ++i )
+      knots[i] = bitcastUIntToFloat( this.packedCurvesExtraData.data[offset++] );
+  }
+}
+
+Curves_data.NURBS_getUniformEvalKnots( UInt32 spanIndex, io UInt32 minSpanIndex, io UInt32 maxSpanIndex ) {
+  UInt32 deg = this.order - 1;
+  UInt32 count = deg * 2;
+  minSpanIndex = 0;
+  maxSpanIndex = count - 1;
+
+  if( !this.isPeriodic() ) {
+    // Clamp at ends, if applicable
+    SInt32 starKnot = SInt32( spanIndex ) - SInt32( this.order - 2 );
+    if( starKnot < 0 )
+      minSpanIndex = -starKnot;
+
+    SInt32 endKnot = spanIndex + deg;
+    SInt32 maxValue = ( this.pointCount + this.wrappedCVCount ) - deg;
+    SInt32 clampedEnd = maxValue - endKnot;
+    if( clampedEnd < 0 )
+      maxSpanIndex += clampedEnd;
+  }
+}
+
+CurvesStructure.NURBS_getWeights_nonRational( Curves_data curveData, UInt32 spanIndex, Float32 param, io UInt32 count, io Float32 pointWeights<>, 
+                                              Boolean evalDerWeights, io Float32 derWeights<>,
+                                              Boolean evalDer2Weights, io Float32 der2Weights<> ) {
+  count = curveData.order;
+  UInt32 minSpanIndex, maxSpanIndex;
+  Boolean implicitKnots = curveData.NURBS_hasImplicitUniformKnots();
+
+  // Avoid creating too big working data space if order <= 4
+  if( curveData.order <= 4 ) {
+    Float32 workingBuffer[24];//order*(order+2)
+    Float32 workingBufferArr<> = workingBuffer;
+
+    Float32 knots[6];//degree*2
+    Float32 knotsArr<> = knots;
+
+    if( implicitKnots ) {
+      curveData.NURBS_getUniformEvalKnots( spanIndex, minSpanIndex, maxSpanIndex );
+      EvaluateNurbsBasis_uniformKnots( curveData.order, (param - curveData.domainStart) - spanIndex, minSpanIndex, maxSpanIndex, workingBufferArr );
+    } else {
+      this.NURBS_getEvalKnots( curveData, spanIndex, knotsArr );
+      EvaluateNurbsBasis( curveData.order, knotsArr, param, workingBufferArr );
+    }
+
+    for( Size i = 0; i < curveData.order; ++i )
+      pointWeights[i] = workingBufferArr[i];
+
+    if( evalDerWeights ) {
+      Float32 workingBuffer2[8];//order*(order/2)
+      Float32 workingBuffer2Arr<> = workingBuffer2;
+
+      EvaluateNurbsBasisDerivatives( curveData.order, implicitKnots, minSpanIndex, maxSpanIndex, knotsArr, UInt8( evalDer2Weights ? 2 : 1 ), workingBufferArr, workingBuffer2Arr );
+      for( Size i = 0; i < curveData.order; ++i )
+        derWeights[i] = workingBufferArr[i + curveData.order];
+
+      if( evalDer2Weights ) {
+        UInt32 offset = curveData.order * 2;
+        for( Size i = 0; i < curveData.order; ++i )
+          der2Weights[i] = workingBufferArr[i + offset];
+      }
+    }
+
+  } else {
+    Float32 workingBuffer[80];//curves_maxOrder*(curves_maxOrder+2)
+    Float32 workingBufferArr<> = workingBuffer;
+
+    Float32 knots[14];//curves_maxDegree*2
+    Float32 knotsArr<> = knots;
+
+    if( implicitKnots ) {
+      curveData.NURBS_getUniformEvalKnots( spanIndex, minSpanIndex, maxSpanIndex );
+      EvaluateNurbsBasis_uniformKnots( curveData.order, (param - curveData.domainStart) - spanIndex, minSpanIndex, maxSpanIndex, workingBufferArr );
+    } else {
+      this.NURBS_getEvalKnots( curveData, spanIndex, knotsArr );
+      EvaluateNurbsBasis( curveData.order, knotsArr, param, workingBufferArr );
+    }
+
+    for( Size i = 0; i < curveData.order; ++i )
+      pointWeights[i] = workingBufferArr[i];
+
+    if( evalDerWeights ) {
+      Float32 workingBuffer2[32];//curves_maxOrder*(curves_maxOrder/2)
+      Float32 workingBuffer2Arr<> = workingBuffer2;
+
+      EvaluateNurbsBasisDerivatives( curveData.order, implicitKnots, minSpanIndex, maxSpanIndex, knotsArr, UInt8( evalDer2Weights ? 2 : 1 ), workingBufferArr, workingBuffer2Arr );
+      for( Size i = 0; i < curveData.order; ++i )
+        derWeights[i] = workingBufferArr[i + curveData.order];
+
+      if( evalDer2Weights ) {
+        UInt32 offset = curveData.order * 2;
+        for( Size i = 0; i < curveData.order; ++i )
+          der2Weights[i] = workingBufferArr[i + offset];
+      }
+    }
+  }
+}
+
+CurvesStructure.NURBS_getPointsAndWeights_nonRational( Curves_data curveData, UInt32 spanIndex, Float32 spanParam, io UInt32 count, io UInt32 pointIndices<>, io Float32 pointWeights<> ) {
+  // We provide an optimized, expanded version up to maxOrder
+  this.NURBS_getWeights_nonRational( curveData, spanIndex, spanParam, count, pointWeights, false, pointWeights, false, pointWeights );
+  this.NURBS_getPoints( curveData, spanIndex, count, pointIndices );
+//report( "spanIndex " + spanIndex + " spanParam " + spanParam + " P " + pointIndices + " W " + pointWeights );
+}
+
+inline CurvesStructure.NURBS_getPointsAndWeights( Curves_data curveData, UInt32 spanIndex, Float32 spanParam, io UInt32 count, io UInt32 pointIndices<>, io Float32 pointWeights<> ) {
+  this.NURBS_getPointsAndWeights_nonRational( curveData, spanIndex, spanParam, count, pointIndices, pointWeights );
+  if( curveData.isRational() )
+    this.rational_divideWeights( curveData, count, pointIndices, pointWeights, true );
+}
+
+
+inline CurvesStructure.NURBS_getWeights( Curves_data curveData, UInt32 spanIndex, Float32 spanParam, UInt32 count, UInt32 pointIndices<>, io Float32 pointWeights<> ) {
+  UInt32 dummy;
+  this.NURBS_getWeights_nonRational( curveData, spanIndex, spanParam, dummy, pointWeights, false, pointWeights, false, pointWeights );
+  if( curveData.isRational() )
+    this.rational_divideWeights( curveData, count, pointIndices, pointWeights, true );
+}
+
+CurvesStructure.NURBS_getWeights( Curves_data curveData, UInt32 spanIndex, Float32 spanParam, UInt32 count, UInt32 pointIndices<>,
+                                   io Float32 pointWeights<>, io Float32 derPointWeights<> ) {
+  UInt32 dummy;
+  this.NURBS_getWeights_nonRational( curveData, spanIndex, spanParam, dummy, pointWeights, true, derPointWeights, false, pointWeights );
+
+  if( curveData.isRational() )
+    this.applyRationalQuotient( curveData, pointWeights, pointIndices, derPointWeights );
+}
+
+inline CurvesStructure.NURBS_getPointsAndWeights( Curves_data curveData, UInt32 spanIndex, Float32 spanParam, io UInt32 count, io UInt32 pointIndices<>,
+                                                   io Float32 pointWeights<>, io Float32 derPointWeights<> ) {
+  this.NURBS_getPoints( curveData, spanIndex, count, pointIndices );
+  this.NURBS_getWeights( curveData, spanIndex, spanParam, count, pointIndices, pointWeights, derPointWeights );
+}
+
+CurvesStructure.NURBS_getDerivativesAtParam( Curves_data curveData, Float32 param, io Vec3 dU, io Vec3 dUU, Boolean computeDUU ) {
+
+  Float32 spanParam;
+  UInt32 spanIndex;
+  this.NURBS_getSpanParam( curveData, param, spanIndex, spanParam );
+
+  UInt32 pointIndices[8];
+  Float32 pointWeights[8];
+  Float32 pointDerWeights[8];
+  Float32 pointDer2Weights[8];
+
+  UInt32 pointIndicesArray<> = pointIndices;
+  Float32 pointWeightsArray<> = pointWeights;
+  Float32 pointDerWeightsArray<> = pointDerWeights;
+  Float32 pointDer2WeightsArray<> = pointDer2Weights;
+
+  // First, get weights, normalized
+  UInt32 count;
+  this.NURBS_getWeights_nonRational( curveData, spanIndex, spanParam, count, pointWeightsArray, true, pointDerWeightsArray, computeDUU, pointDer2WeightsArray );
+  this.NURBS_getPoints( curveData, spanIndex, count, pointIndicesArray );
+
+  if( this.useDoubles ) {
+    // WARNING: this is an almost-duplicate of the float32 case; fixes should be done to both
+    // We want to keep all computations in Float64, and only convert to Float32 at the last minute
+    if( curveData.isRational() ) {
+      Vec4_d evalPos;
+      Vec4_d der;
+      Vec4_d der2;
+      Float64 WSum, invWSum;
+      for( Size i = 0; i < count; ++i ) {
+        UInt32 pointIndex = pointIndices[i];
+        Float64 weight = pointWeights[i];
+
+        Float64 rationalWeight = this.weights[pointIndex];
+        Vec3_d position = this.positions_d[pointIndex] * rationalWeight;// Homogeneous coords
+        Vec4_d pos4( position.x, position.y, position.z, rationalWeight );
+
+        evalPos += pos4 * pointWeights[i];
+        der += pos4 * pointDerWeights[i];
+        if( computeDUU )
+          der2 += pos4 * pointDer2Weights[i];
+      }
+
+      // Follow the logic of OpenNURBS'a ON_EvaluateQuotientRule.
+      WSum = evalPos.t;
+      if( WSum > 1e-6 )
+        invWSum = 1.0f / WSum;
+
+      // Normalize rational weights
+      evalPos *= invWSum;
+      der *= invWSum;
+      if( computeDUU )
+        der2 *= invWSum;
+
+      // 1rst derivative - faster special case 
+      // f = v;            // f = func(t)
+      // x = v + v_stride; // x = numerator'(t)/w
+      // wt = -x[dim];     // wt = -denominator'(t)/w
+      // j = dim; while( j-- ) *x++ += wt* *f++;
+      Float64 wt = -der.t;
+      der += wt * evalPos;
+      dU = Vec3( Float32( der.x ), Float32( der.y ), Float32( der.z ) );
+
+      if( computeDUU ) {
+        // 2nd derivative - faster special case 
+        // f = v + v_stride; >>> der
+        // x = f + v_stride; >>> der2
+        // v = func(t), f = func'(t), x = numerator''(t)/w, 
+        // * wt = -2*denominator'(t)/w, w2 = denominator''(t)/w
+        //wt *= 2.0;
+        //w2 = -x[dim];
+        //j = dim; while( j-- ) *x++ += w2* *v++ + wt* *f++;
+        wt *= 2.0f;
+        Float64 w2 = -der2.t;
+        der2 += w2 * evalPos + wt * der;
+
+        dUU = Vec3( Float32( der2.x ), Float32( der2.y ), Float32( der2.z ) );
+      }
+    } else {
+      Vec3_d der;
+      Vec3_d der2;
+
+      for( Size i = 0; i < count; ++i ) {
+        UInt32 pointIndex = pointIndices[i];
+        Vec3_d position = this.positions_d[pointIndex];
+        der += position * pointDerWeights[i];
+        if( computeDUU )
+          der2 += position * pointDer2Weights[i];
+      }
+      dU = der.toVec3();
+      if( computeDUU )
+        dUU = der2.toVec3();
+    }
+  } else {
+    // WARNING: this is an almost-duplicate of the float64 case; fixes should be done to both
+    if( curveData.isRational() ) {
+      Vec4 evalPos;
+      Vec4 der;
+      Vec4 der2;
+      Float32 WSum, invWSum;
+      for( Size i = 0; i < count; ++i ) {
+        UInt32 pointIndex = pointIndices[i];
+        Float32 weight = pointWeights[i];
+
+        Float32 rationalWeight = this.weights[pointIndex];
+        Vec3 position = this.positions[pointIndex] * rationalWeight;// Homogeneous coords
+        Vec4 pos4( position.x, position.y, position.z, rationalWeight );
+
+        evalPos += pos4 * pointWeights[i];
+        der += pos4 * pointDerWeights[i];
+        if( computeDUU )
+          der2 += pos4 * pointDer2Weights[i];
+      }
+
+      // Follow the logic of OpenNURBS'a ON_EvaluateQuotientRule.
+      WSum = evalPos.t;
+      if( WSum > 1e-6 )
+        invWSum = 1.0f / WSum;
+
+      // Normalize rational weights
+      evalPos *= invWSum;
+      der *= invWSum;
+      if( computeDUU )
+        der2 *= invWSum;
+
+      // 1rst derivative - faster special case 
+      // f = v;            // f = func(t)
+      // x = v + v_stride; // x = numerator'(t)/w
+      // wt = -x[dim];     // wt = -denominator'(t)/w
+      // j = dim; while( j-- ) *x++ += wt* *f++;
+      Float32 wt = -der.t;
+      der += wt * evalPos;
+      dU = der.toVec3();
+
+      if( computeDUU ) {
+        // 2nd derivative - faster special case 
+        // f = v + v_stride; >>> der
+        // x = f + v_stride; >>> der2
+        // v = func(t), f = func'(t), x = numerator''(t)/w, 
+        // * wt = -2*denominator'(t)/w, w2 = denominator''(t)/w
+        //wt *= 2.0;
+        //w2 = -x[dim];
+        //j = dim; while( j-- ) *x++ += w2* *v++ + wt* *f++;
+        wt *= 2.0f;
+        Float32 w2 = -der2.t;
+        der2 += w2 * evalPos + wt * der;
+
+        dUU = der2.toVec3();
+      }
+    } else {
+      Vec3 der;
+      Vec3 der2;
+      for( Size i = 0; i < count; ++i ) {
+        UInt32 pointIndex = pointIndices[i];
+        Vec3 position = this.positions[pointIndex];
+        der += position * pointDerWeights[i];
+        if( computeDUU )
+          der2 += position * pointDer2Weights[i];
+      }
+      dU = der;
+      if( computeDUU )
+        dUU = der2;
+    }
+  }
+}
+
+inline CurvesStructure.NURBS_getDerivativesAtParam( Curves_data curveData, Float32 param, io Vec3 dU, io Vec3 dUU ) {
+  this.NURBS_getDerivativesAtParam( curveData, param, dU, dUU, true );
+}
+
+inline Vec3 CurvesStructure.NURBS_getDerivativeAtParam( Curves_data curveData, Float32 param ) {
+  Vec3 dU, dUU;
+  this.NURBS_getDerivativesAtParam( curveData, param, dU, dUU, false );
+  return dU;
+}

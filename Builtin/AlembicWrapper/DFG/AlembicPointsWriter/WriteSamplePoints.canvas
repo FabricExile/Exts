@@ -1,0 +1,51 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "writes a single sample into the file based on the provided GeometryAttributes.\n\nSupported types:\n  this: AlembicPointsWriter\n  points: Ref<Points>\n  result: Boolean\n"
+    },
+  "title" : "WriteSamplePoints",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicPointsWriter"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "points",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Points"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "F8146F17377397DCC827CE0DEDF4AC33",
+  "code" : "require AlembicWrapper;
+
+dfgEntry {
+  Ref<Points> points_ref = points;
+  result = this.writeSamplePoints(points_ref);
+}
+"
+  }

@@ -1,0 +1,98 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Euler.html"
+    },
+  "title" : "Euler[] ->",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 0,\n  \"g\" : 191,\n  \"b\" : 232\n  }"
+        },
+      "name" : "value",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Euler[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0,
+            "ro" : {
+              "order" : 0
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Euler[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "x",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "y",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "z",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 0,\n  \"g\" : 191,\n  \"b\" : 232\n  }"
+        },
+      "name" : "ro",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "RotationOrder[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "537224983DD0B341C1C886BF57D4CA3D",
+  "code" : "require Math;
+
+operator Math_Euler_decompose_task<<<index>>>(in Euler[] value, io Scalar[] x, io Scalar[] y, io Scalar[] z, io RotationOrder[] ro) {
+  x[index] = value[index].x;
+  y[index] = value[index].y;
+  z[index] = value[index].z;
+  ro[index] = value[index].ro;
+}
+
+dfgEntry {
+  Size task_size = value.size();
+  x.resize(task_size);
+  y.resize(task_size);
+  z.resize(task_size);
+  ro.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size i = 0; i < task_size; i++) {
+      Math_Euler_decompose_task(i, value, x, y, z, ro);
+    }
+  } else {
+    Math_Euler_decompose_task<<<task_size>>>(value, x, y, z, ro);
+  }
+}
+"
+  }

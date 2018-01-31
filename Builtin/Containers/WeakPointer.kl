@@ -1,0 +1,58 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+object WeakPointer{
+  Ref<Object> owner;
+};
+
+interface WeakPointerable {
+  Ref<WeakPointer> getWeakPointer();
+};
+
+inline WeakPointer.initialize!( Ref<Object> owner ) {
+  this.owner = owner;
+}
+
+inline Boolean WeakPointer.isValid() {
+  return this.owner;
+}
+
+inline Ref<Object> WeakPointer.getOwner() {
+  if( !this.owner )
+    setError( "WeakPointer.getOwner: pointed object has been destroyed" );
+  return this.owner;
+}
+
+object BaseWeakPointerable : WeakPointerable{
+  Ref<Object> owner;
+  WeakPointer weakPointerContainer;
+};
+
+BaseWeakPointerable() {
+  this.owner = this;
+}
+
+BaseWeakPointerable.initialize!( Ref<Object> owner ) {
+  if( this.weakPointerContainer )
+    setError( "BaseWeakPointerable.initialize called after a WeakPointer was requested" );
+  this.owner = owner;
+}
+
+Ref<WeakPointer> BaseWeakPointerable.getWeakPointer() {
+  Ref<BaseWeakPointerable> mutableThis = this;
+  if( !mutableThis.weakPointerContainer ) {
+    mutableThis.weakPointerContainer = WeakPointer();
+    mutableThis.weakPointerContainer.initialize( this );
+  }
+  return mutableThis.weakPointerContainer;
+}
+
+BaseWeakPointerable.invalidate!() {
+  if( this.weakPointerContainer )
+    this.weakPointerContainer.owner = null;
+}
+
+~BaseWeakPointerable() {
+  this.invalidate();
+}

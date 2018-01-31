@@ -1,0 +1,87 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "Helper function for the InlineDrawing DrawingHandle data type\nto draw a list of objects given an index table and a list of transforms.\nThis method can be called several times by the same DrawingHandle\nwithout overwriting the previous content.\n\nSupported types:\n  this: DrawingHandle\n  color: Color\n  masters: Lines[]\n  transforms: Xfo[]\n  indices: Index[]\n  instance: InlineInstance\n"
+    },
+  "title" : "AccumulateDrawLinesArray",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "DrawingHandle"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 0,\n  \"b\" : 0\n  }"
+        },
+      "name" : "color",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Color" : {
+          "r" : 0,
+          "g" : 1,
+          "b" : 0,
+          "a" : 1
+          }
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Color"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "masters",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Lines[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 249,\n  \"g\" : 157,\n  \"b\" : 28\n  }"
+        },
+      "name" : "transforms",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Xfo[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "indices",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Index[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "instance",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "InlineInstance"
+      }
+    ],
+  "extDeps" : {
+    "InlineDrawing" : "*"
+    },
+  "presetGUID" : "2FB031D2ED3B2B873543D40DF1F82B7F",
+  "code" : "require InlineDrawing;
+
+dfgEntry {
+  if( !Boolean(this) )
+    return;
+  this.accumulateDrawLinesArray(color, masters, transforms, indices, instance);
+}
+"
+  }

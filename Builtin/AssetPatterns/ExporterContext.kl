@@ -1,0 +1,88 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+require Math;
+
+/**
+The ExporterContext represents the context at which an export
+takes place. The ExporterContext provides access to the time
+samples and additional flags.
+\dfgTypeColor Color(206, 165, 151)
+\dfgPresetColor Color(132, 106, 97)
+*/
+struct ExporterContext : ImporterContext
+{
+  Float32 timeSamples[];
+  Boolean willCallUpdateForEachTimeSample;
+};
+
+/// \dfgPresetOmit
+function ExporterContext() {
+  this.willCallUpdateForEachTimeSample = false;
+}
+
+function UInt32 ExporterContext.numTimeSamples()
+{
+  return this.timeSamples.size();
+}
+
+function Float32 ExporterContext.stepToTimeSample!(Index index)
+{
+  this.time = this.timeSamples[index];
+  return this.time;
+}
+
+/// \dfgPresetOmit
+function ExporterContext.setTimeSamples!(Float32 timeSamples[])
+{
+  this.timeSamples = timeSamples.clone();
+  this.willCallUpdateForEachTimeSample = this.timeSamples.size() > 0;
+  if(this.willCallUpdateForEachTimeSample)
+    this.time = this.timeSamples[0];
+}
+
+/// \dfgPresetOmit
+function ExporterContext.setTimeSamples!(Float32 start, Float32 end, Float32 step)
+{
+  Float32 timeSamples[];
+  for(Float32 t=start; t<=end + 0.001; t += step)
+    timeSamples.push(t);
+  this.setTimeSamples(timeSamples);
+}
+
+/// \dfgPresetOmit
+function Boolean ExporterContext.equals(ExporterContext other) {
+  if(this.time != other.time)
+    return false;
+  if(this.time.isNaN() != other.time.isNaN())
+    return false;
+  if(this.lod != other.lod)
+    return false;
+  if(this.variation != other.variation)
+    return false;
+  if(this.timeSamples.size() != other.timeSamples.size())
+    return false;
+  for(Size i=0;i<this.timeSamples.size();i++)
+  {
+    if(this.timeSamples[i] != other.timeSamples[i])
+      return false;
+  }
+  return true;
+}
+
+/// \dfgPresetOmit
+function Boolean ExporterContext.isAtStart()
+{
+  if(this.timeSamples.size() < 2)
+    return true;
+  return this.time <= this.timeSamples[0];
+}
+
+/// \dfgPresetOmit
+function Boolean ExporterContext.isAtEnd()
+{
+  if(this.timeSamples.size() < 2)
+    return true;
+  return this.time >= this.timeSamples[this.timeSamples.size()-1];
+}

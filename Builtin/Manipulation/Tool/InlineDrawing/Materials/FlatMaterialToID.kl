@@ -1,0 +1,234 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+namespace Tool {
+  namespace InlineDrawingRender {
+
+    /// \internal
+    /// Flat shader mapping the Tool parameter naming conventions.
+    object FlatShader : OGLInlineShader{};
+
+    /// default constructor
+    FlatShader() {
+      this.init( this.type() );
+    }
+
+    /// initialize the shader using a name.
+    /// \internal
+    FlatShader.init!( String name ) {
+      this.name = name;
+      this.setVertexCode( "
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+
+      uniform mat4 renderTransform;
+      attribute vec4 positions;
+
+      void main() {
+        gl_Position = renderTransform * positions;
+      }
+      ");
+
+      this.setFragmentCode( "
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+
+      uniform vec4 color;
+      uniform float transparency;
+
+      void main() {
+        gl_FragColor = vec4( color.xyz, color.w * ( 1.0 - clamp( transparency, 0.0, 1.0 ) ) );
+      }
+      ");  
+        this.defineUniform( InlineUniform( "transparency", 0.0f ) );
+      this.defineUniform( InlineUniform( "renderTransform", Mat44() ) );
+      this.defineUniform( InlineUniform( 'color', Color( 1.0 ) ) );
+      this.defineAttribute( 'positions', "Vec3" );
+    }
+
+    /// \internal
+    /// Flat shader mapping the Tool parameter naming conventions.
+    object FlatPointsShader : FlatShader{};
+
+    /// default constructor
+    FlatPointsShader() {
+      this.init( this.type() );
+    }
+
+    /// initialize the shader using a name.
+    /// \internal
+    FlatPointsShader.init!( String name ) {
+      // Overwrite base class vertex code to add pointSizes
+      this.name = name;
+      this.setVertexCode( "
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+
+      uniform mat4 renderTransform;
+      attribute vec4 positions;
+      attribute float pointSizes;
+
+      void main() {
+        gl_Position = renderTransform * positions;
+        gl_PointSize = pointSizes;
+      }
+      ");
+        this.defineAttribute( 'pointSizes', "Float32" );
+    }
+
+    /// \internal
+    /// Flat shader mapping the Tool parameter naming conventions.
+    object FlatColoredShader : OGLInlineShader{};
+
+    /// default constructor
+    FlatColoredShader() {
+      this.init( this.type() );
+    }
+
+    /// initialize the shader using a name.
+    /// \internal
+    FlatColoredShader.init!( String name ) {
+      // Overwrite base class vertex code to add pointSizes
+      this.name = name;
+
+      this.setVertexCode( "
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+
+      uniform mat4 renderTransform;
+      attribute vec4 positions;
+      attribute vec4 color;
+
+      varying vec4 v_vertexColor;
+
+      void main() {
+        gl_Position = renderTransform * positions;
+        v_vertexColor = color;
+      }
+      ");
+
+        this.setFragmentCode( "
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+
+      varying vec4 v_vertexColor;
+      uniform float transparency;
+
+      void main() {
+        gl_FragColor = vec4( v_vertexColor.xyz, v_vertexColor.w * ( 1.0 - clamp( transparency, 0.0, 1.0 ) ) );
+      }
+      ");  
+        this.defineUniform( InlineUniform( "transparency", 0.0f ) );
+      this.defineUniform( InlineUniform( "renderTransform", Mat44() ) );
+      this.defineAttribute( 'positions', "Vec3" );
+      this.defineAttribute( 'color', "Vec4" );
+    }
+
+    /// \internal
+    /// Flat shader mapping the Tool parameter naming conventions.
+    object FlatColoredPointsShader : FlatColoredShader{
+    };
+
+    /// default constructor
+    FlatColoredPointsShader() {
+      this.init( this.type() );
+    }
+
+    /// initialize the shader using a name.
+    /// \internal
+    FlatColoredPointsShader.init!( String name ) {
+      // Overwrite base class vertex code to add pointSizes
+      this.name = name;
+
+      this.setVertexCode( "
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+
+      uniform mat4 renderTransform;
+      attribute vec4 positions;
+      attribute float pointSizes;
+      attribute vec4 color;
+
+      varying vec4 v_vertexColor;
+
+      void main() {
+        gl_Position = renderTransform * positions;
+        gl_PointSize = pointSizes;
+        v_vertexColor = color;
+      }
+      ");
+        this.defineAttribute( 'pointSizes', "Float32" );
+    }
+
+    /// \internal
+    /// Textured shader mapping the Tool parameter naming conventions.
+    object FlatTexturedShader : OGLInlineShader{};
+
+    /// default constructor
+    FlatTexturedShader() {
+      this.init( this.type() );
+    }
+
+    /// initialize the shader using a name.
+    /// \internal
+    FlatTexturedShader.init!( String name ) {
+      this.name = name;
+      this.setVertexCode( "
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+
+      uniform mat4 renderTransform;
+      attribute vec4 positions;
+      attribute vec2 uvs0;
+      varying vec2 v_uv0;
+
+      void main() {
+        gl_Position = renderTransform * positions;
+        v_uv0 = uvs0;
+      }
+      ");
+
+        this.setFragmentCode( "
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+
+      uniform float transparency;
+      uniform sampler2D color;
+      varying vec2 v_uv0;
+
+      void main() {
+        vec4 color = texture2D( color, vec2( v_uv0.x, 1.0 - v_uv0.y ) );
+        if( transparency >= 1.0 || color.w <= 0 )
+          discard;
+        gl_FragColor = vec4( color.xyz, color.w * ( 1.0 - clamp( transparency, 0.0, 1.0 ) ) );
+      }
+      ");  
+      this.defineUniform( InlineUniform( "transparency", 0.0f ) );
+      this.defineUniform( InlineUniform( "renderTransform", Mat44() ) );
+      this.defineUniform( InlineUniform( 'color', null ) );
+      this.defineAttribute( 'positions', "Vec3" );
+      this.defineAttribute( 'uvs0', "Vec2" );
+    }
+
+    /// \internal
+    object FlatMaterialToID : MaterialToID{
+    };
+
+    /// \internal
+    Type FlatMaterialToID.getIDShaderType!( DrawContext context, Ref<InlineShape> contextualShape ) {
+
+      Ref<InlineDebugShape> debugShape = contextualShape;
+      Ref<InlinePointsShape> pointsShape = contextualShape;
+      Boolean hasPointSizes = Boolean( debugShape ) || ( Boolean( pointsShape ) && Boolean( pointsShape.getPoints().sizesAttribute ) );
+
+      Boolean hasVertexColors = IsColorAttribute( context.contextualProperties );
+      Boolean hasTextureColors = IsColorTexture( context.contextualProperties );
+
+      if( !hasPointSizes ) {
+        if( hasTextureColors )
+          return FlatTexturedShader;
+        else if( hasVertexColors )
+          return FlatColoredShader;
+        else
+          return FlatShader;
+      } else {
+        if( hasVertexColors )
+          return FlatColoredPointsShader;
+        else
+          return FlatPointsShader;
+      }
+    }
+  }// namespace InlineDrawingRender
+}// namespace Tool

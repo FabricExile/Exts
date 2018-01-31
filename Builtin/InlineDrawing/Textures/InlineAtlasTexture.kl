@@ -1,0 +1,60 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Text;
+
+/**
+  \versionadded 2.4.0
+
+    The InlineAtlasTexture uses an AtlasGL to load a texture from it. 
+    For performances and memory reasons, the same texture should be shared.
+    For this purpose, the texture can be registered in InlineDrawing using the getOrCreateAtlasTexture function.
+    The name of the texture is created from the font path and size.
+
+    \seealso :kl-ref:`AtlasGL`.
+
+  \dfgPresetOmit
+*/
+object InlineAtlasTexture : InlineTexture {
+  /// Reference to an AtlasGL
+  protected Ref<AtlasGL> atlas;
+};
+
+/// Constructs an InlineAtlasTexture
+/// \param Reference to an AtlasGL
+function InlineAtlasTexture(Ref<AtlasGL> atlas, String name) {
+  this.name = name;
+  this.version = 1;
+  this.atlas = atlas;
+}
+
+/// Gets a reference to an AtlasGL
+function Ref<AtlasGL> InlineAtlasTexture.getAtlas() {
+  return this.atlas;
+} 
+
+/// Gets or creates an InlineAtlasTexture. 
+/// \param fontPath Font path, use default Roboto font if path is not valid 
+/// \param fontSize Font size
+Ref<InlineTexture> InlineDrawingBase.getOrCreateAtlasTexture!(FilePath fontPath, UInt32 fontSize) {
+  
+  String name = CreateAtlasGLNameFromFont(fontPath, fontSize);
+
+  InlineAtlasTexture texture = null;
+  if(this.hasTexture(name)) 
+    texture = this.getTexture(name);
+  
+  else 
+  {
+    Ref<AtlasGL> atlas = GetOrCreateAtlasGL(fontPath, fontSize);
+    if(!atlas)
+    {
+      setError("The AtlasGL " + name + "is null");
+      return null;
+    }
+    texture = InlineAtlasTexture(atlas, name);
+    this.registerTexture(texture);
+  }
+  return texture;
+}

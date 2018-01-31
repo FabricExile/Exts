@@ -1,0 +1,110 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Xfo.html",
+    "uiTooltip" : "Transforms a vector with this xfo inversely\n\n Supported by Xfo"
+    },
+  "title" : "InverseTransformVector[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 249,\n  \"g\" : 157,\n  \"b\" : 28\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Xfo[]" : [
+          {
+            "ori" : {
+              "v" : {
+                "x" : 0,
+                "y" : 0,
+                "z" : 0
+                },
+              "w" : 1
+              },
+            "tr" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              },
+            "sc" : {
+              "x" : 1,
+              "y" : 1,
+              "z" : 1
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Xfo[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "vec",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Vec3[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "0AF5FEAEB17A74872E422BD598B2A725",
+  "code" : "require Math;
+
+operator Math_Xfo_inverseTransformVector_task<<<index>>>(
+  io Vec3[] result
+, in Xfo[] this
+, in Vec3[] vec
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].inverseTransformVector(vec[index < vec.size() ? index : vec.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( vec.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < vec.size()) task_size = vec.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Xfo_inverseTransformVector_task(index, result, this, vec);
+    }
+  } else {
+    Math_Xfo_inverseTransformVector_task<<<task_size>>>(result, this, vec);
+  }
+}
+"
+  }

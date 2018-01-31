@@ -1,0 +1,234 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+
+const Integer InlineUniform_Type_Integer = 0;
+const Integer InlineUniform_Type_Float32 = 1;
+const Integer InlineUniform_Type_Vec2 = 2;
+const Integer InlineUniform_Type_Vec3 = 3;
+const Integer InlineUniform_Type_Vec4 = 4;
+const Integer InlineUniform_Type_Mat33 = 5;
+const Integer InlineUniform_Type_Mat44 = 6;
+const Integer InlineUniform_Type_InlineTexture = 7;
+
+/**
+\versionadded 1.12.0
+
+The InlineUniform represents a single value for an InlineMaterial. Essentially the InlineUniform is a variant storing all possible values as well as a type.
+
+\example
+    InlineUniform u_color('u_color', Color(1.0, 0.0, 0.0));
+    u_color.setOptional();
+    report(u_color.getColor());
+\endexample
+\dfgPresetOmit
+*/
+struct InlineUniform {
+  /// \internal
+  String name;
+  /// \internal
+  Integer type;
+  /// \internal
+  Integer intValue;
+  /// \internal
+  Float32 floatValue;
+  /// \internal
+  Vec2 vec2;
+  /// \internal
+  Vec3 vec3;
+  /// \internal
+  Vec4 vec4;
+  /// \internal
+  Mat33 mat33;
+  /// \internal
+  Mat44 mat44;
+  /// \internal
+  InlineTexture inlineTexture;
+  /// \internal
+  Boolean optional;
+};
+
+/// constructs a uniform from a Integer value
+function InlineUniform(String name, Integer value) {
+  this.name = name;
+  this.type = InlineUniform_Type_Integer;
+  this.intValue = value;
+  this.optional = false;
+}
+
+/// constructs a uniform from a Float32 value
+function InlineUniform(String name, Float32 value) {
+  this.name = name;
+  this.type = InlineUniform_Type_Float32;
+  this.floatValue = value;
+  this.optional = false;
+}
+
+/// constructs a uniform from a Vec2 value
+function InlineUniform(String name, Vec2 value) {
+  this.name = name;
+  this.type = InlineUniform_Type_Vec2;
+  this.vec2 = value;
+  this.optional = false;
+}
+
+/// constructs a uniform from a Vec3 value
+function InlineUniform(String name, Vec3 value) {
+  this.name = name;
+  this.type = InlineUniform_Type_Vec3;
+  this.vec3 = value;
+  this.optional = false;
+}
+
+/// constructs a uniform from a Vec4 value
+function InlineUniform(String name, Vec4 value) {
+  this.name = name;
+  this.type = InlineUniform_Type_Vec4;
+  this.vec4 = value;
+  this.optional = false;
+}
+
+/// constructs a uniform from a Quat value
+function InlineUniform(String name, Quat value) {
+  this.name = name;
+  this.type = InlineUniform_Type_Vec4;
+  this.vec4.x = value.v.x;
+  this.vec4.y = value.v.y;
+  this.vec4.z = value.v.z;
+  this.vec4.t = value.w;
+  this.optional = false;
+}
+
+/// constructs a uniform from a Color value
+function InlineUniform(String name, Color value) {
+  this.name = name;
+  this.type = InlineUniform_Type_Vec4;
+  this.vec4.x = value.r;
+  this.vec4.y = value.g;
+  this.vec4.z = value.b;
+  this.vec4.t = value.a;
+  this.optional = false;
+}
+
+/// constructs a uniform from a Mat33 value
+function InlineUniform(String name, Mat33 value) {
+  this.name = name;
+  this.type = InlineUniform_Type_Mat33;
+  this.mat33 = value;
+  this.optional = false;
+}
+
+/// constructs a uniform from a Mat44 value
+function InlineUniform(String name, Mat44 value) {
+  this.name = name;
+  this.type = InlineUniform_Type_Mat44;
+  this.mat44 = value;
+  this.optional = false;
+}
+
+/// constructs a uniform from a InlineTexture value
+function InlineUniform(String name, InlineTexture value) {
+  this.name = name;
+  this.type = InlineUniform_Type_InlineTexture;
+  this.inlineTexture = value;
+  this.optional = false;
+}
+
+/// returns the name of this uniform
+function String InlineUniform.getName() {
+  return this.name;
+}
+
+/// returns the type of this uniform. for 
+/// comparison the InlineUniform_Type constants can be used.
+function Integer InlineUniform.getType() {
+  return this.type;
+}
+
+/// returns the uniform's Integer value
+function Integer InlineUniform.getInteger() {
+  return this.intValue;
+}
+
+/// returns the uniform's Float32 value
+function Float32 InlineUniform.getFloat32() {
+  return this.floatValue;
+}
+
+/// returns the uniform's Vec2 value
+function Vec2 InlineUniform.getVec2() {
+  return this.vec2;
+}
+
+/// returns the uniform's Vec3 value
+function Vec3 InlineUniform.getVec3() {
+  return this.vec3;
+}
+
+/// returns the uniform's Vec4 value
+function Vec4 InlineUniform.getVec4() {
+  return this.vec4;
+}
+
+/// returns the uniform's Color value
+function Color InlineUniform.getColor() {
+  return Color(this.vec4.x, this.vec4.y, this.vec4.z, this.vec4.t);
+}
+
+/// returns the uniform's Quat value
+function Quat InlineUniform.getQuat() {
+  return Quat(this.vec4.x, this.vec4.y, this.vec4.z, this.vec4.t);
+}
+
+/// returns the uniform's Mat33 value
+function Mat33 InlineUniform.getMat33() {
+  return this.mat33;
+}
+
+/// returns the uniform's Mat44 value
+function Mat44 InlineUniform.getMat44() {
+  return this.mat44;
+}
+
+/// returns the uniform's InlineTexture value
+function InlineTexture InlineUniform.getInlineTexture() {
+  return this.inlineTexture;
+}
+
+/// sets the optional flag on the uniform.
+/// the shader might decide to ignore invalid
+/// and optional uniforms.
+function InlineUniform.setOptional!() {
+  this.optional = true;
+}
+
+/// returns true if this uniform is optional
+function Boolean InlineUniform.isOptional() {
+  return this.optional;
+}
+
+/// returns the name of the klType
+function String InlineUniform.getKLTypeName() {
+  switch(this.type)
+  {
+    case InlineUniform_Type_Integer:
+      return "Integer";
+    case InlineUniform_Type_Float32:
+      return "Scalar";
+    case InlineUniform_Type_Vec2:
+      return "Vec2";
+    case InlineUniform_Type_Vec3:
+      return "Vec3";
+    case InlineUniform_Type_Vec4:
+      return "Vec4";
+    case InlineUniform_Type_Mat33:
+      return "Mat33";
+    case InlineUniform_Type_Mat44:
+      return "Mat44";
+    case InlineUniform_Type_InlineTexture:
+      return "InlineTexture";
+  } 
+  return "";
+}

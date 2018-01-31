@@ -1,0 +1,835 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+/**
+\versionadded 1.12.0
+The :ref:`paramdict` object is used to store a list of parameters based on names.
+
+Example
+---------
+
+.. code-block:: kl
+
+  ParamDict dict();
+
+  // store a scalar and a color
+  dict.setFloat64('length', 1.7);
+  dict.setColor('diffuse', Color(1.0, 0.0, 0.0));
+
+  // restore them
+  report(dict.getFloat64('length'));
+  report(dict.getColor('diffuse'));
+*/
+
+object ParamDict {
+  /// \internal
+  Param params[String];
+};
+
+function Size ParamDict.size() {
+  return this.params.size();
+}
+
+function ParamDict.clear!() {
+  this.params.clear();
+}
+
+/// returns all parameter names in this ParamDict
+function String[] ParamDict.getParamNames() {
+  String result[];
+  for(name in this.params)
+    result.push(name);
+  return result;
+}
+
+/// returns true if a certain Param is part of the ParamDict
+function Boolean ParamDict.has(String name) {
+  return this.params.has(name);
+}
+
+/// return the value type for a given Param
+function String ParamDict.getValueType(String name) {
+  Param param =  this.params.get(name, null);
+  if(param)
+    return param.getValueType();
+  return '';
+}
+
+/// getting a Param contained in the ParamDict
+function Param ParamDict.get(String name) {
+  return this.params.get(name, null);
+}
+
+/// setting a Param in the ParamDict
+function ParamDict.set!(String name, Param param) {
+  this.params[name] = param;
+}
+
+/// getting a Boolean value from the ParamDict
+function Boolean ParamDict.getBoolean(String name) {
+  Param param = this.get(name);
+  if(param == null)
+    return false;
+  if(param.type() != BooleanParam)
+    return false;
+  BooleanParam castParam = param;
+  return castParam.getValue();
+}
+
+/// setting a Boolean value on the ParamDict
+function ParamDict.setBoolean!(String name, Boolean value) {
+  if(!this.has(name)) {
+    this.params[name] = BooleanParam(name, value);
+    return;
+  }
+
+  Param param = this.get(name);
+  if(param.type() != BooleanParam) {
+    this.params[name] = BooleanParam(name, value);
+    return;
+  }
+
+  BooleanParam castParam = param;
+  castParam.setValue(value);
+}
+
+/// getting a Boolean array value from the ParamDict
+function Boolean[] ParamDict.getBooleanArray(String name) {
+  Boolean result[];
+  Param param = this.get(name);
+  if(param == null)
+    return result;
+  if(param.type() != BooleanArrayParam)
+    return result;
+  BooleanArrayParam castParam = param;
+  return castParam.values;
+}
+
+/// setting a Boolean array value on the ParamDict
+function ParamDict.setBooleanArray!(String name, Boolean values[]) {
+  if(!this.has(name)) {
+    BooleanArrayParam castParam(name);
+    castParam.values = values;
+    this.params[name] = castParam;
+    return;
+  }
+
+  Param param = this.get(name);
+  if(param.type() != BooleanArrayParam) {
+    BooleanArrayParam castParam(name);
+    castParam.values = values;
+    this.params[name] = castParam;
+    return;
+  }
+
+  BooleanArrayParam castParam = param;
+  castParam.values = values;
+}
+
+/// getting a SInt32 value from the ParamDict
+function SInt32 ParamDict.getSInt32(String name) {
+  Param param = this.get(name);
+  if(param == null)
+    return 0;
+  if(param.type() != SInt32Param)
+    return 0;
+  SInt32Param castParam = param;
+  return castParam.getValue();
+}
+
+/// setting a SInt32 value on the ParamDict
+function ParamDict.setSInt32!(String name, SInt32 value) {
+  if(!this.has(name)) {
+    this.params[name] = SInt32Param(name, value);
+    return;
+  }
+
+  Param param = this.get(name);
+  if(param.type() != SInt32Param) {
+    this.params[name] = SInt32Param(name, value);
+    return;
+  }
+
+  SInt32Param castParam = param;
+  castParam.setValue(value);
+}
+
+/// getting a SInt32 array value from the ParamDict
+function SInt32[] ParamDict.getSInt32Array(String name) {
+  SInt32 result[];
+  Param param = this.get(name);
+  if(param == null)
+    return result;
+  if(param.type() != SInt32ArrayParam)
+    return result;
+  SInt32ArrayParam castParam = param;
+  return castParam.values;
+}
+
+/// setting a SInt32 array value on the ParamDict
+function ParamDict.setSInt32Array!(String name, SInt32 values[]) {
+  if(!this.has(name)) {
+    SInt32ArrayParam castParam(name);
+    castParam.values = values;
+    this.params[name] = castParam;
+    return;
+  }
+
+  Param param = this.get(name);
+  if(param.type() != SInt32ArrayParam) {
+    SInt32ArrayParam castParam(name);
+    castParam.values = values;
+    this.params[name] = castParam;
+    return;
+  }
+
+  SInt32ArrayParam castParam = param;
+  castParam.values = values;
+}
+
+/// getting a Float64 value from the ParamDict
+function Float64 ParamDict.getFloat64(String name) {
+  Param param = this.get(name);
+  if(param == null)
+    return 0.0;
+  if(param.type() != Float64Param)
+    return 0.0;
+  Float64Param castParam = param;
+  return castParam.getValue();
+}
+
+/// setting a Float64 value on the ParamDict
+function ParamDict.setFloat64!(String name, Float64 value) {
+  if(!this.has(name)) {
+    this.params[name] = Float64Param(name, value);
+    return;
+  }
+
+  Param param = this.get(name);
+  if(param.type() != Float64Param) {
+    this.params[name] = Float64Param(name, value);
+    return;
+  }
+
+  Float64Param castParam = param;
+  castParam.setValue(value);
+}
+
+/// getting a Float64 array value from the ParamDict
+function Float64[] ParamDict.getFloat64Array(String name) {
+  Float64 result[];
+  Param param = this.get(name);
+  if(param == null)
+    return result;
+  if(param.type() != Float64ArrayParam)
+    return result;
+  Float64ArrayParam castParam = param;
+  return castParam.values;
+}
+
+/// setting a Float64 array value on the ParamDict
+function ParamDict.setFloat64Array!(String name, Float64 values[]) {
+  if(!this.has(name)) {
+    Float64ArrayParam castParam(name);
+    castParam.values = values;
+    this.params[name] = castParam;
+    return;
+  }
+
+  Param param = this.get(name);
+  if(param.type() != Float64ArrayParam) {
+    Float64ArrayParam castParam(name);
+    castParam.values = values;
+    this.params[name] = castParam;
+    return;
+  }
+
+  Float64ArrayParam castParam = param;
+  castParam.values = values;
+}
+
+/// getting a String value from the ParamDict
+function String ParamDict.getString(String name) {
+  Param param = this.get(name);
+  if(param == null)
+    return '';
+  if(param.type() != StringParam)
+    return '';
+  StringParam castParam = param;
+  return castParam.getValue();
+}
+
+/// setting a String value on the ParamDict
+function ParamDict.setString!(String name, String value) {
+  if(!this.has(name)) {
+    this.params[name] = StringParam(name, value);
+    return;
+  }
+
+  Param param = this.get(name);
+  if(param.type() != StringParam) {
+    this.params[name] = StringParam(name, value);
+    return;
+  }
+
+  StringParam castParam = param;
+  castParam.setValue(value);
+}
+
+/// getting a String array value from the ParamDict
+function String[] ParamDict.getStringArray(String name) {
+  String result[];
+  Param param = this.get(name);
+  if(param == null)
+    return result;
+  if(param.type() != StringArrayParam)
+    return result;
+  StringArrayParam castParam = param;
+  return castParam.values;
+}
+
+/// setting a String array value on the ParamDict
+function ParamDict.setStringArray!(String name, String values[]) {
+  if(!this.has(name)) {
+    StringArrayParam castParam(name);
+    castParam.values = values;
+    this.params[name] = castParam;
+    return;
+  }
+
+  Param param = this.get(name);
+  if(param.type() != StringArrayParam) {
+    StringArrayParam castParam(name);
+    castParam.values = values;
+    this.params[name] = castParam;
+    return;
+  }
+
+  StringArrayParam castParam = param;
+  castParam.values = values;
+}
+
+/// getting a Object value from the ParamDict
+function Object ParamDict.getObject(String name) {
+  Param param = this.get(name);
+  if(param == null)
+    return null;
+  if(param.type() != ObjectParam)
+    return null;
+  ObjectParam castParam = param;
+  return castParam.getValue();
+}
+
+/// setting a Object value on the ParamDict
+function ParamDict.setObject!(String name, Object value) {
+  if(!this.has(name)) {
+    this.params[name] = ObjectParam(name, value);
+    return;
+  }
+
+  Param param = this.get(name);
+  if(param.type() != ObjectParam) {
+    this.params[name] = ObjectParam(name, value);
+    return;
+  }
+
+  ObjectParam castParam = param;
+  castParam.setValue(value);
+}
+
+/// getting a Object array value from the ParamDict
+function Object[] ParamDict.getObjectArray(String name) {
+  Object result[];
+  Param param = this.get(name);
+  if(param == null)
+    return result;
+  if(param.type() != ObjectArrayParam)
+    return result;
+  ObjectArrayParam castParam = param;
+  return castParam.values;
+}
+
+/// setting a Object array value on the ParamDict
+function ParamDict.setObjectArray!(String name, Object values[]) {
+  if(!this.has(name)) {
+    ObjectArrayParam castParam(name);
+    castParam.values = values;
+    this.params[name] = castParam;
+    return;
+  }
+
+  Param param = this.get(name);
+  if(param.type() != ObjectArrayParam) {
+    ObjectArrayParam castParam(name);
+    castParam.values = values;
+    this.params[name] = castParam;
+    return;
+  }
+
+  ObjectArrayParam castParam = param;
+  castParam.values = values;
+}
+
+/// getting a Vec3 value from the ParamDict
+function Vec3 ParamDict.getVec3(String name) {
+  Param param = this.get(name);
+  if(param == null)
+    return Vec3();
+  if(param.type() != Vec3Param)
+    return Vec3();
+  Vec3Param castParam = param;
+  return castParam.getValue();
+}
+
+/// setting a Vec3 value on the ParamDict
+function ParamDict.setVec3!(String name, Vec3 value) {
+  if(!this.has(name)) {
+    this.params[name] = Vec3Param(name, value);
+    return;
+  }
+
+  Param param = this.get(name);
+  if(param.type() != Vec3Param) {
+    this.params[name] = Vec3Param(name, value);
+    return;
+  }
+
+  Vec3Param castParam = param;
+  castParam.setValue(value);
+}
+
+/// getting a Vec3 array value from the ParamDict
+function Vec3[] ParamDict.getVec3Array(String name) {
+  Vec3 result[];
+  Param param = this.get(name);
+  if(param == null)
+    return result;
+  if(param.type() != Vec3ArrayParam)
+    return result;
+  Vec3ArrayParam castParam = param;
+  return castParam.values;
+}
+
+/// setting a Vec3 array value on the ParamDict
+function ParamDict.setVec3Array!(String name, Vec3 values[]) {
+  if(!this.has(name)) {
+    Vec3ArrayParam castParam(name);
+    castParam.values = values;
+    this.params[name] = castParam;
+    return;
+  }
+
+  Param param = this.get(name);
+  if(param.type() != Vec3ArrayParam) {
+    Vec3ArrayParam castParam(name);
+    castParam.values = values;
+    this.params[name] = castParam;
+    return;
+  }
+
+  Vec3ArrayParam castParam = param;
+  castParam.values = values;
+}
+
+/// getting a Euler value from the ParamDict
+function Euler ParamDict.getEuler(String name) {
+  Param param = this.get(name);
+  if(param == null)
+    return Euler();
+  if(param.type() != EulerParam)
+    return Euler();
+  EulerParam castParam = param;
+  return castParam.getValue();
+}
+
+/// setting a Euler value on the ParamDict
+function ParamDict.setEuler!(String name, Euler value) {
+  if(!this.has(name)) {
+    this.params[name] = EulerParam(name, value);
+    return;
+  }
+
+  Param param = this.get(name);
+  if(param.type() != EulerParam) {
+    this.params[name] = EulerParam(name, value);
+    return;
+  }
+
+  EulerParam castParam = param;
+  castParam.setValue(value);
+}
+
+/// getting a Euler array value from the ParamDict
+function Euler[] ParamDict.getEulerArray(String name) {
+  Euler result[];
+  Param param = this.get(name);
+  if(param == null)
+    return result;
+  if(param.type() != EulerArrayParam)
+    return result;
+  EulerArrayParam castParam = param;
+  return castParam.values;
+}
+
+/// setting a Euler array value on the ParamDict
+function ParamDict.setEulerArray!(String name, Euler values[]) {
+  if(!this.has(name)) {
+    EulerArrayParam castParam(name);
+    castParam.values = values;
+    this.params[name] = castParam;
+    return;
+  }
+
+  Param param = this.get(name);
+  if(param.type() != EulerArrayParam) {
+    EulerArrayParam castParam(name);
+    castParam.values = values;
+    this.params[name] = castParam;
+    return;
+  }
+
+  EulerArrayParam castParam = param;
+  castParam.values = values;
+}
+
+/// getting a Quat value from the ParamDict
+function Quat ParamDict.getQuat(String name) {
+  Param param = this.get(name);
+  if(param == null)
+    return Quat();
+  if(param.type() != QuatParam)
+    return Quat();
+  QuatParam castParam = param;
+  return castParam.getValue();
+}
+
+/// setting a Quat value on the ParamDict
+function ParamDict.setQuat!(String name, Quat value) {
+  if(!this.has(name)) {
+    this.params[name] = QuatParam(name, value);
+    return;
+  }
+
+  Param param = this.get(name);
+  if(param.type() != QuatParam) {
+    this.params[name] = QuatParam(name, value);
+    return;
+  }
+
+  QuatParam castParam = param;
+  castParam.setValue(value);
+}
+
+/// getting a Quat array value from the ParamDict
+function Quat[] ParamDict.getQuatArray(String name) {
+  Quat result[];
+  Param param = this.get(name);
+  if(param == null)
+    return result;
+  if(param.type() != QuatArrayParam)
+    return result;
+  QuatArrayParam castParam = param;
+  return castParam.values;
+}
+
+/// setting a Quat array value on the ParamDict
+function ParamDict.setQuatArray!(String name, Quat values[]) {
+  if(!this.has(name)) {
+    QuatArrayParam castParam(name);
+    castParam.values = values;
+    this.params[name] = castParam;
+    return;
+  }
+
+  Param param = this.get(name);
+  if(param.type() != QuatArrayParam) {
+    QuatArrayParam castParam(name);
+    castParam.values = values;
+    this.params[name] = castParam;
+    return;
+  }
+
+  QuatArrayParam castParam = param;
+  castParam.values = values;
+}
+
+/// getting a Mat33 value from the ParamDict
+function Mat33 ParamDict.getMat33(String name) {
+  Param param = this.get(name);
+  if(param == null)
+    return Mat33();
+  if(param.type() != Mat33Param)
+    return Mat33();
+  Mat33Param castParam = param;
+  return castParam.getValue();
+}
+
+/// setting a Mat33 value on the ParamDict
+function ParamDict.setMat33!(String name, Mat33 value) {
+  if(!this.has(name)) {
+    this.params[name] = Mat33Param(name, value);
+    return;
+  }
+
+  Param param = this.get(name);
+  if(param.type() != Mat33Param) {
+    this.params[name] = Mat33Param(name, value);
+    return;
+  }
+
+  Mat33Param castParam = param;
+  castParam.setValue(value);
+}
+
+/// getting a Mat33 array value from the ParamDict
+function Mat33[] ParamDict.getMat33Array(String name) {
+  Mat33 result[];
+  Param param = this.get(name);
+  if(param == null)
+    return result;
+  if(param.type() != Mat33ArrayParam)
+    return result;
+  Mat33ArrayParam castParam = param;
+  return castParam.values;
+}
+
+/// setting a Mat33 array value on the ParamDict
+function ParamDict.setMat33Array!(String name, Mat33 values[]) {
+  if(!this.has(name)) {
+    Mat33ArrayParam castParam(name);
+    castParam.values = values;
+    this.params[name] = castParam;
+    return;
+  }
+
+  Param param = this.get(name);
+  if(param.type() != Mat33ArrayParam) {
+    Mat33ArrayParam castParam(name);
+    castParam.values = values;
+    this.params[name] = castParam;
+    return;
+  }
+
+  Mat33ArrayParam castParam = param;
+  castParam.values = values;
+}
+
+/// getting a Mat44 value from the ParamDict
+function Mat44 ParamDict.getMat44(String name) {
+  Param param = this.get(name);
+  if(param == null)
+    return Mat44();
+  if(param.type() != Mat44Param)
+    return Mat44();
+  Mat44Param castParam = param;
+  return castParam.getValue();
+}
+
+/// setting a Mat44 value on the ParamDict
+function ParamDict.setMat44!(String name, Mat44 value) {
+  if(!this.has(name)) {
+    this.params[name] = Mat44Param(name, value);
+    return;
+  }
+
+  Param param = this.get(name);
+  if(param.type() != Mat44Param) {
+    this.params[name] = Mat44Param(name, value);
+    return;
+  }
+
+  Mat44Param castParam = param;
+  castParam.setValue(value);
+}
+
+/// getting a Mat44 array value from the ParamDict
+function Mat44[] ParamDict.getMat44Array(String name) {
+  Mat44 result[];
+  Param param = this.get(name);
+  if(param == null)
+    return result;
+  if(param.type() != Mat44ArrayParam)
+    return result;
+  Mat44ArrayParam castParam = param;
+  return castParam.values;
+}
+
+/// setting a Mat44 array value on the ParamDict
+function ParamDict.setMat44Array!(String name, Mat44 values[]) {
+  if(!this.has(name)) {
+    Mat44ArrayParam castParam(name);
+    castParam.values = values;
+    this.params[name] = castParam;
+    return;
+  }
+
+  Param param = this.get(name);
+  if(param.type() != Mat44ArrayParam) {
+    Mat44ArrayParam castParam(name);
+    castParam.values = values;
+    this.params[name] = castParam;
+    return;
+  }
+
+  Mat44ArrayParam castParam = param;
+  castParam.values = values;
+}
+
+/// getting a Xfo value from the ParamDict
+function Xfo ParamDict.getXfo(String name) {
+  Param param = this.get(name);
+  if(param == null)
+    return Xfo();
+  if(param.type() != XfoParam)
+    return Xfo();
+  XfoParam castParam = param;
+  return castParam.getValue();
+}
+
+/// setting a Xfo value on the ParamDict
+function ParamDict.setXfo!(String name, Xfo value) {
+  if(!this.has(name)) {
+    this.params[name] = XfoParam(name, value);
+    return;
+  }
+
+  Param param = this.get(name);
+  if(param.type() != XfoParam) {
+    this.params[name] = XfoParam(name, value);
+    return;
+  }
+
+  XfoParam castParam = param;
+  castParam.setValue(value);
+}
+
+/// getting a Xfo array value from the ParamDict
+function Xfo[] ParamDict.getXfoArray(String name) {
+  Xfo result[];
+  Param param = this.get(name);
+  if(param == null)
+    return result;
+  if(param.type() != XfoArrayParam)
+    return result;
+  XfoArrayParam castParam = param;
+  return castParam.values;
+}
+
+/// setting a Xfo array value on the ParamDict
+function ParamDict.setXfoArray!(String name, Xfo values[]) {
+  if(!this.has(name)) {
+    XfoArrayParam castParam(name);
+    castParam.values = values;
+    this.params[name] = castParam;
+    return;
+  }
+
+  Param param = this.get(name);
+  if(param.type() != XfoArrayParam) {
+    XfoArrayParam castParam(name);
+    castParam.values = values;
+    this.params[name] = castParam;
+    return;
+  }
+
+  XfoArrayParam castParam = param;
+  castParam.values = values;
+}
+
+/// getting a Color value from the ParamDict
+function Color ParamDict.getColor(String name) {
+  Param param = this.get(name);
+  if(param == null)
+    return Color();
+  if(param.type() != ColorParam)
+    return Color();
+  ColorParam castParam = param;
+  return castParam.getValue();
+}
+
+/// setting a Color value on the ParamDict
+function ParamDict.setColor!(String name, Color value) {
+  if(!this.has(name)) {
+    this.params[name] = ColorParam(name, value);
+    return;
+  }
+
+  Param param = this.get(name);
+  if(param.type() != ColorParam) {
+    this.params[name] = ColorParam(name, value);
+    return;
+  }
+
+  ColorParam castParam = param;
+  castParam.setValue(value);
+}
+
+/// getting a Color array value from the ParamDict
+function Color[] ParamDict.getColorArray(String name) {
+  Color result[];
+  Param param = this.get(name);
+  if(param == null)
+    return result;
+  if(param.type() != ColorArrayParam)
+    return result;
+  ColorArrayParam castParam = param;
+  return castParam.values;
+}
+
+/// setting a Color array value on the ParamDict
+function ParamDict.setColorArray!(String name, Color values[]) {
+  if(!this.has(name)) {
+    ColorArrayParam castParam(name);
+    castParam.values = values;
+    this.params[name] = castParam;
+    return;
+  }
+
+  Param param = this.get(name);
+  if(param.type() != ColorArrayParam) {
+    ColorArrayParam castParam(name);
+    castParam.values = values;
+    this.params[name] = castParam;
+    return;
+  }
+
+  ColorArrayParam castParam = param;
+  castParam.values = values;
+}
+
+
+/// getting a Struct value from the ParamDict
+function ParamDict.getStructType(String name, io UInt64 dataSize, io String type) {
+  Param param = this.get(name);
+  if(param == null)
+    return;
+  StructParam castParam = param;
+  castParam.getValueType(dataSize, type);
+}
+
+/// getting a Struct value from the ParamDict
+function ParamDict.getStructData(String name, io Data data) {
+  Param param = this.get(name);
+  if(param == null)
+    return;
+  StructParam castParam = param;
+  castParam.getValue(data);
+}
+
+/// getting a Struct value from the ParamDict
+function StructParam ParamDict.getStruct(String name) {
+  Param param = this.get(name);
+  if(param == null) return null;
+  StructParam castParam = param;
+  return castParam;
+}
+
+/// setting a Struct value on the ParamDict
+function ParamDict.setStruct!(String name, Type type, Data data, UInt64 dataSize) {
+  if(!this.has(name)) {
+    this.params[name] = StructParam(name, type, data, dataSize);
+    return;
+  }
+  StructParam castParam = this.params[name];
+  castParam.setValue(type, data, dataSize);
+}

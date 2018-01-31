@@ -1,0 +1,375 @@
+//
+// Copyright 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+private Bt2RigidBody Bt2World.addRigidBody!(btRigidBody body, Color color)
+{
+  // todo: add a lock
+  Bt2RigidBody result;
+  result.world = this;
+  result.index = this.rigidBodies.size();
+  result.body = body;
+  result.body.setUserIndex(result.index);
+  result.color = color;
+  this.rigidBodies.push(result);
+  if(this.dynamicsWorld.cxx_isValid() && !this.mbDynamicsWorld.cxx_isValid())
+  {
+    this.dynamicsWorld.addRigidBody(body);
+  }
+  return result;
+}
+
+/// \dfgPresetFolder RigidBodies
+Bt2RigidBody Bt2World.getRigidBody(SInt32 index)
+{
+  if(index < 0 || index >= this.rigidBodies.size())
+    return Bt2RigidBody();
+  return this.rigidBodies[index];
+}
+
+/// \dfgPresetFolder RigidBodies
+/// \dfgPresetDefault all true
+Bt2RigidBody[] Bt2World.getRigidBodies(Boolean all, SInt32 idxs[])
+{
+  if(all)
+    return this.rigidBodies.clone();
+
+  Bt2RigidBody bodies[](idxs.size());
+  for(Size i=0;i<idxs.size();i++)
+    bodies[i] = this.getRigidBody(idxs[i]);
+
+  return bodies;
+}
+
+/// \dfgPresetFolder Bt2IslandBodyInfo
+Bt2IslandBodyInfo Bt2World.getIslandBody(SInt32 index)
+{
+  if(index < 0 || index >= this.islandBodies.size())
+    return Bt2IslandBodyInfo();
+  return this.islandBodies[index];
+}
+
+/// \dfgPresetFolder Bt2IslandBodyInfo
+/// \dfgPresetDefault all true
+Bt2IslandBodyInfo[] Bt2World.getIslandBodies(Boolean all, SInt32 idxs[])
+{
+  if(all)
+    return this.islandBodies.clone();
+
+  Bt2IslandBodyInfo bodies[](idxs.size());
+  for(Size i=0;i<idxs.size();i++)
+    bodies[i] = this.getIslandBody(idxs[i]);
+
+  return bodies;
+}
+
+/// \dfgPresetFolder RigidBodies
+/// \dfgPresetDefault mass 1.0
+/// \dfgPresetDefault color {"r": 0.7, "g": 0.7, "b": 0.7, "a": 1.0}
+/// \dfgPresetDefault linearVelocity {"x": 0.0, "y": 0.0, "z": 0.0}
+/// \dfgPresetDefault angularVelocity {"x": 0.0, "y": 0.0, "z": 0.0}
+/// \dfgPresetDefault linearDamping 0.0
+/// \dfgPresetDefault angularDamping 0.0
+/// \dfgPresetDefault friction 0.5
+/// \dfgPresetDefault rollingFriction 0.0
+/// \dfgPresetDefault spinningFriction 0.0
+/// \dfgPresetDefault restitution 0.0
+/// \dfgPresetDefault linearSleepingThreshold 0.8
+/// \dfgPresetDefault angularSleepingThreshold 1.0
+/// \dfgPresetDefault additionalDamping false
+/// \dfgPresetDefault additionalDampingFactor 0.005
+Bt2RigidBody Bt2World.addRigidBody!(
+  Bt2Shape shape,
+  Float32 mass,
+  Xfo xfo,
+  Color color,
+  Vec3 linearVelocity,
+  Vec3 angularVelocity,
+  Float32 linearDamping,
+  Float32 angularDamping,
+  Float32 friction,
+  Float32 rollingFriction,
+  Float32 spinningFriction,
+  Float32 restitution,
+  Float32 linearSleepingThreshold,
+  Float32 angularSleepingThreshold,
+  Boolean additionalDamping,
+  Float32 additionalDampingFactor
+) {
+
+  if(!shape.isValid())
+    return Bt2RigidBody();
+
+  Float32 m = mass;
+  if(shape.isForPassiveRigidBodiesOnly())
+    m = 0.0;
+
+  Boolean isDynamic = (m != 0.0);
+  btVector3 localInertia = Vec3(0, 0, 0);
+  if(isDynamic)
+  {
+    shape.shape.calculateLocalInertia(m, localInertia);
+  }
+
+  btTransform transfo;
+  transfo.setRotation(xfo.ori);
+  transfo.setOrigin(xfo.tr);
+  btDefaultMotionState ms(transfo);
+  btRigidBody_btRigidBodyConstructionInfo cInfo(m, ms, shape.shape, localInertia);
+
+  cInfo.set_m_linearDamping(linearDamping);
+  cInfo.set_m_angularDamping(angularDamping);
+  cInfo.set_m_friction(friction);
+  cInfo.set_m_rollingFriction(rollingFriction);
+  cInfo.set_m_spinningFriction(spinningFriction);
+  cInfo.set_m_restitution(restitution);
+  cInfo.set_m_linearSleepingThreshold(linearSleepingThreshold);
+  cInfo.set_m_angularSleepingThreshold(angularSleepingThreshold);
+  cInfo.set_m_additionalDamping(additionalDamping);
+  cInfo.set_m_additionalDampingFactor(additionalDampingFactor);
+
+  btRigidBody body(cInfo);
+  body.setLinearVelocity(linearVelocity);
+  body.setAngularVelocity(angularVelocity);
+
+  Bt2RigidBody result = this.addRigidBody(body, color);
+
+  // debug drawing
+  if(result.isValid() && this.handle != null && color.a > 0.0)
+  {
+    InlineShape drawShape = this.drawShapes.get(shape.index, null);
+    if(drawShape)
+    {
+      Bt2World_DrawRbdInfo info = this.drawRbdInfos.get(shape.index, Bt2World_DrawRbdInfo());
+      if(info.transform == null)
+      {
+        info.transform = StaticInlineTransform(this.uid() + '_xform_' + shape.index, xfo);
+        info.bodyIdxs.push(result.index);
+        this.handle.rootTransform.addChild(info.transform);
+
+        InlineDrawing draw = this.handle.getDrawing();
+        InlineShader shader = draw.registerShader(OGLWireFrameShader('Bt2WorldSurfaceShader', OGLSurfaceShader()));
+
+        Ref<OGLWireFrameShader> wireFrameShader = shader;
+
+        InlineMaterial mat = shader.getOrCreateMaterial('Bt2World_'+this.uid());
+        mat.setUniform('u_diffuseColor', color);
+        mat.setUniform('u_specularColor', Color(0.0, 0.0, 0.0));
+        mat.setUniform('u_specularFactor', 16.0);
+        mat.setUniform('u_doubleSided', Integer(1));
+
+        info.instance = SimpleInlineInstance(
+          this.uid() + '_instance_' + shape.index, info.transform, drawShape, this.handle.visibility, mat);
+        info.instance.setTransformUniform(InlineUniform('u_diffuseColor', color), 0);
+
+        this.drawRbdInfos[shape.index] = info;
+      } else {
+        info.instance.setTransformUniform(InlineUniform('u_diffuseColor', color), info.transform.getLocalCount());
+        info.transform.pushLocalXfo(xfo);
+        info.bodyIdxs.push(result.index);
+      }
+    }
+  }
+
+  return result;
+}
+
+/// \dfgPresetFolder RigidBodies
+/// \dfgPresetDefault mass 1.0
+Bt2RigidBody Bt2World.addRigidBody!(
+  Bt2Shape shape,
+  Float32 mass,
+  Xfo xfo,
+  Color color
+) {
+  return this.addRigidBody(shape, mass, xfo, color, Vec3(), Vec3(), 0, 0, 0.5, 0, 0, 0, 0.8, 1.0, false, 0.005);  
+}
+
+/// \dfgPresetFolder RigidBodies
+/// \dfgPresetDefault normal {"x": 0.0, "y": 1.0, "z": 0.0}
+/// \dfgPresetDefault constant 0.0
+/// \dfgPresetDefault margin 0.1
+Bt2RigidBody Bt2World.addGround!(
+  Vec3 normal,
+  Float32 constant,
+  Float32 margin
+) {
+  if(this.supportsSoftBodies)
+  {
+    Bt2Shape shape = this.getOrAddBox(Vec3(5000));
+    shape.setMargin(margin);
+    this.addRigidBody(shape, 0.0, Xfo(normal * (constant - 5000)), Color(0.2, 0.2, 0.2, 0.0));
+  }
+  Bt2Shape shape = this.getOrAddStaticPlane(normal, constant);
+  shape.setMargin(margin);
+  return this.addRigidBody(shape, 0.0, Xfo(), Color(0.5, 0.5, 0.5));
+}
+
+/// \dfgPresetFolder RigidBodies
+/// \dfgPresetCombo shapeType ("box", "convexHull")
+/// \dfgPresetDefault shapeType 0
+/// \dfgPresetDefault margin 0.0
+/// \dfgPresetDefault mass 1.0
+/// \dfgPresetDefault color {"r": 0.7, "g": 0.7, "b": 0.7, "a": 1.0}
+/// \dfgPresetDefault linearVelocity {"x": 0.0, "y": 0.0, "z": 0.0}
+/// \dfgPresetDefault angularVelocity {"x": 0.0, "y": 0.0, "z": 0.0}
+/// \dfgPresetDefault linearDamping 0.0
+/// \dfgPresetDefault angularDamping 0.0
+/// \dfgPresetDefault friction 0.5
+/// \dfgPresetDefault rollingFriction 0.0
+/// \dfgPresetDefault spinningFriction 0.0
+/// \dfgPresetDefault restitution 0.0
+/// \dfgPresetDefault linearSleepingThreshold 0.8
+/// \dfgPresetDefault angularSleepingThreshold 1.0
+/// \dfgPresetDefault additionalDamping false
+/// \dfgPresetDefault additionalDampingFactor 0.005
+Bt2RigidBody[] Bt2World.addPolygonIslandBodies!(
+  PolygonMesh mesh,
+  SInt32 shapeType,
+  Float32 margin,
+  Float32 mass,
+  Xfo xfo,
+  Color color,
+  Vec3 linearVelocity,
+  Vec3 angularVelocity,
+  Float32 linearDamping,
+  Float32 angularDamping,
+  Float32 friction,
+  Float32 rollingFriction,
+  Float32 spinningFriction,
+  Float32 restitution,
+  Float32 linearSleepingThreshold,
+  Float32 angularSleepingThreshold,
+  Boolean additionalDamping,
+  Float32 additionalDampingFactor
+) {
+  Bt2RigidBody result[];
+  if(mesh == null)
+    return result;
+  if(mesh.pointCount() == 0)
+    return result;
+  if(mesh.polygonCount() == 0)
+    return result;
+
+  SInt32 pointToChunkIndex[];
+  SInt32 pointToChunkPoint[];
+  SInt32 polyToChunkIndex[];
+  SInt32 polyToChunkPoly[];
+  PolygonMesh chunks[] = mesh.splitMeshIntoIslands(pointToChunkIndex, pointToChunkPoint, polyToChunkIndex, polyToChunkPoly);
+
+  GeometryAttributes sourceAttributes = mesh.getAttributes();
+  Vec3Attribute sourcePositions = sourceAttributes.getAttribute('positions');
+  Vec3Attribute normals = sourceAttributes.getAttribute('normals');
+
+  Bt2IslandBodyInfo info;
+  info.index = this.islandBodies.size();
+  info.world = this;
+  info.pos.resize(mesh.pointCount());
+  info.vertexChunkID = pointToChunkIndex;
+
+  if(normals)
+  {
+    info.normal.resize(mesh.polygonPointsCount());
+    info.cornerChunkID.resize(mesh.polygonPointsCount());
+
+    Size offset = 0;
+    for(Size i=0;i<mesh.polygonCount();i++)
+    {
+      Size size = mesh.getPolygonSize(i);
+      PolygonMesh chunk = chunks[polyToChunkIndex[i]];
+      for(Size j=0;j<size;j++)
+      {
+        Size index = mesh.getPolygonAttributeIndex(i, j);
+        info.cornerChunkID[offset] = polyToChunkIndex[i];
+        info.normal[offset] = normals.values[index];
+        offset++;
+      }
+    }
+  }
+
+  for(Size i=0;i<chunks.size();i++)
+  {
+    LocalBoundingVolume bounds = chunks[i].getBoundingVolume();
+    Vec3 min = bounds.pt1;
+    Vec3 max = bounds.pt2;
+    Vec3 halfExtents = (max - min) * 0.5;
+    Vec3 center = (min + max) * 0.5;
+    Xfo localXfo(center);
+    Xfo globalXfo = xfo * localXfo;
+
+    GeometryAttributes chunkAttributes = chunks[i].getAttributes();
+    IntegerAttribute chunkVertexToVertex = chunkAttributes.getAttribute('chunkVertexToVertex');
+    Vec3Attribute chunkPositions = chunkAttributes.getAttribute('positions');
+
+    for(Size j=0;j<chunks[i].pointCount();j++)
+    {
+      Vec3 p = chunkPositions.values[j] - center;
+      chunks[i].setPointPosition(j, p);
+      info.pos[chunkVertexToVertex.values[j]] = p;
+    }
+
+    String key = this.uid() + '_shape_' + mesh.uid() + '_' + i;
+
+    Bt2Shape shape;
+    if(shapeType == 0) // box
+    {
+      shape =  this.addShape('box_'+key, btBoxShape(halfExtents), false);
+    }
+    else // convex hull
+    {
+      shape = this.getOrAddConvexHull(chunks[i].uid(), chunkPositions.values, chunks[i].pointCount(), sourcePositions.version);
+    }
+
+    // debug drawing
+    if(shape.isValid() && this.handle != null)
+    {
+      InlineDrawing drawing = this.handle.getDrawing();
+      InlineShape drawShape = InlineMeshShape(key, chunks[i]);
+      drawing.registerShape(drawShape);
+      this.drawShapes[shape.index] = drawShape;
+    }
+
+    Bt2RigidBody body = this.addRigidBody(
+      shape,
+      mass,
+      globalXfo,
+      color,
+      linearVelocity,
+      angularVelocity,
+      linearDamping,
+      angularDamping,
+      friction,
+      rollingFriction,
+      spinningFriction,
+      restitution,
+      linearSleepingThreshold,
+      angularSleepingThreshold,
+      additionalDamping,
+      additionalDampingFactor
+      );
+    result.push(body);
+
+    info.bodyIdxs.push(body.getIndex());
+  }
+
+  this.islandBodies.push(info);
+
+  return result;
+}
+
+/// \dfgPresetFolder RigidBodies
+/// \dfgPresetCombo shapeType ("box", "convexHull")
+/// \dfgPresetDefault shapeType 0
+/// \dfgPresetDefault margin 0.0
+/// \dfgPresetDefault mass 1.0
+/// \dfgPresetDefault color {"r": 0.7, "g": 0.7, "b": 0.7, "a": 1.0}
+Bt2RigidBody[] Bt2World.addPolygonIslandBodies!(
+  PolygonMesh mesh,
+  SInt32 shapeType,
+  Float32 margin,
+  Float32 mass,
+  Xfo xfo,
+  Color color
+) {
+  return this.addPolygonIslandBodies(mesh, shapeType, margin, mass, xfo, color, Vec3(), Vec3(), 0, 0, 0.5, 0, 0, 0, 0.8, 1.0, false, 0.005);
+}

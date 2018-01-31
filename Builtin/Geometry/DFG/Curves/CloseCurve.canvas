@@ -1,0 +1,44 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/Curves.html",
+    "uiTooltip" : "Closes the curve (or does nothing is already closed).\n- For a linear curve, this only results in a removed segment between the last and first point.\n- For a Bezier curve, the last point (end of last piece) is removed so the piece ends with the first point (shared with the 1st piece).\n- For a NURBS curve, the last point is removed so the curve ends with the first point (shared).\n\nSupported types:\n  this: Curves\n  curveIndex: UInt32\n"
+    },
+  "title" : "CloseCurve",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Curves"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "curveIndex",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "UInt32"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "CA3FA95F13C3287D598F813CF8BAFDA2",
+  "code" : "require Geometry;
+
+dfgEntry {
+  this.closeCurve(curveIndex);
+}
+"
+  }

@@ -1,0 +1,70 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 132,\n  \"g\" : 106,\n  \"b\" : 97\n  }",
+    "uiTooltip" : "Returns all of the nested objects\n\nSupported types:\n  this: ImporterObject\n  ctxt: ImporterContext\n  type: String\n  result: ImporterObject\n"
+    },
+  "title" : "nestedObjectsByType",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 206,\n  \"g\" : 165,\n  \"b\" : 151\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Ref<ImporterObject>"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 206,\n  \"g\" : 165,\n  \"b\" : 151\n  }"
+        },
+      "name" : "ctxt",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "ImporterContext"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiCombo" : "(\"Transform\", \"Instance\", \"Camera\", \"Light\", \"Shape\", \"Material\", \"Texture\", \"AnimCurve\", \"Behavior\")"
+        },
+      "name" : "type",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String" : "Shape"
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 206,\n  \"g\" : 165,\n  \"b\" : 151\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Ref<ImporterObject>[]"
+      }
+    ],
+  "extDeps" : {
+    "AssetPatterns" : "*"
+    },
+  "presetGUID" : "58F9B7B3142BEE59C27EFC71D1432CD7",
+  "code" : "require AssetPatterns;
+
+dfgEntry {
+  result = this.getNestedObjectsByType(ctxt, type);
+}
+"
+  }

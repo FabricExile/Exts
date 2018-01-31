@@ -1,0 +1,213 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Ray.html",
+    "uiTooltip" : "Computes the intersection of the Ray and a triangle in 3d space defined by 3 point values.\nReturns true if the ray intersects the triangle.\nwith a triangle.\n\n Supported by Ray"
+    },
+  "title" : "IntersectTriangle[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Ray[]" : [
+          {
+            "start" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              },
+            "direction" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Ray[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "cull",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Boolean[]" : [
+          false
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Boolean[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "bidirectional",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Boolean[]" : [
+          false
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Boolean[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "v0",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "v1",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "v2",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "point",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "dist",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "u",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "v",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "FC12B15A3F7D7720B25FE78A87B98969",
+  "code" : "require Math;
+
+operator Math_Ray_intersectTriangle_task<<<index>>>(
+  io Boolean[] result
+, in Ray[] this
+, in Boolean[] cull
+, in Boolean[] bidirectional
+, in Vec3[] v0
+, in Vec3[] v1
+, in Vec3[] v2
+, out Vec3[] point
+, out Scalar[] dist
+, out Scalar[] u
+, out Scalar[] v
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].intersectTriangle(cull[index < cull.size() ? index : cull.size() - 1], bidirectional[index < bidirectional.size() ? index : bidirectional.size() - 1], v0[index < v0.size() ? index : v0.size() - 1], v1[index < v1.size() ? index : v1.size() - 1], v2[index < v2.size() ? index : v2.size() - 1], point[index < point.size() ? index : point.size() - 1], dist[index < dist.size() ? index : dist.size() - 1], u[index < u.size() ? index : u.size() - 1], v[index < v.size() ? index : v.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( cull.size() == 0) return;
+  if( bidirectional.size() == 0) return;
+  if( v0.size() == 0) return;
+  if( v1.size() == 0) return;
+  if( v2.size() == 0) return;
+  if( point.size() == 0) return;
+  if( dist.size() == 0) return;
+  if( u.size() == 0) return;
+  if( v.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < cull.size()) task_size = cull.size();
+  if(task_size < bidirectional.size()) task_size = bidirectional.size();
+  if(task_size < v0.size()) task_size = v0.size();
+  if(task_size < v1.size()) task_size = v1.size();
+  if(task_size < v2.size()) task_size = v2.size();
+  result.resize(task_size);
+  point.resize(task_size);
+  dist.resize(task_size);
+  u.resize(task_size);
+  v.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Ray_intersectTriangle_task(index, result, this, cull, bidirectional, v0, v1, v2, point, dist, u, v);
+    }
+  } else {
+    Math_Ray_intersectTriangle_task<<<task_size>>>(result, this, cull, bidirectional, v0, v1, v2, point, dist, u, v);
+  }
+}
+"
+  }

@@ -1,0 +1,62 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+require Singletons;
+
+namespace Tool {
+
+  const String RenderEngineSingleton = "RenderEngine";
+
+  interface RenderEngine;
+  object BaseTool;
+
+  /// Context for drawing a BaseTool.
+  /// The viewport contains the current viewport being drawn.
+  /// The renderEngine contains the drawing engine that implements the tool drawing.
+  /// The contextualProperties, if set, contains the viewport-specific properties 
+  /// for the BaseTool that is being drawn.
+  ///
+  /// See :ref:`TPG.drawing` for more information about tool drawing.
+  struct DrawContext {
+    Ref<Viewport> viewport;
+    Ref<RenderEngine> renderEngine;
+    Ref<PropertyContainer> contextualProperties;
+  };
+
+  inline Boolean DrawContext.isSet() {
+    return Boolean( this.viewport ) || Boolean( this.contextualProperties );
+  }
+
+  interface RenderEngineDrawCallback {
+    renderEngineDrawCallback!( Ref<Viewport> viewport, Size drawPassIndex );
+  };
+
+  interface SelectionDrawableItem;
+
+  /// The RenderEngine implements the drawing for of a BaseTool.
+  /// It has to support the various shapes, materials and properties,
+  /// and also provide selection capabilities through the getSelectionDrawableItem method.
+  ///
+  /// See :ref:`TPG.drawing` for more information about tool drawing.
+  interface RenderEngine {
+
+    /// Returns a handle for the added instance
+    UInt32 addInstance!( Ref<BaseTool> instance );//TODO: add "collection"
+    updateInstance!( UInt32 instanceHandle, DrawContext context, Boolean visible, Boolean canSelect, Ref<Object> material );
+    removeInstance!( UInt32 instanceHandle );
+
+    UInt32 getDrawIterationIndex();// Incremented each time a viewport is drawn
+
+    /// Returns a SelectionManager compatible interface for an instance
+    Ref<SelectionDrawableItem> getSelectionDrawableItem( UInt32 instanceHandle, DrawContext contex );
+
+    registerCallback!( Ref<RenderEngineDrawCallback> callback );
+    unregisterCallback!( Ref<RenderEngineDrawCallback> callback );
+
+    // To add: support for draw ordering (layers): insert, list them.
+  };
+
+  Ref<RenderEngine> GetRenderEngine() {
+    return Singleton_get( RenderEngineSingleton );
+  }
+}// namespace Tool

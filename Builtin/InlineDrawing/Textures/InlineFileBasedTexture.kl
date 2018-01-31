@@ -1,0 +1,40 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require OpenImageIO;
+
+/**
+\versionadded 1.12.0
+
+The InlineFileBasedTexture uses the OpenImageInput to load a texture from a file. The texture can then be used inside an InlineUniform to drive an InlineShader or InlineMaterial.
+
+\example
+  InlineDrawing draw = OGLInlineDrawing();
+
+  // load the texture and register it
+  InlineFileBasedTexture texture = draw.registerTexture(InlineFileBasedTexture('diffuse_frame0.png'));
+
+  // reload the texture later from a different frame
+  texture.open('diffuse_frame1.png');
+\endexample
+\dfgPresetOmit
+*/
+object InlineFileBasedTexture : InlineTexture {};
+
+/// standard constructor
+function InlineFileBasedTexture() {
+  this.version = 1;
+}
+
+/// standard constructor with a filename
+function InlineFileBasedTexture(String fileName) {
+  this.version = 1;
+  this.open(fileName);
+}
+
+/// loads the texture from a file
+function InlineFileBasedTexture.open!(String fileName) {
+  this.name = fileName;
+  this.version++;
+}

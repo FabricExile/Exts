@@ -1,0 +1,206 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require InlineDrawing;
+
+/**
+\versionadded 1.12.0
+
+The :kl-ref:`SliderGizmoHandler` converts mouse events into and absolute translation along a predefined axis. The :kl-ref:`SliderGizmoHandler` is intended to be used to compute the value of a slider. 
+
+Compared to the :kl-ref:`PositionAxisGizmoHandler` that computes a relative translation, the :kl-ref:`SliderGizmoHandler` generates an absolute value in the parent space of the owner :kl-ref:`InlineInstance`.
+
+\rst
+  .. kl-example:: MyCommand
+      :nooutput:
+      require InlineDrawing;
+
+      /// Define a custom object that will propagate slider changes
+      /// back into Maya.
+      object SliderManipulationCallback : GizmoManipulationCallback {
+        String hostName;
+        String graphName;
+      };
+
+      function SliderManipulationCallback(EvalContext context){
+        this.hostName = context.host;
+        this.graphName = context.graph;
+      }
+
+
+      /// Invoked by the GizmoHandler when the mouse drag is starting
+      function SliderManipulationCallback.onDragBegin!(io MouseEvent mouseEvent){
+        if(this.hostName == 'Maya'){
+          // Open a new undo chunck so all changes made during the drag are grouped under a single undo.
+          mouseEvent.getHost().callCustomCommand('undoInfo', '-openChunk');
+        }
+      }
+
+      /// Invoked by the GizmoHandler when the mouse drag is ending
+      function SliderManipulationCallback.onDragEnd!(io MouseEvent mouseEvent){
+        if(this.hostName == 'Maya'){
+          // Close the undo chunk now that the drag has finished. 
+          mouseEvent.getHost().callCustomCommand('undoInfo', '-closeChunk');
+        }
+      }
+
+      /// Invoked during a drag on a gizmo.
+      function SliderManipulationCallback.onDrag!(io MouseEvent mouseEvent, Xfo space, Xfo delta, UInt32 flags){
+        if(this.hostName == 'Maya'){
+          // Generate a command that will change the attribute value back in Maya.
+          String value = delta.tr.y;
+          // Remove the leading '+' that is added to Scalars when cast to strings.
+          if(value.startsWith('+'))
+            value = value.leftStrip(1);
+          String args[];
+          args.push('"' + this.graphName + '.value");
+          args.push(value);
+          mouseEvent.getHost().callCustomCommand('setAttr', args);
+        }
+      }
+
+
+      // Draw a slider using a rectangle and a coboid for the slider range and handle.
+      function drawSlider(String name, Color color, Xfo xfo, EvalContext context){
+
+        InlineDrawing drawing = OGLInlineDrawing_GetInstance();
+        InlineTransform sliderParentTransform = StaticInlineTransform(name+'SliderParent', drawing.getRoot(), xfo);
+
+        InlineShader flatShader = drawing.registerShader(OGLFlatShader());
+        InlineMaterial flatMaterial = flatShader.getOrCreateMaterial("phong");
+
+        InlineShader surfaceShader = drawing.registerShader(OGLSurfaceShader());
+        InlineMaterial phongMaterial = surfaceShader.getOrCreateMaterial("phong");
+
+        // Create the slider frame and handle.
+        {
+          Scalar range = 6.0;
+          {
+            // Position the slider frame to define clearly the range limits of the slider. 
+            // The slider has a 
+            Lines sliderFrame();
+            sliderFrame.addRectangle(Xfo(Vec3(0.0, range * 0.5, 0.0), Quat(Euler(HALF_PI, 0.0, 0.0))), 0.5, range);
+            InlineLinesShape shape('sliderFrame', sliderFrame);
+          
+            StaticInlineTransform sliderFrameTransform('SliderFrame', sliderParentTransform, Xfo());
+            InlineInstance instance = SimpleInlineInstance('PositionAxisGizmoX', sliderFrameTransform, shape, flatMaterial);
+            instance.setInstanceUniform(InlineUniform('u_color', color));
+          }
+          {
+            // Create the handle
+            PolygonMesh sliderHandle();
+            sliderHandle.addCuboid(Xfo(), 0.5, 0.5, 0.1, true, false);
+            InlineMeshShape shape('sliderHandle', sliderHandle);
+          
+            StaticInlineTransform sliderHandleTransform('SliderHandle', sliderParentTransform, Xfo());
+            InlineInstance instance = SimpleInlineInstance('PositionAxisGizmoX', sliderHandleTransform, shape, phongMaterial);
+            instance.setInstanceUniform(InlineUniform('u_diffuseColor', color));
+
+            SliderManipulationCallback callback(context);
+            SliderGizmoHandler handler(instance, Vec3(0.0, 1.0, 0.0), callback, Vec2(0.0, range));
+          }
+        }
+      }
+
+      operator gizmoManipulator(io Scalar eval, io Scalar value, EvalContext context) {
+
+        InlineDrawing drawing = OGLInlineDrawing_GetInstance();
+
+        // Setup the manipulator only once when the scene is first evaluated.
+        Ref<EventDispatcher> eventDispatcher = EventDispatcher_GetInstance();
+        if(eventDispatcher.activeManipulator() != 'GizmoManipulator')
+        {
+          eventDispatcher.registerManipulator(GizmoManipulator());
+
+          // activate the manipulator
+          eventDispatcher.pushManipulator('GizmoManipulator');
+
+          // Draw 2 sliders that will both manipulate the same maya attribute.
+          drawSlider('Red', Color(1.0, 0.0, 0.0), Xfo(Vec3(3.0, 3.0, 0.0)), context);
+          drawSlider('Blue', Color(0.0, 0.0, 1.0), Xfo(Vec3(-3.0, 0.5, 0.0), Quat(Euler(0.0, 0.0, HALF_PI))), context);
+        }
+
+        // Each evaluation update the sliders with the new value.
+        // The local Xfo of the slider handles is driven by the value from Maya.
+        {
+          String path[];
+          path.push('RedSliderParent');
+          path.push('SliderHandle');
+          StaticInlineTransform sliderHandleTransform = drawing.getRoot().getChildByPath(path);
+          if(sliderHandleTransform)
+            sliderHandleTransform.setLocalXfo(0, Xfo(Vec3(0.0, value, 0.0)));
+        }
+        {
+          String path[];
+          path.push('BlueSliderParent');
+          path.push('SliderHandle');
+          StaticInlineTransform sliderHandleTransform = drawing.getRoot().getChildByPath(path);
+          if(sliderHandleTransform)
+            sliderHandleTransform.setLocalXfo(0, Xfo(Vec3(0.0, value, 0.0)));
+        }
+
+        eval = value;
+      }
+\endrst
+      
+\seealso GizmoHandler, BaseGizmoHandler
+\dfgPresetOmit
+*/
+object SliderGizmoHandler : BaseGizmoHandler {
+  
+  Vec3 manipulationVector;
+
+  Boolean dragging;
+  Xfo spaceXfo;
+  Vec2 limits;
+};
+
+function SliderGizmoHandler(InlineInstance owner, Vec3 manipulationVector, GizmoManipulationCallback callback, Vec2 limits){
+  this.init(owner, callback);
+  this.manipulationVector = manipulationVector;
+  this.limits = limits;
+  this.spaceXfo = Xfo();
+}
+
+
+function SliderGizmoHandler.onEvent!(io MouseEvent mouseEvent){
+  if(mouseEvent.eventType() == Event_MouseButtonPress){
+    // On Mousedown.
+    if(mouseEvent.button == MouseButton_LeftButton){
+      this.dragging = true;
+      this.callback.onDragBegin(mouseEvent);
+      mouseEvent.accept();
+    }
+  }
+  else if(mouseEvent.eventType() == Event_MouseMove){
+    // On drag
+    if(this.dragging){
+      if(this.owner.getTransform().hasParent())
+        this.spaceXfo = this.owner.getTransform().getParent().getGlobalXfo(0);
+      Vec3 p1, p2;
+      p1 = this.spaceXfo.tr;
+      p2 = p1 + this.spaceXfo.ori.rotateVector(this.manipulationVector);
+
+      // We cast to InlineViewport to access the method calcRayFromScreenPos
+      Ref<InlineViewport> viewport = mouseEvent.getViewport();
+      Ray ray = viewport.calcRayFromScreenPos(mouseEvent.pos);
+      Vec2 params = ray.intersectLine(p1, p2);
+      Xfo delta();
+      delta.tr = this.manipulationVector * Math_clamp(params.y, this.limits.x, this.limits.y);
+
+      this.callback.onDrag(mouseEvent, this.spaceXfo, delta, ManipulationMode_Position);
+      mouseEvent.accept();
+    }
+  }
+  else if(mouseEvent.eventType() == Event_MouseButtonRelease){
+    // On release
+    if(this.dragging){
+      this.dragging = false;
+      this.callback.onDragEnd(mouseEvent);
+      mouseEvent.accept();
+    }
+  }
+}
+
+

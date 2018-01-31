@@ -1,0 +1,445 @@
+{
+  "objectType" : "Graph",
+  "metadata" : {
+    "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+    "uiNodeColor" : "{\n  \"r\" : 132,\n  \"g\" : 106,\n  \"b\" : 97\n  }"
+    },
+  "title" : "UsdExporter",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {},
+      "name" : "filePath",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "String"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {},
+      "name" : "ctxt",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "ExporterContext"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {},
+      "name" : "objects",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Ref<ImporterObject>[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "export",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "BaseExporter"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "stage",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "UsdStage"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "succeeded",
+      "nodePortType" : "In",
+      "defaultValues" : {
+        "Boolean" : false
+        },
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "savedToDisk",
+      "nodePortType" : "In",
+      "defaultValues" : {
+        "Boolean" : false
+        },
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean"
+      }
+    ],
+  "extDeps" : {
+    "UsdPatterns" : "*"
+    },
+  "presetGUID" : "91121A6F267BA89EB3E216AE5D4408A9",
+  "nodes" : [
+    {
+      "objectType" : "Inst",
+      "metadata" : {
+        "uiGraphPos" : "{\"x\":336.0,\"y\":36.0}"
+        },
+      "name" : "exporter",
+      "ports" : [
+        {
+          "objectType" : "InstPort",
+          "name" : "exec",
+          "nodePortType" : "IO"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "exporter",
+          "nodePortType" : "Out"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "filePath",
+          "nodePortType" : "In"
+          }
+        ],
+      "definition" : {
+        "objectType" : "Func",
+        "metadata" : {
+          "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+          "uiNodeColor" : "{\n  \"r\" : 121,\n  \"g\" : 134,\n  \"b\" : 143\n  }"
+          },
+        "title" : "func",
+        "ports" : [
+          {
+            "objectType" : "ExecPort",
+            "name" : "exec",
+            "nodePortType" : "IO",
+            "execPortType" : "IO",
+            "typeSpec" : "Execute"
+            },
+          {
+            "objectType" : "ExecPort",
+            "name" : "exporter",
+            "nodePortType" : "In",
+            "execPortType" : "Out",
+            "typeSpec" : "BaseExporter"
+            },
+          {
+            "objectType" : "ExecPort",
+            "name" : "filePath",
+            "nodePortType" : "Out",
+            "execPortType" : "In",
+            "typeSpec" : "String"
+            }
+          ],
+        "extDeps" : {
+          "UsdPatterns" : "*",
+          "AssetPatterns" : "*"
+          },
+        "code" : "dfgEntry {
+  exporter = UsdExporter(filePath);
+}
+"
+        }
+      },
+    {
+      "objectType" : "Var",
+      "metadata" : {
+        "uiGraphPos" : "{\"x\":562.0,\"y\":136.0}"
+        },
+      "name" : "exporter_2",
+      "ports" : [
+        {
+          "objectType" : "VarPort",
+          "name" : "value",
+          "nodePortType" : "IO"
+          }
+        ],
+      "dataType" : "BaseExporter",
+      "extDep" : "AssetPatterns:*"
+      },
+    {
+      "objectType" : "Inst",
+      "metadata" : {
+        "uiGraphPos" : "{\"x\":809.0,\"y\":242.0}"
+        },
+      "name" : "updateObjects_1",
+      "ports" : [
+        {
+          "objectType" : "InstPort",
+          "name" : "exec",
+          "nodePortType" : "IO"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "this",
+          "nodePortType" : "IO"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "ctxt",
+          "nodePortType" : "In"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "objects",
+          "nodePortType" : "In"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "result",
+          "nodePortType" : "Out"
+          }
+        ],
+      "executable" : "Fabric.Compounds.IO.Exporter.updateObjects",
+      "presetGUID" : "7CC196496775BE343351C43260151777"
+      },
+    {
+      "objectType" : "Inst",
+      "metadata" : {
+        "uiGraphPos" : "{\"x\":1168.0,\"y\":335.0}"
+        },
+      "name" : "exportToDisk_1",
+      "ports" : [
+        {
+          "objectType" : "InstPort",
+          "name" : "exec",
+          "nodePortType" : "IO"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "this",
+          "nodePortType" : "IO"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "ctxt",
+          "nodePortType" : "In"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "result",
+          "nodePortType" : "Out"
+          }
+        ],
+      "executable" : "Fabric.Compounds.IO.Exporter.exportToDisk",
+      "presetGUID" : "AA51ECB41532E72918981EC5250764B9"
+      },
+    {
+      "objectType" : "Inst",
+      "metadata" : {
+        "uiGraphPos" : "{\"x\":923.0,\"y\":106.0}"
+        },
+      "name" : "getStage",
+      "ports" : [
+        {
+          "objectType" : "InstPort",
+          "name" : "exec",
+          "nodePortType" : "IO"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "exporter",
+          "nodePortType" : "In"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "stage",
+          "nodePortType" : "Out"
+          }
+        ],
+      "definition" : {
+        "objectType" : "Func",
+        "metadata" : {
+          "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+          "uiNodeColor" : "{\n  \"r\" : 121,\n  \"g\" : 134,\n  \"b\" : 143\n  }"
+          },
+        "title" : "func",
+        "ports" : [
+          {
+            "objectType" : "ExecPort",
+            "name" : "exec",
+            "nodePortType" : "IO",
+            "execPortType" : "IO",
+            "typeSpec" : "Execute"
+            },
+          {
+            "objectType" : "ExecPort",
+            "metadata" : {},
+            "name" : "exporter",
+            "nodePortType" : "Out",
+            "execPortType" : "In",
+            "typeSpec" : "BaseExporter"
+            },
+          {
+            "objectType" : "ExecPort",
+            "name" : "stage",
+            "nodePortType" : "In",
+            "execPortType" : "Out",
+            "typeSpec" : "UsdStage"
+            }
+          ],
+        "extDeps" : {
+          "UsdPatterns" : "*"
+          },
+        "code" : "dfgEntry {
+  UsdExporter usdExporter(exporter);
+  stage = usdExporter.getStage();
+}
+"
+        }
+      }
+    ],
+  "connections" : {
+    "filePath" : [
+      "exporter.filePath"
+      ],
+    "ctxt" : [
+      "updateObjects_1.ctxt",
+      "exportToDisk_1.ctxt"
+      ],
+    "objects" : [
+      "updateObjects_1.objects"
+      ],
+    "exporter.exporter" : [
+      "exporter_2.value"
+      ],
+    "exporter_2.value" : [
+      "updateObjects_1.this",
+      "getStage.exporter"
+      ],
+    "updateObjects_1.this" : [
+      "exportToDisk_1.this"
+      ],
+    "updateObjects_1.result" : [
+      "succeeded"
+      ],
+    "exportToDisk_1.this" : [
+      "export"
+      ],
+    "exportToDisk_1.result" : [
+      "savedToDisk"
+      ],
+    "getStage.stage" : [
+      "stage"
+      ]
+    },
+  "requiredPresets" : {
+    "Fabric.Compounds.IO.Exporter.updateObjects" : {
+      "objectType" : "Func",
+      "metadata" : {
+        "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+        "uiNodeColor" : "{\n  \"r\" : 132,\n  \"g\" : 106,\n  \"b\" : 97\n  }",
+        "uiTooltip" : "Adds objects to the export\n\nSupported types:\n  this: BaseExporter\n  ctxt: ExporterContext\n  objects: Ref<ImporterObject>[]\n  result: Boolean\n"
+        },
+      "title" : "updateObjects",
+      "ports" : [
+        {
+          "objectType" : "ExecPort",
+          "name" : "exec",
+          "nodePortType" : "IO",
+          "execPortType" : "IO",
+          "typeSpec" : "Execute"
+          },
+        {
+          "objectType" : "ExecPort",
+          "name" : "this",
+          "nodePortType" : "IO",
+          "execPortType" : "IO",
+          "typeSpec" : "BaseExporter"
+          },
+        {
+          "objectType" : "ExecPort",
+          "metadata" : {
+            "uiColor" : "{\n  \"r\" : 206,\n  \"g\" : 165,\n  \"b\" : 151\n  }"
+            },
+          "name" : "ctxt",
+          "nodePortType" : "Out",
+          "execPortType" : "In",
+          "typeSpec" : "ExporterContext"
+          },
+        {
+          "objectType" : "ExecPort",
+          "metadata" : {
+            "uiColor" : "{\n  \"r\" : 206,\n  \"g\" : 165,\n  \"b\" : 151\n  }"
+            },
+          "name" : "objects",
+          "nodePortType" : "Out",
+          "execPortType" : "In",
+          "typeSpec" : "Ref<ImporterObject>[]"
+          },
+        {
+          "objectType" : "ExecPort",
+          "name" : "result",
+          "nodePortType" : "In",
+          "execPortType" : "Out",
+          "typeSpec" : "Boolean"
+          }
+        ],
+      "extDeps" : {
+        "AssetPatterns" : "*"
+        },
+      "presetGUID" : "7CC196496775BE343351C43260151777",
+      "code" : "require AssetPatterns;
+
+dfgEntry {
+  result = false;
+  if(this)
+    result = this.updateObjects(ctxt, objects);
+}
+"
+      },
+    "Fabric.Compounds.IO.Exporter.exportToDisk" : {
+      "objectType" : "Func",
+      "metadata" : {
+        "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+        "uiNodeColor" : "{\n  \"r\" : 132,\n  \"g\" : 106,\n  \"b\" : 97\n  }",
+        "uiTooltip" : "Saves the file to disk\n\nSupported types:\n  this: BaseExporter\n  filePath: String\n  result: Boolean\n"
+        },
+      "title" : "exportToDisk",
+      "ports" : [
+        {
+          "objectType" : "ExecPort",
+          "name" : "exec",
+          "nodePortType" : "IO",
+          "execPortType" : "IO",
+          "typeSpec" : "Execute"
+          },
+        {
+          "objectType" : "ExecPort",
+          "name" : "this",
+          "nodePortType" : "IO",
+          "execPortType" : "IO",
+          "typeSpec" : "BaseExporter"
+          },
+        {
+          "objectType" : "ExecPort",
+          "metadata" : {
+            "uiColor" : "{\n  \"r\" : 206,\n  \"g\" : 165,\n  \"b\" : 151\n  }"
+            },
+          "name" : "ctxt",
+          "nodePortType" : "Out",
+          "execPortType" : "In",
+          "typeSpec" : "ExporterContext"
+          },
+        {
+          "objectType" : "ExecPort",
+          "name" : "result",
+          "nodePortType" : "In",
+          "execPortType" : "Out",
+          "typeSpec" : "Boolean"
+          }
+        ],
+      "extDeps" : {
+        "AssetPatterns" : "*"
+        },
+      "presetGUID" : "AA51ECB41532E72918981EC5250764B9",
+      "code" : "require AssetPatterns;
+
+dfgEntry {
+  result = false;
+  if(this)
+    result = this.exportToDisk(ctxt);
+}
+"
+      }
+    }
+  }

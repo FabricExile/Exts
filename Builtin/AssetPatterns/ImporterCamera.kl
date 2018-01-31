@@ -1,0 +1,72 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/**
+The ImporterCamera represents a camera object being imported. It stores 
+a series of properties such as the field of view.
+\dfgPresetOmit
+*/
+object ImporterCamera : ImporterTransform permits Importer
+{
+};
+
+/// \dfgPresetOmit
+function ImporterCamera(String id, String path) {
+  this.initialize(id, path, 'Camera');
+}
+
+/// \dfgPresetOmit
+protected function ImporterCamera.initialize!(String id, String path, String type) {
+  this.parent.initialize(id, path, type);
+  this.initProperty('color', ImporterColor(Color(0.0, 0.0, 0.4)));
+  this.initProperty('focalLength', ImporterScalar(35.0)); // in mm
+  this.initProperty('fovY', ImporterScalar(53.0)); // in degrees
+  this.initProperty('fStop', ImporterScalar(3.6));
+  this.initProperty('focusDistance', ImporterScalar(2000.0)); // in mm
+  this.initProperty('near', ImporterScalar(0.1)); // in cm
+  this.initProperty('far', ImporterScalar(1000.0)); // in cm
+}
+
+/// \dfgPresetOmit
+function Scalar ImporterCamera.getFocalLength(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('focalLength', context);
+  return mutableThis.getScalarProperty('focalLength');
+}
+
+/// \dfgPresetOmit
+function Scalar ImporterCamera.getFovY(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('fovY', context);
+  return mutableThis.getScalarProperty('fovY');
+}
+
+/// \dfgPresetOmit
+function Scalar ImporterCamera.getFStop(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('fStop', context);
+  return mutableThis.getScalarProperty('fStop');
+}
+
+/// \dfgPresetOmit
+function Scalar ImporterCamera.getFocusDistance(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('focusDistance', context);
+  return mutableThis.getScalarProperty('focusDistance');
+}
+
+/// \dfgPresetOmit
+function Scalar ImporterCamera.getNear(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('near', context);
+  return mutableThis.getScalarProperty('near');
+}
+
+/// \dfgPresetOmit
+function Scalar ImporterCamera.getFar(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('far', context);
+  return mutableThis.getScalarProperty('far');
+}
+

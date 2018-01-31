@@ -1,0 +1,182 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  Specialized GeometryAttribute containing a constant sized arrays of UInt16, packed as a single memory buffer.
+  The UInt16ConstantArrayAttribute.setArraySize method sets a constant array size for all values.
+  Values can be accessed with the UInt16ConstantArrayAttribute.values array member, but its usage might be restricted by the owner Geometry.
+*/
+object UInt16ConstantArrayAttribute : BaseAttribute {
+  /// Values array container
+  UInt16 values[];
+
+  /// \internal
+  Size arraySize;
+
+  /// If true, values should be interpreted as a 0.0 to 1.0 range (eg: for OpenGL)
+  Boolean normalize;
+
+  /// If true, IntegerAttribute.linearCombine and IntegerAttribute.getLinearCombination
+  /// will average the values. Else, an arbitrary source value will be used.
+  Boolean canInterpolate;
+};
+
+function StatisticRecord[] UInt16ConstantArrayAttribute.getStatistics() {
+  StatisticRecord stats[] = this.parent.getStatistics();
+  stats.push( StatisticRecord( Statistic_MemoryUsage, this.values.size()*2 ) );
+  return stats;
+}
+
+/// \dfgPresetOmit
+UInt16ConstantArrayAttribute.cloneMembersTo( io UInt16ConstantArrayAttribute that ) {
+  //The difference with default clone() is that new.parent.autoStat will point to 'new' (from constructor)
+  this.parent.cloneMembersTo(that);//Copies all but the values
+  that.arraySize = this.arraySize;
+  that.normalize = this.normalize;
+  that.canInterpolate = this.canInterpolate;
+  that.copyFrom(this);
+}
+
+inline UInt16ConstantArrayAttribute.setArraySize!(Size arraySize) {
+  if( this.arraySize != arraySize ) {
+    this.arraySize = arraySize;
+    this.resize(this.count);
+  }
+}
+
+inline UInt16ConstantArrayAttribute.resize!(Size count) {
+  this.parent.resize(count);
+  this.values.resize(count * this.arraySize);
+}
+
+inline Boolean UInt16ConstantArrayAttribute.checkConsistency() {
+  if( this.size() != this.values.size()/this.arraySize )
+    return false;
+  return this.parent.checkConsistency();
+}
+
+inline Data UInt16ConstantArrayAttribute.data() {
+  return this.values.data();
+}
+
+inline UInt32 UInt16ConstantArrayAttribute.getElementsMemType( ) {
+  return this.values.getElementsMemType();
+}
+
+inline UInt16ConstantArrayAttribute.convertToGPU!( ) {
+  this.values.convertToGPU();
+  this.incrementVersion();
+}
+
+inline UInt16ConstantArrayAttribute.convertToCPU!( ) {
+  this.values.convertToCPU();
+  this.incrementVersion();
+}
+
+
+inline UInt16 UInt16ConstantArrayAttribute.get(Size index, Size offset) {
+  return this.values[index * this.arraySize + offset];
+}
+
+inline UInt16ConstantArrayAttribute.copyValue!( Size sourceIndex, Size targetIndex ) {
+  for(Size i = 0; i < this.arraySize; ++i)
+    this.values[targetIndex*this.arraySize+i] = this.values[sourceIndex*this.arraySize+i];
+}
+
+inline UInt16ConstantArrayAttribute.copyValue!( Ref<Object> sourceAttr, Size sourceIndex, Size targetIndex ) {
+  Ref<UInt16ConstantArrayAttribute> source = sourceAttr;
+  for(Size i = 0; i < this.arraySize; ++i)
+    this.values[targetIndex*this.arraySize+i] = source.values[sourceIndex*this.arraySize+i];
+}
+
+inline UInt16ConstantArrayAttribute.copyFrom!( Ref<Object> otherAttr ) {
+  this.parent.copyFrom( otherAttr );
+  Ref<UInt16ConstantArrayAttribute> other = otherAttr;
+  other.values.copyTo(this.values);
+}
+
+/** Returns a linear combination of source values. If IntegerAttribute.canInterpolate is false, an arbitrary source value will be returned.
+    \param sourceIndices The array of source indices
+    \param sourceWeights The array of source weights, which need to correspond to each sourceIndices. Normally the sum of the weights should be 1.0
+*/
+inline LocalL16UInt16Array UInt16ConstantArrayAttribute.getLinearCombination( LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights ) {
+  LocalL16UInt16Array resultVector;
+  resultVector.resize(this.arraySize);
+  if(this.canInterpolate) {
+    for(Size i = 0; i < this.arraySize; ++i) {
+      //Could be optimized for SIMD..
+      Scalar result;
+      for( Size j = 0; j < sourceIndices.size(); ++j )
+        result += this.values[sourceIndices.get(j)*this.arraySize+i]*sourceWeights.get(j);
+      resultVector.set(i, UInt16(result+0.5));//rounding
+    }
+  } else if(sourceIndices.size()) {
+    for(Size i = 0; i < this.arraySize; ++i)
+      resultVector.set(i, this.values[sourceIndices.get(0)*this.arraySize+i]);
+  }
+  return resultVector;
+}
+
+inline UInt16ConstantArrayAttribute.linearCombine!( Ref<Object> sourceAttr, LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights, Size targetIndex ) {
+  Ref<UInt16ConstantArrayAttribute> source = sourceAttr;
+  if(this.canInterpolate) {
+    for(Size i = 0; i < this.arraySize; ++i) {
+      //Could be optimized for SIMD..
+      Scalar result;
+      for( Size j = 0; j < sourceIndices.size(); ++j )
+        result += source.values[sourceIndices.get(j)*this.arraySize+i]*sourceWeights.get(j);
+      this.values[targetIndex*this.arraySize+i] = UInt16(result+0.5);//rounding
+    }
+  } else if(sourceIndices.size()){
+    for(Size i = 0; i < this.arraySize; ++i)
+      this.values[targetIndex*this.arraySize+i] = source.values[sourceIndices.get(0)*this.arraySize+i];
+  }
+}
+
+inline UInt16ConstantArrayAttribute.setValue!( Size index, LocalL16UInt16Array value ) {
+  for(Size i = 0; i < this.arraySize; ++i)
+    this.values[index*this.arraySize+i] = UInt16(value.get(i));
+}
+
+inline UInt16ConstantArrayAttribute.setFromScalar!( Size index, LocalL16ScalarArray value ) {
+  for(Size i = 0; i < this.arraySize; ++i)
+    this.values[index*this.arraySize+i] = UInt16(value.get(i));
+}
+
+inline Size UInt16ConstantArrayAttribute.getScalarValueSize() {
+  return this.arraySize;
+}
+
+inline Boolean UInt16ConstantArrayAttribute.equalValues( Size index1, Size index2 ) {
+  for(Size i = 0; i < this.arraySize; ++i) {
+    if( this.values[index1*this.arraySize+i] != this.values[index2*this.arraySize+i])
+      return false;
+  }
+  return true;
+}
+
+function String UInt16ConstantArrayAttribute.valueDesc( Size index ) {
+  String desc = "[";
+  for(Size i = 0; i < this.arraySize; ++i) {
+    if(i)
+      desc += ', ';
+    desc += this.values[index*this.arraySize+i];
+  }
+  desc += "]";
+  return desc;
+}
+
+require Util;
+function String UInt16ConstantArrayAttribute.unitTestPrint( Size index ) {
+  return this.valueDesc( index );
+}
+
+function String UInt16ConstantArrayAttribute.truncateDecimalsPrint( Size index, UInt32 n ) {
+  return this.valueDesc( index );
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+function Ref<UInt16ConstantArrayAttribute> GeometryAttributes.getOrCreateUInt16ConstantArrayAttribute!( String name ) {
+  return this.getOrCreateAttribute( name, UInt16ConstantArrayAttribute );
+}

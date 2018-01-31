@@ -1,0 +1,77 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Geometry;
+
+function Boolean BaseGeometry.setAttributeValueArray_CheckIndex(
+  SInt32 mode,
+  io UInt32 idxs[],
+  io Size vertexCount,
+  io Size faceCount,
+  io Size faceCornerTotalCount,
+  io Size resultSize
+) {
+
+  vertexCount = 0;
+  faceCount = 0;
+  faceCornerTotalCount = 0;
+  resultSize = 0;
+
+  Geometry geometry = this;
+  if(geometry == null)
+    return false;
+
+  vertexCount = geometry.getAttributes().size();
+
+  // mode 1 and mode 2 only work with PolygonMeshes
+  PolygonMesh mesh = geometry;
+  if(mesh == null && mode > 0)
+    return false;
+  else if(mesh != null)
+  {
+    vertexCount = mesh.pointCount();
+    faceCount = mesh.polygonCount();
+    faceCornerTotalCount = mesh.polygonPointsCount();
+  }
+
+  resultSize = idxs.size();
+  if(resultSize == 0)
+  {
+    switch(mode)
+    {
+      case 0:
+      {
+        resultSize = vertexCount;
+        break;
+      }
+      case 1: // per face
+      {
+        resultSize = faceCount;
+        break;
+      }
+      case 2: // per face corner
+      {
+        resultSize = faceCornerTotalCount;
+        UInt32 newIdxs[]();
+        idxs = newIdxs;
+        break;
+      }
+    }
+  }
+  else if(mode == 2)
+  {
+    // in case we are using face corners
+    // we need to go through all of them and sum up
+    // the face corners
+    resultSize = 0;
+    for(Size i=0;i<idxs.size();i++) {
+      if(idxs[i] >= faceCount)
+        continue;
+      Size count = mesh.getPolygonSize(idxs[i]);
+      resultSize += count;
+    }
+  }
+
+  return true;
+}

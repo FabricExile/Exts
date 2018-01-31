@@ -1,0 +1,98 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 2.2.1
+  
+  :kl-ref:`LegacyDFGSliderTarget` specializes :kl-ref:`LegacyBaseSliderTarget` to be used within a DFG graph.
+
+  \seealso :kl-ref:`LegacyDFGToolData`
+
+  \dfgPresetOmit
+*/
+object LegacyDFGSliderTarget : LegacyBaseSliderTarget, LegacyDFGToolTarget{
+  /// Store previous and current target transform.
+  /// Uses to drive the port value.
+  private LegacyDFGToolData toolData;
+};
+
+/// Constructor.
+/// \param portName The name of the port to drive.
+LegacyDFGSliderTarget(String portName) {
+  this.toolData = LegacyDFGToolData(portName);
+  this.values.resize(1);
+  this.toolData.setRTValAtPortIndex(
+    0, 
+    RTVal(this.getValue()), 
+    false,
+    false);
+}
+
+/// Implementation of :kl-ref:`SliderTarget`.
+LegacyDFGSliderTarget.valueChanged!(Float32 value) {
+  this.parent.valueChanged(value);
+  this.toolData.setRTValAtPortIndex(
+    0, 
+    RTVal(this.getValue()), 
+    false,
+    false);
+}
+
+/// Implementation of :kl-ref:`LegacyToolTarget`.
+LegacyDFGSliderTarget.registerValue!() {
+  this.parent.registerValue();
+  this.toolData.setRTValAtPortIndex(
+    0, 
+    RTVal(this.getValue()), 
+    true,
+    false);
+}
+
+/// Implementation of :kl-ref:`LegacyToolTarget`.
+LegacyDFGSliderTarget.bakeValue!() {
+  this.parent.bakeValue();
+  this.toolData.setRTValAtPortIndex(
+    0, 
+    RTVal(this.getValue()), 
+    false,
+    true);
+}
+
+/// Implementation of :kl-ref:`LegacyDFGToolTarget`.
+LegacyDFGToolData LegacyDFGSliderTarget.getToolData() {
+  return this.toolData;
+}
+
+/// Implementation of :kl-ref:`LegacyDFGToolTarget`.
+LegacyDFGSliderTarget.setToolData!( LegacyDFGToolData toolData) {
+   this.toolData = toolData;
+}
+
+/// DFG helper, gets or creates a LegacyDFGSliderTarget.
+/// \param target Tool target.
+/// \param portName Name of the May44 input port to drive.
+/// \param transformInit Initial trasnform, set from the port.
+GetOrCreateLegacyDFGSliderTarget(
+  io SliderTarget target,
+  String portName,
+  Float32 valueInit) 
+{
+  if(!target) 
+    target = LegacyDFGSliderTarget(portName);
+ 
+  if(target)
+  {
+    if(valueInit != target.getValue())
+      target.valueChanged(valueInit);
+
+    LegacyDFGToolTarget dfgTarget = target;
+    LegacyDFGToolData toolData = dfgTarget.getToolData();
+
+    if(toolData.getPortAtIndex(0) != portName)
+    {
+      toolData.setPortAtIndex(0, portName);
+      dfgTarget.setToolData(toolData);
+    }
+  } 
+}

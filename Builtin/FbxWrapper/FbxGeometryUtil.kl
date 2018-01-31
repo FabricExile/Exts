@@ -1,0 +1,506 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+require Geometry;
+
+Box3 FbxNode.GetLocalBoundsAsBox3!()
+{
+  Box3 bounds;
+  switch(this.GetTypeName())
+  {
+    case "Mesh":
+    {
+      FbxMesh mesh = this.GetMesh();
+      Size nbPoints = mesh.GetControlPointsCount();
+      CxxFbxVector4Ptr pointsPtr = mesh.cxx_GetControlPoints();
+      Vec4_d points<>(pointsPtr.__getUnderlyingPtr(), nbPoints);
+      for(Size i=0;i<points.size();i++)
+      {
+        Vec3 v(Float32(points[i].x), Float32(points[i].y), Float32(points[i].z));
+        bounds.merge(v);
+      }
+      break;
+    }
+  }
+  return bounds;
+}
+
+PolygonMesh FbxNode.GetKLPolygonMesh!()
+{
+  if(this.GetTypeName() != "Mesh")
+  {
+    setError("The FbxNode of type '"+this.GetTypeName()+"' cannot retrieve a PolygonMesh.");
+    return null;
+  }
+
+  FbxMesh mesh = this.GetMesh();
+
+  Size nbPoints = mesh.GetControlPointsCount();
+  Size nbPolys = mesh.GetPolygonCount();
+  Size nbPolyPoints = mesh.GetPolygonVertexCount();
+
+  CxxFbxVector4Ptr pointsPtr = mesh.cxx_GetControlPoints();
+  Vec4_d points<>(pointsPtr.__getUnderlyingPtr(), nbPoints);
+
+  CxxSInt32Ptr polyVerticesPtr = mesh.cxx_GetPolygonVertices();
+  SInt32 polyVertices<>(polyVerticesPtr.__getUnderlyingPtr(), nbPolyPoints);
+
+  PolygonMesh polyMesh();
+  polyMesh.createPoints(nbPoints);
+  for(Size i=0;i<nbPoints;i++)
+  {
+    polyMesh.setPointPosition(i, Vec3(
+      Float32(points[i].x),
+      Float32(points[i].y),
+      Float32(points[i].z)
+      ));
+  }
+
+  polyMesh.beginStructureChanges();
+
+  Size offset = 0;
+  LocalL8UInt32Array verts;
+  for(Size i=0;i<nbPolys;i++)
+  {
+    Size size = mesh.GetPolygonSize(i);
+    verts.resize(size);
+
+    for(Size j=0;j<size;j++)
+      verts.set(j, polyVertices[offset++]);
+
+    polyMesh.addPolygon(verts);
+  }
+
+  polyMesh.endStructureChanges();
+
+  GeometryAttributes attributes = polyMesh.getAttributes();
+
+  if (!mesh.GenerateNormals(false /* overwrite normals */))
+  {
+    // setError('FbxGeometryUtil: GenerateNormals failed');
+    polyMesh.recomputePointNormals(0.1);
+  }
+
+  Ref<Vec3Attribute> normals = attributes.getOrCreateVec3Attribute('normals');
+  for(Size i=0;i<nbPolys;i++)
+  {
+    Size size = mesh.GetPolygonSize(i);
+
+    for(Size j=0;j<size;j++)
+    {
+      FbxVector4 n;
+      mesh.GetPolygonVertexNormal(i, j, n);
+      polyMesh.setPolygonAttribute(i, j, normals, Vec4(n).xyz());
+    }
+  }
+
+  Size nbTangentChannels = 0;
+  for(Size elementIdx=0;elementIdx<mesh.GetElementTangentCount();elementIdx++)
+  {
+    FbxLayerElementTangent tangentElement = mesh.GetElementTangent(elementIdx);
+    if(tangentElement.GetMappingMode() == FbxLayerElement_eByPolygonVertex)
+    {
+      FbxLayerElementArrayVector4 directArray = tangentElement.GetDirectArray();
+      FbxLayerElementArrayInt indexArray = tangentElement.GetIndexArray();
+      FbxLayerElement_EReferenceMode refMode = tangentElement.GetReferenceMode();
+      
+      String attrName = 'tangents';
+      if(nbTangentChannels > 0)
+        attrName += nbTangentChannels;
+
+      Ref<Vec4Attribute> tangents = attributes.getOrCreateVec4Attribute(attrName);
+      offset = 0;
+      for(Size i=0;i<nbPolys;i++)
+      {
+        Size size = mesh.GetPolygonSize(i);
+        for(Size j=0;j<size;j++,offset++)
+        {
+          Vec4 tangent;
+          if(refMode == FbxLayerElement_eIndexToDirect)
+          {
+            SInt32 idx = indexArray.GetAt(offset);
+            tangent = directArray.GetAt(idx);
+          }
+          else
+          {
+            tangent = directArray.GetAt(offset);
+          }
+          polyMesh.setPolygonAttribute(i, j, tangents, tangent);
+        }
+      }
+      nbTangentChannels++;
+    }
+  }
+
+  Size nbUVChannels = 0;
+  for(Size elementIdx=0;elementIdx<mesh.GetElementUVCount();elementIdx++)
+  {
+    FbxLayerElementUV uvElement = mesh.GetElementUV(elementIdx);
+    if(uvElement.GetMappingMode() == FbxLayerElement_eByPolygonVertex)
+    {
+      FbxLayerElementArrayVector2 directArray = uvElement.GetDirectArray();
+      Ref<Vec2Attribute> uvs = attributes.getOrCreateVec2Attribute('uvs'+nbUVChannels);
+      for(Size i=0;i<nbPolys;i++)
+      {
+        Size size = mesh.GetPolygonSize(i);
+        for(Size j=0;j<size;j++)
+        {
+          UInt32 uvIndex = mesh.GetTextureUVIndex(i, j);
+          Vec2 uv = directArray.GetAt(uvIndex);
+          polyMesh.setPolygonAttribute(i, j, uvs, uv);
+        }
+      }
+      nbUVChannels++;
+    }
+  }
+
+  Size nbVertexColorChannels = 0;
+  for(Size elementIdx=0;elementIdx<mesh.GetElementVertexColorCount();elementIdx++)
+  {
+    FbxLayerElementVertexColor colorElement = mesh.GetElementVertexColor(elementIdx);
+    if(colorElement.GetMappingMode() == FbxLayerElement_eByPolygonVertex)
+    {
+      FbxLayerElementArrayColor directArray = colorElement.GetDirectArray();
+      FbxLayerElementArrayInt indexArray = colorElement.GetIndexArray();
+      FbxLayerElement_EReferenceMode refMode = colorElement.GetReferenceMode();
+      
+      String attrName = 'vertexColors';
+      if(nbVertexColorChannels > 0)
+        attrName += nbVertexColorChannels;
+
+
+      Ref<ColorAttribute> colors = attributes.getOrCreateColorAttribute(attrName);
+      offset = 0;
+      for(Size i=0;i<nbPolys;i++)
+      {
+        Size size = mesh.GetPolygonSize(i);
+        for(Size j=0;j<size;j++,offset++)
+        {
+          Color color;
+          if(refMode == FbxLayerElement_eIndexToDirect)
+          {
+            SInt32 idx = indexArray.GetAt(offset);
+            color = directArray.GetAt(idx);
+          }
+          else
+          {
+            color = directArray.GetAt(offset);
+          }
+          polyMesh.setPolygonAttribute(i, j, colors, color);
+        }
+      }
+      nbVertexColorChannels++;
+    }
+  }
+
+  Size nbMaterialMappings = 0;
+  for(Size elementIdx=0;elementIdx<mesh.GetElementMaterialCount();elementIdx++)
+  {
+    FbxLayerElementMaterial materialElement = mesh.GetElementMaterial(elementIdx);
+    if(materialElement.GetMappingMode() == FbxLayerElement_eByPolygon)
+    {
+      FbxLayerElementArrayInt indexArray = materialElement.GetIndexArray();
+      
+      String attrName = 'materialID';
+      if(nbMaterialMappings > 0)
+        attrName += nbMaterialMappings;
+
+      Ref<IntegerAttribute> materialIDs = attributes.getOrCreateIntegerAttribute(attrName);
+      for(Size i=0;i<nbPolys;i++)
+      {
+        SInt32 matID = indexArray.GetAt(i);
+        Size size = mesh.GetPolygonSize(i);
+        for(Size j=0;j<size;j++)
+        {
+          polyMesh.setPolygonAttribute(i, j, materialIDs, matID);
+        }
+      }
+
+      nbMaterialMappings++;
+    }
+  }
+
+  return polyMesh;
+}
+
+Boolean FbxNode.GetSkinningInformation!(io PolygonMesh polygonMesh, io Mat44 meshReferencePose, io FbxNode bones[])
+{
+  if(this.GetTypeName() != "Mesh")
+  {
+    setError("The FbxNode of type '"+this.GetTypeName()+"' cannot retrieve a PolygonMesh.");
+    return false;
+  }
+
+  FbxMesh mesh = this.GetMesh();
+  Size nbPoints = mesh.GetControlPointsCount();
+  if(polygonMesh == null || polygonMesh.pointCount() != nbPoints)
+    polygonMesh = this.GetKLPolygonMesh();
+
+  for(SInt32 i=0;i<mesh.GetDeformerCount(FbxDeformer_eSkin);i++)
+  {
+    FbxSkin skin = mesh.GetDeformer(0, FbxDeformer_eSkin);
+
+    FbxScene scene = this.GetScene();
+    for(SInt32 j=0;j<scene.GetPoseCount();j++)
+    {
+      FbxPose pose = scene.GetPose(j);
+      if(!pose.IsBindPose())
+        continue;
+
+      for(SInt32 k=0;k<pose.GetCount();k++)
+      {
+        String poseName = pose.GetNodeName(k).GetCurrentName();
+        if(poseName == this.GetName())
+        {
+          meshReferencePose = Mat44(pose.GetMatrix(k)).transpose();
+          break;
+        }
+      }
+    }
+
+    SInt32 boneIndices[][](polygonMesh.pointCount());
+    Float32 boneWeights[][](polygonMesh.pointCount());
+
+    for(SInt32 j=0;j<skin.GetClusterCount();j++)
+    {
+      FbxCluster cluster = skin.GetCluster(j);
+      FbxNode linkNode = cluster.GetLink();
+      bones.push(linkNode);
+
+      SInt32 pointsPerCluster = cluster.GetControlPointIndicesCount();
+      CxxSInt32Ptr pointIndicesPtr = cluster.cxx_GetControlPointIndices();
+      CxxFloat64Ptr pointWeightsPtr = cluster.cxx_GetControlPointWeights();
+
+      for(SInt32 k=0;k<pointsPerCluster;k++)
+      {
+        SInt32 id = pointIndicesPtr.cxx_getAt(k).cxx_get();
+        if(id >= boneIndices.size())
+          continue;
+        Float32 weight = Float32(pointWeightsPtr.cxx_getAt(k).cxx_get());
+        boneIndices[id].push(j);
+        boneWeights[id].push(weight);
+      }
+    }
+
+    // bubble sort the weights
+    for(Size j=0;j<boneIndices.size();j++)
+    {
+      for(Size k=0;k<boneIndices[j].size()-1;k++)
+      {
+        for(Size l=k+1;l<boneIndices[j].size();l++)
+        {
+          if(boneWeights[j][l] > boneWeights[j][k])
+          {
+            Float32 w = boneWeights[j][l];
+            boneWeights[j][l] = boneWeights[j][k];
+            boneWeights[j][k] = w;
+            SInt32 id = boneIndices[j][l];
+            boneIndices[j][l] = boneIndices[j][k];
+            boneIndices[j][k] = id;
+          }
+        }
+      }
+    }
+
+    Ref<SkinningAttribute> skinningAttr = polygonMesh.getOrCreateSkinningAttribute("skinningData");
+  
+    for(Index j=0;j<boneIndices.size();j++)
+    {
+      UInt32 count = boneIndices[j].size();
+      LocalL16UInt32Array indices;
+      LocalL16ScalarArray weights;
+      indices.resize(count);
+      weights.resize(count);
+
+      // Some Fbx files have non-normalized skinning weights, and so here we
+      // normalize the data so that the geometry will be deformed correctly.
+      Scalar weightsSum = 0.0;
+      for(Index k=0;k<count;k++)
+      {
+        weightsSum += boneWeights[j][k];
+      }
+      
+      if(weightsSum > DIVIDEPRECISION)
+      {
+        for(Index k=0;k<count;k++) 
+        {
+          indices.set(k, boneIndices[j][k]);
+          weights.set(k, boneWeights[j][k] / weightsSum);
+        }
+      }
+
+      polygonMesh.setPointAttribute(j, skinningAttr, indices, weights);
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
+FbxNode.SetKLPolygonMesh!(PolygonMesh polygonMesh)
+{
+  GeometryAttributes attributes = polygonMesh.getAttributes();
+  Ref<Vec3Attribute> positions = attributes.getAttribute('positions');
+  Ref<Vec3Attribute> normals = attributes.getAttribute('normals');
+  Ref<Vec4Attribute> tangents = attributes.getAttribute('tangents');
+  Ref<Vec2Attribute> uvs = attributes.getAttribute('uvs0');
+
+  FbxManager manager = this.GetFbxManager();
+  FbxMesh mesh = FbxMesh_Create(manager, polygonMesh.getDebugName());
+
+  mesh.SetControlPointCount(polygonMesh.pointCount());
+  if(polygonMesh.pointCount() > 0)
+  {
+    CxxFbxVector4Ptr pointsPtr = mesh.cxx_GetControlPoints();
+    Vec4_d points<>(pointsPtr.__getUnderlyingPtr(), polygonMesh.pointCount());
+    for(Size i=0;i<polygonMesh.pointCount();i++)
+    {
+      Vec3 v = polygonMesh.getPointPosition(i);
+      points[i] = Vec4_d(v.x, v.y, v.z, 1.0);
+    }
+  }
+
+  if(normals != null)
+  {
+    FbxLayerElementNormal element = mesh.CreateElementNormal();
+    element.SetMappingMode(FbxLayerElement_eByPolygonVertex);
+    element.SetReferenceMode(FbxLayerElement_eIndexToDirect);
+
+    FbxLayerElementArrayInt indexArray = element.GetIndexArray();
+    FbxLayerElementArrayVector4 directArray = element.GetDirectArray();
+
+    indexArray.SetCount(polygonMesh.polygonPointsCount());
+    directArray.SetCount(normals.values.size());
+
+    Size offset = 0;
+    for(Size i=0;i<polygonMesh.polygonCount();i++)
+    {
+      Size size = polygonMesh.getPolygonSize(i);
+      for(Size k=0;k<size;k++)
+      {
+        indexArray.SetAt(offset, polygonMesh.getPolygonAttributeIndex(i, k));
+        offset++;
+      }
+    }
+
+    for(Size i=0;i<normals.values.size();i++)
+    {
+      Vec4 n(normals.values[i].x, normals.values[i].y, normals.values[i].z, 1.0);
+      directArray.SetAt(i, n);
+    }
+  }
+
+  if(tangents != null)
+  {
+    FbxLayerElementTangent element = mesh.CreateElementTangent();
+    element.SetMappingMode(FbxLayerElement_eByPolygonVertex);
+    element.SetReferenceMode(FbxLayerElement_eIndexToDirect);
+
+    FbxLayerElementArrayInt indexArray = element.GetIndexArray();
+    FbxLayerElementArrayVector4 directArray = element.GetDirectArray();
+
+    indexArray.SetCount(polygonMesh.polygonPointsCount());
+    directArray.SetCount(tangents.values.size());
+
+    Size offset = 0;
+    for(Size i=0;i<polygonMesh.polygonCount();i++)
+    {
+      Size size = polygonMesh.getPolygonSize(i);
+      for(Size k=0;k<size;k++)
+      {
+        indexArray.SetAt(offset, polygonMesh.getPolygonAttributeIndex(i, k));
+        offset++;
+      }
+    }
+
+    for(Size i=0;i<tangents.values.size();i++)
+    {
+      Vec4 t = tangents.values[i];
+      directArray.SetAt(i, t);
+    }
+  }
+
+  if(uvs != null)
+  {
+    FbxLayerElementUV element = mesh.CreateElementUV('uvs0');
+    element.SetMappingMode(FbxLayerElement_eByPolygonVertex);
+    element.SetReferenceMode(FbxLayerElement_eIndexToDirect);
+
+    FbxLayerElementArrayVector2 directArray = element.GetDirectArray();
+    directArray.SetCount(uvs.values.size());
+    for(Size i=0;i<uvs.values.size();i++)
+      directArray.SetAt(i, uvs.values[i]);
+  }
+
+  // todo: vertex colors
+  // todo: materialID?
+
+  for(Size i=0;i<polygonMesh.polygonCount();i++)
+  {
+    LocalL8UInt32Array verts;
+    polygonMesh.getPolygonPoints(i, verts);
+
+    SInt32 texUvIdx = -1;
+    mesh.BeginPolygon();
+    for(Size j=0;j<verts.size();j++)
+    {
+      if(uvs != null)
+      {
+        texUvIdx = polygonMesh.getPolygonAttributeIndex(i, j);
+      }
+      mesh.AddPolygon(verts.get(j), texUvIdx);
+    }
+    mesh.EndPolygon();
+  }
+
+  this.SetNodeAttribute(mesh);
+}
+
+FbxNode.SetupSingleSmoothingGroup!()
+{
+  if(this.GetTypeName() != 'Mesh')
+    return;
+
+  FbxMesh mesh = this.GetMesh();
+  FbxLayerElementSmoothing element = mesh.CreateElementSmoothing();
+  element.SetMappingMode(FbxLayerElement_eByPolygon);
+  element.SetReferenceMode(FbxLayerElement_eIndexToDirect);
+
+  FbxLayerElementArrayInt indexArray = element.GetIndexArray();
+  FbxLayerElementArrayInt directArray = element.GetDirectArray();
+
+  UInt32 nbPolys = mesh.GetPolygonCount();
+  indexArray.SetCount(nbPolys);
+  directArray.SetCount(1);
+  directArray.SetAt(0, 0);
+
+  for(Size j=0;j<nbPolys;j++)
+    indexArray.SetAt(j, 0);
+}
+
+Geometry FbxNode.GetKLGeometry!()
+{
+  switch(this.GetTypeName())
+  {
+    case "Mesh":
+    {
+      return this.GetKLPolygonMesh();
+    }
+  }
+  return null;
+}
+
+FbxNode.SetKLGeometry!(Geometry geometry)
+{
+  PolygonMesh mesh = geometry;
+  if(mesh)
+  {
+    this.SetKLPolygonMesh(mesh);
+  }
+  else
+  {
+    setError("Not yet implemented.!");
+  }
+}

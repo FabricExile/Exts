@@ -1,0 +1,62 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// The ScriptableGeometrySelectionTool specializes :kl-ref:`Tool::GeometrySelectionTool`
+  /// so it works on an external, persisted selection set by issuing
+  /// commands.
+  ///
+  /// See :ref:`TPG.selection` for more information and examples.
+  object ScriptableGeometrySelectionTool : GeometrySelectionTool{
+
+    // TODO: use the new command system
+    SetPathValueCommandWrapper setSelectionCommandWrapper;
+    SetPathValueCommandWrapper setModeCommandWrapper;
+  };
+
+  // TODO: use the new command system
+  ScriptableGeometrySelectionTool.setPortArgs!( String portPath, String modePortPath ) {
+    this.setSelectionCommandWrapper = SetPathValueCommandWrapper( portPath );
+    if( modePortPath )
+      this.setModeCommandWrapper = SetPathValueCommandWrapper( modePortPath );
+  }
+
+  ScriptableGeometrySelectionTool.setSelection!( ItemReferences selection ) {
+    this.parent.setSelection( selection );
+  }
+
+  ScriptableGeometrySelectionTool.selectionChanged!( UInt8 opType, ItemReferences added, ItemReferences removed ) {
+    this.parent.selectionChanged( opType, added, removed );
+
+    if( opType == BaseSelectionTool_opType_set ) // Set all values
+      this.setSelectionCommandWrapper.setValue( RTVal( this.getSelectionSafeCopy() ) );
+    else {
+      // Apply delta from command
+      //report( "ADDED ", added.uid(), added, "REMOVED", removed );
+
+      RTVal args[String];
+      args["target"] = PathValue( this.setSelectionCommandWrapper.targetPath );
+
+      if( added.size() )
+        args["added"] = added; // no need to clone, it's already a new value
+
+      if( removed.size() )
+        args["removed"] = removed; // no need to clone, it's already a new value
+
+      GetCommandManager().createCommand(
+        "ChangeItems",
+        args,
+        true );
+    }
+  }
+
+  ScriptableGeometrySelectionTool.selectionModeChanged!( UInt8 selectionMode, Boolean fromUI ) {
+    if( Boolean( this.setModeCommandWrapper.targetPath ) && fromUI ) {
+      // reflect in the port value
+      this.setModeCommandWrapper.setValue( RTVal( selectionMode ) );
+    }
+  }
+
+}// namespace Tool

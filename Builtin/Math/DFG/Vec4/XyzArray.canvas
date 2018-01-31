@@ -1,0 +1,74 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Vec4.html",
+    "uiTooltip" : "Returns a Vec3 containing the X, Y and Z components.\n\n Supported by Vec4"
+    },
+  "title" : "Xyz[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec4[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0,
+            "t" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec4[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Vec3[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "B3D04A5A108F65CEB88A4D5E1117FCE2",
+  "code" : "require Math;
+
+operator Math_Vec4_xyz_task<<<index>>>(
+  io Vec3[] result
+, in Vec4[] this
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].xyz();
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  Size task_size = this.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Vec4_xyz_task(index, result, this);
+    }
+  } else {
+    Math_Vec4_xyz_task<<<task_size>>>(result, this);
+  }
+}
+"
+  }

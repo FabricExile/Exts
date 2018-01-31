@@ -1,0 +1,164 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math, LA;
+
+namespace RBF {
+
+/**
+  \versionadded 2.6.0
+
+  RBF.Solver implements a polyharmonic RBF:
+  - https://en.wikipedia.org/wiki/Polyharmonic_spline.
+  - https://elonen.iki.fi/code/tpsdemo/
+  - http://www.scholarpedia.org/article/Radial_basis_function#Choice_of_interpolation_as_approximation_method
+
+  The radial basic functions are defined in RBF::Kernel. 
+  It supports a regularisation parameter to relaxes the interpolation.
+
+  Solve F = W * RBF(C - X) + V.X' using a LU decomposition where:
+  - F: Function to approximate/interpolate at X, 
+  - C: Controls points positions
+  - X' = [1 X]
+  - RBF: Radial basic function
+  - W, V: RBF and polynomial weights
+*/
+struct Solver {
+  /// C: controls points positions
+  /// W-V: rbf-polynomial weigths
+  Mat C, W, V; 
+  /// RBF kernel
+  Kernel kernel;
+};
+
+/// Constructs a solver
+/// \param C Set of controls points positions
+/// \param F Set of functions values at controls points
+/// \param kernel RBF kernel
+/// \param lambda Regularisation term
+Solver(Mat C, Mat F, Kernel kernel, Float32 lambda) {
+  this.init(C, F, kernel, lambda);
+}
+
+/// Constructs a solver
+/// \param C Set of controls points positions
+/// \param F Set of functions values at controls points
+/// \param kernel RBF kernel
+/// \param lambda Regularisation term
+Solver(Vec C[], Vec F[], Kernel kernel, Float32 lambda) {
+  this.init(Mat(C), Mat(F), kernel, lambda);
+}
+
+/// \internal
+operator SolverInit_task(
+  Index index,
+  Kernel kernel, 
+  Mat C,
+  io Mat A,
+  io Float32 alpha) 
+{
+  for(UInt32 i=index; i < C.rows(); i++)
+  {
+    Float32 dist = 0.0f;
+    for(UInt32 j=0; j < C.cols(); j++)
+      dist += pow(C.get(index, j) - C.get(i, j), 2.0f);
+
+    dist = sqrt(dist);
+    Float32 rbfDist = kernel.distance(dist);
+
+    alpha += 2.0f*dist;
+    A.set(index, i, rbfDist);
+    A.set(i, index, rbfDist);
+  }
+}
+ 
+/// \internal
+/// Initializes the solver, computes the weights.
+private Solver.init!(Mat C, Mat F, Kernel kernel, Float32 lambda) {
+
+  if(C.rows() != F.rows())
+    setError(
+      "RBF::Solver.init, C and F must have the same number of rows"
+      );
+
+  // |A' B| |W|   |F|
+  // |Bt 0| |V| = |0|
+  // A' = lambda * alpha^2 * I + A
+  this.C = C;
+  this.kernel = kernel;
+  this.kernel.computeScalarParameter(C);
+    
+  // Create the system
+  Float32 alpha = 0.0f;
+  Mat A(C.rows() + C.cols()+1);
+  SolverInit_task<<<C.rows()>>>(this.kernel, C, A, alpha);
+ 
+  // Relaxation: A' = lambda * alpha^2 * I + A
+  if(lambda > 0.0f) {
+    alpha /= Float32(C.rows()*C.rows());
+    for(UInt32 i=0; i < C.rows(); i++)
+      A.set(i, i, A.get(i, i) + lambda*alpha*alpha);
+  }
+
+  Mat B = Mat(C.rows(), C.cols()+1);
+  B.setCol(0, 1.0f);
+  B.setSub(0, C.rows(), 1, C.cols()+1, C);
+
+  A.setSub(0, C.rows(), C.rows(), C.rows() + C.cols()+1, B);
+  A.setSub(C.rows(), C.rows() + C.cols()+1, 0, C.rows(), B.transpose());
+
+  // Solve for the weights.
+  Mat Y(F.rows() + C.cols()+1, F.cols()); 
+  Y.setSub(0, F.rows(), 0, F.cols(), F);
+  
+  Mat X;
+  LA_LU_DecomposeAndSolve(A, X, Y);
+
+  this.W = X.sub(0, F.rows(), 0, F.cols());
+  this.V = X.sub(F.rows(), F.rows()+ C.cols()+1, 0, F.cols()).transpose();
+} 
+ 
+/// \internal
+operator SolverInterpolate_task(
+  UInt32 index,
+  Kernel kernel, 
+  Mat W, 
+  Mat C, 
+  Vec pos, 
+  io Vec values)
+{
+  for(UInt32 i=0; i < C.rows(); i++) 
+  {
+    Float32 dist = 0.0f; 
+    for(UInt32 j=0; j < C.cols(); j++)
+      dist += pow(pos.get(j) - C.get(i, j), 2.0f);
+    values.set(index, values.get(index) + kernel.distance(sqrt(dist)) * W.get(i, index));
+  }
+}
+
+/// Interpolates and returns the value at position `pos`.
+Vec Solver.interpolate(Vec pos) {
+  
+  if(pos.size() != this.C.cols())
+    setError(
+      "RBF::Solver.interpolate, wring pos size, must be equal to " + 
+      this.C.cols()
+      );
+
+  Vec values(this.W.cols());
+  
+  // RBG interpolation
+  SolverInterpolate_task<<<this.W.cols()>>>(
+    this.kernel, 
+    this.W, this.C, 
+    pos, values);
+ 
+  // Polynomial
+  Vec pos_ = pos.clone(); pos_.push_top(1.0f);
+  values += this.V * pos_;
+
+  return values;   
+}
+
+} // namespace RBF

@@ -1,0 +1,100 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+ 
+/**
+  \versionadded 2.2.1
+  
+  :kl-ref:`DFGSRTTarget` specializes :kl-ref:`LegacyBaseSRTTarget` to be used within a DFG graph.
+
+  \seealso :kl-ref:`LegacyDFGToolData`
+
+  \dfgPresetOmit
+*/
+object LegacyDFGSRTTarget : LegacyBaseSRTTarget, LegacyDFGToolTarget{
+  /// Store previous and current target transform.
+  /// Uses to drive the port value.
+  private LegacyDFGToolData toolData;
+};
+
+/// Constructor.
+/// \param portName Name of the port to drive.
+LegacyDFGSRTTarget(String portName) {
+  // Resize the number of manipulated values to 1.
+  this.transforms.resize(1);
+  this.toolData = LegacyDFGToolData(portName);
+  this.toolData.setRTValAtPortIndex(
+    0, 
+    RTVal(this.getTransform()), 
+    false,
+    false);
+}
+
+/// Implementation of :kl-ref:`SRTTarget`.
+LegacyDFGSRTTarget.transformChanged!(Mat44 transform) {
+  this.parent.transformChanged(transform);
+  this.toolData.setRTValAtPortIndex(
+    0, 
+    RTVal(this.getTransform()), 
+    false,
+    false);
+}
+
+/// Implementation of :kl-ref:`LegacyToolTarget`.
+LegacyDFGSRTTarget.registerValue!() {
+  this.parent.registerValue();
+  this.toolData.setRTValAtPortIndex(
+    0, 
+    RTVal(this.getTransform()), 
+    true,
+    false);
+}
+
+/// Implementation of :kl-ref:`LegacyToolTarget`.
+LegacyDFGSRTTarget.bakeValue!() {
+  this.parent.bakeValue();
+  this.toolData.setRTValAtPortIndex(
+    0, 
+    RTVal(this.getTransform()), 
+    false,
+    true);
+}
+
+/// Implementation of :kl-ref:`LegacyDFGToolTarget`.
+LegacyDFGToolData LegacyDFGSRTTarget.getToolData() {
+  return this.toolData;
+}
+
+/// Implementation of :kl-ref:`LegacyDFGToolTarget`.
+LegacyDFGSRTTarget.setToolData!( LegacyDFGToolData toolData) {
+   this.toolData = toolData;
+}
+
+/// DFG helper, gets or creates a LegacyDFGSRTTarget.
+/// \param target Tool target.
+/// \param portName Name of the May44 input port to drive.
+/// \param transformInit Initial trasnform, set from the port.
+GetOrCreateLegacyDFGSRTTarget(
+  io SRTTarget target,
+  String portName,
+  Mat44 transformInit) 
+{
+  if(!target) 
+    target = LegacyDFGSRTTarget(portName);
+ 
+  if(target)
+  {
+    if(transformInit != target.getTransform())
+      target.transformChanged(transformInit);
+
+    LegacyDFGToolTarget dfgTarget = target;
+    LegacyDFGToolData toolData = dfgTarget.getToolData();
+
+    if(toolData.getPortAtIndex(0) != portName)
+    {
+      toolData.setPortAtIndex(0, portName);
+      dfgTarget.setToolData(toolData);
+    }
+  } 
+}

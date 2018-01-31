@@ -1,0 +1,62 @@
+//
+// Copyright 2010-2015 Fabric Software Inc. All rights reserved.
+//
+
+/// Simple, non-reentrant spin lock, which can be bracketed with a LightLockBracket
+struct LightLock {
+  UInt32 lockVariable;
+};
+
+inline Boolean LightLock.locked() { 
+  return this.lockVariable == 1;
+}
+
+/// Check if write locked, but forces a memory fetch for more accuracy
+inline Boolean LightLock.locked_fetch!() {
+  return this.lockVariable.atomicGet() == 1;
+}
+
+inline LightLock.acquire!() {
+  SimpleAcquire( this.lockVariable );
+}
+
+inline Boolean LightLock.tryAcquire!() {
+  return TryAcquire( this.lockVariable );
+}
+
+inline LightLock.release!() {
+  SimpleRelease( this.lockVariable );
+}
+
+/// Bracket for a LightLock
+struct LightLockBracket {
+  Data data;
+};
+
+inline LightLockBracket( io LightLock lightLock ) {
+  this.data = lightLock.data();
+  SimpleAcquire( lightLock.lockVariable );
+}
+
+inline ~LightLockBracket() {
+  SimpleRelease( this.data->{LightLock}.lockVariable );
+}
+
+/// Bracket for a LightLock which is only enabled if IsMultithreading() is true
+struct MTLightLockBracket {
+  Data data;
+  Boolean enabled;
+};
+
+inline MTLightLockBracket( io LightLock lightLock ) {
+  this.enabled = IsMultithreading();
+  if( this.enabled ) {
+    this.data = lightLock.data();
+    SimpleAcquire( lightLock.lockVariable );
+  }
+}
+
+inline ~MTLightLockBracket() {
+  if( this.enabled )
+    SimpleRelease( this.data->{LightLock}.lockVariable );
+}

@@ -1,0 +1,117 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Euler.html",
+    "uiTooltip" : "Constructor using three Scalars as angles in radians and a RotationOrder\n\n Supported by Euler"
+    },
+  "title" : "Euler[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "x",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "y",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "z",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 0,\n  \"g\" : 191,\n  \"b\" : 232\n  }"
+        },
+      "name" : "order",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "RotationOrder[]" : [
+          {
+            "order" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "RotationOrder[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 0,\n  \"g\" : 191,\n  \"b\" : 232\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Euler[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "6A89824671D6ADF7C92CB0B5F9DAAD22",
+  "code" : "require Math;
+
+operator Math_Euler_Euler_task<<<index>>>(
+  io Euler[] result
+, in Scalar[] x
+, in Scalar[] y
+, in Scalar[] z
+, in RotationOrder[] order
+) {
+  result[index] = Euler(x[index < x.size() ? index : x.size() - 1], y[index < y.size() ? index : y.size() - 1], z[index < z.size() ? index : z.size() - 1], order[index < order.size() ? index : order.size() - 1]);
+}
+
+dfgEntry {
+  if( x.size() == 0) return;
+  if( y.size() == 0) return;
+  if( z.size() == 0) return;
+  if( order.size() == 0) return;
+  Size task_size = 0;
+  if(task_size < x.size()) task_size = x.size();
+  if(task_size < y.size()) task_size = y.size();
+  if(task_size < z.size()) task_size = z.size();
+  if(task_size < order.size()) task_size = order.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Euler_Euler_task(index, result, x, y, z, order);
+    }
+  } else {
+    Math_Euler_Euler_task<<<task_size>>>(result, x, y, z, order);
+  }
+}
+"
+  }

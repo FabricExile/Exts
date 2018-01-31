@@ -1,0 +1,67 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "stores the value in the property as a UInt8.\n\nSupported types:\n  this: AlembicPropertyWriter\n  value: UInt8\n  result: Boolean\n"
+    },
+  "title" : "WriteUInt8Sample[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicPropertyWriter[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "value",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "UInt8[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "UInt8[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "4E9D2BB0F9F58DD7A9E50D37416D8BDC",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicPropertyWriter_writeUInt8Sample_task<<<index>>>(
+  io Boolean[] result
+, io AlembicPropertyWriter[] this
+, in UInt8[] value
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].writeUInt8Sample(value[index < value.size() ? index : value.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( value.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < value.size()) task_size = value.size();
+  result.resize(task_size);
+  for(Size index = 0; index < task_size; index++) {
+    AlembicWrapper_AlembicPropertyWriter_writeUInt8Sample_task(index, result, this, value);
+  }
+}
+"
+  }

@@ -1,0 +1,74 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// Provides base functionality for tool shapes.
+  ///
+  /// See :ref:`TPG.drawing` for more information about drawing tool shapes.
+  object BaseShape : BaseTool, RaycastTargetShape{
+    UInt32 renderInstanceHandle;
+    RenderEngine renderEngine;
+    Boolean raycastVisibleOnly;
+  };
+
+  BaseShape() {
+    this.renderInstanceHandle = InvalidIndex;
+  }
+
+  BaseShape.invalidate!( Ref<BaseTool> ownerTool ) {
+    this.parent.invalidate( ownerTool );
+    if( Boolean( this.renderEngine ) && this.renderInstanceHandle != InvalidIndex ) {
+      this.renderEngine.removeInstance( this.renderInstanceHandle );
+      this.renderInstanceHandle = InvalidIndex;
+    }
+  }
+
+  ~BaseShape() {
+    this.invalidate( this );
+  }
+
+  /// If true and isVisible(), the shape will only be drawn for selection/raycast
+  /// and not in the viewport
+  BaseShape.setRaycastVisibleOnly!( Boolean raycastVisibleOnly ) {
+    if( this.raycastVisibleOnly != raycastVisibleOnly )
+      this.raycastVisibleOnly = raycastVisibleOnly;
+  }
+
+  /// Updates the associated RenderEngine instance, its visibility, and its material.
+  BaseShape.updateDrawData!( DrawContext context ) {
+    if( this.renderInstanceHandle == InvalidIndex ) {
+      this.renderEngine = context.renderEngine;
+      this.renderInstanceHandle = this.renderEngine.addInstance( this );
+    }
+    Boolean visible = this.isVisible( context );
+    Ref<Object> material = GetMaterial( context.contextualProperties );
+    this.renderEngine.updateInstance( this.renderInstanceHandle, context, visible && !this.raycastVisibleOnly, this.raycastVisibleOnly || visible, material );
+  }
+
+  /// Updates the associated RenderEngine instance, its visibility, and its material.
+  BaseShape.selfUpdateDrawData!( io DrawContext context, io Boolean drawChildren ) {
+    this.parent.selfUpdateDrawData( context, drawChildren );
+    this.updateDrawData( context );
+  }
+
+  /// Implementation of RaycastTargetShape
+  /// Returns a selection manager compatible item (for raycast).
+  /// Note: the returned item is context-dependant (depends on viewport) but is recycled for all viewports, so it should be used before it is recycled for other viewports.
+  Ref<SelectionDrawableItem> BaseShape.getSelectionDrawableItem( DrawContext context ) {
+
+    if( this.renderInstanceHandle == InvalidIndex )
+      return null;
+
+    if( !this.isVisible( context ) ) {
+      if( !this.raycastVisibleOnly )
+        return null;
+    }
+
+    DrawContext selfContext = context;
+    selfContext.contextualProperties = this.getContextualProperties( context );
+    return context.renderEngine.getSelectionDrawableItem( this.renderInstanceHandle, selfContext );
+  }
+
+}// namespace Tool

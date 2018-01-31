@@ -1,0 +1,83 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 1.12.0
+
+  :kl-ref:`MouseEvent` object used to propagate mouse events into the Manipulation system. 
+
+  A given MouseEvent object may be generated for a wide range of mouse events in the host application. 
+  The event type should always be checked for the exact type of the event. 
+  e.g. MouseEnter and MouseLeave are sent to the system as moue events from Maya. 
+  The mouse position is not valid in these 2 cases. 
+  In Qt 5 based applications, the MouseEnter event can be populated using the mouse position and other data.
+
+  \seealso :kl-ref:`BaseEvent`
+
+  \dfgPresetOmit
+*/
+object MouseEvent : BaseEvent {
+
+  /// The button that caused the event.
+  MouseButton button;
+
+  /// The button state when the event was generated. 
+  /// The button state is a combination of MouseButton_LeftButton, MouseButton_RightButton, MouseButton_MidButton using the OR operator. 
+  /// For mouse move events, this is all buttons that are pressed down. 
+  /// For mouse press and double click events this includes the button that caused the event.
+  /// For mouse release events this excludes the button that caused the event.
+  MouseButton buttons;
+
+  /// The cursor position in pixels, relative to the viewport that received the event. 
+  Vec2 pos;
+};
+
+/// Constructor.
+/// \param eventType The mouse event type (press, move ...).
+/// \param modifiers The key modifier.
+/// \param button The button causing the event.
+/// \param buttons The button state.
+/// \param pos The mouse position in the viewport.
+/// \param viewport The viewport from where the event has been emitted.
+MouseEvent(
+  EventType eventType, 
+  ModiferKey modifiers, 
+  MouseButton button, 
+  MouseButton buttons, 
+  Vec2 pos, 
+  Viewport_Virtual viewport)
+{
+  this.pos = pos;
+  this.button = button;
+  this.buttons = buttons;
+  this.viewport = viewport;
+  this.eventType = eventType;
+  this.modifiers = modifiers;
+}
+
+/// Get the viewport dimension as Normalized Device Coordinates. 
+/// cf. http://www.songho.ca/opengl/gl_transform.html. 
+/// \note To move to the viewport class.
+Vec3 MouseEvent.getNormalizedCoords() {
+  SInt32 upperLeftX, upperLeftY, bottomRightX, bottomRightY;
+  Viewport_Virtual viewport = this.getViewport().getSubViewport( this.pos.x, this.pos.y, upperLeftX, upperLeftY, bottomRightX, bottomRightY );
+  if( viewport )
+  {
+    Vec2 dim = viewport.getDimensions();
+    return Vec3( ( this.pos.x - upperLeftX ) / dim.x, ( this.pos.y - bottomRightY ) / dim.y, 1.0f ) *2.0f - Vec3( 1 );
+  }
+  else return Vec3();
+}
+
+String MouseEvent.describe( Boolean includeContext ) {
+  String result = "MouseEvent pos=(" + Integer( this.pos.x ) + ", " + Integer( this.pos.y ) + ") ";
+  if( this.button )
+    result += " button=" + DescribeMouseButtons( this.button );
+  if( Boolean( this.buttons ) && this.buttons != this.button )
+    result += " buttons=" + DescribeMouseButtons( this.buttons ); 
+  result += " event=" + DescribeEventType( this.eventType );
+  if( includeContext )
+    result += " " + this.describeContext();
+  return result;
+}

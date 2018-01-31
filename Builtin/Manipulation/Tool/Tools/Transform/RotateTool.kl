@@ -1,0 +1,122 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  const String RotateTool_beginMiddleClickDrag = "rot_beginMiddleDrag";
+
+  /// This tool allows to rotate a :kl-ref:`Tool::TransformTarget` 
+  /// in various ways by combining multiple sub-tool gizmos,
+  /// which allow to drag axis, viewport-aligned and free sphere
+  /// rotations. Also, it supports active gizmo (axis) selection
+  /// and then remaps maps middle-clicks to the active sub-tool.
+  ///
+  /// While this tool is used as a sub-tool of the :kl-ref:`TransformTool`,
+  /// it can also be created independently.
+  object RotateTool : BaseTool{
+    Boolean showHints;
+    TransformTarget transformTarget;
+
+    Color highlightColor;
+    Color red, green, blue;
+    Color lightGray;
+    RotateDragInteraction middleClickDrag;
+    String activeChild;
+  };
+
+  RotateTool( Ref<TransformTarget> transformTarget, Color highlightColor, Boolean showHints ) {
+    this.construct( transformTarget, highlightColor, showHints );
+  }
+
+  RotateTool.construct!( Ref<TransformTarget> transformTarget, Color highlightColor, Boolean showHints ) {
+    this.showHints = showHints;
+    this.transformTarget = transformTarget;
+    this.highlightColor = highlightColor;
+
+    this.red = Color( 1.0, 0.0, 0.0 );
+    this.green = Color( 0.0, 1.0, 0.0 );
+    this.blue = Color( 0.0, 0.0, 0.8 );
+    this.lightGray = Color( 0.7 );
+
+    // Free rotate sphere. We put it first so it is drawn first
+    RotateBallTool rotateBall( transformTarget, Color( 0.0, 0.0, 0.0, 0.001 ), 0.95, Color( 0.3, 0.3, 0.3, 0.3 ) );
+    this.addChild( "Ball", rotateBall );
+
+    // Create the axis tools, and offset them so we can see the viewport space translate tool
+    Ref<RotateAroundAxisTool> axisTool = this.addChild( "XAxis", RotateAroundAxisTool( transformTarget, Vec3( 1, 0, 0 ), this.red, 1.0, highlightColor, showHints, true ) );
+    this.connectActiveAxisEvents( axisTool );// setup drag + click-no-drag -> active gizmo for middle-drag
+
+    axisTool = this.addChild( "YAxis", RotateAroundAxisTool( transformTarget, Vec3( 0, 1, 0 ), this.green, 1.0, highlightColor, showHints, true ) );
+    this.connectActiveAxisEvents( axisTool );// setup drag + click-no-drag -> active gizmo for middle-drag
+
+    axisTool = this.addChild( "ZAxis", RotateAroundAxisTool( transformTarget, Vec3( 0, 0, 1 ), this.blue, 1.0, highlightColor, showHints, true ) );
+    this.connectActiveAxisEvents( axisTool );// setup drag + click-no-drag -> active gizmo for middle-drag
+
+    // Viewport space tool
+    RotateInViewportTool viewportTool( transformTarget, Color( 0.1, 0.8, 0.8 ), 1.2, highlightColor, showHints );
+    this.addChild( "Viewport", viewportTool );
+    this.connectActiveAxisEvents( viewportTool );// setup drag + click-no-drag -> active gizmo for middle-drag
+
+    // Create a deactivated mouse middle-click drag interaction
+    this.middleClickDrag = RotateDragInteraction( MouseClickDragInteraction( MouseButton_MiddleButton ), transformTarget, Vec3(), 0.01 );
+    this.middleClickDrag.addListener( this, false, ToolEvent_DragBegin, RotateTool_beginMiddleClickDrag );
+  }
+
+
+  /// Helper: connect events so that when begin drag, or click-no-drag on a child, make it the active gizmo
+  RotateTool.connectActiveAxisEvents!( Ref<XfoTargetAlignedGizmo> child ) {
+    // connect begin drag and click-no-drag to setting it as the active gizmo
+    Ref<EventSource> sourceInteraction = child.xfoDragInteraction.getInteraction();
+    sourceInteraction.addListener( this, false, ToolEvent_DragBeginEndNoMove, child.getName() + "Clicked" );
+    sourceInteraction.addListener( this, false, ToolEvent_DragBegin, child.getName() + "Clicked" );
+  }
+  
+  RotateTool.onEvent!( ToolEvent event, ToolEventUserID userID ) {
+
+    // Check if it is a "ChildnameClicked" event
+    Integer strPos = event.name.find( "Clicked" );
+    if( strPos > 0 ) {
+      String childName = event.name.left( strPos );
+      this.activeChild = childName;
+      Ref<XfoTargetAlignedGizmo> child = this.getChild( childName );
+      if( child ) {
+        // This child is the active one
+
+        // Remove previous active state data
+        this.removeState( "ActiveTool" );
+
+        if( childName == "Ball" )
+          this.middleClickDrag.setWorldAxis( Vec3() );//deactivate
+        else {
+          // Attach state specific data for that child
+          this.addState( "ActiveTool" );
+
+          // Set its color to darker highlight
+          Color darkerHighlight = this.highlightColor * 0.8;
+          darkerHighlight.a = 1.0;
+          this.attachAndDoStateSpecificChildAction( "ActiveTool", SetColorAction( darkerHighlight, true ), childName + "/shape" );
+        }
+      }
+    }
+    if( event.name == RotateTool_beginMiddleClickDrag ) {
+      Ref<XfoTargetAlignedGizmo> child = this.getChild( this.activeChild );
+      if( child ) {
+        // update axis; has to be done each time for RotateInViewportTool (camera might move)
+        Mat33 rotation = child.getTargetTransform().upperLeft();
+        if( this.activeChild == "XAxis" )
+          this.middleClickDrag.setWorldAxis( rotation * Vec3( 1, 0, 0 ) );
+        else if( this.activeChild == "YAxis" )
+          this.middleClickDrag.setWorldAxis( rotation * Vec3( 0, 1, 0 ) );
+        else if( this.activeChild == "ZAxis" )
+          this.middleClickDrag.setWorldAxis( rotation * Vec3( 0, 0, 1 ) );
+        else if( this.activeChild == "Viewport" ) {
+          Ref<RotateInViewportTool> rotViewportTool = child;
+          this.middleClickDrag.setWorldAxis( rotViewportTool.computeAxis() );
+        }
+      }
+    }
+    this.parent.onEvent( event, userID );
+  }
+
+}// namespace Tool

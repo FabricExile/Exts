@@ -1,0 +1,95 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "writes a single sample into the file based on the provided Mat44.\n\nSupported types:\n  this: AlembicXformWriter\n  mat: Mat44\n  result: Boolean\n"
+    },
+  "title" : "WriteSample[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicXformWriter[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 249,\n  \"g\" : 157,\n  \"b\" : 28\n  }"
+        },
+      "name" : "mat",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Mat44[]" : [
+          {
+            "row0" : {
+              "x" : 1,
+              "y" : 0,
+              "z" : 0,
+              "t" : 0
+              },
+            "row1" : {
+              "x" : 0,
+              "y" : 1,
+              "z" : 0,
+              "t" : 0
+              },
+            "row2" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 1,
+              "t" : 0
+              },
+            "row3" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0,
+              "t" : 1
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Mat44[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "8468AFECDEDBD9D21D73ABC472F4CA22",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicXformWriter_writeSample_task<<<index>>>(
+  io Boolean[] result
+, io AlembicXformWriter[] this
+, in Mat44[] mat
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].writeSample(mat[index < mat.size() ? index : mat.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( mat.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < mat.size()) task_size = mat.size();
+  result.resize(task_size);
+  for(Size index = 0; index < task_size; index++) {
+    AlembicWrapper_AlembicXformWriter_writeSample_task(index, result, this, mat);
+  }
+}
+"
+  }

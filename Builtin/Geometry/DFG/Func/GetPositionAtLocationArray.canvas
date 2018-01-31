@@ -1,0 +1,83 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/SpatialQueryable.html",
+    "uiTooltip" : "From a GeometryLocation built from this Geometry, returns the local position.\nThe location must be valid, and must have been created by this Geometry or one with the same structure, and no structure changes should have been made.\n\n Supported by SpatialQueryable,Points,Lines,PolygonMesh"
+    },
+  "title" : "GetPositionAtLocation[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "$TYPE$[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "location",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "GeometryLocation[]" : [
+          {
+            "index" : -1,
+            "subIndex" : 0,
+            "barycentric" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "GeometryLocation[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Vec3[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "3AE8CDBF448FCB0B5714EF4E057AF9D4",
+  "code" : "require Geometry;
+
+operator Geometry_SpatialQueryable_getPositionAtLocation_task<<<index>>>(
+  io Vec3[] result
+, in $TYPE$[] this
+, in GeometryLocation[] location
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].getPositionAtLocation(location[index < location.size() ? index : location.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( location.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < location.size()) task_size = location.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Geometry_SpatialQueryable_getPositionAtLocation_task(index, result, this, location);
+    }
+  } else {
+    Geometry_SpatialQueryable_getPositionAtLocation_task<<<task_size>>>(result, this, location);
+  }
+}
+"
+  }

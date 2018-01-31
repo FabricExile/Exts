@@ -1,0 +1,137 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+require DFGWrapper;
+require Singletons;
+
+/**
+The KL Evaluator is an implementation of an Evaluator.
+
+\dfgPresetOmit
+*/
+object KLEvaluator : Evaluator
+{
+  private String name;
+  private Boolean deforming;
+  private String argNames[];
+  private String argDataTypes[];
+  private SInt32 argPortTypes[];
+  private RTVal argValues[];
+  private String propNames[];
+  private String propTypes[];
+  private String extensionDependencies[];
+  private String klCode;
+};
+
+function KLEvaluator(String name, Boolean deforming)
+{
+  this.name = name;
+  this.deforming = deforming;
+}
+
+/// Returns the name of the evaluator
+String KLEvaluator.getName!()
+{
+  return this.name;
+}
+
+/// Add a new argument
+KLEvaluator.defineArg!(String name, String dataType, SInt32 portType, RTVal value)
+{
+  this.argNames.push(name);
+  this.argDataTypes.push(dataType);
+  this.argPortTypes.push(portType);
+  this.argValues.push(value);
+}
+
+/// Add a new argument
+KLEvaluator.defineArg!(String name, String dataType, SInt32 portType)
+{
+  this.argNames.push(name);
+  this.argDataTypes.push(dataType);
+  this.argPortTypes.push(portType);
+  this.argValues.push(RTVal());
+}
+
+/// Returns the number of arguments
+Size KLEvaluator.getArgCount!()
+{
+  return this.argNames.size();
+}
+
+/// Returns the name of an argument
+String KLEvaluator.getArgName!(Index index)
+{
+  return this.argNames[index];
+}
+
+/// Returns the data type of an argument
+String KLEvaluator.getArgDataType!(Index index)
+{
+  return this.argDataTypes[index];
+}
+
+/// Returns the port type of an argument
+SInt32 KLEvaluator.getArgPortType!(Index index)
+{
+  return this.argPortTypes[index];
+}
+
+/// Returns the value of an argument
+RTVal KLEvaluator.getArgValue!(Index index)
+{
+  return this.argValues[index];
+}
+
+/// Returns true if this is a deformer
+Boolean KLEvaluator.isDeformer!()
+{
+  return this.deforming;
+}
+
+/// Returns a list of extension dependencies
+String[] KLEvaluator.getExtDeps!()
+{
+  return this.extensionDependencies;
+}
+
+/// Adds an extension dependency
+KLEvaluator.addExtDep!(String extDep)
+{
+  this.extensionDependencies.push(extDep);
+}
+
+/// Returns the KL code
+String KLEvaluator.getKLCode!()
+{
+  return this.klCode;
+}
+
+/// Sets the KL code of this evaluator
+KLEvaluator.setKLCode!(String klCode)
+{
+  this.klCode = klCode;
+}
+
+/// Adds a line of KL code to this evaluator
+KLEvaluator.addKLCode!(String klCode)
+{
+  this.klCode += klCode + "\n";
+}
+
+// updates the evaluator based on a context
+KLEvaluator.updateDefaultContext!(ImporterContext context)
+{
+  for(Size i=0;i<this.argNames.size();i++)
+  {
+    if(this.argNames[i] == 'time' || 
+      this.argNames[i] == 'timeline')
+    {
+      if(this.argDataTypes[i] == 'Float32')
+      {
+        this.argValues[i] = RTVal(context.time);
+      }
+    }
+  }
+}

@@ -1,0 +1,101 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/PolygonMesh.html",
+    "uiTooltip" : "For a point and a specific neighborPolygonIndex, returns the polygon and associated polygonPointIndex\n\n Supported by PolygonMesh"
+    },
+  "title" : "GetPointPolygonAndIndex[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "PolygonMesh[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "point",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Size[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Size[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "neighborPolygonIndex",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Size[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Size[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "polygon",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Size[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "polygonPointIndex",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Size[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "6BE17E216BEDCB0F2639D6F5CC294E6A",
+  "code" : "require Geometry;
+
+operator Geometry_PolygonMesh_getPointPolygonAndIndex_task<<<index>>>(
+  in PolygonMesh[] this
+, in Size[] point
+, in Size[] neighborPolygonIndex
+, out Size[] polygon
+, out Size[] polygonPointIndex
+) {
+  this[index < this.size() ? index : this.size() - 1].getPointPolygonAndIndex(point[index < point.size() ? index : point.size() - 1], neighborPolygonIndex[index < neighborPolygonIndex.size() ? index : neighborPolygonIndex.size() - 1], polygon[index < polygon.size() ? index : polygon.size() - 1], polygonPointIndex[index < polygonPointIndex.size() ? index : polygonPointIndex.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( point.size() == 0) return;
+  if( neighborPolygonIndex.size() == 0) return;
+  if( polygon.size() == 0) return;
+  if( polygonPointIndex.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < point.size()) task_size = point.size();
+  if(task_size < neighborPolygonIndex.size()) task_size = neighborPolygonIndex.size();
+  polygon.resize(task_size);
+  polygonPointIndex.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Geometry_PolygonMesh_getPointPolygonAndIndex_task(index, this, point, neighborPolygonIndex, polygon, polygonPointIndex);
+    }
+  } else {
+    Geometry_PolygonMesh_getPointPolygonAndIndex_task<<<task_size>>>(this, point, neighborPolygonIndex, polygon, polygonPointIndex);
+  }
+}
+"
+  }

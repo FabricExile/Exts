@@ -1,0 +1,103 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/SpatialQueryable.html",
+    "uiTooltip" : "Returns true if the geometry locations are equal or equivalent for this geometry.\n\n Supported by SpatialQueryable,Points,Lines,PolygonMesh"
+    },
+  "title" : "AreGeometryLocationsEquivalent[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "$TYPE$[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "location0",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "GeometryLocation[]" : [
+          {
+            "index" : -1,
+            "subIndex" : 0,
+            "barycentric" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "GeometryLocation[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "location1",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "GeometryLocation[]" : [
+          {
+            "index" : -1,
+            "subIndex" : 0,
+            "barycentric" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "GeometryLocation[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "6298B6CE13B49D5020664AB40D0D6F62",
+  "code" : "require Geometry;
+
+operator Geometry_SpatialQueryable_areGeometryLocationsEquivalent_task<<<index>>>(
+  io Boolean[] result
+, in $TYPE$[] this
+, in GeometryLocation[] location0
+, in GeometryLocation[] location1
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].areGeometryLocationsEquivalent(location0[index < location0.size() ? index : location0.size() - 1], location1[index < location1.size() ? index : location1.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( location0.size() == 0) return;
+  if( location1.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < location0.size()) task_size = location0.size();
+  if(task_size < location1.size()) task_size = location1.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Geometry_SpatialQueryable_areGeometryLocationsEquivalent_task(index, result, this, location0, location1);
+    }
+  } else {
+    Geometry_SpatialQueryable_areGeometryLocationsEquivalent_task<<<task_size>>>(result, this, location0, location1);
+  }
+}
+"
+  }

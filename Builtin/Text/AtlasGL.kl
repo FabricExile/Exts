@@ -1,0 +1,164 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+require FreeTypeGL, Math, FileIO;
+
+/**
+  \versionadded 2.4.0
+    
+  AtlasGL extends FreeTypeAtlas to draw 2D text with FabricOGL.
+  It's in charge of generating and binding an OpenGL Texture from the atlas.
+  It also provides high level methods to set the atlas properties (font and glyphs).
+  
+  The size of the atlas (and of the OpenGL texture) can be big if a lot of glyphs are used.
+  For performances and memory reasons, the same atlas should be shared between several TextGL objects.
+  For this purpose, the atlas are registered as a singleton.
+  The name of the singleton is created from the font path and size.
+
+  \example
+
+    Float32 fontSize = 20;
+    FilePath fontPath = FilePath('${FABRIC_DIR}/Resources/Fonts/Roboto/Roboto-Regular.ttf'); 
+    
+    Ref<AtlasGL> atlas = GetOrCreateAtlasGL(fontPath, fontSize);
+  
+    Ref<AtlasGL> atlas2 = GetAtlasGL(fontPath, fontSize);
+
+  \endexample
+
+  \seealso :kl-ref:`FreeTypeAtlas`
+
+  \dfgPresetOmit
+*/
+object AtlasGL : FreeTypeAtlas {
+};
+
+/// Constructs an AtlasGL.
+/// \param fontPath Font path
+/// \param fontSize Font size
+AtlasGL(FilePath fontPath, UInt32 fontSize) {
+  String asciiGlyphs = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+  this.parent.init();
+  this.setFontAndGlyphs(asciiGlyphs, fontPath, fontSize);
+}
+
+/// Checks this atlas is equal to the oether.
+Boolean AtlasGL.equal!(Ref<AtlasGL> atlas) {
+  return this === atlas;
+}
+
+/// \internal
+/// Computes the atlas size from the fontSize and the glyphs (rounded to the closest power of 2).
+/// \param glyphs List of glyph to use (e.g 123abcABC?)
+/// \param fontSize Font size
+private Boolean AtlasGL.computeAtlasSizeFromFontAnGlyphs(String glyphs, Float32 fontSize, io UInt32 size) {
+  UInt32 width, heigth;
+  this.getDimensions(width, heigth);
+
+  UInt32 temp = UInt32(sqrt(glyphs.length()*fontSize*fontSize));
+  size = pow(2, ceil(log(temp)/log(2)));
+
+  return (size != width || size != heigth);
+ }
+
+/// \internal
+/// Initializes the font and the atlas.
+/// The atlas size is computed from the fontSize and the glyphs.
+/// \param glyphs List of glyph to use (e.g 123abcABC?)
+/// \param fontPath Font path 
+/// \param fontSize Font size
+private AtlasGL.setFontAndGlyphs!(String glyphs, FilePath fontPath, UInt32 fontSize) {
+
+  if(fontSize == 0)
+  {
+    report("The fontSize is null " + fontSize);
+    return;
+  }
+
+  if(!fontPath.exists())
+  {
+    setError("AtlasGL.setFontAndGlyphs : The file " + fontPath.string() + "doesn't exists");
+    return;
+  }
+
+  UInt32 newSize = 0;
+  if(this.computeAtlasSizeFromFontAnGlyphs(glyphs, fontSize, newSize))
+    this.parent.createAtlas(newSize, newSize);
+  
+  if( !this.fontIsValid() || this.getFontSize() != fontSize ||
+      this.getFontPath() != fontPath.string() || this.getGlyphs() != glyphs
+    )
+  {
+    this.parent.clear();
+    String str = fontPath.string();
+    this.parent.createFont(fontSize, str);
+    this.parent.createGlyphs(glyphs);
+  }
+}
+
+/// Sets the font size.
+/// \param fontSize Font size
+AtlasGL.setFontSize!(Float32 fontSize) {
+  this.setFontAndGlyphs(this.getGlyphs(), this.getFontPath(), fontSize);
+}
+
+/// Sets the font to use.
+/// \param fontPath Font path
+AtlasGL.setFontPath!(FilePath fontPath) {
+  this.setFontAndGlyphs(this.getGlyphs(), fontPath, this.getFontSize());
+}
+
+/// Updates the glyps list.
+/// \param glyphs List of glyph to use (e.g 123abcABC?)
+AtlasGL.setGlyphs!(String glyphs) {
+  this.setFontAndGlyphs(glyphs, this.getFontPath(), this.getFontSize());
+}
+
+/// \internal
+/// Creates an Atlas name from the font.
+/// \param fontPath Font path
+/// \param fontSize Font size
+function String CreateAtlasGLNameFromFont(FilePath fontPath, UInt32 fontSize) {
+  return fontPath.fileName().string() + "_" + String(fontSize);
+}
+
+/// Gets an GetOrCreateAtlasGL singleton (if it exists already).
+/// \param name The singleton name.
+Ref<AtlasGL> GetAtlasGL(FilePath fontPath, UInt32 fontSize) {
+  return Singleton_get(CreateAtlasGLNameFromFont(fontPath, fontSize));
+}
+
+/// \internal
+/// Creates (if not already) an AtlasGL singleton.
+/// \param atlas Reference the AtlasGL to register
+/// \param logErrorIfInit If true, log an error if the singleton exists already.
+Ref<AtlasGL> CreateAtlasGL(Ref<AtlasGL> atlas, Boolean logErrorIfInit) {
+  Ref<AtlasGL> atlasRef = GetAtlasGL(FilePath(atlas.getFontPath()), atlas.getFontSize());
+  if(atlas !== atlasRef)
+  {
+    if(Boolean(atlasRef)) 
+    { 
+      if(logErrorIfInit)
+        setError("CreateAtlasGL: AtlasGL already set");
+    } 
+    else atlasRef = atlas;
+  }
+  Singleton_set(CreateAtlasGLNameFromFont(atlas.getFontPath(), atlas.getFontSize()), atlasRef);
+  return atlasRef;
+}
+
+/// Gets or creates an AtlasGL singleton. 
+/// \param fontPath Font path, use default Roboto font if path is not valid 
+/// \param fontSize Font size
+Ref<AtlasGL> GetOrCreateAtlasGL(FilePath fontPath, UInt32 fontSize) {
+  FilePath fontPath_ = fontPath.expandEnvVars();
+  if(!fontPath_.exists())
+  {
+    //report("Warning : GetOrCreateAtlasGL, fontPath " + fontPath_.string() + " doesn't exist, default Roboto font is used instead");
+    fontPath_ = FilePath("${FABRIC_DIR}/Resources/Fonts/Roboto/Roboto-Regular.ttf").expandEnvVars();
+  }
+  Ref<AtlasGL> atlas = GetAtlasGL(fontPath_, fontSize);
+  if(!atlas) atlas = CreateAtlasGL(AtlasGL(fontPath_, fontSize), true);
+  return atlas;
+}

@@ -1,0 +1,48 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+    "uiNodeColor" : "{\n  \"r\" : 132,\n  \"g\" : 106,\n  \"b\" : 97\n  }",
+    "uiTooltip" : "Returns all materials on an ImporterObject. This works only on ImporterObjects of type ImporterShape"
+    },
+  "title" : "membersProperty",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Execute" : {}
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Ref<ImporterObject>"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "members",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Ref<ImporterObject>[]"
+      }
+    ],
+  "extDeps" : {
+    "AssetPatterns" : "*"
+    },
+  "presetGUID" : "836418B84D10859A295C0B224CA5EB3A",
+  "code" : "require AssetPatterns;
+
+dfgEntry {
+  ImporterGroup group = this;
+  if(group == null)
+    return;
+  members = group.getMembers(group.defaultContext);
+}
+"
+  }

@@ -1,0 +1,463 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// \internal
+  object SelectionLists{
+    ItemReferences lists[String];
+  };
+
+  /// Service for storing global selection lists.
+  Ref<ItemReferences> GetSelectionList( String name ) {
+    Ref<SelectionLists> lists = GetOrCreateSingleton( "SelectionLists", SelectionLists );
+
+    Ref<ItemReferences> refs = lists.lists.get( name, null );
+    if( !refs ) {
+      ItemReferences newList( name );
+      lists.lists[name] = newList;
+      refs = newList;
+    }
+    return refs;
+  }
+
+  /// \internal
+  /// Service for translating primitive IDs to component IDs for built-in Geometry types (Points, Curves, Lines, Points)
+  UInt32[] SelectedPrimitiveIDsToComponents( Ref<Geometry> geo, UInt8 selectionMode, IndexSet primitiveIDs ) {
+    if( selectionMode == SelectionMode_Points || geo.type().isA( Points ) ) {
+      Ref<PolygonMesh> mesh = geo;
+      if( !mesh )
+        return primitiveIDs.indices;
+
+      // Convert attribute indices (which can be >= pointCount)
+      // to points
+      IndexSet mergedIndices;
+      for( Size i = 0; i < primitiveIDs.size(); ++i )
+        mergedIndices.add( mesh.getPointFromAttributeIndex( primitiveIDs.get( i ) ) );
+
+      return mergedIndices.indices;
+    }
+
+    if( selectionMode == SelectionMode_Elements_includePartial ) {
+      UInt32 primitiveToComponent[];
+
+      // For PolygonMeshes, translate triangles to polygons
+      Ref<PolygonMesh> mesh = geo;
+      if( mesh ) {
+        // Build a triangle -> polygons table. TODO: this could be cached on the mesh (with structure version)
+        primitiveToComponent.reserve( mesh.triangleCount() );
+
+        for( Size i = 0; i < mesh.polygonCount(); ++i ) {
+          UInt32 subTriCount = mesh.getPolygonSubTriangleCount( i );
+          for( Size j = 0; j < subTriCount; ++j )
+            primitiveToComponent.push( i );
+        }
+      }
+
+      // For Curves, translate tesselated segments to curves
+      Ref<Curves> curves = geo;
+      if( curves ) {
+        Ref<Curves_samplingData> curvesSampling = curves.getUpdatedSampling( false );
+        primitiveToComponent.reserve( curvesSampling.getPositionsAttribute().size() );
+
+        Curves_curveSamplingInfo samplingInfo[] = curvesSampling.getCurvesSamplingInfo();
+
+        for( Size i = 0; i < samplingInfo.size(); ++i ) {
+          UInt32 lineSegmentCount = samplingInfo[i].lineSegmentCount;
+          UInt32 firstLineSegment = samplingInfo[i].firstLineSegment;
+
+          UInt32 max = firstLineSegment + lineSegmentCount;
+          if( max > primitiveToComponent.size() )
+            primitiveToComponent.resize( max );
+
+          for( Size j = 0; j < lineSegmentCount; ++j )
+            primitiveToComponent[firstLineSegment + j] = i;
+        }
+      }
+
+      if( primitiveToComponent ) {
+        IndexSet components;
+        for( Size i = 0; i < primitiveIDs.indices.size(); ++i )
+          components.add( primitiveToComponent[primitiveIDs.indices[i]] );
+        return components.indices;
+      }
+    }
+
+    if( selectionMode == SelectionMode_Elements_excludePartial ) {
+      // For these, we draw the points only; translate to actual "full" elements.
+      Ref<PolygonMesh> mesh = geo;
+      if( mesh ) {
+        UInt32 polys[];
+        for( Size i = 0; i < mesh.polygonCount(); ++i ) {
+          UInt32 size = mesh.getPolygonSize( i );
+          Size j;
+          for( j = 0; j < size; ++j ) {
+            if( !primitiveIDs.has( mesh.getPolygonPoint( i, j ) ) )
+              break;
+          }
+          if( j == size )
+            polys.push( i );
+        }
+        return polys;
+      }
+      Ref<Curves> curves = geo;
+      if( curves ) {
+        Ref<Curves_samplingData> curvesSampling = curves.getUpdatedSampling( false );
+        Curves_curveSamplingInfo samplingInfo[] = curvesSampling.getCurvesSamplingInfo();
+        UInt32 subCurves[];
+
+        for( Size i = 0; i < samplingInfo.size(); ++i ) {
+          UInt32 size = samplingInfo[i].sampleCount;
+          Size j;
+          for( j = 0; j < size; ++j ) {
+            if( !primitiveIDs.has( samplingInfo[i].firstSample + j ) )
+              break;
+          }
+          if( j == size )
+            subCurves.push( i );
+        }
+        return subCurves;
+      }
+      Ref<Lines> lines = geo;
+      if( lines ) {
+        UInt32 segments[];
+        UInt32 lineCount = lines.lineCount();
+
+        for( Size i = 0; i < lineCount; ++i ) {
+          Size start, end;
+          lines.getLineAttributeIndices( i, start, end );
+
+          if( primitiveIDs.has( start ) && primitiveIDs.has( end ) )
+            segments.push( i );
+        }
+        return segments;
+      }
+    }
+    return primitiveIDs.indices;
+  }
+
+  /// Entry point for drawing a selection list in the 3D viewport.
+  /// Only items that are DrawableGeometryComponents will be drawn in the 3D viewport.
+  ///
+  /// \param color Selection color, and its alpha will be used for transparency.
+  /// \param useXRayMask If true, selected triangles will be rendered in a chess pattern (in which case transparency might not be required).
+  ///
+  /// See :ref:`TPG.selection` for more information and examples.
+  DrawItems( Ref<ItemReferences> items, Ref<Viewport> viewport, Color color, Boolean useXRayMask ) {
+    SelectionDrawBracket bracket( color, useXRayMask );
+    Ref<SelectionSharedDrawData> drawData = bracket.drawData;
+
+    Size itemSize = items.size();
+    Ref<ItemReference> components[];
+    for( Size i = 0; i < itemSize; ++i ) {
+      items.getAllSubTypeItems( i, components );
+
+      for( Size j = 0; j < components.size(); ++j ) {
+        Ref<DrawableGeometryComponents> selectedGeom = components[j];
+
+        if( Boolean( selectedGeom ) && Boolean( selectedGeom.drawable ) ) {
+          Ref<SelectionSharedDrawData_shaderData> shaderData = drawData.getOrCreateShader( selectedGeom.drawable, bracket.context );
+
+          // Reset default values (might have been overriden)
+          shaderData.shaderValues.setUniform( shaderData.shaderColorKey, drawData.color );
+          shaderData.shaderValues.setUniform( shaderData.shaderXRayMaskKey, Integer( drawData.useXRayMask ? 1 : 0 ) );
+
+          // Get specific drawing parameters: transform + positions buffer
+          UInt32 glInstanceCount = 1;
+          OGLBuffer_ buffer = null;
+          OGLBuffer legacyBuffer = null;
+          Mat44 transfo;
+          Ref<OGLProgramParamValues> shaderParamValues = shaderData.shaderValues;
+
+          selectedGeom.drawable.prepareForSelectionDraw( selectedGeom.key, selectedGeom.componentType == ComponentType_points ? SelectionMode_Points : SelectionMode_Objects, viewport, glInstanceCount, transfo, buffer, legacyBuffer, shaderParamValues, bracket.context );
+
+          if( shaderData.shaderTransformKey != InvalidIndex )
+            shaderData.shaderValues.setUniform( shaderData.shaderTransformKey, transfo );
+
+          shaderData.shaderValues.setVertexAttrib( shaderData.shaderPositionsKey, buffer, legacyBuffer, drawData.positionsLegacyBufferWrapper );
+
+          shaderData.shaderValues.activate( bracket.context );
+          Ref<ItemReference> itemRef = selectedGeom;
+          bracket.context.stateCache.enableVertexProgramPointSize( false );
+
+          selectedGeom.drawable.drawGLComponents( selectedGeom.key, itemRef, viewport, bracket.context );
+        }
+      }
+    }
+  }
+
+  /// Draws all components of the drawList objects, for the provided componentType.
+  ///
+  /// See :ref:`TPG.selection` for more information and examples.
+  DrawComponentOverlayIfRequired( Ref<SelectionManagerDrawList> drawList, String componentType, Ref<Viewport> viewport, Color color, Boolean useXRayMask ) {
+
+    SelectionDrawBracket bracket( color, useXRayMask );
+    Ref<SelectionSharedDrawData> drawData = bracket.drawData;
+
+    Size itemSize = drawList.size();
+    for( Size i = 0; i < itemSize; ++i ) {
+      Ref<SelectionDrawableItem> drawable = drawList.get( i );
+      Ref<Geometry> geo = drawList.getGeometry( i );
+      if( Boolean( geo ) ) {
+
+        Ref<SelectionSharedDrawData_shaderData> shaderData = drawData.getOrCreateShader( drawable, bracket.context );
+
+        // Reset default values (might have been overriden)
+        shaderData.shaderValues.setUniform( shaderData.shaderColorKey, drawData.color );
+        shaderData.shaderValues.setUniform( shaderData.shaderXRayMaskKey, 0 );// We don't draw polygons
+
+        Ref<Points> points = geo;
+        Boolean drawAllPoints = componentType == ComponentType_points && !points;
+
+        Ref<PolygonMesh> mesh = geo;
+        Boolean drawWires = componentType == ComponentType_elements && Boolean( mesh );
+
+        if( !drawAllPoints && !drawWires )
+          continue;
+
+        // Get specific drawing parameters: transform + positions buffer
+        UInt32 glInstanceCount = 1;
+        OGLBuffer_ buffer = null;
+        OGLBuffer legacyBuffer = null;
+        Mat44 transfo;
+        Ref<OGLProgramParamValues> shaderParamValues = shaderData.shaderValues;
+
+        drawable.prepareForSelectionDraw( drawList.getKey( i ), componentType == ComponentType_points ? SelectionMode_Points : SelectionMode_Objects, viewport, glInstanceCount, transfo, buffer, legacyBuffer, shaderParamValues, bracket.context );
+
+        if( shaderData.shaderTransformKey != InvalidIndex )
+          shaderData.shaderValues.setUniform( shaderData.shaderTransformKey, transfo );
+
+        Size pointCount = shaderData.shaderValues.setVertexAttrib( shaderData.shaderPositionsKey, buffer, legacyBuffer, drawData.positionsLegacyBufferWrapper );
+
+        shaderData.shaderValues.activate( bracket.context );
+        bracket.context.stateCache.enableVertexProgramPointSize( false );
+
+        if( drawAllPoints ) {
+          bracket.context.stateCache.pointSize( GetSelectionManager().defaultPointDrawSize );
+          glDrawArrays( GL_POINTS, 0, pointCount );
+        }
+        if( drawWires ) {
+          Ref<WireframeDrawData> wires = GetOrCreateWireframeDrawData( geo, bracket.context );
+          if( wires.componentGLElements ) {
+            bracket.context.stateCache.lineWidth( 1 );
+            bracket.context.stateCache.bindBuffer( GL_ELEMENT_ARRAY_BUFFER, wires.componentGLElements.bufferID );
+            Data NULL;
+            glDrawElements( GL_LINES, wires.componentGLElements.elementCount, wires.componentGLElements.elementGLType, NULL );
+          }
+        }
+      }
+    }
+  }
+
+  /// \internal
+  interface DrawableGeometryComponents_virtuals {
+    draw!( Ref<Viewport> viewport, io Ref<OGLContext> context );
+  };
+
+  /// Implements ItemReferences components that also
+  /// refer to their source SelectionDrawableItem, which allows
+  /// them, once added to an ItemReferences, to be drawn by
+  /// services such as :kl-ref:`Tool::DrawItems`.
+  ///
+  /// See :ref:`TPG.selection` for more information and examples.
+  object DrawableGeometryComponents : BaseComponentItemReference{
+    SelectionManagerDrawListKey key;
+    SelectionDrawableItem drawable;// Should we own or not?
+    Object attachedDrawData;
+  };
+
+  DrawableGeometryComponents( Ref<SelectionDrawableItem> drawable, SelectionManagerDrawListKey key ) {
+    UInt32 componentIndices[];
+    this.construct( drawable, key, ComponentType_object, componentIndices );
+  }
+
+  DrawableGeometryComponents( Ref<SelectionDrawableItem> drawable, SelectionManagerDrawListKey key, String componentType, UInt32 componentIndices[] ) {
+    this.construct( drawable, key, componentType, componentIndices );
+  }
+
+  DrawableGeometryComponents.construct!( Ref<SelectionDrawableItem> drawable, SelectionManagerDrawListKey key, String componentType, UInt32 componentIndices[] ) {
+    this.drawable = drawable;
+    this.itemReference = drawable;
+    this.key = key;
+    this.componentType = componentType;
+
+    for( Size i = 0; i < componentIndices.size(); ++i )
+      this.componentIndices.add( componentIndices[i] );
+
+    this.incrementVersion();
+  }
+
+  /// \internal
+  object SelectionSharedDrawData_shaderData{
+    // selection draw shader data
+    // TODO: have a 3.2 and 2.1 version of the shader
+    Boolean isDefault;
+    OGLProgram shader;
+    OGLProgramParamValues shaderValues;
+    Size shaderPositionsKey;
+    Size shaderTransformKey;
+    Size shaderColorKey;
+    Size shaderXRayMaskKey;
+  };
+
+  /// \internal
+  object SelectionSharedDrawData{
+
+    OGLContext context;
+    SelectionSharedDrawData_shaderData shaderData[String];
+
+    OGLBuffer_ positionsLegacyBufferWrapper;
+
+    Color color;
+    Boolean useXRayMask;
+  };
+
+  /// \internal
+  /// Perpares the selection draw shader and returns an OGLContext wrapping the current context
+  /// to be used for drawing.
+  /// Note: SelectionDrawBracket should be used instead of calling this function directly.
+  ///
+  /// \param color Selection color, and its alpha will be used for transparency.
+  /// \param useXRayMask If true, selection will be rendered in a chess pattern (in which case transparency might not be required).
+  Ref<SelectionSharedDrawData> BeginSelectionDraw( Color color, Boolean useXRayMask ) {
+
+    if( !cpglHaveContext() )
+      throw "BeginSelectionDraw: error: no current OpenGL context";
+
+    {
+      // Hack: ensure that OGL globals initialize with an independant context
+      OGLCapabilities caps();
+      caps.initialize();
+      if( caps.GLMajorVersion < 3 || ( caps.GLMajorVersion == 3 && caps.GLMinorVersion < 2 ) ) {
+        OGLWrapperIndependantContextBracket temp();
+      }
+    }
+
+    Ref<SelectionSharedDrawData> data = GetOrCreateSingleton( "SelectDrawData", SelectionSharedDrawData );
+    if( !data.context ) {
+      data.context = OGLContext();
+      data.positionsLegacyBufferWrapper = OGLBuffer_();
+    }
+
+    Ref<OGLContext> context = data.context;
+
+    data.context.initializeFromCurrentContext();
+    context.stateCache.reset();
+
+    // TODO: make a 3.2 Core Profile compatible version
+    glPushAttrib( GL_ALL_ATTRIB_BITS );
+    glPushClientAttrib( GL_CLIENT_ALL_ATTRIB_BITS );
+
+    // On top transparent draw: blending, no Z writing, and polygon offset
+    context.stateCache.depthMask( false );
+    context.stateCache.blendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+    context.stateCache.enableBlend( true );
+    context.stateCache.pointSize( 3.0f );
+
+    context.stateCache.enablePolygonOffsetFill( true );
+    context.stateCache.enablePolygonOffsetLine( true );
+    context.stateCache.enablePolygonOffsetPoint( true );
+    context.stateCache.polygonOffset( -1, -1 );
+
+    context.stateCache.depthFunc( GL_LEQUAL );
+
+    data.color = color;
+    data.useXRayMask = useXRayMask;
+    return data;
+  }
+
+  /// \internal
+  Ref<SelectionSharedDrawData_shaderData> SelectionSharedDrawData.getOrCreateShader!( Ref<SelectionDrawableItem> drawable, io Ref<OGLContext> context ) {
+    String customShaderName = drawable.getCustomTransformShaderName();
+    Ref<SelectionSharedDrawData_shaderData> shaderData = this.shaderData.get( customShaderName, null );
+    if( !shaderData ) {
+      SelectionSharedDrawData_shaderData newShaderData();
+      shaderData = newShaderData;
+      this.shaderData[customShaderName] = newShaderData;
+
+      shaderData.isDefault = Boolean( customShaderName );
+
+      // Create the default shader
+      shaderData.shader = OGLProgram( customShaderName ? "DrawSelectionShader_" + customShaderName : "DrawSelectionShader" );
+
+      // Create the default shader
+      shaderData.shader.addShader( "
+                                   #version 120
+
+                                   uniform mat4 transform;
+      attribute vec4 positions;
+
+      void main() {
+        vec4 position = transform * positions;
+        float z = 1.0f - position.z / position.w;
+        z = z * 1.001;//Hacked polygon offset since it can't work for GL_LINES and GL_POINTS
+        position.z = ( 1.0 - z ) * position.w;
+        gl_Position = position;
+      }
+      ", GL_VERTEX_SHADER );
+
+        shaderData.shader.addShader( "
+                                     #version 120
+
+                                     uniform int XRayMask;
+      uniform vec4 color;
+
+      void main() {
+        if( XRayMask != 0 ) {
+          int sum = int( gl_FragCoord.x ) + int( gl_FragCoord.y );
+          if( ( sum / 2 ) * 2 == sum )
+            discard;
+        }
+        gl_FragColor = vec4( color );
+      }
+      ", GL_FRAGMENT_SHADER);
+
+        // If custom shader, allow to change the code
+        if( customShaderName )
+          drawable.buildCustomTransformShader( customShaderName, shaderData.shader );
+
+      if( !shaderData.shader.create( context ) )
+        throw( "BeginSelectionDraw: Error creating shader" );
+
+      shaderData.shaderPositionsKey = shaderData.shader.getParameterKey( "positions" );
+      shaderData.shaderTransformKey = shaderData.shader.getParameterKey( "transform" );
+      shaderData.shaderColorKey = shaderData.shader.getParameterKey( "color" );
+      shaderData.shaderXRayMaskKey = shaderData.shader.getParameterKey( "XRayMask" );
+
+      // Create program param values container
+      shaderData.shaderValues = OGLProgramParamValues();
+      shaderData.shaderValues.initialize( shaderData.shader, null );
+    }
+    return shaderData;
+  }
+
+  /// \internal
+  /// Ends the selection draw setup
+  /// Note: SelectionDrawBracket should be used instead of calling this function directly.
+  EndSelectionDraw( io Ref<OGLContext> context ) {
+    glPopClientAttrib();
+    glPopAttrib();
+  }
+
+  /// \internal
+  /// Installs the selection draw shader and context required for drawing selection with :kl-ref:`Tool::DrawableGeometryComponents.draw`
+  struct SelectionDrawBracket {
+    Ref<OGLContext> context;
+    Ref<SelectionSharedDrawData> drawData;
+  };
+
+  /// \param color Selection color, and its alpha will be used for transparency.
+  /// \param useXRayMask If true, selection will be rendered in a chess pattern (in which case transparency might not be required).
+  SelectionDrawBracket( Color color, Boolean useXRayMask ) {
+    this.drawData = BeginSelectionDraw( color, useXRayMask );
+    if( this.drawData )
+      this.context = this.drawData.context;
+  }
+
+  ~SelectionDrawBracket() {
+    if( this.context )
+      EndSelectionDraw( this.context );
+  }
+
+}// namespace Tool

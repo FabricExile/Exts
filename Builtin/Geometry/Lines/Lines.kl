@@ -1,0 +1,413 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math, FabricStatistics;
+
+/**
+  The Lines object implements a Geometry made of line segments. Each segment corresponds to attribute index pairs.
+
+  The Lines have a `raycastThickness` member that defines the lines' thickness for bounding volume and SpatialQueryable methods.
+
+  \note For functions treating `elements` such as :kl-ref:`SpatialQuery.getElementsInBBox`, an element corresponds to a line segment.
+
+  \example
+    //Create a XZ square
+    Lines lines = Lines();
+    lines.addPoints( 4 );
+
+    lines.setPointPosition( 0, Vec3(0,0,0) );
+    lines.setPointPosition( 1, Vec3(1,0,0) );
+    lines.setPointPosition( 2, Vec3(1,0,1) );
+    lines.setPointPosition( 3, Vec3(0,0,1) );
+
+    lines.addClosedLine( 0, 3 );
+
+    Size segmentCount = lines.lineCount();
+    for( Size i = 0; i < segmentCount; ++i ) {
+      Size startPoint, endPoint;
+      lines.getLineAttributeIndices( i, startPoint, endPoint );
+      report("Segment " + i + " from " + lines.getPointPosition(startPoint) + " to " + lines.getPointPosition(endPoint) );
+    }
+  \endexample
+\dfgTypeColor Color(51, 1, 106)
+*/
+object Lines : BaseGeometry, Geometry, SpatialQueryable {
+
+  /// Point index pairs for segments
+  UInt32 indices[];
+
+  /// Thickness to be used for SpatialQueryable methods
+  Scalar raycastThickness;
+
+  /// \internal Created on demand. Cache from the meta-data dictionary to avoid locks.
+  Object spatialAccelerationCache;
+};
+
+function Lines() {
+  this.parent._init("Lines");
+  this.raycastThickness = 1e-4;
+}
+
+/// Constructor taking the string to be used as the name. 
+/// \param debugName the name displayed in debugging
+function Lines(String debugName) {
+  this.parent._init(debugName);
+  this.raycastThickness = 1e-4;
+}
+
+/// Returns the debug name used when constructing the geometry.
+function String Lines.getDebugName() {
+  return this.debugName;
+}
+
+/// Returns the version of the geometry including attribute values
+inline UInt32 Lines.getVersion() {
+  return this.parent.getVersion();
+}
+
+/// Returns the version of the geometry structure including the the attribute set (but not attribute values).
+inline UInt32 Lines.getStructureVersion() {
+  return this.parent.getStructureVersion();
+}
+
+/// Returns the associated GeometryAttributes container.
+/// Use :kl-ref:`Lines.getLineAttributeIndices` to get attribute indices corresponding to a line segment.
+inline Ref<GeometryAttributes> Lines.getAttributes() { 
+  return this.parent.attributes; 
+}
+
+/// Returns the metaData container for this Geometry.
+function Ref<ThreadsafeMetaDataContainer> Lines.getMetaData() {
+  return this.metaData;
+}
+
+/// Clears all data, including points and attributes. The version gets incremented.
+function Lines.clear!() {
+  this.parent.clear();
+  this.indices.resize(0);
+}
+
+/// \internal Copies the line segment structure
+function Lines.copyStructure!( Lines src ) {
+  Size count = src.indices.size();
+  this.indices.resize( count );// Avoid reallocs; don't call clone()
+  for( Size i = 0; i < count; ++i )
+    this.indices[i] = src.indices[i];
+  this.structureVersion += src.structureVersion + 1;
+}
+
+/// Copies the content from the source Lines.
+function Lines.copy!( Lines src ) {
+  this.copyStructure(src);
+  this.attributes.copy(src.attributes);
+  this.raycastThickness = src.raycastThickness;
+}
+
+/// Copies the content from the source Geometry.
+function Lines.copy!( Geometry src ) {
+  Lines srcLines = src;
+  if(!srcLines)
+    throw("Lines Cannot copy data from a non-Lines. Src Geometry is a :"+src.type());
+  this.copy(srcLines);
+}
+
+/// \dfgPresetCreate
+Lines.cloneMembersTo(io Lines that) {
+  //The difference with default clone() is that new.parent.autoStat will point to 'new' (from constructor)
+  that.copy( Lines(this) );
+  that.debugName = this.debugName;
+}
+
+/// Returns the number of points, which is not directly related to the number of line segments (points can be shared by multiple segments).
+/// \seealso Lines.lineCount
+function Size Lines.pointCount() {
+  return this.parent.pointCount();
+}
+
+/// Returns the number of line segments, which is not directly related to the number of points (points can be shared by multiple segments).
+/// \seealso Lines.pointCount
+inline Size Lines.lineCount() {
+  return this.indices.size()/2;
+}
+
+/// Returns the indices of the line segments
+/// \seealso Lines.getIndicesPerCurve
+inline UInt32[] Lines.getIndices() {
+  return this.indices;
+}
+
+/// Returns the indices for each curve as a separate array
+/// \seealso Lines.getIndices
+inline UInt32[][] Lines.getIndicesPerCurve() {
+  UInt32 result[][];
+  UInt32 indices[];
+
+  UInt32 lastA = -1;
+  UInt32 lastB = -1;
+
+  for(Size i=0;i<this.indices.size();i+=2) {
+    UInt32 a = this.indices[i];
+    UInt32 b = this.indices[i+1];
+
+    if(a == lastB) {
+      indices.push(b);
+    } else {
+      if(indices.size() > 0)
+      {
+        result.push(indices.clone());
+        indices.resize(0);
+      }
+      indices.push(a);
+      indices.push(b);
+    }
+
+    lastA = a;
+    lastB = b;
+  }
+
+  result.push(indices);
+  return result;
+}
+
+/// Adds N points and returns the index of the first of the consecutive indices.
+inline Size Lines.addPoints!( Size count ) {
+  Size prevSize = this.attributes.size();
+  this.attributes.resize( prevSize + count );
+  return prevSize;
+}
+
+/// Sets the positions of a point.
+/// \note Once positions have been set, call :kl-ref:`Lines.incrementPositionsVersion` (see :ref:`attributeversioning`)
+/// \dfgCreateArrayPreset
+inline Lines.setPointPosition!( Size point, Vec3 position ) {
+  this.parent.setPosition( point, position );
+}
+
+/// Helper for incrementing the version of the positions attribute after value changes.
+/// See :ref:`attributeversioning` for more information.
+inline Lines.incrementPositionsVersion!() {
+  this.attributes.positionsAttribute.incrementVersion();
+}
+
+/// Returns the position of a point.
+/// \dfgCreateArrayPreset
+inline Vec3 Lines.getPointPosition( Size point ) {
+  return this.parent.getPosition( point );
+}
+
+/// Adds a line segment referring to 2 point indices
+inline Lines.addSegment!( UInt32 ptIdx0, UInt32 ptIdx1 )
+{
+  this.indices.push(ptIdx0);
+  this.indices.push(ptIdx1);
+  this.structureVersion++;
+}
+
+/// Adds multiple line segments referring to consecutive point indices.
+/// For example, 'addLine( 3, 6 )' will create segments [3,4], [4,5] and [5,6].
+/// \param ptIdxStart First index of the first segment
+/// \param Last index of the last segment.
+inline Lines.addLine!( UInt32 ptIdxStart, UInt32 ptIdxEnd )
+{
+  for(Index i=ptIdxStart; i<ptIdxEnd; i++)
+  {
+    this.indices.push(i);
+    this.indices.push(i+1);
+  }
+  this.structureVersion++;
+}
+
+/// Adds multiple line segments referring to a loop of consecutive point indices (circular array).
+/// For example, 'addClosedLine( 3, 6 )' will create segments [3,4], [4,5], [5,6] and [6,3].
+/// \param ptIdxStart First index of the first segment and last index of the last segment
+/// \param First index of the last segment
+inline Lines.addClosedLine!( UInt32 ptIdxStart, UInt32 ptIdxEnd )
+{
+  this.addLine(ptIdxStart, ptIdxEnd);
+  this.indices.push(ptIdxEnd);
+  this.indices.push(ptIdxStart);
+  this.structureVersion++;
+}
+
+/// Returns the point indices corresponding to segment `lineIndex`.
+inline Lines.getLineAttributeIndices?( Size lineIndex, out Size start, out Size end ) {
+  start = this.indices[lineIndex*2];
+  end = this.indices[lineIndex*2+1];
+}
+
+/// \internal 
+/// When setting the segment indices directly on 'indices' member, this should be called after changes are finished, so caches (such as drawing data) know that they need to be regenerated.
+function Lines.incrementVersion!( )
+{
+  this.structureVersion++;
+}
+
+/// Returns a String description of the Lines. 
+/// \param withAttributes include the attribute values in the desc.
+/// \param useUnitTestPrint use the unitTestPrint method to ensure that the values are consistent accross platforms(used in unit testing).
+function String Lines.getDesc?( Boolean withAttributes, Boolean useUnitTestPrint ) {
+  String desc;
+  desc += "Lines "+ this.debugName + ": pointCount: " + this.pointCount() + " segmentCount: " + this.lineCount() + '\n';
+
+  for( Size i = 0; i < this.lineCount(); ++i ) {
+    Size start, end;
+    this.getLineAttributeIndices( i, start, end );
+    desc += "  Segment "+i+" = [" + start + ", " + end + "]\n";
+  }
+
+  if( withAttributes )
+    desc += this.attributes.getDesc(useUnitTestPrint) + '\n';
+
+  return desc;
+}
+
+/// Returns a String description of the Lines. 
+/// \param withAttributes include the attribute values in the desc.
+function String Lines.getDesc?( Boolean withAttributes ) {
+  return this.getDesc(withAttributes, false);
+}
+
+/// \internal Implementation of StatisticSource interface's 'getStatistics()'.
+function StatisticRecord[] Lines.getStatistics() {
+  StatisticRecord stats[] = this.parent.getStatistics();
+  stats.push( StatisticRecord( "Lines", this.lineCount() ) );
+  stats.push( StatisticRecord( Statistic_MemoryUsage, this.indices.size()*4 ) );
+  return stats;
+}
+
+function LocalBoundingVolume Lines.getBoundingVolume() {
+  LocalBoundingVolume bBox = this.parent.getBoundingVolume();
+  Vec3 thicknessVec = Vec3( this.raycastThickness, this.raycastThickness, this.raycastThickness );
+  bBox.bBoxSetMin( bBox.bBoxGetMin() - thicknessVec );
+  bBox.bBoxSetMax( bBox.bBoxGetMax() + thicknessVec );
+  return bBox;
+}
+
+/// Geometry interface: return the number of line segment (same as :kl-ref:`Lines.lineCount`)
+function Size Lines.elementCount() {
+  return this.lineCount();
+}
+
+/// Geometry interface: return the bounding volume of a line segment (takes into account `raycastThickness`)
+function LocalBoundingVolume Lines.getElementBoundingVolume(Size index) {
+  Scalar halfThickness = this.raycastThickness*0.5;
+  Vec3 thicknessVec = Vec3( halfThickness, halfThickness, halfThickness );
+
+  LocalBoundingVolume bbox;
+  bbox.bBoxInit();
+  Size startIndex, endIndex;
+  this.getLineAttributeIndices( index, startIndex, endIndex );
+  bbox.bBoxAdd( this.attributes.getPosition( startIndex ) );
+  bbox.bBoxAdd( this.attributes.getPosition( endIndex ) );
+  bbox.pt1 -= thicknessVec;
+  bbox.pt2 += thicknessVec;
+  return bbox;
+}
+
+/// Returns the memory location id. CPU = 0, GPU = 1, VSM = 2;
+inline UInt32 Lines.getMemType( ) {
+  return this.indices.getElementsMemType();
+}
+
+function Lines.convertToGPU!() {
+  this.indices.convertToGPU();
+}
+
+function Lines.convertToCPU!() {
+  this.indices.convertToCPU();
+}
+
+/**
+  Returns an aligned transform for each control point of the curve
+  \dfgPresetCreate
+  \dfgPresetDefault upvector {"x": 0.0, "y": 1.0, "z": 0.0}
+*/
+function Xfo[] Lines.getPerPointTransforms(Vec3 upvector) {
+
+  Xfo transforms[];
+  if(this.indices.size() < 2)
+    return transforms;
+
+  Vec3Attribute linePosAttr = this.getAttributes().getAttribute('positions', Vec3Attribute);
+  Vec3 linePos[] = linePosAttr.values;
+
+  transforms.resize(this.pointCount());
+
+  UInt32 curves[][] = this.getIndicesPerCurve();
+
+  for(Size curve = 0; curve < curves.size(); curve++) {
+    if(curves[curve].size() < 2)
+      continue;
+
+    Vec3 lastTangent;
+
+    for(Size i=0;i<curves[curve].size();i++) {
+
+      UInt32 index = curves[curve][i];
+      UInt32 index2 = curves[curve][(i+1) % curves[curve].size()];
+      UInt32 index3 = curves[curve][(i+curves[curve].size()-1) % curves[curve].size()];
+
+      Vec3 tangent;
+
+      // compute tangent
+      if(i == curves[curve].size()-1) {
+
+        tangent = linePos[index].subtract(linePos[index3]);
+        if(tangent != Vec3())
+          tangent = tangent.unit();
+        else
+          tangent = lastTangent.negate();
+        lastTangent = tangent.negate();
+
+        // is this closed?
+        if(index == curves[curve][0]) {
+          tangent = linePos[curves[curve][1]].subtract(linePos[curves[curve][0]]);
+          if(tangent != Vec3())
+            tangent = tangent.unit();
+          tangent = (tangent - lastTangent).unit();
+        }
+
+      } else {
+
+        tangent = linePos[index2].subtract(linePos[index]);
+        if(tangent != Vec3())
+          tangent = tangent.unit();
+        else
+          tangent = lastTangent.negate();
+
+        Vec3 storedTangent = tangent;
+        if(lastTangent != Vec3())
+          tangent = (tangent - lastTangent).unit();
+        lastTangent = storedTangent.negate();
+      }
+
+      Xfo xfo;
+      xfo.tr = linePos[index];
+      xfo.ori.setFromDirectionAndUpvector(tangent, upvector);
+      transforms[index] = xfo;
+    }
+  }
+
+  return transforms;
+}
+
+/// Geometry interface: transforms the positions of the geometry
+Lines.applyTransform!( Mat44 transform ) {
+  this.parent.applyTransform( transform );
+}
+
+/// Geometry interface: transforms the positions of the geometry
+Lines.applyTransform!( Xfo transform ) {
+  this.parent.applyTransform( transform );
+}
+
+/// Geometry interface: returns all point positions
+Vec3[] Lines.getAllPointPositions() {
+  return this.parent.getAllPointPositions();
+}
+
+/// Geometry interface: sets all point positions
+Lines.setAllPointPositions!( Vec3 positions[] ) {
+  this.parent.setAllPointPositions( positions );
+}

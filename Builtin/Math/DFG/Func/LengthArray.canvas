@@ -1,0 +1,66 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Vec2.html",
+    "uiTooltip" : "Returns the length of this vector\n\n Supported by Vec2,Vec3,Vec4,Quat"
+    },
+  "title" : "Length[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec2[]" : [
+          {
+            "x" : 0,
+            "y" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "$TYPE$[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "AD6D9ADBA38BE82406DF75C2EFA5E12B",
+  "code" : "require Math;
+
+operator Math_Vec2_length_task<<<index>>>(
+  io Scalar[] result
+, in $TYPE$[] this
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].length();
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  Size task_size = this.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Vec2_length_task(index, result, this);
+    }
+  } else {
+    Math_Vec2_length_task<<<task_size>>>(result, this);
+  }
+}
+"
+  }

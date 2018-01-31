@@ -1,0 +1,111 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Vec2.html",
+    "uiTooltip" : "Returns the distance of this vector to a line defined\nby two points on the line\n\n Supported by Vec2"
+    },
+  "title" : "DistanceToLine[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec2[]" : [
+          {
+            "x" : 0,
+            "y" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec2[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "lineP0",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec2[]" : [
+          {
+            "x" : 0,
+            "y" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec2[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "lineP1",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec2[]" : [
+          {
+            "x" : 0,
+            "y" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec2[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "CDD121C947357A7545877BD81A5BFFA3",
+  "code" : "require Math;
+
+operator Math_Vec2_distanceToLine_task<<<index>>>(
+  io Scalar[] result
+, in Vec2[] this
+, in Vec2[] lineP0
+, in Vec2[] lineP1
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].distanceToLine(lineP0[index < lineP0.size() ? index : lineP0.size() - 1], lineP1[index < lineP1.size() ? index : lineP1.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( lineP0.size() == 0) return;
+  if( lineP1.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < lineP0.size()) task_size = lineP0.size();
+  if(task_size < lineP1.size()) task_size = lineP1.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Vec2_distanceToLine_task(index, result, this, lineP0, lineP1);
+    }
+  } else {
+    Math_Vec2_distanceToLine_task<<<task_size>>>(result, this, lineP0, lineP1);
+  }
+}
+"
+  }

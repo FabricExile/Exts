@@ -1,0 +1,134 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Alembic;
+require Geometry;
+
+/**
+  \internal
+
+  A writer object for storing a single geometry attribute
+  \dfgArrayPexDisable true
+*/
+object AlembicGeometryParamWriter {
+  /// \internal
+  private String _name;
+  /// \internal
+  private String _paramType;
+  /// \internal
+  private AlembicGeometryScope _scope;
+  /// \internal
+  private SInt32 _lastVersion;
+  /// \internal
+  private UInt64 _lastUID;
+  /// \internal
+  private AlembicOFloat32GeomParam _Float32Param;
+  /// \internal
+  private AlembicOUInt32GeomParam _UInt32Param;
+  /// \internal
+  private AlembicOSInt32GeomParam _SInt32Param;
+  /// \internal
+  private AlembicOVec2VfGeomParam _Vec2VfParam;
+  /// \internal
+  private AlembicOVec3VfGeomParam _Vec3VfParam;
+  /// \internal
+  private AlembicOVec3NfGeomParam _Vec3NfParam;
+  /// \internal
+  private AlembicOQuatfGeomParam _QuatfParam;
+  /// \internal
+  private AlembicOColorfGeomParam _ColorfParam;
+  /// \internal
+  private AlembicOMat44fGeomParam _Mat44fParam;
+  /// \internal
+  private AlembicOArrayProperty _valueProperty;
+};
+
+function AlembicGeometryParamWriter(AlembicOCompoundProperty parent, String name, AlembicGeometryScope scope, SInt32 timeSampling, Ref<ScalarAttribute> attribute) {
+  this.initFloat32( parent, name, scope, timeSampling, attribute );
+}
+
+function AlembicGeometryParamWriter(AlembicOCompoundProperty parent, String name, AlembicGeometryScope scope, SInt32 timeSampling, Ref<UInt32Attribute> attribute) {
+  this.initUInt32( parent, name, scope, timeSampling, attribute );
+}
+
+function AlembicGeometryParamWriter(AlembicOCompoundProperty parent, String name, AlembicGeometryScope scope, SInt32 timeSampling, Ref<IntegerAttribute> attribute) {
+  this.initSInt32( parent, name, scope, timeSampling, attribute );
+}
+
+function AlembicGeometryParamWriter(AlembicOCompoundProperty parent, String name, AlembicGeometryScope scope, SInt32 timeSampling, Ref<Vec2Attribute> attribute) {
+  this.initVec2Vf( parent, name, scope, timeSampling, attribute );
+}
+
+function AlembicGeometryParamWriter(AlembicOCompoundProperty parent, String name, AlembicGeometryScope scope, SInt32 timeSampling, Ref<Vec3Attribute> attribute) {
+  this.initVec3Vf( parent, name, scope, timeSampling, attribute );
+}
+
+function AlembicGeometryParamWriter(AlembicOCompoundProperty parent, String name, AlembicGeometryScope scope, SInt32 timeSampling, Ref<QuatAttribute> attribute) {
+  this.initQuatf( parent, name, scope, timeSampling, attribute );
+}
+
+function AlembicGeometryParamWriter(AlembicOCompoundProperty parent, String name, AlembicGeometryScope scope, SInt32 timeSampling, Ref<ColorAttribute> attribute) {
+  this.initColorf( parent, name, scope, timeSampling, attribute );
+}
+
+function AlembicGeometryParamWriter(AlembicOCompoundProperty parent, String name, AlembicGeometryScope scope, SInt32 timeSampling, Ref<Mat44Attribute> attribute) {
+  this.initMat44f( parent, name, scope, timeSampling, attribute );
+}
+
+function String AlembicGeometryParamWriter.getName() {
+  return this._name;
+}
+
+function String AlembicGeometryParamWriter.getParamType() {
+  return this._paramType;
+}
+
+function AlembicGeometryScope AlembicGeometryParamWriter.getScope() {
+  return this._scope;
+}
+
+function AlembicMetaData AlembicGeometryParamWriter.getMetaData() {
+  return this._valueProperty.getMetaData();
+}
+
+function Boolean AlembicGeometryParamWriter.writeSample!(
+  Ref<Geometry> geometry,
+  Ref<GeometryAttribute> attribute
+)
+{
+  UInt32 optionalPointToIndex[];
+  return this.writeSample( geometry, attribute, optionalPointToIndex );
+}
+
+function Boolean AlembicGeometryParamWriter.writeSample!(
+  Ref<Geometry> geometry,
+  Ref<GeometryAttribute> attribute,
+  UInt32 optionalPointToIndex<>
+)
+{
+
+  if( this._lastVersion == attribute.getVersion() && this._lastUID == attribute.uid() )
+    return true;
+  this._lastVersion = attribute.getVersion();
+  this._lastUID = attribute.uid();
+
+  switch(this._paramType)
+  {
+    case 'Float32' : return this.writeSampleFloat32( geometry, attribute, optionalPointToIndex );
+    case 'UInt32' : return this.writeSampleUInt32( geometry, attribute, optionalPointToIndex );
+    case 'SInt32' : return this.writeSampleSInt32( geometry, attribute, optionalPointToIndex );
+    case 'Vec2Vf' : return this.writeSampleVec2Vf( geometry, attribute, optionalPointToIndex );
+    case 'Vec3Vf' : return this.writeSampleVec3Vf( geometry, attribute, optionalPointToIndex );
+    case 'Quatf' : return this.writeSampleQuatf( geometry, attribute, optionalPointToIndex );
+    case 'Colorf' : return this.writeSampleColorf( geometry, attribute, optionalPointToIndex );
+    case 'Mat44f' : return this.writeSampleMat44f( geometry, attribute, optionalPointToIndex );
+    default:
+    {
+      setError('AlembicGeometryParamWriter: Unsupported paramType "'+this._paramType+'".');
+      break;
+    }
+  }
+
+  return false;
+}

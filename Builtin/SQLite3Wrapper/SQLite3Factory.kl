@@ -1,0 +1,33 @@
+//
+// Copyright 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+object SQLite3Model;
+
+/// The SQLite3Factory manages all known models for a given
+/// database.
+object SQLite3Factory
+{
+  protected SQLite3Model models[String];
+};
+
+/// Default constructor
+SQLite3Factory()
+{
+}
+
+/// Returns a model base on its name
+Ref<SQLite3Model> SQLite3Factory.getModel?(String name)
+{
+  return this.models.get(name, null);
+}
+
+/// Registers a new model in the factory
+SQLite3Factory.addModel!(SQLite3Model model)
+{
+  if(this.models.has(model.getModelName()))
+    throw("A model called "+model.getModelName()+" already registered in this factory.");
+  this.models[model.getModelName()] = model;
+  this.models[model.getModelName()].setFactory(this);
+  this.models[model.getModelName()].createTableIfRequired();
+}

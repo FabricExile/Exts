@@ -1,0 +1,78 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+require Math, FabricStatistics;
+
+/**
+  The Image2DScalar is an Image2D storing Scalar pixel values.
+  \seealso Image2D
+*/
+object Image2DScalar : Image2D {
+  Scalar pixels[];
+};
+
+/// Default constructor. Sets up the statistics register.
+function Image2DScalar() {
+  if(FabricStatisticsEnabled())
+    this.autoStats = StatisticsAutoRegisterMember(this);
+}
+
+/// Resize the image allocating space for pixel storage.
+/// \param width The new width of the image
+/// \param height The new height of the image
+function Image2DScalar.resize!(
+  in UInt32 width,
+  in UInt32 height,
+){
+  this.pixels.resize(width * height);
+  this.width = width;
+  this.height = height;
+  this.incrementVersion();
+}
+
+/// Samples the image pixels, returning a bi-linearly interpolated pixel value. 
+/// \param u The u param to sample the image. Should range between 0.0 and 1.0 
+/// \param v The v param to sample the image. Should range between 0.0 and 1.0 
+function Scalar Image2DScalar.sample(
+  in Scalar u,
+  in Scalar v
+){
+  Scalar u1, u2, v1, v2;
+  UInt32 tl, bl, tr, br;
+  Scalar uinterp, vinterp;
+  this.getSampleParams( 
+    u, v,
+    u1, u2, v1, v2,
+    tl, bl, tr, br,
+    uinterp, vinterp
+    );
+  
+  Scalar tlClr = this.pixels[tl];
+  Scalar blClr = this.pixels[bl];
+  Scalar trClr = this.pixels[tr];
+  Scalar brClr = this.pixels[br];
+  Scalar uClr = tlClr.linearInterpolate(blClr, uinterp);
+  Scalar vClr = trClr.linearInterpolate(brClr, uinterp);
+  return uClr.linearInterpolate(vClr, vinterp);
+}
+
+/// Sets a new pixel value
+/// \param uindex the index of the pixel in u
+/// \param vindex the index of the pixel in v
+/// \param pixelValue the new value for the pixel
+inline Image2DScalar.setPixel!(
+  in Integer uindex,
+  in Integer vindex,
+  in Scalar pixelValue
+){
+  this.pixels[(vindex * this.width) + uindex] = pixelValue;
+}
+
+//Implementation of StatisticSource interface's 'getStatistics()'.
+function StatisticRecord[] Image2DScalar.getStatistics() {
+  StatisticRecord stats[] = this.parent.getStatistics();
+  stats.push( StatisticRecord( "Size", this.pixels.size() ) );
+  stats.push( StatisticRecord( Statistic_MemoryUsage, 12*4+this.pixels.size()*4*4 ) );
+  return stats;
+}

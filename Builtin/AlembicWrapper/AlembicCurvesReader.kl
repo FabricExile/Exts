@@ -1,0 +1,417 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Alembic;
+require Geometry;
+
+/**
+  The :kl-ref:`AlembicCurvesReader` specializes the :kl-ref:`AlembicObjectReader` interface for reading :kl-ref:`AlembicICurves` data. 
+  It can be created using the :kl-ref:`AlembicArchiveReader.getCurves` method.
+  \example
+
+  require AlembicWrapper;
+  require FileIO;
+
+  operator entry() {
+    
+    FilePath path = FilePath('${FABRIC_SCENE_GRAPH_DIR}/Python/Apps/Resources/Alembic/furmonster.abc').expandEnvVars();
+
+    AlembicArchiveReader archive(path.string());
+    String curvesPaths[] = archive.getPathsOfType('Curves');
+
+    for(Size i=0;i<curvesPaths.size();i++) {
+
+      AlembicCurvesReader curves = archive.getCurves(curvesPaths[i]);
+      report('samples: '+curves.getNumSamples());
+
+      Lines lines = Lines();
+      curves.readSample(2.4, lines);
+
+      report(lines.pointCount());
+      report(lines.lineCount());
+    }
+
+  }
+
+  \endexample
+  \seealso AlembicCurvesWriter
+*/
+object AlembicCurvesReader : AlembicBaseObjectReader, AlembicGeometryReader{
+  /// \internal
+  private AlembicICurves _curves;
+  /// \internal
+  private AlembicICurvesSchema _schema;
+  /// \internal
+  private UInt32 _numCurves;
+  /// \internal
+  private UInt32 _pointToCurve[];
+  /// \internal
+  private UInt32 _optionalPointToIndex[];
+
+  /// \internal
+  private AlembicICurvesSample _sampleA;
+  /// \internal
+  private AlembicICurvesSample _sampleB;
+  /// \internal
+  private AlembicGeometryAttributesReader _attributesReader;
+  /// \internal
+  private UInt64 _geometryUid;
+};
+
+/// \internal
+private function AlembicCurvesReader(AlembicArchiveReader archive, AlembicIObject curves) {
+
+  this._curves = AlembicICurves(curves);
+  this._schema = this._curves.getSchema();
+  this.parent.set( archive, curves, this._schema.getTimeSampling(), this._schema.getNumSamples(), this._schema.getChildBoundsProperty() );
+
+  this._sampleA = AlembicICurvesSample();
+  this._sampleB = AlembicICurvesSample();
+  this._attributesReader = AlembicGeometryAttributesReader( archive, this._schema.getArbGeomParams() );
+
+  // Add readers for properties that are part of the schema (and not part of arbGeomParams)
+
+  // Positions
+  {
+    AlembicGeometryParamReader paramReader(
+      this.archive,
+      AlembicIVec3VfGeomParam(
+      this.getSchema().getPositionsProperty().getParent(),
+      this.getSchema().getPositionsProperty().getName()
+      ) );
+    paramReader._name = "positions";
+    this._attributesReader.addParamReader( paramReader );
+  }
+
+  // Velocities
+  if( this.getSchema().getVelocitiesProperty().valid() ) {
+    AlembicGeometryParamReader paramReader(
+      this.archive,
+      AlembicIVec3VfGeomParam(
+      this.getSchema().getVelocitiesProperty().getParent(),
+      this.getSchema().getVelocitiesProperty().getName()
+      ) );
+    paramReader._name = "velocities";
+    this._attributesReader.addParamReader( paramReader );
+  }
+
+  // Widths
+  if( this.getSchema().getWidthsParam().valid() ) {
+    AlembicGeometryParamReader paramReader(
+      this.archive,
+      this.getSchema().getWidthsParam()
+      );
+    paramReader._name = "sizes";
+    this._attributesReader.addParamReader( paramReader );
+  }
+
+  // UVs
+  if( this.getSchema().getUVsParam().valid() ) {
+    AlembicGeometryParamReader paramReader(
+      this.archive,
+      this.getSchema().getUVsParam()
+      );
+    paramReader._name = "uvs0";
+    this._attributesReader.addParamReader( paramReader );
+  }
+
+  // backwards compatibility
+  // properties might be stored on other props
+  // TO FIX: this will actually duplicate the property values & reads!!
+  AlembicICompoundProperty mainProps = this._curves.getProperties();
+  AlembicICompoundProperty geomProps = AlembicICompoundProperty(mainProps, ".geom");
+  if(geomProps.valid()) {
+    for(Size i=0;i<geomProps.getNumProperties();i++) {
+
+      AlembicPropertyHeader ph = geomProps.getPropertyHeader(i);
+      if(ph.getName() == '.color') {
+        AlembicGeometryParamReader paramReader = AlembicGeometryParamReader(archive, AlembicIColorfGeomParam(geomProps, ph.getName()));
+        paramReader._name = 'vertexColors';
+        this._attributesReader.addParamReader(paramReader);
+      }
+      else if(ph.getName() == 'N') {
+        // Houdini includes normals at .geom's level, not in arbGeomParams
+        AlembicGeometryParamReader paramReader = AlembicGeometryParamReader(archive, AlembicIVec3NfGeomParam(geomProps, ph.getName()));
+        this._attributesReader.addParamReader(paramReader);
+      }
+    }
+  }
+
+}
+
+/// returns the full path of the wrapped AlembicICurves
+function String AlembicCurvesReader.getPath() {
+  return this._curves.asIObject().getFullName();
+}
+
+/// returns true if this reader wraps a valid AlembicICurves
+function Boolean AlembicCurvesReader.valid() {
+  if(!this._curves.valid())
+    return false;
+  return this.parent.valid();
+}
+
+/// clears all pointers and releases all alembic containers
+function AlembicCurvesReader.reset!() {
+  this._curves.reset();
+  this._schema.reset();
+  this._sampleA = null;
+  this._sampleB = null;
+}
+
+/// returns the number of samples of this reader
+function SInt32 AlembicCurvesReader.getNumSamples() {
+  return this._numSamples;
+}
+
+/// returns the schema of this reader
+AlembicICurvesSchema AlembicCurvesReader.getSchema() 
+{ 
+  return this._schema; 
+}
+
+/// returns the first sample used by this reader
+AlembicICurvesSample AlembicCurvesReader.getSampleA() 
+{ 
+  return this._sampleA; 
+}
+
+/// returns the second sample used by this reader
+AlembicICurvesSample AlembicCurvesReader.getSampleB() 
+{ 
+  return this._sampleB; 
+} 
+
+/// returns the timesampling of this reader
+AlembicTimeSampling AlembicCurvesReader.getTimeSampling() 
+{ 
+  return this._timeSampling; 
+}
+
+/// returns the bounding box
+function Box3 AlembicCurvesReader.getSelfBounds!(Float64 time, io Boolean isConstant) {
+  isConstant = this._numSamples <= 1;
+  AlembicSampleInfo info(time, this._timeSampling, this._numSamples);
+  this._schema.get(this._sampleA, this.archive.getISampleSelector( info.indexA ));
+  if(info.requiresInterpolation())
+    this._schema.get(this._sampleB, this.archive.getISampleSelector( info.indexB ));
+
+  Box3 box = this._sampleA.getSelfBounds();
+  if(info.requiresInterpolation())
+  {
+    Box3 box2 = this._sampleB.getSelfBounds();
+    box.min = box.min.linearInterpolate(box2.min, Float32(info.fraction));
+    box.max = box.max.linearInterpolate(box2.max, Float32(info.fraction));
+  }
+  return box;
+}
+
+/// Returns true if the bounds of this object, excluding the children, are constant
+public Boolean AlembicCurvesReader.areSelfBoundsConstant() {
+  // To be overriden
+  return this._numSamples <= 1;
+}
+
+/// reads a sample at a given time. this will properly interpolate between samples.
+/// the result is stored in the provided Curves geometry.
+/// \dfgPresetCreate
+function AlembicCurvesReader.readSample!(Float64 time, io Curves geom) {
+
+  if(this == null)
+    return;
+  
+  this.updateTimeInfo(time);
+
+  if(!geom)
+    geom = Curves();
+
+  Boolean theSameGeo = geom.uid() == this._geometryUid;
+  this._geometryUid = geom.uid();
+
+  this._schema.get(this._sampleA, AlembicISampleSelector(this._info.indexA));
+  if(this._info.requiresInterpolation())
+    this._schema.get(this._sampleB, this._infoIndexBSelector);
+
+  //topology
+  if(    geom.curveCount() != this._sampleA.getNumCurves()
+      || this._schema.getTopologyVariance() == Alembic_kHeterogenousTopology
+      || !theSameGeo )
+  {
+    // number of curves
+    geom.setCurveCount( 0 );
+    this._numCurves = this._sampleA.getNumCurves();
+
+    // number of vertices
+    SInt32 numVertices<> = this._sampleA.getCurvesNumVertices();
+
+    // type of curves
+    Boolean periodic = ( this._sampleA.getWrap() == Alembic_kPeriodic );
+    AlembicCurveType curveType = this._sampleA.getType();
+    AlembicBasisType basisType = this._sampleA.getBasis();
+    Float32 knots<> = this._sampleA.getKnots();
+    UInt8 orders<> = this._sampleA.getOrders();
+
+    // checking if the type is supported
+    {
+      Boolean supported = true; String name = "";
+      if( basisType == Alembic_kCatmullromBasis )
+        { supported = false; name = "CatmullRom"; }
+      if( basisType == Alembic_kHermiteBasis )
+        { supported = false; name = "Hermite"; }
+      if( basisType == Alembic_kPowerBasis )
+        { supported = false; name = "Power"; }
+      if( !supported )
+      {
+        curveType = Alembic_kLinear;
+        report(
+          "Warning : unsupported Curve basis = " + name
+          + "; Falling back to Linear (" + this.getPath() + ")"
+        );
+      }
+    }
+
+    // Beginning of the knots for the current curve 
+    Index knotOffset = 0;
+
+    for(Size i=0;i<this._numCurves;i++)
+    {
+      UInt8 order = UInt8(
+        curveType == Alembic_kLinear ? 2 :
+        curveType == Alembic_kCubic ? 4 :
+        orders[i] // Alembic_kVariableOrder
+      );
+
+      // Skipping the first and last knots
+      knotOffset++;
+      Size nbKnots = numVertices[i] + order-2;
+
+      if( order == 2 )
+        geom.addLinearCurveIndex( numVertices[i] - (periodic?1:0), periodic ); // TODO : detect closed Curves
+      else
+      {
+        if( basisType == Alembic_kBezierBasis )
+          geom.addBezierIndex( numVertices[i]/(order-1), order-1, periodic ); // TODO : detect closed Curves
+        else
+        if( basisType == Alembic_kBsplineBasis )
+        {
+          Float32 curveKnots[]; curveKnots.reserve( nbKnots );
+          for(Index k=0; k<nbKnots; k++)
+            curveKnots.push( knots[ knotOffset + k ] );
+
+          geom.addNURBSIndex(
+            order-1,
+            periodic ? curveForm_periodic : curveForm_open,
+            curveKnots
+          );
+        }
+        else
+          throw ("Invalid Basis Type = " + basisType + " for object \"" + this.getPath() + "\"");
+      }
+
+      knotOffset += nbKnots;
+      knotOffset++;
+    }
+
+    // Maya includes repeated points
+    Index alembicOffset;
+    this._pointToCurve.resize( 0 );
+    this._pointToCurve.reserve( geom.allCurvesPointRange() );
+    this._optionalPointToIndex.resize( 0 );
+    this._optionalPointToIndex.reserve( geom.allCurvesPointRange() );
+
+    for( Index i = 0; i<this._numCurves; i++ )
+    {
+      Size verts = geom.getPointCount(i);
+      Vec3 alPos<> = this._sampleA.getPositions();
+      for(Index j=0; j<verts; j++)
+      {
+        this._optionalPointToIndex.push( alembicOffset++ );
+        this._pointToCurve.push( i );
+      }
+      alembicOffset += numVertices[i]-verts;
+    }
+  }
+  GeometryAttributes attributes = geom.getAttributes();
+  this._attributesReader.readCurveSample( time, this._numCurves, this._pointToCurve, this._optionalPointToIndex, attributes );
+}
+
+/// reads a sample at a given time. this will properly interpolate between samples.
+/// the result is stored in the provided Lines geometry.
+/// \dfgPresetCreate
+function AlembicCurvesReader.readSample!(Float64 time, io Lines lines) {
+
+  if(this == null)
+    return;
+  
+  this.updateTimeInfo(time);
+
+  if(!lines)
+    lines = Lines();
+
+  Boolean theSameGeo = lines.uid() == this._geometryUid;
+  this._geometryUid = lines.uid();
+
+  // From Pablo , dosn't work in zeuxis
+  //if(this._info.time == time && theSameGeo)
+  //  return;
+  //AlembicSampleInfo info(time, this._timeSampling, this._numSamples);
+  //if(info == this._info && theSameGeo)
+  //  return;
+  //this._info = info;
+
+  this._schema.get(this._sampleA, AlembicISampleSelector(this._info.indexA));
+  if(this._info.requiresInterpolation())
+    this._schema.get(this._sampleB, this._infoIndexBSelector);
+
+  Vec3 positionsValuesA<> = this._sampleA.getPositions();
+
+  GeometryAttributes attributes = lines.getAttributes();
+
+  // topology
+  if(lines.indices.size() == 0 ||
+    this._numCurves != this._sampleA.getNumCurves() ||
+    lines.pointCount() != positionsValuesA.size()
+    ) {
+    lines.indices.resize(0);
+    lines.clear();
+    lines.addPoints( positionsValuesA.size() );
+    SInt32 numVertices<> = this._sampleA.getCurvesNumVertices();
+    this._numCurves = numVertices.size();
+
+    Size offset = 0;
+    this._pointToCurve.resize( positionsValuesA.size() );
+    for(Size i=0;i<this._numCurves;i++) {
+      for(Size j=0;j<numVertices[i];j++) {
+        this._pointToCurve[offset++] = i;
+      }
+    }
+
+    // TODO : Use Lines.addLineStrips!(Vec3 strip[], Size counts[]) instead
+    offset = 0;
+    for(Size i=0;i<this._numCurves;i++)
+    {
+      for(Size j=0;j<numVertices[i]-1;j++) {
+        lines.indices.push(offset++);
+        lines.indices.push(offset);
+      }
+      offset++;
+    }
+    lines.structureVersion++;
+  }
+
+  this._attributesReader.readCurveSample( time, this._numCurves, this._pointToCurve, this._optionalPointToIndex, attributes );
+}
+
+/// Reads a geometry sample at a given time
+function AlembicCurvesReader.readSample!(Float64 time, io Geometry geom) {
+
+  if( Ref<Lines>(geom) )
+    this.readSample( time, Lines(geom) );
+  else
+  {
+    if( !Ref<Curves>(geom) )
+      geom = Curves();
+    this.readSample( time, Curves(geom) );
+  }
+}

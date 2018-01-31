@@ -1,0 +1,170 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Alembic;
+require Geometry;
+
+// forward decl;
+object AlembicArchiveWriter;
+
+/**
+  The :kl-ref:`AlembicPropertyWriter` can be used to store custom properties within any path of an existing AlembicObjectWriter.
+  \seealso AlembicPropertyReader
+  \dfgArrayPexDisable true
+*/
+object AlembicPropertyWriter {
+  /// \internal
+  private Ref<AlembicArchiveWriter> archive;
+  /// \internal
+  private AlembicPropertyType propertyType;
+  /// \internal
+  private AlembicDataType dataType;
+  /// \internal
+  private AlembicOCompoundProperty compound;
+  /// \internal
+  private AlembicPropertyHeader header;
+  /// \internal
+  private UInt32 numSamples;
+  /// \internal
+  private UInt32 storedSamples;
+  /// \internal
+  private SInt32 timeSampling;
+  /// \internal
+  private AlembicOScalarProperty scalarProp;
+  /// \internal
+  private AlembicOArrayProperty arrayProp;
+  /// \internal
+  private Object specializedProp;
+};
+
+/// \internal
+function AlembicPropertyWriter() {
+  this.propertyType = Alembic_kUnknownProperty;
+}
+
+/// \internal
+private function AlembicPropertyWriter(
+  Ref<AlembicArchiveWriter> archive,
+  AlembicOCompoundProperty compound,
+  AlembicPropertyType propertyType,
+  String name,
+  AlembicPOD pod,
+  UInt32 extent,
+  SInt32 timeSampling
+) {
+  this.archive = archive;
+  this.propertyType = propertyType;
+  this.compound = compound;
+
+  switch(this.propertyType) {
+    case Alembic_kCompoundProperty:
+    {
+      AlembicOCompoundProperty prop(compound, name);
+      this.header = prop.getHeader();
+      this.timeSampling = 0;
+      this.numSamples = 0;
+      this.storedSamples = 0;
+      this.dataType = AlembicDataType();
+      this.specializedProp = prop;
+      break;
+    }
+    case Alembic_kScalarProperty:
+    {
+      this.dataType = AlembicDataType(pod, extent);
+      this.scalarProp = AlembicOScalarProperty(compound, name, this.dataType);
+      this.header = this.scalarProp.getHeader();
+      this.scalarProp.setTimeSampling(timeSampling);
+      this.timeSampling = timeSampling;
+      this.numSamples = this.scalarProp.getTimeSampling().getNumStoredTimes();
+      if(this.numSamples == 0)
+        this.numSamples = 1;
+      this.storedSamples = 0;
+      this.specializedProp = null;
+      break;
+    }
+    case Alembic_kArrayProperty:
+    {
+      this.dataType = AlembicDataType(pod, extent);
+      this.arrayProp = AlembicOArrayProperty(compound, name, this.dataType);
+      this.header = this.arrayProp.getHeader();
+      this.arrayProp.setTimeSampling(timeSampling);
+      this.timeSampling = timeSampling;
+      this.numSamples = this.arrayProp.getTimeSampling().getNumStoredTimes();
+      if(this.numSamples == 0)
+        this.numSamples = 1;
+      this.storedSamples = 0;
+      this.specializedProp = null;
+      break;
+    }
+    default:
+    {
+      this.numSamples = 0;
+      this.dataType = AlembicDataType();
+    }
+  }
+}
+
+private function AlembicPropertyHeader AlembicPropertyWriter.getHeader() {
+  if(this == null)
+    return null;
+  if(!this.valid())
+    return null;
+  return this.header;
+}
+
+/// returns true if this reader wraps a valid AlembicIPoints
+function Boolean AlembicPropertyWriter.valid() {
+  return this.propertyType != Alembic_kUnknownProperty;
+}
+
+/// clears all pointers and releases all alembic containers
+function AlembicPropertyWriter.reset!() {
+  this.compound.reset();
+  this.scalarProp.reset();
+  this.arrayProp.reset();
+  this.specializedProp = null;
+}
+
+/// returns the full path of the wrapped AlembicIPoints
+function String AlembicPropertyWriter.getName() {
+  if(this == null)
+    return "";
+  if(!this.valid())
+    return "";
+  return this.header.getName();
+}
+
+function String AlembicPropertyWriter.getPropertyType() {
+  if(this == null)
+    return "";
+  if(!this.valid())
+    return "";
+
+  String result;
+  if(this.header.isScalar())
+    result = "scalar-";
+  else if(this.header.isArray())
+    result = "array-";
+  else if(this.header.isCompound())
+    result = "compound-";
+
+  result += this.dataType.getPodName() + '-';
+  result += this.dataType.getExtent();
+  return result;
+}
+
+function AlembicOScalarProperty AlembicPropertyWriter.getScalarProperty!()
+{
+  return this.scalarProp;
+}
+
+function AlembicOArrayProperty AlembicPropertyWriter.getArrayProperty!()
+{
+  return this.arrayProp;
+}
+
+function AlembicOCompoundProperty AlembicPropertyWriter.getCompoundProperty!()
+{
+  return this.specializedProp;
+}

@@ -1,0 +1,61 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 2.0
+  
+  :kl-ref:`LegacyBaseSliderTarget` is a base class for any for any :kl-ref:`SliderTarget`.
+
+  \seealso :kl-ref:`LegacyToolTarget`, :kl-ref:`SliderTool`, :kl-ref:`LegacyBaseToolTarget`
+
+  \dfgPresetOmit
+*/
+interface SliderTarget {
+  /// Maps the target value to the slider value range [-1, 1].
+  /// \param value The slider tool value.
+  Float32 valueToSlider(Float32 value);
+  
+  /// Maps the slider value to the target value range.
+  /// \param value The slider target value.
+  Float32 sliderToValue(Float32 value);
+
+  /// Updates the sliders values.
+  /// \param value The value given by the tool.
+  valueChanged!(Float32 value);
+
+  /// Gets the target value. 
+  /// Must be called only if isValid() == true.
+  Float32 getValue();
+};
+
+object LegacyBaseSliderTarget : LegacyBaseToolTarget, SliderTarget {
+  /// Array of tranforms (one Values for each target).
+  protected Float32 values[]; 
+};
+
+/// Implementation of :kl-ref:`SliderTarget`.
+/// To override.
+protected Float32 LegacyBaseSliderTarget.sliderToValue(Float32 value) {
+  return value;
+}
+
+/// Implementation of :kl-ref:`SliderTarget`.
+/// To override.
+protected Float32 LegacyBaseSliderTarget.valueToSlider(Float32 value) {
+  return value;
+}
+
+/// Implementation of :kl-ref:`SliderTarget`.
+/// To override.
+LegacyBaseSliderTarget.valueChanged!(Float32 value) {
+  if(this.values.size() == 0) return;
+  for(Index i=0; i<this.values.size(); ++i)
+    this.values[i] = this.sliderToValue(value); 
+}
+
+/// Implementation of :kl-ref:`SliderTarget`.
+/// To override.
+Float32 LegacyBaseSliderTarget.getValue() {
+  return this.values.size() ? this.valueToSlider(this.values[0]) : this.valueToSlider(0.0f);
+}

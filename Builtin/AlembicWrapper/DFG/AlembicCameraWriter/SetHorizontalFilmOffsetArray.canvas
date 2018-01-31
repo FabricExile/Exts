@@ -1,0 +1,58 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "sets the current sample's horizontalFilmOffset value\n\nSupported types:\n  this: AlembicCameraWriter\n  value: Float64\n"
+    },
+  "title" : "SetHorizontalFilmOffset[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicCameraWriter[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "value",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float64[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float64[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "68C52451030A00B9CB7BBE39573DB12F",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicCameraWriter_setHorizontalFilmOffset_task<<<index>>>(
+  io AlembicCameraWriter[] this
+, in Float64[] value
+) {
+  this[index < this.size() ? index : this.size() - 1].setHorizontalFilmOffset(value[index < value.size() ? index : value.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( value.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < value.size()) task_size = value.size();
+  for(Size index = 0; index < task_size; index++) {
+    AlembicWrapper_AlembicCameraWriter_setHorizontalFilmOffset_task(index, this, value);
+  }
+}
+"
+  }

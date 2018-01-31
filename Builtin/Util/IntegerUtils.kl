@@ -1,0 +1,379 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+const UInt32 InvalidIndex = 4294967295;// -UInt32(1)
+const UInt32 UInt32HighBit = 1<<31;
+
+/// returns true if a given UInt8 flag is part of the UInt8 bit mask
+inline Boolean getFlag( UInt8 val, UInt8 flag ) {
+  return Boolean(val & flag);
+}
+
+/// sets a given UInt8 flag as part of the UInt8 bit mask
+inline setFlag( io UInt8 val, UInt8 flag ) {
+  val = val | flag;
+}
+
+/// sets a given UInt8 flag as part of the UInt8 bit mask
+inline Boolean atomicGetThenSetFlag( io UInt8 val, UInt8 flag ) {
+  return val.atomicOr( flag ) & flag;
+}
+
+/// sets a given UInt8 flag as part of the UInt8 bit mask and returns the previous value
+inline Boolean getThenSetFlag( io UInt8 val, UInt8 flag ) {
+  Boolean value = getFlag( val, flag );
+  if( !value )
+    setFlag( val, flag );
+  return value;
+}
+
+/// removes a given UInt8 flag from an UInt8 bit mask
+inline clearFlag( io UInt8 val, UInt8 flag ) {
+  val = val & ~flag;
+}
+
+/// removes a given UInt8 flag from an UInt8 bit mask
+inline Boolean atomicGetThenClearFlag( io UInt8 val, UInt8 flag ) {
+  return val.atomicAnd( ~flag ) & flag;
+}
+
+/// removes a given UInt8 flag as part of the UInt8 bit mask and returns the previous value
+inline Boolean getThenClearFlag( io UInt8 val, UInt8 flag ) {
+  Boolean value = getFlag( val, flag );
+  if( value )
+    clearFlag( val, flag );
+  return value;
+}
+
+inline Boolean getFlag( UInt16 val, UInt16 flag ) {
+  return Boolean(val & flag);
+}
+
+/// sets a given UInt16 flag as part of the UInt16 bit mask
+inline setFlag( io UInt16 val, UInt16 flag ) {
+  val = val | flag;
+}
+
+/// sets a given UInt16 flag as part of the UInt16 bit mask
+inline Boolean atomicGetThenSetFlag( io UInt16 val, UInt16 flag ) {
+  return val.atomicOr( flag ) & flag;
+}
+
+/// sets a given UInt16 flag as part of the UInt16 bit mask and returns the previous value
+inline Boolean getThenSetFlag( io UInt16 val, UInt16 flag ) {
+  Boolean value = getFlag( val, flag );
+  if( !value )
+    setFlag( val, flag );
+  return value;
+}
+
+inline clearFlag( io UInt16 val, UInt16 flag ) {
+  val = val & ~flag;
+}
+
+/// removes a given UInt16 flag from an UInt16 bit mask
+inline Boolean atomicGetThenClearFlag( io UInt16 val, UInt16 flag ) {
+  return val.atomicAnd( ~flag ) & flag;
+}
+
+/// removes a given UInt16 flag as part of the UInt16 bit mask and returns the previous value
+inline Boolean getThenClearFlag( io UInt16 val, UInt16 flag ) {
+  Boolean value = getFlag( val, flag );
+  if( value )
+    clearFlag( val, flag );
+  return value;
+}
+
+/// returns true if a given UInt32 flag is part of the UInt32 bit mask
+inline Boolean getFlag( UInt32 val, UInt32 flag ) {
+  return Boolean(val & flag);
+}
+
+/// sets a given UInt32 flag as part of the UInt32 bit mask
+inline setFlag( io UInt32 val, UInt32 flag ) {
+  val = val | flag;
+}
+
+/// sets a given UInt32 flag as part of the UInt32 bit mask
+inline Boolean atomicGetThenSetFlag( io UInt32 val, UInt32 flag ) {
+  return val.atomicOr( flag ) & flag;
+}
+
+/// sets a given UInt32 flag as part of the UInt32 bit mask and returns the previous value
+inline Boolean getThenSetFlag( io UInt32 val, UInt32 flag ) {
+  Boolean value = getFlag( val, flag );
+  if( !value )
+    setFlag( val, flag );
+  return value;
+}
+
+/// removes a given UInt32 flag from an UInt32 bit mask
+inline clearFlag( io UInt32 val, UInt32 flag ) {
+  val = val & ~flag;
+}
+
+/// removes a given UInt32 flag from an UInt32 bit mask
+inline Boolean atomicGetThenClearFlag( io UInt32 val, UInt32 flag ) {
+  return val.atomicAnd( ~flag ) & flag;
+}
+
+/// removes a given UInt32 flag as part of the UInt32 bit mask and returns the previous value
+inline Boolean getThenClearFlag( io UInt32 val, UInt32 flag ) {
+  Boolean value = getFlag( val, flag );
+  if( value )
+    clearFlag( val, flag );
+  return value;
+}
+
+/// swaps two UInt32 numbers
+inline swap( io UInt32 first, io UInt32 second ) {
+  UInt32 temp = first;
+  first = second;
+  second = temp;
+}
+
+/// performs a logarithmic round up for the provided value
+inline UInt8 Log2RoundUp(UInt32 value) {
+  UInt8 nextBit;
+  UInt32 shiftValue = value;
+  if( shiftValue >> 16 ) {
+    shiftValue = shiftValue >> 16;
+    nextBit += 16;
+  }
+  if( shiftValue >> 8 ) {
+    shiftValue = shiftValue >> 8;
+    nextBit += 8;
+  }
+  if( shiftValue >> 4 ) {
+    shiftValue = shiftValue >> 4;
+    nextBit += 4;
+  }
+  if( shiftValue >> 2 ) {
+    shiftValue = shiftValue >> 2;
+    nextBit += 2;
+  }
+  if( shiftValue >> 1 ) {
+    shiftValue = shiftValue >> 1;
+    nextBit += 1;
+  }
+  if( (1 << nextBit) != value )//round up
+    nextBit += 1;
+
+  return nextBit;
+}
+
+/// returns a certain bit of a given UInt32 value
+inline Boolean getBit( UInt32 val, UInt32 bit ) {
+  return (val & (1 << bit )) != 0;
+}
+
+/// sets a certain bit of a given UInt32 value
+inline setBit( io UInt32 val, UInt32 bit ) {
+  val = val | (1 << bit );
+}
+
+/// sets a certain bit of a given UInt32 value
+inline atomicSetBit( io UInt32 val, UInt32 bit ) {
+  val.atomicOr( 1 << bit );
+}
+
+/// first gets and then sets a bit of a given UInt32 value
+inline Boolean getThenSetBit( io UInt32 val, UInt32 bit ) {
+  Boolean prevVal = getBit(val, bit);
+  if( !prevVal )
+    setBit( val, bit );
+  return prevVal;
+}
+
+/// sets a bit to 0 for a given UInt32 value
+inline clearBit( io UInt32 val, UInt32 bit ) {
+  val = val & ~( 1 << bit );
+}
+
+/// sets a bit to 0 for a given UInt32 value
+inline atomicClearBit( io UInt32 val, UInt32 bit ) {
+  val.atomicAnd( ~( 1 << bit ) );
+}
+
+/// first gets and then clears a bit of a given UInt32 value
+inline Boolean getThenClearBit( io UInt32 val, UInt32 bit ) {
+  Boolean prevVal = getBit(val, bit);
+  if( prevVal )
+    clearBit( val, bit );
+  return prevVal;
+}
+
+/// sets a bit to 0 or 1 for a given UInt32 value
+inline setBit( io UInt32 val, UInt32 bit, Boolean value ) {
+  if( value )
+    setBit( val, bit );
+  else
+    clearBit( val, bit );
+}
+
+/// sets a bit to 0 or 1 for a given UInt32 value
+inline atomicSetBit( io UInt32 val, UInt32 bit, Boolean value ) {
+  if( value )
+    atomicSetBit( val, bit );
+  else
+    atomicClearBit( val, bit );
+}
+
+/// first gets and then sets a bit to 0 or 1 for a given UInt32 value
+inline Boolean getThenSetBit( io UInt32 val, UInt32 bit, Boolean value ) {
+  Boolean prevVal = getBit(val, bit);
+  if( prevVal != value ) {
+    setBit( val, bit, value );
+  }
+  return prevVal;
+}
+
+/// returns a UInt32 number as a bitmask
+/** \example
+    UInt32 v;
+    setBit(v, 3, true);
+    setBit(v, 7, true);
+    setBit(v, 12, true);
+    report(getSetBitsString(v));
+    \endexample
+*/
+function String getSetBitsString( UInt32 val ) {
+  String s = '[';
+  Boolean first = true;
+  for( Size i = 0; i < 32; ++i ) {
+    if( getBit( val, i ) ) {
+      if( first ) {
+        s += i;
+        first = false;
+      } else
+        s += ', '+i;
+    }
+  }
+  return s+']';
+}
+
+/// returns true if a given UInt64 flag is part of the UInt64 bit mask
+inline Boolean getBit( UInt64 val, UInt64 bit ) {
+  return (val & (1 << bit )) != 0;
+}
+
+/// sets a bit of a given UInt64 value
+inline setBit( io UInt64 val, UInt64 bit ) {
+  val = val | (1 << bit );
+}
+
+/// first gets and then sets a bit of a UInt64 value
+inline Boolean getThenSetBit( io UInt64 val, UInt64 bit ) {
+  Boolean prevVal = getBit(val, bit);
+  if( !prevVal )
+    setBit( val, bit );
+  return prevVal;
+}
+
+/// sets a bit of a UInt64 value to 0
+inline clearBit( io UInt64 val, UInt64 bit ) {
+  val = val & ~( 1 << bit );
+}
+
+/// sets a bit of a UInt64 value to 0 or 1
+inline setBit( io UInt64 val, UInt64 bit, Boolean value ) {
+  if( value )
+    setBit( val, bit );
+  else
+    clearBit( val, bit );
+}
+
+/// first gets and then sets a bit of a UInt64 value to 0 or 1
+inline Boolean getThenSetBit( io UInt64 val, UInt64 bit, Boolean value ) {
+  Boolean prevVal = getBit(val, bit);
+  if( prevVal != value ) {
+    setBit( val, bit, value );
+  }
+  return prevVal;
+}
+
+/// returns a UInt64 number as a bitmask
+function String getSetBitsString( UInt64 val ) {
+  String s = '[';
+  Boolean first = true;
+  for( Size i = 0; i < 64; ++i ) {
+    if( getBit( val, i ) ) {
+      if( first ) {
+        s += i;
+        first = false;
+      } else
+        s += ', '+i;
+    }
+  }
+  return s+']';
+}
+
+/// Simple structure that stores a flag and a 31-bit index into a UInt32 value.
+struct FlagAndIndex {
+  UInt32 value;
+};
+
+inline Boolean FlagAndIndex.getFlag() {
+  return Boolean(this.value & UInt32HighBit);
+}
+
+inline FlagAndIndex.setFlag!() {
+  this.value |= UInt32HighBit;
+}
+
+inline FlagAndIndex.clearFlag!() {
+  this.value &= ~UInt32HighBit;
+}
+
+inline Boolean FlagAndIndex.getThenSetFlag!() {
+  Boolean value = this.getFlag();
+  if( !value )
+    this.setFlag();
+  return value;
+}
+
+inline Boolean FlagAndIndex.getThenClearFlag!() {
+  Boolean value = this.getFlag();
+  if( value )
+    this.clearFlag();
+  return value;
+}
+
+inline UInt32 FlagAndIndex.getIndex() {
+  return this.value & ~UInt32HighBit;
+}
+
+inline UInt32 FlagAndIndex.getMaybeInvalidIndex() {
+  UInt32 value = this.value & ~UInt32HighBit;
+  return value == ~UInt32HighBit ? InvalidIndex : value;
+}
+
+inline FlagAndIndex.get( io Boolean flag, io UInt32 index ) {
+  flag = this.getFlag();
+  index = this.getIndex();
+}
+
+inline FlagAndIndex.getMaybeInvalidIndex( io Boolean flag, io UInt32 index ) {
+  flag = this.getFlag();
+  index = this.getMaybeInvalidIndex();
+}
+
+inline Boolean FlagAndIndex.isInvalidIndex() {
+  return this.value == (UInt32HighBit-1);
+}
+
+inline UInt32 FlagAndIndex.set!( Boolean flag, UInt32 index ) {
+  return this.value = (flag ? UInt32HighBit : 0) | (index & ~UInt32HighBit);
+}
+
+inline UInt32 FlagAndIndex.setIndex!( UInt32 index ) {
+  return this.value = (this.value & UInt32HighBit) | (index & ~UInt32HighBit);
+}
+inline Boolean == (FlagAndIndex a, FlagAndIndex b) {
+  return a.value == b.value;
+}
+
+inline Boolean != (FlagAndIndex a, FlagAndIndex b) {
+  return a.value != b.value;
+}

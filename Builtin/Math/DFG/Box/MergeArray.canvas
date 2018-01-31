@@ -1,0 +1,73 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Box2.html",
+    "uiTooltip" : "Merges the given Box2 value into this box\n\n Supported by Box2,Box3"
+    },
+  "title" : "Merge[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "$TYPE$[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "v",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Box2[]" : [
+          {
+            "min" : {
+              "x" : null,
+              "y" : null
+              },
+            "max" : {
+              "x" : null,
+              "y" : null
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "$TYPE$[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "2AFE67C1DAEC8282374575352F82E04A",
+  "code" : "require Math;
+
+operator Math_Box2_merge_task<<<index>>>(
+  io $TYPE$[] this
+, in $TYPE$[] v
+) {
+  this[index < this.size() ? index : this.size() - 1].merge(v[index < v.size() ? index : v.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( v.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < v.size()) task_size = v.size();
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Box2_merge_task(index, this, v);
+    }
+  } else {
+    Math_Box2_merge_task<<<task_size>>>(this, v);
+  }
+}
+"
+  }

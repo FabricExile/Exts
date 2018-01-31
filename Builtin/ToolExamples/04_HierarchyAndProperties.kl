@@ -1,0 +1,47 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+using namespace Tool;
+
+object HierarchyAndProperties : BaseTool{};
+
+HierarchyAndProperties() {
+  // sphere child at the origin
+  this.addChild( "sphere", SphereShape(2) );
+
+  // text child at X = 5
+  Tool::Text text( "TextChild" );
+  text.setLocalTransform( Xfo( Vec3( 5, 0, 0 ) ) );
+  this.addChild( "text", text );
+ 
+  // intermediate tool (not drawn) at X = 5
+  BaseTool intermediateTool = this.addChild( "intermediate", BaseTool() );
+  intermediateTool.setLocalTransform( Xfo( Vec3(0,5,0) ) );
+
+  // arrow shape, child of intermediate tool, at X = 5 (composed: X = 5, Y = 5)
+  intermediateTool.addChild( "arrow", ArrowShape( Vec3( 0, 1, 0 ), 2, 0.5, 0.2 ) );
+  // getting a child by relative path:
+  BaseTool arrowShape = this.getChild( "intermediate/arrow" );
+  arrowShape.setLocalTransform( Xfo( Vec3( 5, 0, 0 ) ) );
+
+  // text shape, child of intermediate tool, at X = -5 (composed: X = -5, Y = 5)
+  BaseTool textShape = intermediateTool.addChild( "text", Tool::Text( "TextSubChild" ) );
+  textShape.setLocalTransform( Xfo( Vec3( -5, 0, 0 ) ) );
+
+  // set properties through the hierarchy to show propagation
+  this.setColor( Color( 1.0, 0.0, 0.0 ) );
+  this.setFontSize( 10 );
+
+  intermediateTool.setColor( Color( 0.0, 0.0, 1.0 ) );
+  intermediateTool.setFontSize( 20 );
+
+  arrowShape.setColor( Color( 0.0, 1.0, 0.0 ) );
+
+  // add a perspective compensation modifier to the arrow shape
+  // so it has a contant size of approximately 50 pixels per unit;
+  // arrow is 2 units long -> approx. 100 pixels
+  PerspectiveCompensationModifier compensatePerspectiveModifier();
+  compensatePerspectiveModifier.setPixelsPerUnit( 50 );
+  arrowShape.addDrawModifier( compensatePerspectiveModifier, false );
+}

@@ -1,0 +1,103 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  const UInt8 Alignment_unspecified = 0;
+  const UInt8 Alignment_right = 1 << 0;
+  const UInt8 Alignment_left = 1 << 1;
+  const UInt8 Alignment_up = 1 << 2;
+  const UInt8 Alignment_down = 1 << 3;
+  const UInt8 Alignment_centeredHorizontally = Alignment_right | Alignment_left;
+  const UInt8 Alignment_centeredVertically = Alignment_up | Alignment_down;
+  const UInt8 Alignment_centered = Alignment_up | Alignment_down | Alignment_right | Alignment_left;
+  const UInt8 Alignment_upperLeft = Alignment_up | Alignment_left;
+  const UInt8 Alignment_lowerLeft = Alignment_down | Alignment_left;
+  const UInt8 Alignment_upperRight = Alignment_up | Alignment_right;
+  const UInt8 Alignment_lowerRight = Alignment_down | Alignment_right;
+
+  /// \internal
+  /// This is providing very basic alignment functionality.
+  interface LayoutAlignment {
+    ///Returns alignment as a WAlignment_X constant
+    UInt8 getAlignment();
+
+    ///Sets alignment from a WAlignment_X constant
+    setAlignment!( UInt8 alignment );
+
+    // TODO: add methods returning min rect size etc.
+  };
+
+  /// Helper function: gets the alignment, or an inherited one.
+  UInt8 GetAlignment( Ref<Component> component ) {
+    if( !component )
+      return Alignment_unspecified;
+
+    Ref<LayoutAlignment> layAlign = component;
+    if( layAlign ) {
+      UInt8 align = layAlign.getAlignment();
+      if( align != Alignment_unspecified )
+        return align;
+    }
+    return GetAlignment( component.getParent() );
+  }
+
+
+  /// Aligns the pixelSize rectangle so it lies inside the parent rectangle, given the alignment.
+  /// Coordinates are assumed to be in pixel space.
+  /// If allowScaling is true, it will be scaled to fit (maintaining the ratio).
+  AlignWithParentRectangle( UInt8 alignment, Vec2 pixelSize, Vec2 parentUpperLeft, Vec2 parentLowerRight, Boolean allowScaling, io Vec2 upperLeft, io Vec2 lowerRight ) {
+
+    ValidatePixelSpaceRectangle( parentUpperLeft, parentLowerRight );
+
+    if( parentLowerRight.x - parentUpperLeft.x <= 0 || parentLowerRight.y - parentUpperLeft.y <= 0 ) {
+      // Bad rectangle
+      upperLeft = parentUpperLeft;
+      lowerRight = parentLowerRight;
+      return;
+    }
+
+    Vec2 actualPixelSize = pixelSize;
+    Vec2 parentSize = parentLowerRight - parentUpperLeft;
+    Vec2 parentCenter = ( parentUpperLeft + parentLowerRight ) * 0.5f;
+
+    if( allowScaling ) {
+      // Scale to fit
+      Vec2 ratio = actualPixelSize / parentSize;
+      if( ratio.x > ratio.y )
+        actualPixelSize /= ratio.x;
+      else
+        actualPixelSize /= ratio.y;
+    }
+
+    if( Boolean( alignment & Alignment_left ) && !( alignment & Alignment_right ) ) {
+      // Align left
+      upperLeft.x = parentUpperLeft.x;
+      lowerRight.x = upperLeft.x + actualPixelSize.x;
+    } else if( !( alignment & Alignment_left ) && Boolean( alignment & Alignment_right ) ) {
+      // Align right
+      lowerRight.x = parentLowerRight.x;
+      upperLeft.x = lowerRight.x - actualPixelSize.x;
+    } else {
+      // Align center
+      upperLeft.x = parentCenter.x - actualPixelSize.x*0.5f;
+      lowerRight.x = parentCenter.x + actualPixelSize.x*0.5f;
+    }
+
+    if( Boolean( alignment & Alignment_down ) && !( alignment & Alignment_up ) ) {
+      // Align down
+      upperLeft.y = parentUpperLeft.y;
+      lowerRight.y = upperLeft.y + actualPixelSize.y;
+    } else if( !( alignment & Alignment_down ) && Boolean( alignment & Alignment_up ) ) {
+      // Align up
+      lowerRight.y = parentLowerRight.y;
+      upperLeft.y = lowerRight.y - actualPixelSize.y;
+    } else {
+      // Align center
+      upperLeft.y = parentCenter.y - actualPixelSize.y*0.5f;
+      lowerRight.y = parentCenter.y + actualPixelSize.y*0.5f;
+    }
+  }
+
+}// namespace Tool

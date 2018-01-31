@@ -1,0 +1,1529 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+require Util;
+require Containers;
+require AnimX;
+
+/// \dfgPresetOmit
+interface Importer;
+/// \dfgPresetOmit
+interface ImporterCallback;
+/// \dfgPresetOmit
+interface Exporter;
+/// \dfgPresetOmit
+interface Evaluator;
+/// \dfgPresetOmit
+struct ImporterTraverser;
+object ImporterObject;
+object ImporterBehavior;
+
+/// \dfgPresetOmit
+interface ImporterObject_Virtuals {
+  /// \dfgPresetOmit
+  Boolean updateProperty!(String value, ImporterContext context);
+  /// \dfgPresetOmit
+  Ref<ImporterObject>[] getNestedObjects(ImporterContext ctxt);
+};
+
+/// \dfgPresetOmit
+/// \internal
+object ImporterObjectContexts permits ImporterObject {
+  protected ImporterContext byPropertyName[String];
+};
+
+/// \dfgPresetOmit
+/// \internal
+object ImporterObjectMetaData permits ImporterObject {
+  protected ImporterString values[String];
+};
+
+/**
+  The ImporterObject is the based class for all specialized objects inside of the AssetPatterns extension.
+  The ImporterObject stores an arbitrary list of a generic value, called the ImporterProperty. Specialized
+  implementations such as the ImporterLight, for example, are then used to define a schema on top of the 
+  completely generic ImporterObject.
+  The ImporterObject also provides access to meta data, animation data and can be used to get access to 
+  ImporterProperty values in a delayed fashion.
+  \dfgTypeColor Color(206, 165, 151)
+  \dfgPresetColor Color(132, 106, 97)
+*/
+object ImporterObject : ImporterObject_Virtuals permits Importer, ImporterTraverser, Exporter
+{
+  Importer importer;
+  ImporterCallback callback;
+  Evaluator evaluator;
+  protected String id;
+  protected UInt32 version;
+  protected Ref<ImporterObject> parentObject;
+  protected Ref<ImporterObject> nestedObjects[];
+  protected String path;
+  protected String type;
+  protected String curves[];
+  protected ImporterProperty properties[String];
+  protected ImporterProperty propertyCaches[String];
+  protected Boolean propertyConstant[String];
+  protected ImporterObjectMetaData metaData;
+  ImporterContext defaultContext;
+  protected ImporterObjectContexts lastContextsPerProperty;
+};
+
+/// \dfgPresetOmit
+private function ImporterObject(String id, String path, String type) {
+  this.initialize(id, path, type);
+}
+
+/// \dfgPresetOmit
+function ImporterObject.cloneMembersTo(io ImporterObject other) {
+  other.importer = this.importer;
+  other.callback = this.callback;
+  other.evaluator = this.evaluator;
+  other.id = this.id;
+  other.version = this.version;
+  other.parentObject = this.parentObject;
+  other.nestedObjects = this.nestedObjects.clone();
+  other.path = this.path;
+  other.type = this.type;
+  other.curves = this.curves;
+
+  // create a new dictionary
+  // that way we can change values per instance
+  for(key in this.properties)
+    other.properties[key] = this.properties[key];
+
+  // propertyCaches is not cloned on purpose
+
+  other.propertyConstant = this.propertyConstant.clone();
+  other.metaData = this.metaData;
+  other.defaultContext = this.defaultContext;
+  other.lastContextsPerProperty = this.lastContextsPerProperty;
+}
+
+/// \dfgPresetOmit
+protected Ref<ImporterObject> ImporterObject.getOrCreateCloneForPath(String path) {
+  Ref<ImporterObject> mutableThis = this;
+  String newID = this.getID() + path;
+  String newPath = path + '/' + mutableThis.getPath();
+  Ref<ImporterObject> newObjectRef = mutableThis.importer.getOrCreateObject(mutableThis.getType(), newID, newPath);
+  if(newObjectRef) {
+    ImporterObject newObject = newObjectRef;
+    mutableThis.cloneMembersTo(newObject);
+  }
+  return newObjectRef;
+}
+
+/// \dfgPresetOmit
+protected function ImporterObject.initialize!(String id, String path, String type) {
+  this.id = id;
+  this.version = 1;
+  this.path = path;
+  this.type = type;
+  this.lastContextsPerProperty = ImporterObjectContexts();
+  this.metaData = ImporterObjectMetaData();
+
+  this.initProperty('visible', ImporterBoolean(true));
+  this.initProperty('isConstant', ImporterBoolean(true));
+}
+
+/**
+  Sets the default context to be used for any property getter.
+  This might be used to drive the time at which to query a property later, for example.
+  \dfgPresetCreate
+  \dfgPresetTitle setContext
+  \dfgPresetFolder Object
+  \dfgPresetTooltip
+    Sets the default context to be used for any property getter.
+    This might be used to drive the time at which to query a property later, for example.
+  \enddfgPresetTooltip
+*/
+function ImporterObject.setDefaultContext!(ImporterContext context) {
+  this.defaultContext = context;
+
+  if(this.evaluator)
+  {
+    this.evaluator.updateDefaultContext(context);
+  }
+}
+
+/**
+  Returns the unique ID of the ImporterObject within the import.
+  \dfgPresetCreate
+  \dfgPresetTitle id
+  \dfgPresetFolder Object
+  \dfgPresetTooltip
+    Returns the unique ID of the ImporterObject within the import.
+  \enddfgPresetTooltip
+*/
+function String ImporterObject.getID() {
+  return this.id;
+}
+
+/**
+  Returns the version of this importer object.
+  \dfgPresetCreate
+  \dfgPresetTitle version
+  \dfgPresetFolder Object
+*/
+function UInt32 ImporterObject.getVersion() {
+  return this.version;
+}
+
+/**
+  Returns the name of the ImporterObject.
+  The name is the last segment of the path.
+  \dfgPresetCreate
+  \dfgPresetTitle name
+  \dfgPresetFolder Object
+  \dfgPresetTooltip
+    Returns the name of the ImporterObject.
+    The name is the last segment of the path.
+  \enddfgPresetTooltip
+*/
+function String ImporterObject.getName() {
+  return this.path.reversePartition('/')[2];
+}
+
+/**
+  Returns the type of the ImporterObject
+  \dfgPresetCreate
+  \dfgPresetTitle type
+  \dfgPresetFolder Object
+  \dfgPresetTooltip
+    Returns the type of the ImporterObject
+  \enddfgPresetTooltip
+*/
+function String ImporterObject.getType() {
+  return this.type;
+}
+
+/**
+  Returns the path of the ImporterObject within the import.
+  Paths are separated by the forward slash by default.
+  \dfgPresetCreate
+  \dfgPresetTitle path
+  \dfgPresetFolder Object
+  \dfgPresetTooltip
+    Returns the path of the ImporterObject within the import.
+    Paths are separated by the forward slash by default.
+  \enddfgPresetTooltip
+*/
+function String ImporterObject.getPath() {
+  return this.path;
+}
+
+/// \dfgPresetOmit
+function String ImporterObject.getParentPath() {
+  return this.path.reversePartition('/')[0];
+}
+
+/**
+  Returns the path of the ImporterObject within the import,
+  but per instance. This path will be only different from the 
+  normal path once the object has been traversed.
+  Paths are separated by the forward slash by default.
+  \dfgPresetCreate
+  \dfgPresetTitle instancePath
+  \dfgPresetFolder Object
+  \dfgPresetTooltip
+    Returns the path of the ImporterObject within the import,
+    but per instance. This path will be only different from the 
+    normal path once the object has been traversed.
+    Paths are separated by the forward slash by default.
+  \enddfgPresetTooltip
+*/
+function String ImporterObject.getInstancePath() {
+  if(this.parentObject)
+    return this.parentObject.getInstancePath() + '/' + this.getName();
+  return this.getPath();
+}
+
+/**
+  Returns the parent of this ImporterObject as defined
+  by the object's path - or null if there is no parent.
+  \dfgPresetCreate
+  \dfgPresetTitle parent
+  \dfgPresetFolder Object
+  \dfgPresetTooltip
+    Returns the parent of this ImporterObject as defined
+    by the object's path - or null if there is no parent.
+  \enddfgPresetTooltip
+*/
+function Ref<ImporterObject> ImporterObject.getParent() {
+  if(this.parentObject)
+    return this.parentObject;
+  Importer importer = this.importer;
+  return importer.getObjectFromPath(this.getParentPath());
+}
+
+/**
+  Returns all of the nested objects
+  \dfgPresetCreate
+  \dfgPresetTitle nestedObjects
+  \dfgPresetFolder Object
+  \dfgPresetTooltip
+    Returns all of the nested objects
+  \enddfgPresetTooltip
+*/
+function Ref<ImporterObject>[] ImporterObject.getNestedObjects(ImporterContext ctxt) {
+  return this.nestedObjects;
+}
+
+/**
+  Returns all of the nested objects of a given type
+  \dfgPresetCreate
+  \dfgPresetTitle nestedObjectsByType
+  \dfgPresetFolder Object
+  \dfgPresetCombo type ("Transform", "Instance", "Camera", "Light", "Shape", "Material", "Texture", "AnimCurve", "Behavior")
+  \dfgPresetDefault type "Behavior"
+  \dfgPresetTooltip
+    Returns all of the nested objects
+  \enddfgPresetTooltip
+*/
+function Ref<ImporterObject>[] ImporterObject.getNestedObjectsByType(ImporterContext ctxt, String type) {
+  Ref<ImporterObject> nested[] = this.getNestedObjects(ctxt);
+  Ref<ImporterObject> nestedByType[];
+  for(Size i=0;i<nested.size();i++) {
+    if(nested[i].getType() == type)
+      nestedByType.push(nested[i]);
+  }
+  return nestedByType;
+}
+
+/**
+  Returns all of object's behaviors
+  \dfgPresetCreate
+  \dfgPresetTitle behaviors
+  \dfgPresetFolder Object
+  \dfgPresetTooltip
+    Returns all of object's behaviors
+  \enddfgPresetTooltip
+  \dfgPresetDefault recurse true
+*/
+function Ref<ImporterObject>[] ImporterObject.getBehaviors(ImporterContext ctxt, Boolean recurse) {
+  Ref<ImporterObject> result[] = this.getNestedObjectsByType(ctxt, 'Behavior');
+  if(recurse)
+  {
+    Ref<ImporterObject> thisParent = this.getParent();
+    if(thisParent)
+    {
+      result = thisParent.getBehaviors(ctxt, recurse) + result;
+    }
+  }
+  return result;
+}
+
+/**
+  Adds a new behavior to this object
+  \dfgPresetCreate
+  \dfgPresetTitle addBehavior
+  \dfgPresetFolder Object
+  \dfgPresetTooltip
+    Adds a new behavior to this object
+  \enddfgPresetTooltip
+*/
+function Ref<ImporterObject> ImporterObject.getOrCreateBehavior!(String behavior) {
+  String name = behavior.reversePartition('/')[2];
+  String path = this.getPath() + '/' + name;
+  String id = this.getID() + '/' + name;
+
+  ImporterBehavior result = this.importer.getOrCreateObject('Behavior', id, path);
+  if(result)
+  {
+    result.setBehaviorType(behavior);
+  }
+  return result;
+}
+
+/// \dfgPresetOmit
+function Boolean ImporterObject.getVisible(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('visible', context);
+  return mutableThis.getBooleanProperty('visible');
+}
+
+/// \dfgPresetOmit
+function ImporterObject.setVisible!(Boolean visible) {
+  this.setProperty('visible', visible);
+}
+
+/// \dfgPresetOmit
+function Color ImporterObject.getColor(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('color', context);
+  return mutableThis.getColorProperty('color');
+}
+
+/// \dfgPresetOmit
+function ImporterObject.setColor!(Color color) {
+  this.setProperty('color', color);
+}
+
+/// \dfgPresetOmit
+function String ImporterObject.getLayerID(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('layer', context);
+  return mutableThis.getStringProperty('layer');
+}
+
+/// \dfgPresetOmit
+function Ref<ImporterObject> ImporterObject.getLayer(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  return mutableThis.importer.getObjectFromID(mutableThis.getLayerID(context));
+}
+
+/// \dfgPresetOmit
+function ImporterObject.setLayerID!(String id) {
+  this.setProperty('layer', id);
+}
+
+/// \dfgPresetOmit
+function ImporterObject.setLayer!(Ref<ImporterObject> layer) {
+  this.setLayerID(layer.getID());
+}
+
+/// Updates the given property is required. The ImporterObject uses an internal
+/// cache based on the provided ImporterContext - so the property will only be 
+/// re-evaluated if the context changes.
+/// \dfgPresetOmit
+function Boolean ImporterObject.updateProperty!(String propertyName, ImporterContext context) {
+  if(this.callback == null)
+    return false;
+  if(!this.hasProperty(propertyName))
+    return false;
+  if(this.lastContextsPerProperty.byPropertyName.has(propertyName)) {
+    if(context.equals(this.lastContextsPerProperty.byPropertyName[propertyName]))
+      return false;
+  }
+  this.lastContextsPerProperty.byPropertyName[propertyName] = context;
+  Ref<ImporterObject> thisMutable = this;
+  this.callback.updateProperty(context, thisMutable, propertyName);
+  return true;
+}
+
+/// Dirties the given property. This ensures the property is reloaded in case it is using a callback.
+/// The property is only dirties for the given context
+/// \dfgPresetOmit
+function Boolean ImporterObject.dirtyProperty!(String propertyName) {
+  if(this.callback == null)
+    return false;
+  if(!this.hasProperty(propertyName))
+    return false;
+  if(this.lastContextsPerProperty.byPropertyName.has(propertyName)) {
+    this.lastContextsPerProperty.byPropertyName.delete(propertyName);
+    return true;
+  }
+  return false;
+}
+
+/// Returns the names of properties the user has provided
+function String[] ImporterObject.getUserProperties!(ImporterContext context)
+{
+  String properties[];
+  if(!this.hasProperty('userProperties'))
+    return properties;
+
+  this.updateProperty('userProperties', context);
+  return this.getStringArrayProperty('userProperties');
+}
+
+/// Sets the names of properties the user has provided
+function ImporterObject.setUserProperties!(String properties[])
+{
+  this.setProperty('userProperties', properties);
+}
+
+/// Returns the evaluator for this object
+/// \dfgPresetCreate
+/// \dfgPresetTitle getEvaluator
+/// \dfgPresetFolder Object
+function Ref<Evaluator> ImporterObject.getEvaluator!()
+{
+  return this.evaluator;
+}
+
+/**
+  Returns true if this object has no animation.
+  \dfgPresetCreate
+  \dfgPresetTitle isConstant
+  \dfgPresetFolder Animation
+  \dfgPresetTooltip
+    Returns true if this object has no animation.
+  \enddfgPresetTooltip
+*/
+function Boolean ImporterObject.isConstant(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('isConstant', context);
+  return mutableThis.getBooleanProperty('isConstant');
+}
+
+/**
+  Returns true if a property is constant
+  \dfgPresetCreate
+  \dfgPresetTitle isPropertyConstant
+  \dfgPresetFolder Properties
+*/
+function Boolean ImporterObject.isPropertyConstant(String propertyName) {
+  return this.propertyConstant.get(propertyName, true);
+}
+
+/**
+  Marks a property as constant or varying
+  \dfgPresetOmit
+*/
+function ImporterObject.setPropertyConstant!(String propertyName, Boolean constant) {
+  this.propertyConstant[propertyName] = constant;
+  if(!constant)
+    this.setProperty('isConstant', false);
+}
+
+/**
+  Marks a property as varying
+  \dfgPresetOmit
+*/
+function ImporterObject.setPropertyVarying!(String propertyName) {
+  this.setPropertyConstant(propertyName, false);
+}
+
+/**
+  Returns the time range of this object's animation
+  \dfgPresetCreate
+  \dfgPresetTitle timeRange
+  \dfgPresetFolder Animation
+  \dfgPresetTooltip
+    Returns the time range of this object's animation
+  \enddfgPresetTooltip
+*/
+function Vec2 ImporterObject.getTimeRange(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  if(mutableThis.hasProperty('timeRange')) {
+    mutableThis.updateProperty('timeRange', context);
+    return mutableThis.getVec2Property('timeRange');
+  }
+
+  Vec2 range(SCALAR_INFINITE, -SCALAR_INFINITE);
+  if(mutableThis.isConstant(context))
+    return range;
+
+  Float32 times[] = mutableThis.getTimeSamples(context);
+  if(times.size() > 0) {
+    range.x = times[0];
+    range.y = times[times.size()-1];
+  }
+  return range;
+}
+
+/**
+  Returns all sample times of this object's animation
+  \dfgPresetCreate
+  \dfgPresetTitle times
+  \dfgPresetFolder Animation
+  \dfgPresetTooltip
+    Returns all sample times of this object's animation
+  \enddfgPresetTooltip
+*/
+function Float32[] ImporterObject.getTimeSamples(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  if(!mutableThis.hasProperty('timeSamples')) {
+    Float32 result[];
+    return result;
+  }
+  mutableThis.updateProperty('timeSamples', context);
+  return mutableThis.getScalarArrayProperty('timeSamples');
+}
+
+/// \dfgPresetOmit
+function ImporterObject.setTimeSamples!(Float32 timeSamples[]) {
+  if(timeSamples.size() == 0)
+    return;
+  this.setProperty('timeSamples', timeSamples);
+  this.setProperty('timeRange', Vec2(timeSamples[0], timeSamples[timeSamples.size()-1]));
+  this.setProperty('isConstant', timeSamples[0] >= timeSamples[timeSamples.size()-1]);
+}
+
+/// \dfgPresetOmit
+function String[] ImporterObject.getAnimCurvePaths() {
+  return this.curves;
+}
+
+/// \dfgPresetOmit
+function UInt32 ImporterObject.getAnimCurveCount() {
+  return this.curves.size();
+}
+
+/// \dfgPresetOmit
+function String ImporterObject.getAnimCurveID(UInt32 index) {
+  return this.curves[index];
+}
+
+/// \dfgPresetOmit
+function Ref<ImporterObject> ImporterObject.getAnimCurve(UInt32 index) {
+  Importer importer = this.importer;
+  return importer.getObjectFromID(this.getAnimCurveID(index));
+}
+
+/// \dfgPresetOmit
+function Ref<ImporterObject> ImporterObject.getAnimCurveByName(String name) {
+  Ref<ImporterObject> curves[] = this.getAnimCurves();
+  for(Size i=0;i<curves.size();i++) {
+    if(curves[i].getName() == name)
+      return curves[i];
+  }
+  return null;
+}
+
+/**
+  Returns all animation curve objects of this object.
+  \dfgPresetCreate
+  \dfgPresetTitle animCurves
+  \dfgPresetFolder Animation
+  \dfgPresetTooltip
+    Returns all animation curve objects of this object.
+  \enddfgPresetTooltip
+*/
+function Ref<ImporterObject>[] ImporterObject.getAnimCurves() {
+  Ref<ImporterObject> result[](this.getAnimCurveCount());
+  for(Size i=0;i<this.getAnimCurveCount();i++)
+    result[i] = this.getAnimCurve(i);
+  return result;
+}
+
+/**
+  Returns all valid property names of this object.
+  \dfgPresetCreate
+  \dfgPresetTitle propertyNames
+  \dfgPresetFolder Properties
+  \dfgPresetTooltip
+    Returns all valid property names of this object.
+  \enddfgPresetTooltip
+*/
+function String[] ImporterObject.getPropertyNames() {
+  String keys[];
+  for(key in this.properties)
+    keys.push(key);
+  return keys;
+}
+
+/**
+  Sets up a cache for all properties.
+  This is useful if you want to modify the properties later on.
+*/
+function ImporterObject.setupPropertyCache!(String propertyName) {
+  if(!this.propertyCaches.has(propertyName)) {
+    this.propertyCaches[propertyName] = this.properties[propertyName].clone();
+  } else {
+    this.properties[propertyName] = this.propertyCaches[propertyName].clone();
+  }
+}
+
+/**
+  Returns true if this object has a given property.
+  \dfgPresetCreate
+  \dfgPresetTitle hasProperty
+  \dfgPresetFolder Properties
+  \dfgPresetTooltip
+    Returns true if this object has a given property.
+  \enddfgPresetTooltip
+*/
+function Boolean ImporterObject.hasProperty(String key) {
+  return this.properties.has(key);
+}
+
+/// Defines a new property and sets its value.
+/// \dfgPresetOmit
+function ImporterObject.initProperty!(String key, ImporterProperty prop) {
+  if(this.properties.has(key))
+    throw('Property "'+key+'" already exists!');
+  this.properties[key] = prop;
+  this.version++;
+}
+
+/**
+  Returns the value type of a given property
+  \dfgPresetCreate
+  \dfgPresetTitle propertyType
+  \dfgPresetFolder Properties
+  \dfgPresetTooltip
+    Returns the value type of a given property
+  \enddfgPresetTooltip
+*/
+function String ImporterObject.getPropertyType(String key) {
+  if(this.properties.has(key))
+    return this.properties[key].getValueType();
+  return "";
+}
+
+/// Returns the generic value of a given property
+/// \dfgPresetOmit
+function ImporterProperty ImporterObject.getProperty(String key) {
+  return this.properties[key];
+}
+
+/// Clones a given property. This is useful if the ImporterObject
+/// was cloned before. Only certain properties might be cloned, 
+/// while others might be shared between the ImporterObject clones.
+/// \dfgPresetOmit
+function ImporterObject.cloneProperty!(String key) {
+  if(!this.properties.has(key))
+    return;
+  this.properties[key] = this.properties[key].clone();
+}
+
+/// Clones all properties. See cloneProperty for more details
+/// \dfgPresetOmit
+function ImporterObject.cloneAllProperties!() {
+  for(key in this.properties)
+    this.properties[key] = this.properties[key].clone();
+}
+
+/// Returns the value of a Boolean property.
+/// \dfgPresetOmit
+function Boolean ImporterObject.getBooleanProperty(String key) {
+  if(!this.hasProperty(key))
+    return false;
+  ImporterProperty prop = this.properties[key];
+  if(prop.type() != ImporterBoolean)
+    return false;
+  return ImporterBoolean(prop).get();
+}
+
+/// Sets the Boolean value of a property.
+/// \dfgPresetOmit
+function ImporterObject.setProperty!(String key, Boolean value) {
+  ImporterProperty prop = this.properties.get(key, null);
+  if(prop == null) {
+    this.initProperty(key, ImporterBoolean(value));
+    return;
+  } else if(prop.type() != ImporterBoolean) {
+    report('ImporterObject: Cannot set Boolean value, property '+key+' is a '+prop.type());
+    return;
+  }
+  ImporterBoolean cast(prop);
+  if(cast.get() == value)
+    return;
+  cast.set(value);
+  this.version++;
+}
+
+/// Returns the value of a Integer property.
+/// \dfgPresetOmit
+function Integer ImporterObject.getIntegerProperty(String key) {
+  if(!this.hasProperty(key))
+    return 0;
+  ImporterProperty prop = this.properties[key];
+  if(prop.type() != ImporterInteger)
+    return 0;
+  return ImporterInteger(prop).get();
+}
+
+/// Overload for getIntegerProperty
+/// \dfgPresetOmit
+function Integer ImporterObject.getSInt32Property(String key) {
+  return this.getIntegerProperty(key);
+}
+
+/// Sets the Integer value of a property.
+/// \dfgPresetOmit
+function ImporterObject.setProperty!(String key, Integer value) {
+  ImporterProperty prop = this.properties.get(key, null);
+  if(prop == null) {
+    this.initProperty(key, ImporterInteger(value));
+    return;
+  } else if(prop.type() != ImporterInteger) {
+    report('ImporterObject: Cannot set Integer value, property '+key+' is a '+prop.type());
+    return;
+  }
+  ImporterInteger cast(prop);
+  if(cast.get() == value)
+    return;
+  cast.set(value);
+  this.version++;
+}
+
+/// Modifies the Integer value of a property.
+/// \dfgPresetOmit
+function Integer ImporterObject.modifyProperty!(SInt32 mode, String propertyName, Integer value) {
+  if(!this.hasProperty(propertyName))
+    return 0;
+
+  this.setupPropertyCache(propertyName);
+
+  ImporterProperty prop = this.properties[propertyName];
+  if(prop.type() != ImporterInteger)
+    return 0;
+
+  ImporterInteger cast(prop);
+  switch(mode)
+  {
+    case 0: // add
+    {
+      this.setProperty(propertyName, cast.get() + value);
+      return cast.get();
+    }
+    case 1: // mul
+    {
+      this.setProperty(propertyName, cast.get() * value);
+      return cast.get();
+    }
+    case 2: // set
+    {
+      this.setProperty(propertyName, value);
+      return cast.get();
+    }
+    case 3: // premul
+    {
+      this.setProperty(propertyName, value * cast.get());
+      return cast.get();
+    }
+  }
+
+  return 0;
+}
+
+/// Returns the value of a Scalar property.
+/// \dfgPresetOmit
+function Scalar ImporterObject.getScalarProperty(String key) {
+  if(!this.hasProperty(key))
+    return 0.0;
+  ImporterProperty prop = this.properties[key];
+  if(prop.type() != ImporterScalar)
+    return 0.0;
+  return ImporterScalar(prop).get();
+}
+
+/// Overloaf for getScalarProperty
+/// \dfgPresetOmit
+function Scalar ImporterObject.getFloat32Property(String key) {
+  return this.getScalarProperty(key);
+}
+
+/// Sets the Scalar value of a property.
+/// \dfgPresetOmit
+function ImporterObject.setProperty!(String key, Scalar value) {
+  ImporterProperty prop = this.properties.get(key, null);
+  if(prop == null) {
+    this.initProperty(key, ImporterScalar(value));
+    return;
+  } else if(prop.type() != ImporterScalar) {
+    report('ImporterObject: Cannot set Scalar value, property '+key+' is a '+prop.type());
+    return;
+  }
+  ImporterScalar cast(prop);
+  if(cast.get() == value)
+    return;
+  cast.set(value);
+  this.version++;
+}
+
+/// Modifies the Scalar value of a property.
+/// \dfgPresetOmit
+function Scalar ImporterObject.modifyProperty!(SInt32 mode, String propertyName, Scalar value) {
+  if(!this.hasProperty(propertyName))
+    return 0.0;
+
+  this.setupPropertyCache(propertyName);
+
+  ImporterProperty prop = this.properties[propertyName];
+  if(prop.type() != ImporterScalar)
+    return 0.0;
+
+  ImporterScalar cast(prop);
+  switch(mode)
+  {
+    case 0: // add
+    {
+      this.setProperty(propertyName, cast.get() + value);
+      return cast.get();
+    }
+    case 1: // mul
+    {
+      this.setProperty(propertyName, cast.get() * value);
+      return cast.get();
+    }
+    case 2: // set
+    {
+      this.setProperty(propertyName, value);
+      return cast.get();
+    }
+    case 3: // premul
+    {
+      this.setProperty(propertyName, value * cast.get());
+      return cast.get();
+    }
+  }
+
+  return 0.0;
+}
+
+/// Returns the value of a Scalar[] property.
+/// \dfgPresetOmit
+function Scalar[] ImporterObject.getScalarArrayProperty(String key) {
+  Scalar result[];
+  if(!this.hasProperty(key))
+    return result;
+  ImporterProperty prop = this.properties[key];
+  if(prop.type() != ImporterScalarArray)
+    return result;
+  return ImporterScalarArray(prop).get();
+}
+
+/// Overload for getScalarArrayProperty
+/// \dfgPresetOmit
+function Scalar[] ImporterObject.getFloat32ArrayProperty(String key) {
+  return this.getScalarArrayProperty(key);
+}
+
+/// Sets the Scalar[] value of a property.
+/// \dfgPresetOmit
+function ImporterObject.setProperty!(String key, Scalar value[]) {
+  ImporterProperty prop = this.properties.get(key, null);
+  if(prop == null) {
+    this.initProperty(key, ImporterScalarArray(value));
+    return;
+  } else if(prop.type() != ImporterScalarArray) {
+    report('ImporterObject: Cannot set ScalarArray value, property '+key+' is a '+prop.type());
+    return;
+  }
+  ImporterScalarArray cast(prop);
+  Scalar prevValue[] = this.getScalarArrayProperty(key);
+  if(prevValue.size() == value.size())
+  {
+    Boolean delta = false;
+    for(Size i=0;i<value.size();i++)
+    {
+      if(value[i] != prevValue[i])
+      {
+        delta = true;
+        break;
+      }      
+    }
+    if(!delta)
+      return;
+  }
+  cast.setCopy(value);
+  this.version++;
+}
+
+/// Returns the value of a Vec2 property.
+/// \dfgPresetOmit
+function Vec2 ImporterObject.getVec2Property(String key) {
+  if(!this.hasProperty(key))
+    return Vec2();
+  ImporterProperty prop = this.properties[key];
+  if(prop.type() != ImporterVec2)
+    return Vec2();
+  return ImporterVec2(prop).get();
+}
+
+/// Sets the Vec2 value of a property.
+/// \dfgPresetOmit
+function ImporterObject.setProperty!(String key, Vec2 value) {
+  ImporterProperty prop = this.properties.get(key, null);
+  if(prop == null) {
+    this.initProperty(key, ImporterVec2(value));
+    return;
+  } else if(prop.type() != ImporterVec2) {
+    report('ImporterObject: Cannot set Vec2 value, property '+key+' is a '+prop.type());
+    return;
+  }
+  ImporterVec2 cast(prop);
+  if(cast.get().almostEqual(value))
+    return;
+  cast.set(value);
+  this.version++;
+}
+
+/// Modifies the Vec2 value of a property.
+/// \dfgPresetOmit
+function Vec2 ImporterObject.modifyProperty!(SInt32 mode, String propertyName, Vec2 value) {
+  if(!this.hasProperty(propertyName))
+    return Vec2();
+
+  this.setupPropertyCache(propertyName);
+
+  ImporterProperty prop = this.properties[propertyName];
+  if(prop.type() != ImporterVec2)
+    return Vec2();
+
+  ImporterVec2 cast(prop);
+  switch(mode)
+  {
+    case 0: // add
+    {
+      this.setProperty(propertyName, cast.get() + value);
+      return cast.get();
+    }
+    case 1: // mul
+    {
+      this.setProperty(propertyName, cast.get() * value);
+      return cast.get();
+    }
+    case 2: // set
+    {
+      this.setProperty(propertyName, value);
+      return cast.get();
+    }
+    case 3: // premul
+    {
+      this.setProperty(propertyName, value * cast.get());
+      return cast.get();
+    }
+  }
+
+  return Vec2();
+}
+
+/// Returns the value of a Vec3 property.
+/// \dfgPresetOmit
+function Vec3 ImporterObject.getVec3Property(String key) {
+  if(!this.hasProperty(key))
+    return Vec3();
+  ImporterProperty prop = this.properties[key];
+  if(prop.type() != ImporterVec3)
+    return Vec3();
+  return ImporterVec3(prop).get();
+}
+
+/// Sets the Vec3 value of a property.
+/// \dfgPresetOmit
+function ImporterObject.setProperty!(String key, Vec3 value) {
+  ImporterProperty prop = this.properties.get(key, null);
+  if(prop == null) {
+    this.initProperty(key, ImporterVec3(value));
+    return;
+  } else if(prop.type() != ImporterVec3) {
+    report('ImporterObject: Cannot set Vec3 value, property '+key+' is a '+prop.type());
+    return;
+  }
+  ImporterVec3 cast(prop);
+  if(cast.get().almostEqual(value))
+    return;
+  cast.set(value);
+  this.version++;
+}
+
+/// Modifies the Vec3 value of a property.
+/// \dfgPresetOmit
+function Vec3 ImporterObject.modifyProperty!(SInt32 mode, String propertyName, Vec3 value) {
+  if(!this.hasProperty(propertyName))
+    return Vec3();
+
+  this.setupPropertyCache(propertyName);
+
+  ImporterProperty prop = this.properties[propertyName];
+  if(prop.type() != ImporterVec3)
+    return Vec3();
+
+  ImporterVec3 cast(prop);
+  switch(mode)
+  {
+    case 0: // add
+    {
+      this.setProperty(propertyName, cast.get() + value);
+      return cast.get();
+    }
+    case 1: // mul
+    {
+      this.setProperty(propertyName, cast.get() * value);
+      return cast.get();
+    }
+    case 2: // set
+    {
+      this.setProperty(propertyName, value);
+      return cast.get();
+    }
+    case 3: // premul
+    {
+      this.setProperty(propertyName, value * cast.get());
+      return cast.get();
+    }
+  }
+
+  return Vec3();
+}
+
+/// Returns the value of a Quat property.
+/// \dfgPresetOmit
+function Quat ImporterObject.getQuatProperty(String key) {
+  if(!this.hasProperty(key))
+    return Quat();
+  ImporterProperty prop = this.properties[key];
+  if(prop.type() != ImporterQuat)
+    return Quat();
+  return ImporterQuat(prop).get();
+}
+
+/// Sets the Quat value of a property.
+/// \dfgPresetOmit
+function ImporterObject.setProperty!(String key, Quat value) {
+  ImporterProperty prop = this.properties.get(key, null);
+  if(prop == null) {
+    this.initProperty(key, ImporterQuat(value));
+    return;
+  } else if(prop.type() != ImporterQuat) {
+    report('ImporterObject: Cannot set Quat value, property '+key+' is a '+prop.type());
+    return;
+  }
+  ImporterQuat cast(prop);
+  if(cast.get().almostEqual(value))
+    return;
+  cast.set(value);
+  this.version++;
+}
+
+/// Modifies the Quat value of a property.
+/// \dfgPresetOmit
+function Quat ImporterObject.modifyProperty!(SInt32 mode, String propertyName, Quat value) {
+  if(!this.hasProperty(propertyName))
+    return Quat();
+
+  this.setupPropertyCache(propertyName);
+
+  ImporterProperty prop = this.properties[propertyName];
+  if(prop.type() != ImporterQuat)
+    return Quat();
+
+  ImporterQuat cast(prop);
+  switch(mode)
+  {
+    case 0: // add
+    {
+      this.setProperty(propertyName, cast.get() + value);
+      return cast.get();
+    }
+    case 1: // mul
+    {
+      this.setProperty(propertyName, cast.get() * value);
+      return cast.get();
+    }
+    case 2: // set
+    {
+      this.setProperty(propertyName, value);
+      return cast.get();
+    }
+    case 3: // premul
+    {
+      this.setProperty(propertyName, value * cast.get());
+      return cast.get();
+    }
+  }
+
+  return Quat();
+}
+
+/// Returns the value of a Xfo property.
+/// \dfgPresetOmit
+function Xfo ImporterObject.getXfoProperty(String key) {
+  if(!this.hasProperty(key))
+    return Xfo();
+  ImporterProperty prop = this.properties[key];
+  if(prop.type() != ImporterXfo)
+    return Xfo();
+  return ImporterXfo(prop).get();
+}
+
+/// Sets the Xfo value of a property.
+/// \dfgPresetOmit
+function ImporterObject.setProperty!(String key, Xfo value) {
+  ImporterProperty prop = this.properties.get(key, null);
+  if(prop == null) {
+    this.initProperty(key, ImporterXfo(value));
+    return;
+  } else if(prop.type() != ImporterXfo) {
+    report('ImporterObject: Cannot set Xfo value, property '+key+' is a '+prop.type());
+    return;
+  }
+  ImporterXfo cast(prop);
+  if(cast.get() == value)
+    return;
+  cast.set(value);
+  this.version++;
+}
+
+/// Modifies the Xfo value of a property.
+/// \dfgPresetOmit
+function Xfo ImporterObject.modifyProperty!(SInt32 mode, String propertyName, Xfo value) {
+  if(!this.hasProperty(propertyName))
+    return Xfo();
+
+  this.setupPropertyCache(propertyName);
+
+  ImporterProperty prop = this.properties[propertyName];
+  if(prop.type() != ImporterXfo)
+    return Xfo();
+
+  ImporterXfo cast(prop);
+  switch(mode)
+  {
+    case 0: // add
+    case 1: // mul
+    {
+      this.setProperty(propertyName, cast.get() * value);
+      return cast.get();
+    }
+    case 2: // set
+    {
+      this.setProperty(propertyName, value);
+      return cast.get();
+    }
+    case 3: // premul
+    {
+      this.setProperty(propertyName, value * cast.get());
+      return cast.get();
+    }
+  }
+
+  return Xfo();
+}
+
+/// Returns the value of a Mat44 property.
+/// \dfgPresetOmit
+function Mat44 ImporterObject.getMat44Property(String key) {
+  if(!this.hasProperty(key))
+    return Mat44();
+  ImporterProperty prop = this.properties[key];
+  if(prop.type() != ImporterMat44)
+    return Mat44();
+  return ImporterMat44(prop).get();
+}
+
+/// Sets the Mat44 value of a property.
+/// \dfgPresetOmit
+function ImporterObject.setProperty!(String key, Mat44 value) {
+  ImporterProperty prop = this.properties.get(key, null);
+  if(prop == null) {
+    this.initProperty(key, ImporterMat44(value));
+    return;
+  } else if(prop.type() != ImporterMat44) {
+    report('ImporterObject: Cannot set Mat44 value, property '+key+' is a '+prop.type());
+    return;
+  }
+  ImporterMat44 cast(prop);
+  if(cast.get().almostEqual(value))
+    return;
+  cast.set(value);
+  this.version++;
+}
+
+/// Modifies the Mat44 value of a property.
+/// \dfgPresetOmit
+function Mat44 ImporterObject.modifyProperty!(SInt32 mode, String propertyName, Mat44 value) {
+  if(!this.hasProperty(propertyName))
+    return Mat44();
+
+  this.setupPropertyCache(propertyName);
+
+  ImporterProperty prop = this.properties[propertyName];
+  if(prop.type() != ImporterMat44)
+    return Mat44();
+
+  ImporterMat44 cast(prop);
+  switch(mode)
+  {
+    case 0: // add
+    case 1: // mul
+    {
+      this.setProperty(propertyName, cast.get() * value);
+      return cast.get();
+    }
+    case 2: // set
+    {
+      this.setProperty(propertyName, value);
+      return cast.get();
+    }
+    case 3: // premul
+    {
+      this.setProperty(propertyName, value * cast.get());
+      return cast.get();
+    }
+  }
+
+  return Mat44();
+}
+
+/// Returns the value of a Box3 property.
+/// \dfgPresetOmit
+function Box3 ImporterObject.getBox3Property(String key) {
+  if(!this.hasProperty(key))
+    return Box3();
+  ImporterProperty prop = this.properties[key];
+  if(prop.type() != ImporterBox3)
+    return Box3();
+  return ImporterBox3(prop).get();
+}
+
+/// Sets the Box3 value of a property.
+/// \dfgPresetOmit
+function ImporterObject.setProperty!(String key, Box3 value) {
+  ImporterProperty prop = this.properties.get(key, null);
+  if(prop == null) {
+    this.initProperty(key, ImporterBox3(value));
+    return;
+  } else if(prop.type() != ImporterBox3) {
+    report('ImporterObject: Cannot set Box3 value, property '+key+' is a '+prop.type());
+    return;
+  }
+  ImporterBox3 cast(prop);
+  if(cast.get() == value)
+    return;
+  cast.set(value);
+  this.version++;
+}
+
+/// Returns the value of a Color property.
+/// \dfgPresetOmit
+function Color ImporterObject.getColorProperty(String key) {
+  if(!this.hasProperty(key))
+    return Color();
+  ImporterProperty prop = this.properties[key];
+  if(prop.type() != ImporterColor)
+    return Color();
+  return ImporterColor(prop).get();
+}
+
+/// Sets the Color value of a property.
+/// \dfgPresetOmit
+function ImporterObject.setProperty!(String key, Color value) {
+  ImporterProperty prop = this.properties.get(key, null);
+  if(prop == null) {
+    this.initProperty(key, ImporterColor(value));
+    return;
+  } else if(prop.type() != ImporterColor) {
+    report('ImporterObject: Cannot set Color value, property '+key+' is a '+prop.type());
+    return;
+  }
+  ImporterColor cast(prop);
+  if(cast.get().almostEqual(value))
+    return;
+  cast.set(value);
+  this.version++;
+}
+
+/// Modifies the Color value of a property.
+/// \dfgPresetOmit
+function Color ImporterObject.modifyProperty!(SInt32 mode, String propertyName, Color value) {
+  if(!this.hasProperty(propertyName))
+    return Color();
+
+  this.setupPropertyCache(propertyName);
+
+  ImporterProperty prop = this.properties[propertyName];
+  if(prop.type() != ImporterColor)
+    return Color();
+
+  ImporterColor cast(prop);
+  switch(mode)
+  {
+    case 0: // add
+    {
+      this.setProperty(propertyName, cast.get() + value);
+      return cast.get();
+    }
+    case 1: // mul
+    {
+      this.setProperty(propertyName, cast.get() * value);
+      return cast.get();
+    }
+    case 2: // set
+    {
+      this.setProperty(propertyName, value);
+      return cast.get();
+    }
+  }
+
+  return Color();
+}
+
+/// Returns the value of a String property.
+/// \dfgPresetOmit
+function String ImporterObject.getStringProperty(String key) {
+  if(!this.hasProperty(key))
+    return String();
+  ImporterProperty prop = this.properties[key];
+  if(prop.type() != ImporterString)
+    return String();
+  return ImporterString(prop).get();
+}
+
+/// Sets the String value of a property.
+/// \dfgPresetOmit
+function ImporterObject.setProperty!(String key, String value) {
+  ImporterProperty prop = this.properties.get(key, null);
+  if(prop == null) {
+    this.initProperty(key, ImporterString(value));
+    return;
+  } else if(prop.type() != ImporterString) {
+    report('ImporterObject: Cannot set String value, property '+key+' is a '+prop.type());
+    return;
+  }
+  ImporterString cast(prop);
+  if(cast.get() == value)
+    return;
+  cast.set(value);
+  this.version++;
+}
+
+/// Returns the value of a String[] property.
+/// \dfgPresetOmit
+function String[] ImporterObject.getStringArrayProperty(String key) {
+  String result[];
+  if(!this.hasProperty(key))
+    return result;
+  ImporterProperty prop = this.properties[key];
+  if(prop.type() != ImporterStringArray)
+    return result;
+  return ImporterStringArray(prop).get();
+}
+
+/// Sets the String[] value of a property.
+/// \dfgPresetOmit
+function ImporterObject.setProperty!(String key, String value[]) {
+  ImporterProperty prop = this.properties.get(key, null);
+  if(prop == null) {
+    this.initProperty(key, ImporterStringArray(value));
+    return;
+  } else if(prop.type() != ImporterStringArray) {
+    report('ImporterObject: Cannot set StringArray value, property '+key+' is a '+prop.type());
+    return;
+  }
+  ImporterStringArray cast(prop);
+  String prevValue[] = this.getStringArrayProperty(key);
+  if(prevValue.size() == value.size())
+  {
+    Boolean delta = false;
+    for(Size i=0;i<value.size();i++)
+    {
+      if(value[i] != prevValue[i])
+      {
+        delta = true;
+        break;
+      }      
+    }
+    if(!delta)
+      return;
+  }
+  cast.setCopy(value);
+  this.version++;
+}
+
+/// Returns the value of a Geometry property.
+/// \dfgPresetOmit
+function Geometry ImporterObject.getGeometryProperty(String key) {
+  if(!this.hasProperty(key))
+    return null;
+  ImporterProperty prop = this.properties[key];
+  if(prop.type() != ImporterGeometry)
+    return null;
+  return ImporterGeometry(prop).get();
+}
+
+/// Sets the Geometry value of a property.
+/// \dfgPresetOmit
+function ImporterObject.setProperty!(String key, Geometry value) {
+  ImporterProperty prop = this.properties.get(key, null);
+  if(prop == null) {
+    ImporterGeometry cast();
+    cast.set(value);
+    this.initProperty(key, cast);
+    return;
+  } else if(prop.type() != ImporterGeometry) {
+    report('ImporterObject: Cannot set Geometry value, property '+key+' is a '+prop.type());
+    return;
+  }
+  ImporterGeometry cast(prop);
+  cast.set(value);
+  this.version++;
+}
+
+/// Returns the value of a AnimX::AnimCurve property.
+/// \dfgPresetOmit
+function AnimX::AnimCurve ImporterObject.getAnimCurveProperty(String key) {
+  if(!this.hasProperty(key))
+    return null;
+  ImporterProperty prop = this.properties[key];
+  if(prop.type() != ImporterAnimCurveValue)
+    return null;
+  return ImporterAnimCurveValue(prop).get();
+}
+
+/// Sets the AnimX::AnimCurve value of a property.
+/// \dfgPresetOmit
+function ImporterObject.setProperty!(String key, AnimX::AnimCurve value) {
+  ImporterProperty prop = this.properties.get(key, null);
+  if(prop == null) {
+    ImporterAnimCurveValue cast();
+    cast.set(value);
+    this.initProperty(key, cast);
+    return;
+  } else if(prop.type() != ImporterAnimCurveValue) {
+    report('ImporterObject: Cannot set AnimX::AnimCurve value, property '+key+' is a '+prop.type());
+    return;
+  }
+  ImporterAnimCurveValue cast(prop);
+  cast.set(value);
+  this.version++;
+}
+
+/**
+  Returns all valid keys for metadata on this object.
+  \dfgPresetCreate
+  \dfgPresetTitle metaDataKeys
+  \dfgPresetFolder MetaData
+  \dfgPresetTooltip
+    Returns all valid keys for metadata on this object.
+  \enddfgPresetTooltip
+*/
+function String[] ImporterObject.getMetaDataKeys() {
+  String keys[];
+  for(key in this.metaData.values)
+    keys.push(key);
+  return keys;
+}
+
+/**
+  Returns a metadata string for this object.
+  \dfgPresetCreate
+  \dfgPresetTitle getMetaData
+  \dfgPresetFolder MetaData
+  \dfgPresetTooltip
+    Returns a metadata string for this object.
+  \enddfgPresetTooltip
+*/
+function String ImporterObject.getMetaData(String key, String defaultValue) {
+  ImporterString value = this.metaData.values.get(key, null);
+  if(value == null)
+    return defaultValue;
+  return value.get();
+}
+
+/// Returns a metadata string for this object or an empty string.
+/// \dfgPresetOmit
+function String ImporterObject.getMetaData(String key) {
+  return this.getMetaData(key, "");
+}
+
+/**
+  Returns true if this object has a given metadata string.
+  \dfgPresetCreate
+  \dfgPresetTitle hasMetaData
+  \dfgPresetFolder MetaData
+  \dfgPresetTooltip
+    Returns true if this object has a given metadata string.
+  \enddfgPresetTooltip
+*/
+function Boolean ImporterObject.hasMetaData(String key) {
+  return this.metaData.values.has(key);
+}
+
+/**
+  Sets a metadata string on this object.
+  \dfgPresetCreate
+  \dfgPresetTitle setMetaData
+  \dfgPresetFolder MetaData
+  \dfgPresetTooltip
+    Sets a metadata string on this object.
+  \enddfgPresetTooltip
+*/
+function ImporterObject.setMetaData!(String key, String value) {
+  this.metaData.values[key] = ImporterString(value);
+}

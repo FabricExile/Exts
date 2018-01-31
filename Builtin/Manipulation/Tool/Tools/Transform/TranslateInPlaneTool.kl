@@ -1,0 +1,57 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// This tool allows to translate a :kl-ref:`Tool::TransformTarget` along
+  /// a 2D plane by clicking on a 3D gizmo. The tool creates a :kl-ref:`TranslateInPlaneDragInteraction` 
+  /// to map mouse moves to transform changes.
+  ///
+  /// While this tool is used as a sub-tool of the :kl-ref:`TranslateTool`,
+  /// it can also be created independently.
+  object TranslateInPlaneTool : XfoTargetAlignedGizmo{
+    Boolean localTranslate;
+    TranslateInPlaneDragInteraction translateInteraction;
+  };
+
+  TranslateInPlaneTool( TransformTarget target, Vec3 planeNormal, Color gizmoColor, Vec2 localPlaneOffset, Color highlightColor ) {
+    DrawElements elts();
+    elts.setPen( gizmoColor, 1 );
+    elts.drawSquare( Xfo(), 0.15, 0.15 );
+    elts.setPen( Color( gizmoColor.r, gizmoColor.g, gizmoColor.b, 0.5 ), 1 );
+    elts.drawTrianglesPlane( Xfo(), 0.15, 0.15 );
+
+    GeometricShape gizmoShape();
+    gizmoShape.setGeometry( elts );
+
+    Xfo localTransform;
+    localTransform.ori.setFrom2Vectors( Vec3( 0, 1, 0 ), planeNormal.unit_safe() );
+    localTransform.tr = localTransform.ori.rotateVector( Vec3( localPlaneOffset.x, 0, localPlaneOffset.y ) );
+    gizmoShape.setLocalTransform( localTransform );
+
+    this.construct( target, planeNormal, highlightColor, gizmoShape );
+  }
+
+  TranslateInPlaneTool( TransformTarget target, Vec3 planeNormal, Color highlightColor, Ref<BaseTool> gizmoShape ) {
+    this.construct( target, planeNormal, highlightColor, gizmoShape );
+  }
+
+  TranslateInPlaneTool.construct!( TransformTarget target, Vec3 planeNormal, Color highlightColor, Ref<BaseTool> gizmoShape ) {
+
+    // Add a drag interaction to the shape
+    MouseClickDragRaycastInteraction clickAndDragInteraction();
+    this.translateInteraction = TranslateInPlaneDragInteraction( clickAndDragInteraction, target, planeNormal, this.localTranslate );
+    this.attachComponent( this.translateInteraction );
+
+    this.parent.construct( target, highlightColor, gizmoShape, this.translateInteraction );
+    this.enableLocalTranslation( true );
+  }
+
+  TranslateInPlaneTool.enableLocalTranslation!( Boolean localTranslate ) {
+    this.localTranslate = localTranslate;
+    this.alignModifier.setAlignType( true, localTranslate, false, true );
+    this.translateInteraction.setLocal( localTranslate );
+  }
+
+}// namespace Tool

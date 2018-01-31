@@ -1,0 +1,157 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+const Float64 DebugDeadlockSecondsBeforeDumpStack = 5;
+const Float64 ActiveWaitTimeBeforeMicroSleep = 0.0001;
+const Float64 ActiveWaitTimeSlice = 1.0e-6;
+
+inline AtomicSet( io UInt32 value, UInt32 newValue ) {
+  while( true ) {
+    value.atomicCAS( value, newValue );
+    if( value == newValue )
+      break;
+  }
+}
+
+inline ThreadSafeSet( io UInt32 value, UInt32 newValue, Boolean threadsafe ) {
+  if( threadsafe )
+    AtomicSet( value, newValue );
+  else
+    value = newValue;
+}
+
+inline AtomicSet( io UInt8 value, UInt8 newValue ) {
+  while( true ) {
+    value.atomicCAS( value, newValue );
+    if( value == newValue )
+      break;
+  }
+}
+
+inline ThreadSafeSet( io UInt8 value, UInt8 newValue, Boolean threadsafe ) {
+  if( threadsafe )
+    AtomicSet( value, newValue );
+  else
+    value = newValue;
+}
+
+inline ThreadSafeInc( io UInt32 value, Boolean threadsafe ) {
+  if( threadsafe )
+    value.atomicInc();
+  else
+    ++value;
+}
+
+inline ThreadSafeSetFlag( io UInt32 val, UInt8 flag, Boolean threadsafe ) {
+  if( threadsafe )
+    val.atomicOr(flag);
+  else
+    val = val | flag;
+}
+
+inline ThreadSafeClearFlag( io UInt32 val, UInt8 flag, Boolean threadsafe ) {
+  if( threadsafe )
+    val.atomicAnd(~flag);
+  else
+    val = val & ~flag;
+}
+
+/// Helper function for waiting actively during a specific timelapse.
+function ActiveWait( Scalar seconds ) {
+  UInt64 profileStart = getCurrentTicks();
+  Float32 delta;
+  while( true ) {
+    UInt64 profileEnd = getCurrentTicks();
+    delta = Scalar(getSecondsBetweenTicks(profileStart, profileEnd));
+    if( delta >= seconds )
+      break;
+  }
+  LogActiveWaitTime(delta);
+}
+
+function MicroSleepWait( UInt32 ms ) {
+  UInt64 profileStart = getCurrentTicks();
+  MicroSleep(ms);
+  //report( "MSWAIT " );
+  //dumpstack();
+  LogActiveWaitTime( Scalar( getSecondsBetweenTicks( profileStart, getCurrentTicks() ) ) );
+}
+
+struct ActiveWaitLoopControl {
+  Float32 activeWaitTimeSlice;
+  Float32 activeWaitTimeBeforeSleep;
+  Float32 debugDeadlockSecondsBeforeDumpStack;
+  UInt8 waitMS;
+  Boolean deadlockDumpedStack;
+  UInt64 startTick;
+};
+
+inline ActiveWaitLoopControl() {
+  // Allow these to be specialized after construction
+  this.debugDeadlockSecondsBeforeDumpStack = DebugDeadlockSecondsBeforeDumpStack;
+  this.setPriority( false );
+}
+
+ActiveWaitLoopControl.setPriority!( Boolean high ) {
+  if( high ) {
+    this.activeWaitTimeSlice = ActiveWaitTimeSlice / 2;
+    this.activeWaitTimeBeforeSleep = ActiveWaitTimeBeforeMicroSleep * 2;
+    this.waitMS = 0;
+  } else {
+    this.activeWaitTimeSlice = ActiveWaitTimeSlice;
+    this.activeWaitTimeBeforeSleep = ActiveWaitTimeBeforeMicroSleep;
+    this.waitMS = 1;
+  }
+}
+
+ActiveWaitLoopControl.wait!() {
+
+  if( !this.startTick )
+    this.startTick = getCurrentTicks();
+
+  ActiveWait(this.activeWaitTimeSlice);
+
+  Float32 deltaTime = Float32( getSecondsBetweenTicks(this.startTick, getCurrentTicks()) );
+
+  if( deltaTime > this.activeWaitTimeBeforeSleep ) {
+    // Sleep wait only 1 ms, else we can starve
+    MicroSleepWait( this.waitMS );
+  }
+
+  if(    this.debugDeadlockSecondsBeforeDumpStack > 0 
+      && !this.deadlockDumpedStack 
+      && deltaTime > this.debugDeadlockSecondsBeforeDumpStack ) {
+    setError("Lock wait > DebugDeadlockSecondsBeforeDumpStack");
+    this.deadlockDumpedStack = true;
+  }
+}
+
+Float32 ActiveWaitLoopControl.getWaitTime() {
+  return Float32( getSecondsBetweenTicks( this.startTick, getCurrentTicks() ) );
+}
+
+inline SimpleAcquire( io UInt32 lockVariable ) {
+  ActiveWaitLoopControl waitControl();
+
+  while( true ) {
+    UInt32 result = lockVariable.atomicCAS( 0, 1 );
+    if( result == 0 ) {
+      atomicMemoryBarrier_Acquire();
+      break;
+    }
+    waitControl.wait();
+  }
+}
+
+inline Boolean TryAcquire( io UInt32 lockVariable ) {
+  UInt32 result = lockVariable.atomicCAS( 0, 1 );
+  return result == 0;
+}
+
+inline SimpleRelease( io UInt32 lockVariable ) {
+  //NOTE: in theory we shouldn't have to make this one atomic, but somehow it is required
+  //      to allow for forcing a flush of previous memory writes
+  atomicMemoryBarrier_Release();
+  lockVariable.atomicCAS( 1, 0 );
+}

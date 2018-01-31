@@ -1,0 +1,144 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /**
+    The RotateAroundAxisDragInteraction will change a TransformTarget's orientation
+    component based on a DragInteraction movements relative to a center and
+    an axis. The axis is interpreted in TransformTarget's space, which can be 
+    in world or screen space.
+
+    The :kl-ref:`Tool::RotateAroundAxisDragInteraction.setLocal` method allows to interpret the 
+    axis can be in TransformTarget's local space or in global space (local space is default).
+
+    By default, the rotation center is the TransformTarget translation, 
+    else an explicit center can be set with :kl-ref:`Tool::RotateAroundAxisDragInteraction.setExplicitCenter` .
+    
+    See :ref:`TPG.interactive-tools` for more information and examples related to tool interactions.
+  */
+  object RotateAroundAxisDragInteraction : BaseXfoDragInteraction{
+    Boolean local;//Else: global
+    Vec3 axis;
+    Vec3 explicitCenter;
+    Boolean hasExplicitCenter;
+
+    Mat44 initialTransform;
+    Vec3 lastWorldCenter;// Last values (to help drawing a hint)
+    Vec3 lastWorldAxis;// Last values (to help drawing a hint)
+    Vec3 lastStartPos;// Last values (to help drawing a hint)
+    Vec3 lastEndPos;// Last values (to help drawing a hint)
+    Float32 lastAngle;// Last values (to help drawing a hint)
+  };
+
+  RotateAroundAxisDragInteraction() {
+    this.setLocal( true );
+    this.axis = Vec3( 1, 0, 0 );
+  }
+
+  RotateAroundAxisDragInteraction( DragInteraction dragInteraction, TransformTarget transformTarget, Vec3 axis, Boolean localAxis ) {
+    this.setInteraction( dragInteraction );
+    this.setTransformTarget( transformTarget );
+    this.setLocal( localAxis );
+    this.setAxis( axis );
+  }
+
+  RotateAroundAxisDragInteraction.setLocal!( Boolean localAxis ) {
+    this.local = localAxis;
+  }
+
+  RotateAroundAxisDragInteraction.setAxis!( Vec3 axis ) {
+    this.axis = axis.unit_safe();
+  }
+
+  /// Sets an explicit rotation center. If in local (:kl-ref:`Tool::RotateAroundAxisDragInteraction.setLocal` ),
+  /// the center will be interpreted in local space, else it will be transformed by the TransformTarget transform.
+  RotateAroundAxisDragInteraction.setExplicitCenter!( Vec3 explicitCenter ) {
+    this.explicitCenter = explicitCenter;
+    this.hasExplicitCenter = true;
+  }
+
+  RotateAroundAxisDragInteraction.onBegin!( Ref<DragInteraction> interaction ) {
+    this.initialTransform = this.getTransform();
+    this.parent.onBegin( interaction );
+  }
+
+  RotateAroundAxisDragInteraction.onDrag!( Ref<DragInteraction> interaction ) {
+    // Get the current transfos
+    Mat44 transfo = this.initialTransform;
+    Quat rotation;
+    Ref<Viewport> viewport = interaction.getContextualViewport();
+    String space = this.getTransformSpace();
+
+    Vec3 axis = this.axis;
+    if( this.local )
+      axis = ( transfo.upperLeft() * axis ).unit_safe();
+
+    Vec3 center = transfo.translation();
+    if( this.hasExplicitCenter )
+      center = this.explicitCenter;
+
+    Vec3 startPos, currentPos;
+    Vec2 startPixels = interaction.getInitialPixelPosition();
+    Vec2 currPixels = interaction.getCurrentPixelPosition();
+
+    // To avoid parallel projection differences in 3D. restrict the vector delta in pixels
+    Vec2 pixelCenter = Vec2( center.x, center.y );
+    if( space == NormalizedViewportSpace )
+      pixelCenter = NormalizedScreenSpaceToPixel( viewport, Vec2( center.x, center.y ) );
+    else if( space == WorldSpace ) {
+      Vec3 projCenter = viewport.getProjectionMat() * viewport.getViewMat() * center;
+      pixelCenter = NormalizedScreenSpaceToPixel( viewport, Vec2( projCenter.x, projCenter.y ) );
+    }
+    startPixels = ( startPixels - pixelCenter ).unit_safe() + pixelCenter;
+    currPixels = ( currPixels - pixelCenter ).unit_safe() + pixelCenter;
+
+    if( space != WorldSpace ) {
+      // Ignore axis if screen space
+      axis = Vec3( 0, 0, -1 );
+
+      if( space == NormalizedViewportSpace ) {
+        // convert in pixel space
+        center = Vec3( pixelCenter.x, pixelCenter.y, 0 );
+      }
+      startPos = Vec3( startPixels.x, startPixels.y, 0 );
+      currentPos = Vec3( currPixels.x, currPixels.y, 0 );
+    } else {
+      Ray startRay = viewport.calcRayFromScreenPos( startPixels );
+      Ray currRay = viewport.calcRayFromScreenPos( currPixels );
+
+      // Intersect the axis plane
+      startPos = startRay.intersectPlaneVec3( center, axis );
+      currentPos = currRay.intersectPlaneVec3( center, axis );
+      if( startPos.x == -SCALAR_INFINITE || currentPos.x == -SCALAR_INFINITE )
+        return;//Can't compute
+    }
+
+    Vec3 startVec = startPos - center;
+    Vec3 currVec = currentPos - center;
+    if( currVec.length() < 1e-5 || currentPos.length() < 1e-5 )
+      return;
+
+    Float32 angle = startVec.unit_safe().angleTo( currVec.unit_safe() );
+    if( startVec.cross( currVec ).dot( axis ) < 0 )
+      angle = -angle;
+
+    this.lastWorldCenter = center;
+    this.lastWorldAxis = axis;
+    this.lastStartPos = startPos;
+    this.lastEndPos = currentPos;
+    this.lastAngle = angle;
+
+    rotation.setFromAxisAndAngle( axis, angle );
+
+    Mat44 rotationMat;
+    rotationMat.setFromMat33( rotation.toMat33() );
+
+    transfo.setTranslation( transfo.translation() - center );
+    transfo = rotationMat * transfo;
+    transfo.setTranslation( transfo.translation() + center );
+
+    this.setTransform( transfo );
+  }
+}// namespace Tool

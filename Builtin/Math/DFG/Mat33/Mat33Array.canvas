@@ -1,0 +1,198 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Mat33.html",
+    "uiTooltip" : "Constructor from scalars\n\n Supported by Mat33"
+    },
+  "title" : "Mat33[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "_00",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          1
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "_01",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "_02",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "_10",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "_11",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          1
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "_12",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "_20",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "_21",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "_22",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          1
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 249,\n  \"g\" : 157,\n  \"b\" : 28\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Mat33[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "327522A16BE16832ED4CA83EADA01A66",
+  "priorPortNameMap" : {
+    "00" : 0,
+    "01" : 1,
+    "02" : 2,
+    "10" : 3,
+    "11" : 4,
+    "12" : 5,
+    "20" : 6,
+    "21" : 7,
+    "22" : 8
+    },
+  "code" : "require Math;
+
+operator Math_Mat33_Mat33_task<<<index>>>(
+  io Mat33[] result
+, in Scalar[] _00
+, in Scalar[] _01
+, in Scalar[] _02
+, in Scalar[] _10
+, in Scalar[] _11
+, in Scalar[] _12
+, in Scalar[] _20
+, in Scalar[] _21
+, in Scalar[] _22
+) {
+  result[index] = Mat33(_00[index < _00.size() ? index : _00.size() - 1], _01[index < _01.size() ? index : _01.size() - 1], _02[index < _02.size() ? index : _02.size() - 1], _10[index < _10.size() ? index : _10.size() - 1], _11[index < _11.size() ? index : _11.size() - 1], _12[index < _12.size() ? index : _12.size() - 1], _20[index < _20.size() ? index : _20.size() - 1], _21[index < _21.size() ? index : _21.size() - 1], _22[index < _22.size() ? index : _22.size() - 1]);
+}
+
+dfgEntry {
+  if( _00.size() == 0) return;
+  if( _01.size() == 0) return;
+  if( _02.size() == 0) return;
+  if( _10.size() == 0) return;
+  if( _11.size() == 0) return;
+  if( _12.size() == 0) return;
+  if( _20.size() == 0) return;
+  if( _21.size() == 0) return;
+  if( _22.size() == 0) return;
+  Size task_size = 0;
+  if(task_size < _00.size()) task_size = _00.size();
+  if(task_size < _01.size()) task_size = _01.size();
+  if(task_size < _02.size()) task_size = _02.size();
+  if(task_size < _10.size()) task_size = _10.size();
+  if(task_size < _11.size()) task_size = _11.size();
+  if(task_size < _12.size()) task_size = _12.size();
+  if(task_size < _20.size()) task_size = _20.size();
+  if(task_size < _21.size()) task_size = _21.size();
+  if(task_size < _22.size()) task_size = _22.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Mat33_Mat33_task(index, result, _00, _01, _02, _10, _11, _12, _20, _21, _22);
+    }
+  } else {
+    Math_Mat33_Mat33_task<<<task_size>>>(result, _00, _01, _02, _10, _11, _12, _20, _21, _22);
+  }
+}
+"
+  }

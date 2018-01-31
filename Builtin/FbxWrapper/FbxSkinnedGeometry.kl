@@ -1,0 +1,199 @@
+/*
+ *  Copyright 2010-2015 Fabric Software Inc. All rights reserved.
+ */
+
+require Util, Fbx, Characters;
+
+// /*
+// */
+// object FbxSkinnedGeometry {
+//   /// \internal
+//   /// The SkinnedGeometry (Characters/SkinnedGeometry/kl)
+//   private Ref<SkinnedGeometry> skinnedGeometry;
+// };
+
+// /// Default constructor
+// FbxSkinnedGeometry(FbxNode node, Ref<FbxArchive> archive) {
+//   this.parent.init(node, archive);
+// }
+
+
+
+// /// \internal
+// /// Pase the skinning data relative to this geomtry
+// private FbxSkinnedGeometry.parseSkinningData!() {
+
+//   // Read and get all the fbx identifiers
+//   ImporterOptions options;
+//   this.reader.getHandle().getIdentifiers(this.reader.getAllIdentifiers(), options);
+  
+//   // Now, 
+//   ImporterIdentifier skinDeformerIdentifiers[];
+//   this.reader.getHandle().parseSkeleton(this.identifier, skinDeformerIdentifiers);
+//   for(Index j=0; j<skinDeformerIdentifiers.size(); j++) 
+//   {
+//     Index index = FindIdentifierByPath(skinDeformerIdentifiers[j].path, this.reader.getAllIdentifiers());
+//     ImporterIdentifier currentIdentifier = this.reader.getIdentifier(index);
+
+//     currentIdentifier.setScalarData('referencePose.tr.x',    skinDeformerIdentifiers[j].getScalarData('referencePose.tr.x'));
+//     currentIdentifier.setScalarData('referencePose.tr.y',    skinDeformerIdentifiers[j].getScalarData('referencePose.tr.y'));
+//     currentIdentifier.setScalarData('referencePose.tr.z',    skinDeformerIdentifiers[j].getScalarData('referencePose.tr.z'));
+//     currentIdentifier.setScalarData('referencePose.ori.v.x', skinDeformerIdentifiers[j].getScalarData('referencePose.ori.v.x'));
+//     currentIdentifier.setScalarData('referencePose.ori.v.y', skinDeformerIdentifiers[j].getScalarData('referencePose.ori.v.y'));
+//     currentIdentifier.setScalarData('referencePose.ori.v.z', skinDeformerIdentifiers[j].getScalarData('referencePose.ori.v.z'));
+//     currentIdentifier.setScalarData('referencePose.ori.w',   skinDeformerIdentifiers[j].getScalarData('referencePose.ori.w'));
+//     currentIdentifier.setScalarData('referencePose.sc.x',    skinDeformerIdentifiers[j].getScalarData('referencePose.sc.x'));
+//     currentIdentifier.setScalarData('referencePose.sc.y',    skinDeformerIdentifiers[j].getScalarData('referencePose.sc.y'));
+//     currentIdentifier.setScalarData('referencePose.sc.z',    skinDeformerIdentifiers[j].getScalarData('referencePose.sc.z'));
+    
+//     this.reader.setIdentifier(index, currentIdentifier);
+//     this.addBoneIdentifier(this.reader.getIdentifier(index));
+//   }
+// }
+
+// /// \internal
+// /// Add a node to the bone identifers list
+// private FbxSkinnedGeometry.addBoneIdentifier!(ImporterIdentifier boneIdentifier) {
+//   // Check if the node is not already in the skeleton. This would happen
+//   // if the node was in the parent chain of a previously added node.
+//   if(FindIdentifierByPath(boneIdentifier.path, this.boneIdentifiers) == -1)
+//   {
+//     // We first add the parent chain. We want the array of identifiers to be sorted, such
+//     // that parents always appear first in the list, and that we have a continuous chain all the way to the root.
+//     ImporterIdentifier parentChainIdentifiers[];
+//     this.reader.getHandle().collectParentHierarchyChain(boneIdentifier, parentChainIdentifiers);
+//     for(Index i=0; i<parentChainIdentifiers.size(); i++) 
+//     {
+//       if(FindIdentifierByPath(parentChainIdentifiers[i].path, this.boneIdentifiers) == -1)
+//       {
+//         Index index = FindIdentifierByPath(parentChainIdentifiers[i].path, this.reader.getAllIdentifiers());
+//         this.boneIdentifiers.push(this.reader.getIdentifier(index));
+//       }
+//     }
+//     this.boneIdentifiers.push(boneIdentifier);
+//   }
+// }
+
+// /// Set the skinned geomtry
+// FbxSkinnedGeometry.setSkinnedGeometry!(Ref<SkinnedGeometry> skinnedGeometry) {
+//   // !!! Be carful here
+//   // The member this.geometry is from the parent class FbxGeometry
+//   // Because SkinnedGeometry has its own geometry in order to perform the skining
+//   // we must reference this.geometry to the goemtry of the SkinnedGeometry
+//   this.skinnedGeometry = skinnedGeometry;
+//   this.skinnedGeometry.setGeometry(this.geometry);
+//   this.skinToCharacter();
+// }
+
+// /// \internal
+// /// Skin the current geometry to its character skeleton
+// /// To be called once the character skeleton has been created
+// /// Use to get the bindShape matrix, compute the rig and apply the skinning
+// private FbxSkinnedGeometry.skinToCharacter!() {
+//   // 1. Get the bindShapeTransform
+//   this.skinnedGeometry.setBindShape(GetXfoFromFBXIdentifier(this.identifier, 'xfo').toMat44());
+
+//   // 2. Compute the rig
+//   // Get the skin deformers for this skinGeometry 
+//   ImporterIdentifier skinDeformerIdentifiers[];
+//   this.reader.getHandle().parseSkeleton(this.identifier, skinDeformerIdentifiers);
+
+//   // The Rig can have more bones in it than the skin mesh uses, so we need
+//   // to provide a mapping between the rigs bones, and the bones used to deform the geometry. 
+//   // Remapping the bone IDs enables all skin meshes bound to a particular rig to share
+//   // a set of skinning matrices. A set of skinning matrices is generated for the rig,
+//   // and each geometry is deformed by a subset of the skinning matrices.
+//   Bone deformers[] = this.skinnedGeometry.getCharacter().getSkeleton().getDeformers();
+//   Integer boneMapping[]; boneMapping.resize(skinDeformerIdentifiers.size());
+//   for(Index i=0; i<skinDeformerIdentifiers.size(); i++) 
+//   {
+//     for(Index j=0; j<deformers.size(); j++) 
+//     {
+//       if(skinDeformerIdentifiers[i].name == deformers[j].name)
+//       {
+//         boneMapping[i] = j;
+//         break;
+//       }
+//     }
+//   }
+
+//   UInt32 nb[], packedOrderedIds[];
+//   Scalar packedOrderedWeights[];
+//   this.reader.getHandle().parseSkinWeights(this.identifier, nb, packedOrderedIds, packedOrderedWeights);
+//   if( nb.size() != this.geometry.pointCount() ) 
+//   {
+//     setError("Skinning weight count don't match polygon mesh point count");
+//     return;
+//   }
+
+//   Ref<SkinningAttribute> skinningAttr = this.geometry.getOrCreateAttribute("skinningData", SkinningAttribute);
+
+//   Size srcOffset = 0;
+//   for(Index i = 0; i < nb.size(); ++i ) 
+//   {
+//     UInt32 count = nb[i];
+//     LocalL16UInt32Array indices;
+//     LocalL16ScalarArray weights;
+//     indices.resize(count);
+//     weights.resize(count);
+
+//     // Some Fbx files have non-normalized skinning weights, and so here we
+//     // normalize the data so that the geometry will be deformed correctly.
+//     Scalar weightsSum = 0.0;
+//     for(Index j = 0; j < count; ++j) weightsSum += packedOrderedWeights[srcOffset+j];
+    
+//     if(weightsSum > DIVIDEPRECISION)
+//     {
+//       for(Index j = 0; j < count; ++j ) 
+//       {
+//         indices.set( j, boneMapping[ packedOrderedIds[srcOffset+j] ] );
+//         weights.set(j, packedOrderedWeights[srcOffset+j] / weightsSum);
+//       }
+//     }
+//     this.geometry.setPointAttribute(i, skinningAttr, indices, weights);
+//     srcOffset += count;
+//   }
+//   this.geometry.recomputePointNormals();
+
+
+//   // 3. We finnally tell the skinGeometry that it can apply the skinning
+//   //    since the rig has been computed 
+//   this.skinnedGeometry.applySkinning();
+// }
+
+// /// Get a reference to the SkinnedGeometry
+// Ref<SkinnedGeometry> FbxSkinnedGeometry.getSkinnedGeometry() {
+//   return this.skinnedGeometry;
+// }
+
+// /// Get the bones identifier at index 
+// ImporterIdentifier FbxSkinnedGeometry.getBoneIdentifier(Index index) {
+//   return this.boneIdentifiers[index];
+// }
+
+// /// Get all the bones identifiers
+// ImporterIdentifier[] FbxSkinnedGeometry.getAllBoneIdentifiers() {
+//   return this.boneIdentifiers;
+// }
+ 
+// /// To-Do
+// /// Overload from FbxGeometry
+// /// Returns the mesh bounding box
+// Box3 FbxSkinnedGeometry.getSelfBounds!(Float64 time, io Boolean isConstant) {
+
+//   Box3 bb;
+//   isConstant = false;
+//   // To-Redo, don't be leazy Julien
+//   if(this.skinnedGeometry)
+//   {
+//     LocalBoundingVolume lbv = this.skinnedGeometry.getDeformedGeometry().getBoundingVolume();
+//     bb.min = lbv.pt1;
+//     bb.max = lbv.pt2;
+//   }
+//   else 
+//   {
+//     //isConstant = true;
+//     this.reader.getHandle().parsePolygonMeshBbox(this.identifier, bb.min, bb.max);
+//   }
+//   return bb; 
+// }

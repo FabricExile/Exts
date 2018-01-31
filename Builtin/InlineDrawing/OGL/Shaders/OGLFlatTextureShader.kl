@@ -1,0 +1,125 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+
+/**
+\versionadded 1.12.0
+
+The OGLFlatTextureShader inherits the OGLInlineShader. It extends the OGLInlineShader for shading a texture.
+
+\rst
+Uniforms
+----------
+=============== ============ ============================================ ==================================
+Name            Type         Description                                  Default
+=============== ============ ============================================ ==================================
+u_texture       Texture      Texture used for diffuse color               null
+u_mirrorU       Integer      Flag for flipping the image along U          0
+u_mirrorV       Integer      Flag for flipping the image along V          1
+u_discardAlpha  Integer      Flag to discard 0.0 alpha pixels             0
+u_postMultiply  Integer      Flag to compensate for premultiplied alpha   0
+=============== ============ ============================================ ==================================
+
+Attributes
+----------
+=============== ============ =====================================
+Name            Type         Description
+=============== ============ =====================================
+positions       Vec3         Geometry positions
+uvs0            Vec2         UV set, encoding U and V in X and Y
+=============== ============ =====================================
+\endrst
+
+\example
+  InlineDrawing draw = OGLInlineDrawing();
+  InlineShader shader = draw.registerShader(OGLFlatTextureShader);
+  InlineMaterial mat = shader.getOrCreateMaterial('texturedMat');
+  InlineTexture texture = draw.registerTexture(InlineFileBasedTexture('texture.png'));
+  mat.setUniform('u_texture', texture);
+  mat.setUniform('u_mirrorU', 1);
+\endexample
+\dfgPresetOmit
+*/
+object OGLFlatTextureShader: OGLInlineShader {};
+
+/// default constructor
+function OGLFlatTextureShader() {
+  // Avoid calling the init method if this default constructor is being invoked 
+  // during the construction of a derived object.
+  if(this.type() == OGLFlatTextureShader)
+    this.init(String(this.type()));
+}
+
+/// default constructor taking a name
+function OGLFlatTextureShader(String name) {
+  this.init(name);
+}
+
+/// initialize the OGLFlatTextureShader using name
+/// \internal
+function OGLFlatTextureShader.init!(String name) {
+  this.name = name;
+  this.setVertexCode("
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+
+      uniform mat4 u_viewMatrix;
+      uniform mat4 u_projection;
+      uniform mat4 u_modelMatrix;
+      
+      attribute vec4 positions;
+      attribute vec2 uvs0;
+
+      varying vec2 v_uv0;
+
+      void main(){
+        gl_Position = u_projection * (u_viewMatrix * (u_modelMatrix * positions));
+        v_uv0 = uvs0;
+      }
+    ");
+  this.setFragmentCode("
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+      
+      uniform sampler2D u_texture;
+      uniform int u_mirrorU;
+      uniform int u_mirrorV;
+      uniform int u_discardAlpha;
+      uniform int u_postMultiply;
+
+      varying vec2 v_uv0;
+      
+      void main(){
+        vec2 uv = v_uv0;
+        if(u_mirrorU != 0) uv.x = 1.0 - uv.x;
+        if(u_mirrorV != 0) uv.y = 1.0 - uv.y;
+
+        vec4 texture_color = texture2D( u_texture, uv );
+        if(u_discardAlpha != 0)
+        {
+          if(texture_color.a < 0.0001)
+            discard;
+
+          if(u_postMultiply != 0)
+          {
+            texture_color.r /= texture_color.a;
+            texture_color.g /= texture_color.a;
+            texture_color.b /= texture_color.a;
+            texture_color.a = 1.0;
+          }
+        }
+
+        gl_FragColor = texture_color;
+      }
+    ");  
+  this.defineUniform(InlineUniform("u_viewMatrix", Mat44()));
+  this.defineUniform(InlineUniform("u_projection", Mat44()));
+  this.defineUniform(InlineUniform("u_modelMatrix", Mat44()));
+  this.defineUniform(InlineUniform('u_texture', null));
+  this.defineUniform(InlineUniform('u_mirrorU', 0));
+  this.defineUniform(InlineUniform('u_mirrorV', 1));
+  this.defineUniform(InlineUniform('u_discardAlpha', 0));
+  this.defineUniform(InlineUniform('u_postMultiply', 0));
+  this.defineAttribute('positions', "Vec3");
+  this.defineAttribute('uvs0', "Vec2");
+}

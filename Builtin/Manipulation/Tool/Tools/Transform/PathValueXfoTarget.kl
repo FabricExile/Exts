@@ -1,0 +1,65 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+require FabricInterfaces;
+
+namespace Tool {
+
+  /// The PathValueXfoTarget specializes BasicXfoTarget
+  /// in order to modify an Xfo external value (Canvas port)
+  /// by creating setPathValue commands.
+  ///
+  /// See :ref:`TPG.command_tool_type` for more information about default tools.
+  object PathValueXfoTarget : BasicXfoTarget {
+    Xfo initTransform;
+    SInt32 canMergeID;
+    SetPathValueCommandWrapper cmdWrapper;
+  };
+
+  /// Implementation of PathValueTarget.
+  PathValueXfoTarget( String path ) {
+    this.setTargetPath( path );
+  }
+
+  /// Implementation of PathValueTarget.
+  PathValueXfoTarget.setTargetPath!( String path ) {
+    this.cmdWrapper = SetPathValueCommandWrapper( path );
+    this.canMergeID = NoCanMergeID;
+  }
+
+  String PathValueXfoTarget.getTargetPath() {
+    return this.cmdWrapper.getTargetPath();
+  }
+
+  /// Implementation of PathValueTarget.
+  PathValueXfoTarget.valueChanged!( RTVal val ) {
+    Xfo xfo = val;
+    this.updateValue( xfo );
+  }
+
+  /// Update value from the source port
+  PathValueXfoTarget.updateValue!( Xfo transform ) {
+    //Call directly parent's method: don't create a command in this case
+    //since the value doesn't come from a tool
+    this.parent.setLocalTransform( transform );
+  }
+
+  /// Implementation of TransformTarget.
+  PathValueXfoTarget.setLocalTransform!( Xfo transform ) {
+    this.parent.setLocalTransform( transform );
+    if( this.canMergeID != NoCanMergeID )
+      this.cmdWrapper.setValue( RTVal( this.getLocalTransform() ), this.canMergeID, true );//block log during interaction
+  }
+
+  /// Implementation of TransformTarget.
+  PathValueXfoTarget.beginChanges!( ) {
+    this.canMergeID = GetCommandManager().getNewCanMergeID();
+  }
+
+  /// Implementation of TransformTarget.
+  PathValueXfoTarget.endChanges!( ) {
+    this.cmdWrapper.setValue( RTVal( this.getLocalTransform() ), this.canMergeID, false );
+    this.canMergeID = NoCanMergeID;
+  }
+}// namespace Tool

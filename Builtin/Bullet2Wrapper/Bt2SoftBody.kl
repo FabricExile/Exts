@@ -1,0 +1,557 @@
+//
+// Copyright 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+const SInt32 Bt2Softbody_AeroModel_V_Point = 0;
+const SInt32 Bt2Softbody_AeroModel_V_TwoSided = 1;
+const SInt32 Bt2Softbody_AeroModel_V_TwoSidedLiftDrag = 2;
+const SInt32 Bt2Softbody_AeroModel_V_OneSided = 3;
+const SInt32 Bt2Softbody_AeroModel_F_TwoSided = 4;
+const SInt32 Bt2Softbody_AeroModel_F_TwoSidedLiftDrag = 5;
+const SInt32 Bt2Softbody_AeroModel_F_OneSided = 6;
+
+const SInt32 Bt2SoftBody_Collision_RVSmask = 0x000f; ///Rigid versus soft mask
+const SInt32 Bt2SoftBody_Collision_SDF_RS  = 0x0001; ///SDF based rigid vs soft
+const SInt32 Bt2SoftBody_Collision_CL_RS = 0x0002; ///Cluster vs convex rigid vs soft
+const SInt32 Bt2SoftBody_Collision_SVSmask = 0x0030; ///Rigid versus soft mask   
+const SInt32 Bt2SoftBody_Collision_VF_SS = 0x0010; ///Vertex vs face soft vs soft handling
+const SInt32 Bt2SoftBody_Collision_CL_SS = 0x0020; ///Cluster vs cluster soft vs soft handling
+const SInt32 Bt2SoftBody_Collision_CL_SELF = 0x0040; ///Cluster soft body self collision
+
+/// \dfgPresetOmit
+struct Bt2SoftBody : Bt2Item permits Bt2World
+{
+  protected btSoftBody body;
+  protected UInt32 numNodes;
+  protected btSoftBody_Material material;
+  protected Geometry geometry;
+  protected Xfo initialXfo;
+  protected Color color;
+};
+
+Geometry Bt2SoftBody.getGeometry()
+{
+  return this.geometry;
+}
+
+Color Bt2SoftBody.getColor()
+{
+  return this.color;
+}
+
+function Bt2SoftBody.updateSoftBody!()
+{
+  if(!this.isValid())
+    return;
+  if(!this.body.cxx_isValid())
+    return;
+  if(!this.geometry)
+    return;
+
+  GeometryAttributes attributes = this.geometry.getAttributes();
+  Vec3Attribute positions = attributes.getOrCreateVec3Attribute('positions');
+  Vec3Attribute velocities = attributes.getOrCreateVec3Attribute('velocities');
+
+  Vec3 p[] = positions.values.clone();
+  for(Size i=0;i<this.numNodes;i++)
+    p[i] == this.initialXfo.transformVector(p[i]);
+
+  CxxFloat32Ptr positionsPtr(p.data());
+  CxxFloat32Ptr velocitiesPtr(velocities.values.data());
+
+  CxxbtSoftBody_setPositionsVelocities(this.body, this.numNodes, positionsPtr, this.numNodes, velocitiesPtr);
+}
+
+function Bt2SoftBody.updateGeometry!()
+{
+  if(!this.isValid())
+  {
+    return;
+  }
+  if(!this.body.cxx_isValid())
+  {
+    return;
+  }
+  if(!this.geometry)
+  {
+    return;
+  }
+  if(!this.isValid())
+    return;
+  if(!this.body.cxx_isValid())
+    return;
+  if(!this.geometry)
+    return;
+
+  GeometryAttributes attributes = this.geometry.getAttributes();
+  Vec3Attribute positions = attributes.getOrCreateVec3Attribute('positions');
+  Vec3Attribute velocities = attributes.getOrCreateVec3Attribute('velocities');
+  CxxFloat32Ptr positionsPtr(positions.values.data());
+  CxxFloat32Ptr velocitiesPtr(velocities.values.data());
+
+  CxxbtSoftBody_getPositionsVelocities(this.body, this.numNodes, positionsPtr, this.numNodes, velocitiesPtr);
+  positions.incrementVersion();
+  velocities.incrementVersion();
+
+  PolygonMesh mesh = this.geometry;
+  if(mesh)
+  {
+    for(Size i=0;i<mesh.pointCount();i++)
+    {
+      mesh.setPointPosition(i, this.initialXfo.inverseTransformVector(positions.values[i]));
+    }
+
+    mesh.recomputePointNormals(3.14);
+  }
+  else
+  {
+    for(Size i=0;i<this.numNodes;i++)
+    {
+      positions.values[i] = this.initialXfo.inverseTransformVector(positions.values[i]);
+    }
+  }
+}
+
+function SInt32 Bt2SoftBody.getActivationState()
+{
+  if(!this.isValid())
+    return 0;
+  return this.body.getActivationState();
+}
+
+/// \dfgPresetCombo state ("invalid", "active", "sleeping", "wantsDeactivation", "disableDeactivation", "disableSimulation")
+/// \dfgPresetDefault state 1
+function Bt2SoftBody.setActivationState!(SInt32 state)
+{
+  if(!this.isValid())
+    return;
+  if(state >= Bt2RigidBody_State_ActiveTag && state <= Bt2RigidBody_State_DisableSimulation)
+    this.body.setActivationState(state);
+}
+
+/// \dfgPresetCombo state ("invalid", "active", "sleeping", "wantsDeactivation", "disableDeactivation", "disableSimulation")
+/// \dfgPresetDefault state 1
+function Bt2SoftBody.forceActivationState!(SInt32 state)
+{
+  if(!this.isValid())
+    return;
+  if(state >= Bt2RigidBody_State_ActiveTag && state <= Bt2RigidBody_State_DisableSimulation)
+    this.body.forceActivationState(state);
+}
+
+/// \dfgPresetDefault force true
+function Bt2SoftBody.activate!(Boolean force)
+{
+  if(!this.isValid())
+    return;
+  this.body.activate(force);
+}
+
+/// \dfgPresetDefault force true
+function Boolean Bt2SoftBody.isActive()
+{
+  if(!this.isValid())
+    return false;
+  return this.body.isActive();
+}
+
+function Float32 Bt2SoftBody.getDeactivationTime()
+{
+  if(!this.isValid())
+    return 0;
+  return this.body.getDeactivationTime();
+}
+
+/// \dfgPresetDefault time 1.0
+function Bt2SoftBody.setDeactivationTime!(Float32 time)
+{
+  if(!this.isValid())
+    return;
+  this.body.setDeactivationTime(time);
+}
+
+function Float32 Bt2SoftBody.getRestitution()
+{
+  if(!this.isValid())
+    return 0;
+  return this.body.getRestitution();
+}
+
+/// \dfgPresetDefault restitution 0.0
+function Bt2SoftBody.setRestitution!(Float32 restitution)
+{
+  if(!this.isValid())
+    return;
+  this.body.setRestitution(restitution);
+}
+
+function Float32 Bt2SoftBody.getFriction()
+{
+  if(!this.isValid())
+    return 0;
+  return this.body.getFriction();
+}
+
+/// \dfgPresetDefault friction 0.5
+function Bt2SoftBody.setFriction!(Float32 friction)
+{
+  if(!this.isValid())
+    return;
+  this.body.setFriction(friction);
+}
+
+function Float32 Bt2SoftBody.getRollingFriction()
+{
+  if(!this.isValid())
+    return 0;
+  return this.body.getRollingFriction();
+}
+
+/// \dfgPresetDefault friction 0.0
+function Bt2SoftBody.setRollingFriction!(Float32 friction)
+{
+  if(!this.isValid())
+    return;
+  this.body.setRollingFriction(friction);
+}
+
+function Float32 Bt2SoftBody.getSpinningFriction()
+{
+  if(!this.isValid())
+    return 0;
+  return this.body.getSpinningFriction();
+}
+
+/// \dfgPresetDefault friction 0.0
+function Bt2SoftBody.setSpinningFriction!(Float32 friction)
+{
+  if(!this.isValid())
+    return;
+  this.body.setSpinningFriction(friction);
+}
+
+function Bt2SoftBody.getSettings(
+out Float32 linearStiffness,
+out Float32 angularStiffness,
+out Float32 volumeStiffness,
+out SInt32 aeroDynamicModel,
+out Float32 velocityCorrection,
+out Float32 damping,
+out Float32 drag,
+out Float32 lift,
+out Float32 pressure,
+out Float32 volumeConservation,
+out Float32 dynamicFriction,
+out Float32 poseMatching,
+out Float32 rigidContactsHardness,
+out Float32 kineticContactsHardness,
+out Float32 softContactsHardness,
+out Float32 anchorsHardness,
+out Float32 clusterSoftVsRigidHardness,
+out Float32 clusterSoftVsKineticHardness,
+out Float32 clusterSoftVsSoftHardness,
+out Float32 clusterSoftVsRigidImpulseSplit,
+out Float32 clusterSoftVsKineticImpulseSplit,
+out Float32 clusterSoftVsSoftImpulseSplit,
+out Float32 maxVolumeRatio,
+out Float32 timeScale,
+out SInt32 velocityIterations,
+out SInt32 positionIterations,
+out SInt32 driftIterations,
+out SInt32 clusterIterations
+){
+  if(!this.isValid())
+    return;
+
+  linearStiffness = this.material.get_m_kLST();
+  angularStiffness = this.material.get_m_kAST();
+  volumeStiffness = this.material.get_m_kVST();
+
+  btSoftBody_Config cfg = btSoftBody_getConfig(this.body);
+  aeroDynamicModel = cfg.get_aeromodel();
+  velocityCorrection = cfg.get_kVCF();
+  damping = cfg.get_kDP();
+  drag = cfg.get_kDG();
+  lift = cfg.get_kLF();
+  pressure = cfg.get_kPR();
+  volumeConservation = cfg.get_kVC();
+  dynamicFriction = cfg.get_kDF();
+  poseMatching = cfg.get_kMT();
+  rigidContactsHardness = cfg.get_kCHR();
+  kineticContactsHardness = cfg.get_kKHR();
+  softContactsHardness = cfg.get_kSHR();
+  anchorsHardness = cfg.get_kAHR();
+  clusterSoftVsRigidHardness = cfg.get_kSRHR_CL();
+  clusterSoftVsKineticHardness = cfg.get_kSKHR_CL();
+  clusterSoftVsSoftHardness = cfg.get_kSSHR_CL();
+  clusterSoftVsRigidImpulseSplit = cfg.get_kSR_SPLT_CL();
+  clusterSoftVsKineticImpulseSplit = cfg.get_kSK_SPLT_CL();
+  clusterSoftVsSoftImpulseSplit = cfg.get_kSS_SPLT_CL();
+  maxVolumeRatio = cfg.get_maxvolume();
+  timeScale = cfg.get_timescale();
+  velocityIterations = cfg.get_viterations();
+  positionIterations = cfg.get_piterations();
+  driftIterations = cfg.get_diterations();
+  clusterIterations = cfg.get_citerations();
+}
+
+/// \dfgPresetRange linearStiffness (0, 1)
+/// \dfgPresetDefault linearStiffness 1
+/// \dfgPresetRange angularStiffness (0, 1)
+/// \dfgPresetDefault angularStiffness 1
+/// \dfgPresetRange volumeStiffness (0, 1)
+/// \dfgPresetDefault volumeStiffness 1
+/// \dfgPresetCombo aeroDynamicModel ("V_Point", "V_TwoSided", "V_TwoSidedLiftDrag", "V_OneSided", "F_TwoSided", "F_TwoSidedLiftDrag", "F_OneSided")
+/// \dfgPresetDefault aeroDynamicModel 0
+/// \dfgPresetRange velocityCorrection (0, 4)
+/// \dfgPresetDefault velocityCorrection 1
+/// \dfgPresetRange damping (0, 1)
+/// \dfgPresetDefault damping 0
+/// \dfgPresetRange drag (0, 4)
+/// \dfgPresetDefault drag 0
+/// \dfgPresetRange lift (0, 10)
+/// \dfgPresetDefault lift 0
+/// \dfgPresetRange pressure (-100, 100)
+/// \dfgPresetDefault pressure 0
+/// \dfgPresetRange volumeConservation (0, 10)
+/// \dfgPresetDefault volumeConservation 0
+/// \dfgPresetRange dynamicFriction (0, 1)
+/// \dfgPresetDefault dynamicFriction 0.2
+/// \dfgPresetRange poseMatching (0, 1)
+/// \dfgPresetDefault poseMatching 0
+/// \dfgPresetRange rigidContactsHardness (0, 1)
+/// \dfgPresetDefault rigidContactsHardness 1.0
+/// \dfgPresetRange kineticContactsHardness (0, 1)
+/// \dfgPresetDefault kineticContactsHardness 0.1
+/// \dfgPresetRange softContactsHardness (0, 1)
+/// \dfgPresetDefault softContactsHardness 1.0
+/// \dfgPresetRange anchorsHardness (0, 1)
+/// \dfgPresetDefault anchorsHardness 0.7
+/// \dfgPresetRange clusterSoftVsRigidHardness (0, 1)
+/// \dfgPresetDefault clusterSoftVsRigidHardness 0.1
+/// \dfgPresetRange clusterSoftVsKineticHardness (0, 1)
+/// \dfgPresetDefault clusterSoftVsKineticHardness 1
+/// \dfgPresetRange clusterSoftVsSoftHardness (0, 1)
+/// \dfgPresetDefault clusterSoftVsSoftHardness 0.5
+/// \dfgPresetRange clusterSoftVsRigidImpulseSplit (0, 1)
+/// \dfgPresetDefault clusterSoftVsRigidImpulseSplit 0.5
+/// \dfgPresetRange clusterSoftVsKineticImpulseSplit (0, 1)
+/// \dfgPresetDefault clusterSoftVsKineticImpulseSplit 0.5
+/// \dfgPresetRange clusterSoftVsSoftImpulseSplit (0, 1)
+/// \dfgPresetDefault clusterSoftVsSoftImpulseSplit 0.5
+/// \dfgPresetDefault maxVolumeRatio 1
+/// \dfgPresetDefault timeScale 1
+/// \dfgPresetDefault velocityIterations 0
+/// \dfgPresetDefault positionIterations 1 
+/// \dfgPresetDefault driftIterations 0
+/// \dfgPresetDefault clusterIterations 4
+function Bt2SoftBody.setSettings!(
+in Float32 linearStiffness,
+in Float32 angularStiffness,
+in Float32 volumeStiffness,
+in SInt32 aeroDynamicModel,
+in Float32 velocityCorrection,
+in Float32 damping,
+in Float32 drag,
+in Float32 lift,
+in Float32 pressure,
+in Float32 volumeConservation,
+in Float32 dynamicFriction,
+in Float32 poseMatching,
+in Float32 rigidContactsHardness,
+in Float32 kineticContactsHardness,
+in Float32 softContactsHardness,
+in Float32 anchorsHardness,
+in Float32 clusterSoftVsRigidHardness,
+in Float32 clusterSoftVsKineticHardness,
+in Float32 clusterSoftVsSoftHardness,
+in Float32 clusterSoftVsRigidImpulseSplit,
+in Float32 clusterSoftVsKineticImpulseSplit,
+in Float32 clusterSoftVsSoftImpulseSplit,
+in Float32 maxVolumeRatio,
+in Float32 timeScale,
+in SInt32 velocityIterations,
+in SInt32 positionIterations,
+in SInt32 driftIterations,
+in SInt32 clusterIterations
+){
+  if(!this.isValid())
+    return;
+
+  this.material.set_m_kLST(linearStiffness);
+  this.material.set_m_kAST(angularStiffness);
+  this.material.set_m_kVST(volumeStiffness);
+
+  btSoftBody_Config cfg = btSoftBody_getConfig(this.body);
+  cfg.set_aeromodel(aeroDynamicModel);
+  cfg.set_kVCF(velocityCorrection);
+  cfg.set_kDP(damping);
+  cfg.set_kDG(drag);
+  cfg.set_kLF(lift);
+  cfg.set_kPR(pressure);
+  cfg.set_kVC(volumeConservation);
+  cfg.set_kDF(dynamicFriction);
+  cfg.set_kMT(poseMatching);
+  cfg.set_kCHR(rigidContactsHardness);
+  cfg.set_kKHR(kineticContactsHardness);
+  cfg.set_kSHR(softContactsHardness);
+  cfg.set_kAHR(anchorsHardness);
+  cfg.set_kSRHR_CL(clusterSoftVsRigidHardness);
+  cfg.set_kSKHR_CL(clusterSoftVsKineticHardness);
+  cfg.set_kSSHR_CL(clusterSoftVsSoftHardness);
+  cfg.set_kSR_SPLT_CL(clusterSoftVsRigidImpulseSplit);
+  cfg.set_kSK_SPLT_CL(clusterSoftVsKineticImpulseSplit);
+  cfg.set_kSS_SPLT_CL(clusterSoftVsSoftImpulseSplit);
+  cfg.set_maxvolume(maxVolumeRatio);
+  cfg.set_timescale(timeScale);
+  cfg.set_viterations(velocityIterations);
+  cfg.set_piterations(positionIterations);
+  cfg.set_diterations(driftIterations);
+  cfg.set_citerations(clusterIterations);
+}
+
+function Float32 Bt2SoftBody.getMargin()
+{
+  if(!this.isValid())
+    return 0.0;
+  btCollisionShape shape = this.body.getCollisionShape();
+  return shape.getMargin();
+}
+
+/// \dfgPresetDefault margin 0.1
+function Bt2SoftBody.setMargin!(Float32 margin)
+{
+  if(!this.isValid())
+    return;
+  btCollisionShape shape = this.body.getCollisionShape();
+  shape.setMargin(margin);
+}
+
+function UInt32 Bt2SoftBody.nodeCount()
+{
+  return this.numNodes;
+}
+
+/// \dfgPresetDefault disableCollision true
+/// \dfgPresetRange influence (0, 1)
+/// \dfgPresetDefault influence 1.0
+function Bt2SoftBody.appendAnchor!(SInt32 vertex, Bt2RigidBody body, Vec3 localPivot, Boolean disableCollision, Float32 influence)
+{
+  if(!this.isValid())
+    return;
+  if(!body.isValid())
+    return;
+  if(vertex < 0 || vertex >= this.numNodes)
+    return;
+  this.body.appendAnchor(vertex, body.body, localPivot, disableCollision, influence);
+}
+
+function Vec3 Bt2SoftBody.getPosition(SInt32 vertex)
+{
+  if(vertex < 0 || vertex >= this.numNodes)
+    return Vec3();
+  return btSoftBody_getPosition(this.body, vertex);
+}
+
+/// \dfgPresetDefault force {"x": 0.0, "y": 5.0, "z": 0.0}
+function Bt2SoftBody.addForce!(Vec3 force, SInt32 vertex)
+{
+  if(!this.isValid())
+    return;
+  if(vertex < 0 || vertex >= this.numNodes)
+    return;
+  this.body.addForce(force, vertex);
+}
+
+function Vec3 Bt2SoftBody.getVelocity(SInt32 vertex)
+{
+  if(vertex < 0 || vertex >= this.numNodes)
+    return Vec3();
+  return btSoftBody_getVelocity(this.body, vertex);
+}
+
+/// \dfgPresetDefault velocity {"x": 0.0, "y": 0.0, "z": 0.0}
+function Bt2SoftBody.setVelocity!(Vec3 velocity, SInt32 vertex)
+{
+  if(!this.isValid())
+    return;
+  if(vertex < 0 || vertex >= this.numNodes)
+    return;
+  btSoftBody_setVelocity(this.body, vertex, velocity);
+}
+
+/// \dfgPresetDefault velocity {"x": 0.0, "y": 5.0, "z": 0.0}
+function Bt2SoftBody.addVelocity!(Vec3 velocity, SInt32 vertex)
+{
+  if(!this.isValid())
+    return;
+  if(vertex < 0 || vertex >= this.numNodes)
+    return;
+  this.body.addVelocity(velocity, vertex);
+}
+
+function Float32 Bt2SoftBody.getMass(SInt32 vertex)
+{
+  if(!this.isValid())
+    return 0.0;
+  if(vertex < 0 || vertex >= this.numNodes)
+    return 0.0;
+  return this.body.getMass(vertex);
+}
+
+/// \dfgPresetDefault mass 1.0
+function Bt2SoftBody.setMass!(Float32 mass, SInt32 vertex)
+{
+  if(!this.isValid())
+    return;
+  if(vertex < 0 || vertex >= this.numNodes)
+    return;
+  this.body.setMass(vertex, mass);
+}
+
+function Float32 Bt2SoftBody.getTotalMass()
+{
+  if(!this.isValid())
+    return 0.0;
+  return this.body.getTotalMass();
+}
+
+/// \dfgPresetDefault mass 1.0
+function Bt2SoftBody.setTotalMass!(Float32 mass, Boolean fromfaces)
+{
+  if(!this.isValid())
+    return;
+  this.body.setTotalMass(mass, fromfaces);
+}
+
+
+/// \dfgPresetDefault density 1.0
+function Bt2SoftBody.setTotalDensity!(Float32 density)
+{
+  if(!this.isValid())
+    return;
+  this.body.setTotalDensity(density);
+}
+
+/// \dfgPresetDefault mass 1.0
+function Bt2SoftBody.setVolumeMass!(Float32 mass)
+{
+  if(!this.isValid())
+    return;
+  this.body.setVolumeMass(mass);
+}
+
+/// \dfgPresetDefault density 1.0
+function Bt2SoftBody.setVolumeDensity!(Float32 density)
+{
+  if(!this.isValid())
+    return;
+  this.body.setVolumeDensity(density);
+}
+
+function Bt2SoftBody.transform!(Xfo xfo)
+{
+  if(!this.isValid())
+    return;
+  this.body.transform(xfo);
+}

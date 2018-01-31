@@ -1,0 +1,269 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Alembic;
+require Geometry;
+
+/**
+  The :kl-ref:`AlembicPointsReader` specializes the :kl-ref:`AlembicObjectReader` interface for reading :kl-ref:`AlembicIPoints` data. 
+  It can be created using the :kl-ref:`AlembicArchiveReader.getPoints` method.
+  \example
+
+  require AlembicWrapper;
+  require FileIO;
+
+  operator entry() {
+    
+    FilePath path = FilePath('${FABRIC_SCENE_GRAPH_DIR}/Python/Apps/Resources/Alembic/fireworks.abc').expandEnvVars();
+
+    AlembicArchiveReader archive(path.string());
+    String pointsPaths[] = archive.getPathsOfType('Points');
+
+    for(Size i=0;i<pointsPaths.size();i++) {
+
+      AlembicPointsReader points = archive.getPoints(pointsPaths[i]);
+      report('samples: '+points.getNumSamples());
+
+      GeometryAttributes attr = GeometryAttributes();
+      points.readSample(4.3, attr);
+
+      report(attr.size());
+
+      Ref<Vec3Attribute> positions = attr.getPositions();
+      report(positions.values[4]);
+      report(positions.values[12]);
+    }
+
+  }
+
+  \endexample
+  \seealso AlembicPointsWriter
+*/
+object AlembicPointsReader : AlembicBaseObjectReader, AlembicGeometryReader{
+  /// \internal
+  private AlembicIPoints _points;
+  /// \internal
+  private AlembicIPointsSchema _schema;
+  /// \internal
+  private AlembicIPointsSample _sampleA;
+  /// \internal
+  private AlembicIPointsSample _sampleB;
+  /// \internal
+  private AlembicGeometryAttributesReader _attributesReader;
+  /// \internal
+  private UInt64 _geometryUid;
+};
+
+/// \internal
+private AlembicPointsReader(AlembicArchiveReader archive, AlembicIObject points) {
+
+  this._points = AlembicIPoints(points);
+  this._schema = this._points.getSchema();
+  this.parent.set( archive, points, this._schema.getTimeSampling(), this._schema.getNumSamples(), this._schema.getChildBoundsProperty() );
+
+  this._sampleA = AlembicIPointsSample();
+  this._sampleB = AlembicIPointsSample();
+  this._attributesReader = AlembicGeometryAttributesReader(archive, this._schema.getArbGeomParams());
+ 
+  // backwards compatibility
+  // properties might be stored on other props
+  // TO FIX: this will actually duplicate the property values & reads!!
+  AlembicICompoundProperty mainProps = this._points.getProperties();
+  AlembicICompoundProperty geomProps = AlembicICompoundProperty(mainProps, ".geom");
+  if(geomProps.valid()) {
+    for(Size i=0;i<geomProps.getNumProperties();i++) {
+      AlembicPropertyHeader ph = geomProps.getPropertyHeader(i);
+      if(ph.getName() == '.color') {
+        AlembicGeometryParamReader paramReader = AlembicGeometryParamReader(archive, AlembicIColorfGeomParam(geomProps, ph.getName()));
+        paramReader._name = 'vertexColors';
+        this._attributesReader.addParamReader(paramReader);
+      } else if(ph.getName() == '.scale') {
+        AlembicGeometryParamReader paramReader = AlembicGeometryParamReader(archive, AlembicIVec3VfGeomParam(geomProps, ph.getName()));
+        paramReader._name = 'scales';
+        this._attributesReader.addParamReader(paramReader);
+      } else if(ph.getName() == '.orientation') {
+        AlembicGeometryParamReader paramReader = AlembicGeometryParamReader(archive, AlembicIQuatfGeomParam(geomProps, ph.getName()));
+        paramReader._name = 'orientations';
+        this._attributesReader.addParamReader(paramReader);
+      }
+    }
+  }
+}
+
+/// returns the full path of the wrapped AlembicIPoints
+public String AlembicPointsReader.getPath() {
+  return this._points.asIObject().getFullName();
+}
+
+/// returns true if this reader wraps a valid AlembicIPoints
+public Boolean AlembicPointsReader.valid() {
+  if(!this._points.valid())
+    return false;
+  return this.parent.valid();
+}
+
+/// clears all pointers and releases all alembic containers
+public AlembicPointsReader.reset!() {
+  this._points.reset();
+  this._schema.reset();
+  this._sampleA = null;
+  this._sampleB = null;
+}
+
+/// returns the number of samples of this reader
+public SInt32 AlembicPointsReader.getNumSamples() {
+  return this._numSamples;
+}
+
+/// returns the schema of this reader
+public AlembicIPointsSchema AlembicPointsReader.getSchema() 
+{ 
+  return this._schema; 
+}
+
+/// returns the first sample used by this reader
+public AlembicIPointsSample AlembicPointsReader.getSampleA() 
+{ 
+  return this._sampleA; 
+}
+
+/// returns the second sample used by this reader
+public AlembicIPointsSample AlembicPointsReader.getSampleB() 
+{ 
+  return this._sampleB; 
+} 
+
+/// returns the timesampling of this reader
+public AlembicTimeSampling AlembicPointsReader.getTimeSampling() 
+{ 
+  return this._timeSampling; 
+}
+
+/// returns the bounding box
+public Box3 AlembicPointsReader.getSelfBounds!(Float64 time, io Boolean isConstant) {
+  isConstant = this._numSamples <= 1;
+  AlembicSampleInfo info(time, this._timeSampling, this._numSamples);
+  this._schema.get(this._sampleA, this.archive.getISampleSelector( info.indexA ));
+  if(info.requiresInterpolation())
+    this._schema.get(this._sampleB, this.archive.getISampleSelector( info.indexB ));
+
+  Box3 box = this._sampleA.getSelfBounds();
+  if(info.requiresInterpolation())
+  {
+    Box3 box2 = this._sampleB.getSelfBounds();
+    box.min = box.min.linearInterpolate(box2.min, Float32(info.fraction));
+    box.max = box.max.linearInterpolate(box2.max, Float32(info.fraction));
+  }
+  return box;
+}
+
+/// Returns true if the bounds of this object, excluding the children, are constant
+public Boolean AlembicPointsReader.areSelfBoundsConstant() {
+  // To be overriden
+  return this._numSamples <= 1;
+}
+
+/// reads a sample at a given time. this will properly interpolate between samples.
+/// the result is stored in the provided GeometryAttributes.
+/// \dfgPresetCreate
+public AlembicPointsReader.readSample!(Float64 time, io GeometryAttributes attributes) {
+
+  if(this == null)
+    return;
+  
+  if( !this.updateTimeInfo(time) )
+    return;
+
+  if(!attributes)
+    attributes = GeometryAttributes();
+
+  Boolean theSameGeo = attributes.uid() == this._geometryUid;
+  this._geometryUid = attributes.uid();
+
+  this._schema.get(this._sampleA, this._infoIndexASelector);
+  if(this._info.requiresInterpolation())
+    this._schema.get(this._sampleB, this._infoIndexBSelector);
+
+  // resize the container
+  Vec3 positionsValuesA<> = this._sampleA.getPositions();
+  Vec3 positionsValuesB<>;
+  Size nbPoints = positionsValuesA.size();
+
+  if(this._info.requiresInterpolation()) {
+    positionsValuesB = this._sampleB.getPositions();
+    nbPoints = Math_min(positionsValuesA.size(), positionsValuesB.size());
+  }
+  attributes.resize(nbPoints);
+
+  // take care of radii: todo: this should be implemented later on through alembic
+  ScalarAttribute sizesAttr = attributes.getAttribute(PointsDefaultSizesAttributeName);
+  if(sizesAttr) {
+    for(Size i=0;i<sizesAttr.values.size();i++)
+      sizesAttr.values[i] = 1.0;
+  }
+
+  // perform positions
+  Vec3Attribute positionsAttr = attributes.getOrCreateVec3Attribute('positions');
+  if(this._info.requiresInterpolation()) {
+    for(Size i=0;i<nbPoints;i++)
+      positionsAttr.values[i] = positionsValuesA[i].linearInterpolate(positionsValuesB[i], Float32(this._info.fraction));
+  } else {
+    for(Size i=0;i<nbPoints;i++)
+      positionsAttr.values[i] = positionsValuesA[i];
+  }
+  positionsAttr.incrementVersion();
+
+  // ids
+  UInt32Attribute idsAttr = attributes.getOrCreateUInt32Attribute('ids');
+  UInt64 idsValues<>;
+  if(positionsValuesB.size() > positionsValuesA.size())
+    idsValues = this._sampleA.getIds();
+  else
+    idsValues = this._sampleB.getIds();
+  if(idsValues.size() == nbPoints) {
+    for(Size i=0;i<nbPoints;i++)
+      idsAttr.values[i] = UInt32(idsValues[i]);
+    idsAttr.incrementVersion();
+  }
+
+  // perform velocities
+  Vec3 velocitiesValuesA<> = this._sampleA.getVelocities();
+  if(velocitiesValuesA.size() > 0) {
+    Vec3Attribute velocitiesAttr = attributes.getOrCreateVec3Attribute('velocities');
+    if(this._info.requiresInterpolation()) {
+      Vec3 velocitiesValuesB<> = this._sampleB.getVelocities();
+      for(Size i=0;i<nbPoints;i++)
+        velocitiesAttr.values[i] = velocitiesValuesA[i].linearInterpolate(velocitiesValuesB[i], Float32(this._info.fraction));
+    } else {
+      for(Size i=0;i<nbPoints;i++)
+        velocitiesAttr.values[i] = velocitiesValuesA[i];
+    }
+    velocitiesAttr.incrementVersion();
+  }
+
+  this._attributesReader.readSample(time, attributes);
+}
+
+/// the result is stored in the provided Points.
+/// \dfgPresetCreate
+function AlembicPointsReader.readSamplePoints!(Float64 time, io Points points) {
+  if(this == null)
+    return;
+  if(!points)
+    points = Points();
+
+  GeometryAttributes attributes = points.getAttributes();
+  this.readSample(time, attributes);
+}
+
+/// Reads a geometry sample at a given time
+public AlembicPointsReader.readSample!(Float64 time, io Geometry geom) {
+  Ref<Points> points = geom;
+  if( !points ) {
+    geom = Points();
+    points = geom;
+  }
+  GeometryAttributes attributes = points.getAttributes();
+  this.readSample( time, attributes );
+}

@@ -1,0 +1,67 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "stores the value in the property as a Boolean.\n\nSupported types:\n  this: AlembicPropertyWriter\n  value: Boolean\n  result: Boolean\n"
+    },
+  "title" : "WriteBooleanSample[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicPropertyWriter[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "value",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Boolean[]" : [
+          false
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Boolean[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "DA1CCB03E127B341F7FE3C45D17B45E6",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicPropertyWriter_writeBooleanSample_task<<<index>>>(
+  io Boolean[] result
+, io AlembicPropertyWriter[] this
+, in Boolean[] value
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].writeBooleanSample(value[index < value.size() ? index : value.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( value.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < value.size()) task_size = value.size();
+  result.resize(task_size);
+  for(Size index = 0; index < task_size; index++) {
+    AlembicWrapper_AlembicPropertyWriter_writeBooleanSample_task(index, result, this, value);
+  }
+}
+"
+  }

@@ -1,0 +1,52 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/AlembicWrapper/AlembicPointsWriter.html",
+    "uiTooltip" : "writes a single sample into the file based on the provided GeometryAttributes.\n\n Supported by AlembicPointsWriter"
+    },
+  "title" : "WriteSample",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicPointsWriter"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "points",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "GeometryAttributes"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "00991DB11D07BF91CA2CB242DCD1F972",
+  "code" : "require AlembicWrapper;
+
+dfgEntry {
+  Ref<GeometryAttributes> points_ref = points;
+  result = this.writeSample(points_ref);
+}
+"
+  }

@@ -1,0 +1,68 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/RotationOrder.html",
+    "uiTooltip" : "It would be most excellent to be able to override String casts.\nReturns true if this rotationorder is XYZ\n\n Supported by RotationOrder"
+    },
+  "title" : "IsXYZ[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 0,\n  \"g\" : 191,\n  \"b\" : 232\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "RotationOrder[]" : [
+          {
+            "order" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "RotationOrder[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "612117FB488160BEAD80D2C7E985719E",
+  "code" : "require Math;
+
+operator Math_RotationOrder_isXYZ_task<<<index>>>(
+  io Boolean[] result
+, in RotationOrder[] this
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].isXYZ();
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  Size task_size = this.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_RotationOrder_isXYZ_task(index, result, this);
+    }
+  } else {
+    Math_RotationOrder_isXYZ_task<<<task_size>>>(result, this);
+  }
+}
+"
+  }

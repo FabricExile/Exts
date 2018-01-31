@@ -1,0 +1,68 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/Curve.html",
+    "uiTooltip" : "Returns the array of point indices and associated weights and derivative weights that correspond to curve's evaluation basis at this normalized parameter.\nThese can be used to evaluate any curve attribute and its derivative from a convex (linear) combination of point values.\nThe normalizedParam should be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.\n\nSupported types:\n  this: Curve\n  normalizedParam: Float32\n  pointIndices: LocalL8UInt32Array\n  pointWeights: LocalL8ScalarArray\n  derivativePointWeights: LocalL8ScalarArray\n"
+    },
+  "title" : "GetPointIndicesAndWeightsAtNormalizedParam",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Curve"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiRange" : "(0.0, 1.0)"
+        },
+      "name" : "normalizedParam",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Float32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "pointIndices",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "LocalL8UInt32Array"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "pointWeights",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "LocalL8ScalarArray"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "derivativePointWeights",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "LocalL8ScalarArray"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "B3D0AF1588F27BF10325EEAD2928C698",
+  "code" : "require Geometry;
+
+dfgEntry {
+  this.getPointIndicesAndWeightsAtNormalizedParam(normalizedParam, pointIndices, pointWeights, derivativePointWeights);
+}
+"
+  }

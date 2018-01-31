@@ -1,0 +1,249 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+
+require Singletons;
+
+/**
+\versionadded 1.12.0
+
+The :kl-ref:`EventDispatcher` manages a set of manipulators and
+dispatching events to the currently active manipulator. Custom manipulators can be defined supporting the :kl-ref:`Manipulator` interface. 
+These custom manipulator objects can be registered with the EventDispatcher and 
+then pushed onto the manipulator stack to become activated. The active manipulator
+then receives :kl-ref:`KeyEvent`, :kl-ref:`MouseEvent` and :kl-ref:`MouseWheelEvent` 
+events as they are propagated from the host application.
+
+
+
+\rst
+
+Example
+---------
+
+A custom Manipulator can be defined that handles mouse events. Manipulators are 
+free to interpret mouse events in any way they require. 
+
+  .. kl-example:: EventLogger
+
+    // Define a custom manipulator that simply reports events. 
+    object EventLogger : Manipulator {
+    };
+
+    function EventLogger.onEvent!(io Event event){
+      report("EventLogger.onEvent:" + event);
+    }
+
+    function EventLogger.onEnable!(){
+      report("EventLogger.onEnable");
+    }
+
+    function EventLogger.onDisable!(){
+      report("EventLogger.onDisable" );
+    }
+
+
+This custom manipulator can now be created and registered with the EventDispatcher.
+
+  .. kl-example:: EventLoggerRegistration
+
+    EventDispatcher dispatcher = EventDispatcher_GetInstance();
+    Manipulator manipulator = EventLogger();
+
+    // Register and Activate the EventLogger so that it starts receiving 
+    // events from the DCC (Maya or 3dsmax).
+    dispatcher.registerManipulator('EventLogger', manipulator);
+
+    // Push the manipulator so that it is the currently active manipulator.
+    eventDispatcher.pushManipulator('EventLogger');
+
+\endrst
+
+\seealso EventDispatcherHandle, Manipulator
+\dfgPresetOmit
+*/
+object EventDispatcher {
+
+  /// The library of registered manipulators.
+  Manipulator manipulators[String];
+
+  /// The stack of active manipulators. The last manpulator in the array
+  /// is the currently active manipulator.
+  Manipulator stack[];
+
+  Boolean active;
+};
+
+const String EventDispatcherSingletonName = 'EventDispatcher';
+
+/// Get the EventDispatcher singleton, or construct 
+/// it if it didn't already exist.
+/// \dfgPresetOmit
+function EventDispatcher EventDispatcher_GetInstance() {
+  return GetOrCreateSingleton( EventDispatcherSingletonName, EventDispatcher );
+}
+
+/// Registers a new manipulator with the EventDispatcher with a given name.
+/// \param manipulator The manipulator to register.
+/// \param name The name to register the manipulator with.
+function EventDispatcher.registerManipulator!(String name, Manipulator manipulator){
+  this.manipulators[name] = manipulator;
+}
+
+/// Registers a new manipulator with the EventDispatcher. The name used will be
+/// generated from the Manipulator type.
+/// \param the manipulator to register.
+function EventDispatcher.registerManipulator!(Manipulator manipulator){
+  String name = String(manipulator.type());
+  this.registerManipulator(name, manipulator);
+}
+
+/// Unregisters an existing manipulator from the EventDispatcher.
+/// \param The name of the manipulator to unregister.
+function EventDispatcher.unregisterManipulator!(String name){
+  if(this.manipulators.has(name)){
+    Manipulator manipulator = this.manipulators[name];
+    // Remove occurrances of the manipulator on the currently active stack.
+    for(Integer i=0; i<this.stack.size(); i++){
+      if(this.stack[i] == manipulator){
+        // if the manipulator was at the top of the stack, then deactivate it,
+        // activate the next one down, and then remove it. 
+        if(i==this.stack.size()-1){
+          manipulator.onDisable();
+          if(i>0)
+            this.stack[i-1].onEnable();
+        }
+        else{
+          for(Integer j=i; j<this.stack.size()-1; j++){
+            this.stack[j] = this.stack[j+1];
+            i--;
+          }
+        }
+        this.stack.resize(this.stack.size()-1);
+      }
+    }
+    this.manipulators.delete(name);
+  }
+}
+
+/// Reactivate the manipulation, but do not modify the stack. 
+/// This method should be called by the DCC to activate the currently pushed manipulator.
+/// \note The active manipulator should manage hiding and showing its visible manipulation gizmos when it is deactivated/activated. 
+/// \note Calls into :kl-ref:`EventDispatcher.activateManipulation`
+function EventDispatcher.activateManipulation!(){
+  this.active = true;
+  if(this.stack.size() > 0){
+    Manipulator manipulator = this.stack[this.stack.size()-1];
+    manipulator.onEnable();
+  }
+}
+
+/// Temporarily deactivate the manipulation, but do not modify the stack. 
+/// This method should be called by the DCC when the custom manipulator is disabled to
+/// suspend manipulation. 
+/// \note If a paint manipulator is active, but the user activates a different tool in Maya, then we simply deactivate the manipulation system, but leave the paint manipulator at the top of the stack. The Paint manipulator should then hide its paint brush.
+function EventDispatcher.deactivateManipulation!(){
+  this.active = false;
+  if(this.stack.size() > 0){
+    Manipulator manipulator = this.stack[this.stack.size()-1];
+    manipulator.onDisable();
+  }
+}
+
+/// Returns true if a manipulator with the given name has been registered.
+/// \param name the name of the manipulator.
+function Boolean EventDispatcher.hasManipulator(String name) {
+  return this.manipulators.has(name);
+}
+
+/// Returns the manipulator registered under with the given name. 
+/// \param name the name of the manipulator.
+function Manipulator EventDispatcher.getManipulator(String name){
+  if(this.manipulators.has(name))
+    return this.manipulators[name];
+  else{
+    Manipulator nullManipulator = null;
+    return nullManipulator;
+  }
+}
+
+/// Returns the name of the currently active manipulator
+function String EventDispatcher.activeManipulator(){
+  String result = '';
+  if(this.stack.size() > 0){
+    Manipulator manipulator = this.stack[this.stack.size()-1];
+    result = manipulator.type();
+  }
+  return result;
+}
+
+/// Push the manipulator onto the stack by name. This makes it the 
+/// new active manipulator that will receive events. 
+function EventDispatcher.pushManipulator!(String name){
+  if(!this.manipulators.has(name))
+    setError("Error in EventDispatcher.pushManipulator: EventDispatcher does not have the requested manipulator:" + name);
+  Manipulator manipulator = this.manipulators[name];
+  if(this.active){
+    if(this.stack.size() > 0){
+      // Disable the previous manipulator on the stack. 
+      Manipulator prevManipulator = this.stack[this.stack.size()-1];
+      prevManipulator.onDisable();
+    }
+    manipulator.onEnable();
+  }
+  this.stack.push(manipulator);
+}
+
+/// Pop the current manipulator off the stack. This reverts the active manipulator
+/// to the one that was active before the current one was active.
+function EventDispatcher.popManipulator!(){
+  Manipulator manipulator = this.stack[this.stack.size()-1];
+  manipulator.onDisable();
+  this.stack.pop();
+  if(this.active){
+    if(this.stack.size() > 0){
+      // Re-enable the previous manipulator on the stack. 
+      Manipulator prevManipulator = this.stack[this.stack.size()-1];
+      prevManipulator.onEnable();
+    }
+  }
+}
+
+/// Send the event to the manipulator
+/// \param event The event propagated from the DCC application.
+/// \private
+function EventDispatcher.onEvent!(io Event event){
+  if(!this.active){
+    report("Warning in EventDispatcher.onEvent: Plase activate the EventDispatcher by calling activateManipulation prior to sending events.");
+    return;
+  }
+  if(this.stack.size() > 0){
+    Manipulator manipulator = this.stack[this.stack.size()-1];
+    manipulator.onEvent(event);
+  }
+  //else{
+  // report("Warning in EventDispatcher.onEvent: No active manipulators. Please activeate a manipulator by calling EventDispatcher_GetInstance().pushManipulator('ManipulatorName'); from within your KL code. ");
+  //}
+}
+
+/// Called by the Splice plugin in the Host DCC to propagate a :kl-ref:`KeyEvent`
+/// to the currently active manipulator.
+function Boolean EventDispatcher.onEvent!(io KeyEvent keyEvent) {
+  Event event = keyEvent;
+  return this.onEvent(event);
+}
+
+/// Called by the Splice plugin in the Host DCC to propagate a :kl-ref:`MouseEvent`
+/// to the currently active manipulator.
+function Boolean EventDispatcher.onEvent!(io MouseEvent mouseEvent) {
+  Event event = mouseEvent;
+  return this.onEvent(event);
+}
+
+/// Called by the Splice plugin in the Host DCC to propagate a :kl-ref:`MouseWheelEvent`
+/// to the currently active manipulator.
+function Boolean EventDispatcher.onEvent!(io MouseWheelEvent weelEvent) {
+  Event event = weelEvent;
+  return this.onEvent(event);
+}

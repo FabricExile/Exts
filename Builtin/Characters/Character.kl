@@ -1,0 +1,387 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math, Geometry;
+
+
+/**
+  The Character object defining a characters by combining a skeleton, pose and a set of geometries to be deformed. 
+  \brief An object defining a high level character.
+  \seealso Skeleton, Pose
+
+\rst
+  .. kl-fileexample:: ${FABRIC_SCENE_GRAPH_DIR}/Test/Exts/Characters/character.kl
+\endrst
+*/
+object Character : ICharacter {
+  /// The name of the character.
+  String name;
+
+  /// The array fo geometries that make up the character
+  Geometry geometries[];
+  Mat44 bindShapeTransforms[]; // These values should be stored as meta data on the Geometry object. 
+  Mat44 skinningMatrices[];
+
+  /// The Skeleton defining the hierarchy of bones of the character.
+  Skeleton skeleton;
+
+  /// The pose of the character. 
+  IPose pose;
+
+  /// The global transform of the character. 
+  Xfo globalXfo;
+
+  /// The cache of deformed geometries that make up the character.
+  ///  When deforming on the CPU, we cache the cloned meshes here.
+  Geometry deformedGeometries[];
+  
+  /// The bounding volume of the deformed character.
+  LocalBoundingVolume localBVol;
+
+  /// An internal version counter.
+  /// \internal
+  UInt64 version;
+
+  /// The version of the bounding volume. 
+  /// \internal
+  UInt64 bboxVersion;
+
+  /// A lock used to protect methods durig multithreaded access. 
+  /// \internal
+  SimpleLock simpleLock;
+};
+
+/// Standard constructor taking a name
+/// \param name The initial name of the character
+function Character(String name){
+  this.name = name;
+  this.skeleton = Skeleton(name);
+  this.pose = Pose(this.skeleton);
+  this.version = -1; // Ensure the version is invalid at construction time. 
+  this.simpleLock = SimpleLock(this.name);
+}
+
+/// This constructor is useful for creating instances of characters based
+/// on an existing instance. The constructed instance shares most of the data
+/// with the original instance, but maintains a unique pose(if it is a ClipPose)
+/// This enables the pose to be evaluated at different times to generate unique motion.
+/// \param other The source character to use in the clone.
+/// \param nameSuffix The suffix to add to the name of the new character
+function Character(Character other, String nameSuffix){
+  this.name = other.getName() + nameSuffix;
+  // Share refefrences to the undeformed geometries. 
+  this.geometries = other.geometries;
+  this.bindShapeTransforms = other.bindShapeTransforms;
+  this.skeleton = other.skeleton;
+  if(other.pose.type() == ClipPose){
+    this.pose = ClipPose(this.skeleton, ClipPose(other.pose).getClip());
+  }
+  else{
+    this.pose = Pose(this.skeleton);
+  }
+  this.version = -1; // Ensure the version is invalid at construction time. 
+  this.simpleLock = SimpleLock(this.name);
+}
+
+/// Returns the name of the character.
+function String Character.getName(){
+  return this.name;
+}
+
+/// Increments the internal version counter.
+function Character.incrementVersion!(){
+  this.version += 1;
+}
+
+/// Returns the internal version counter.
+function UInt64 Character.getVersion(){
+  return this.version;
+}
+
+/// Returns the number of geometries this character is made up of
+function Size Character.getNumGeometries(){
+  return this.geometries.size();
+}
+
+/// Returns a geometry with the given index. 
+/// \param index The index of the geometry to return.
+function Geometry Character.getGeometry(Index index){
+  return this.geometries[index];
+}
+
+/// Returns a mesh with the given index. 
+/// \param index The index of the mesh to return.
+function PolygonMesh Character.getMesh(Index index){
+  return PolygonMesh(this.geometries[index]);
+}
+
+/// Returns the Skeleton of this character. 
+function ISkeleton Character.getSkeleton(){
+  return this.skeleton;
+}
+
+/// Sets a new skeleton to be used for this character. 
+/// \note: The Pose of the character will be reset when this method is called.
+function Character.setSkeleton!(Skeleton skeleton){
+  this.skeleton = skeleton;
+  Pose pose = Pose(skeleton);
+  this.pose = pose;
+}
+
+/// Returns the pose object for this character.
+function IPose Character.getPose(){
+  return this.pose;
+}
+
+/// Sets a the pose object for this character.
+function Character.setPose!(IPose pose){
+  this.pose = pose;
+}
+
+/// Returns the global Xfo of the character. 
+/// The Global Xfo is used to globally position the character. It is applied 
+/// as an offset to the computed pose. 
+function Xfo Character.getGlobalXfo(){
+  return this.globalXfo;
+}
+
+/// Sets the global Xfo of the character. 
+/// The Global Xfo is used to globally position the character. It is applied 
+/// as an offset to the computed pose. 
+function Character.setGlobalXfo!(Xfo globalXfo){
+  this.globalXfo = globalXfo;
+}
+
+/// Returns the bind shape transform for the given geometry.
+/// \param the index of the geometry to return the bind shape transform for.
+function Mat44 Character.getBindShapeTransform(Index index){
+  return this.bindShapeTransforms[index];
+}
+
+/// Returns the skinning matrices for the character based on the current pose.
+/// The skinning matrices combine the reference pose stored in the skeleton,
+/// the transforms in the pose structure, and the global Xfo of character.
+function Mat44[] Character.getSkinningMatrices?(){
+  // Lock this method so that other threads can't enter untill we exit. 
+  AutoLock AL(this.simpleLock);
+  // If either the pose or the skeleton change, the skinning matrices 
+  // must be recomputed.  
+  UInt64 version = this.pose.getVersion() + this.skeleton.getVersion();
+  if(this.version != version){
+    // disable the constness of this method so we can update the caches. 
+    Ref<Character> _this = this;
+    Size deformerIndices[] = _this.skeleton.getDeformerIndices();
+    _this.skinningMatrices.resize(deformerIndices.size());
+    for (Integer i = 0; i < deformerIndices.size(); i++) {
+      _this.skinningMatrices[i] = (_this.globalXfo * _this.pose.getBoneXfo(deformerIndices[i])).toMat44() * _this.skeleton.getBone(deformerIndices[i]).invRefPose;
+    }
+    _this.version = version;
+  }
+  return this.skinningMatrices;
+}
+
+/// Returns the current bounding volume of the character.
+function LocalBoundingVolume Character.getBoundingVolume?(){
+  // Lock this method so that other threads can't enter untill we exit. 
+  AutoLock AL(this.simpleLock);
+  if(this.bboxVersion != this.version){
+    // disable the constness of this method so we can update the caches. 
+    Ref<Character> _this = this;
+    _this.localBVol.bBoxInit();
+    Mat44 skinningMatrices[] = _this.getSkinningMatrices();
+    // The following code computes an accurate bounding box by transforming the 
+    // source box by each of the bones skinning matrices. 
+    for( UInt32 i = 0; i < _this.geometries.size(); ++i ) {
+      LocalBoundingVolume geomVol = _this.geometries[i].getBoundingVolume();
+      Mat44 bindShapeTransform;// = _this.geometries[i].getMetaData('bindShapeTransform');
+      bindShapeTransform.setIdentity();
+      for( UInt32 j = 0; j < skinningMatrices.size(); ++j ) {
+        if(_this.skeleton.getBone(i).testFlag(BONEFLAG_DEFORMER)){
+          _this.localBVol.bBoxAddTransformedBBox(geomVol, skinningMatrices[i] * bindShapeTransform);
+        }
+      }
+    }
+    _this.bboxVersion = _this.version;
+  }
+  return this.localBVol;
+}
+
+/// Returns a deformed copy of one of the geometries stored in the character. 
+/// \node: The 
+function Geometry Character.getDeformedGeometry!(Index index){
+  Geometry geometry = this.getGeometry(index);
+  Geometry deformedGeometry = null;
+  this.deformedGeometries.resize(this.geometries.size());
+  if(this.deformedGeometries[index] == null){
+    deformedGeometry = geometry.clone();
+    this.deformedGeometries[index] = deformedGeometry;
+  }
+  else{
+    deformedGeometry = this.deformedGeometries[index];
+  }
+
+  Mat44 bindShapeTransform = this.bindShapeTransforms[index];
+  Mat44 skinningMatrices[] = this.getSkinningMatrices();
+
+  if(this.calcDeformation(geometry, deformedGeometry, bindShapeTransform, skinningMatrices))
+    return deformedGeometry;
+  else
+    return geometry;
+}
+
+/// Returns a deformed copy of one of the meshes stored in the character. 
+/// \node: The 
+function PolygonMesh Character.getDeformedMesh!(Index index){
+  return PolygonMesh(this.getDeformedGeometry(index));
+}
+
+/// The per-point operator that computes the linear blend skinning. 
+/// \internal
+operator skinPositions<<<index>>>(
+  Vec3 srcpositions[],
+  io Vec3 positions[],
+  SkinningAttribute skinningAttr,
+  Mat44 skinningPosAndNormMatrices[]
+){
+  Vec3 srcPos = srcpositions[index];
+
+  LocalL16UInt32Array indices;
+  LocalL16ScalarArray weights;
+  skinningAttr.getPairs(index, indices, weights);
+
+  Vec3 position(0,0,0);
+  for( UInt32 i = 0; i < indices.size(); ++i ) {
+    Scalar boneWeight = weights.get(i);
+    if( boneWeight == 0.0 )
+      break;
+    UInt32 boneId = indices.get(i);
+    position += (skinningPosAndNormMatrices[boneId*2] * srcPos) * boneWeight;
+  }
+
+  positions[index] = position;
+}
+
+/// The per-point operator that computes the linear blend skinning. 
+/// \internal
+operator skinPositionsAndNormals<<<index>>>(
+  Vec3 srcpositions[],
+  Vec3 srcnormals[],
+  io Vec3 positions[],
+  io Vec3 normals[],
+  SkinningAttribute skinningAttr,
+  Mat44 skinningPosAndNormMatrices[]
+){
+  Vec3 srcPos = srcpositions[index];
+  Vec3 srcNorm = srcnormals[index];
+  Vec3 position(0,0,0);
+  Vec3 normal(0,0,0);
+
+  LocalL16UInt32Array indices;
+  LocalL16ScalarArray weights;
+  skinningAttr.getPairs(index, indices, weights);
+  
+  for( UInt32 i = 0; i < indices.size(); ++i ) {
+    Scalar boneWeight = weights.get(i);
+    if( boneWeight == 0.0 )
+      break;
+    UInt32 boneId = indices.get(i);
+    position += (skinningPosAndNormMatrices[boneId*2] * srcPos) * boneWeight;
+    normal += (skinningPosAndNormMatrices[boneId*2+1] * srcNorm) * boneWeight;
+  }
+  Scalar length = normal.length();//Don't call setUnit to avoid runtime error reports..
+  if( length > 0.0001 )
+    normal *= 1.0 / length;
+
+  positions[index] = position;
+  normals[index] = normal;
+}
+
+/// Computes the deformation of the character using linear blend skinning. 
+/// \internal
+function Boolean Character.calcDeformation?(
+  Geometry srcGeometry, 
+  io Geometry targGeometry,
+  Mat44 bindShapeTransform,
+  Mat44 skinningMatrices[]
+){
+  Ref<GeometryAttributes> srcAttributes = srcGeometry.getAttributes();
+  Ref<GeometryAttributes> targAttributes = targGeometry.getAttributes();
+
+  if( !srcAttributes.has("skinningData") ){
+    setError("ERROR: mesh does not have skinningData");
+    return false;
+  }
+
+  Mat44 skinningPosAndNormMatrices[];
+  skinningPosAndNormMatrices.resize( skinningMatrices.size()*2 );
+  for( UInt32 i = 0; i < skinningMatrices.size(); ++i ) {
+    skinningPosAndNormMatrices[i*2] = skinningMatrices[i] * bindShapeTransform;
+    skinningPosAndNormMatrices[i*2 + 1] = skinningPosAndNormMatrices[i*2];
+    skinningPosAndNormMatrices[i*2 + 1].zeroTranslation();
+  }
+  
+  Vec3Attribute srcPositionsAttribute = srcAttributes.positionsAttribute;
+  Vec3Attribute srcNormalsAttribute = srcAttributes.normalsAttribute;
+  Vec3Attribute targPositionsAttribute = targAttributes.positionsAttribute;
+  Vec3Attribute targNormalsAttribute = targAttributes.normalsAttribute;
+  SkinningAttribute skinningAttr = srcAttributes.getAttribute("skinningData");
+
+  if(srcNormalsAttribute == null){
+    skinPositions<<<targAttributes.size()>>>(
+      srcPositionsAttribute.values,
+      targPositionsAttribute.values,
+      skinningAttr,
+      skinningPosAndNormMatrices
+    );
+    targPositionsAttribute.incrementVersion();
+  }
+  else{
+    skinPositionsAndNormals<<<targAttributes.size()>>>(
+      srcPositionsAttribute.values,
+      srcNormalsAttribute.values,
+      targPositionsAttribute.values,
+      targNormalsAttribute.values,
+      skinningAttr,
+      skinningPosAndNormMatrices
+    );
+    targPositionsAttribute.incrementVersion();
+    targNormalsAttribute.incrementVersion();
+  }
+  return true;
+}
+
+/// Generates a Description string of this character.
+/// \param indent The indentation to use when generating the string. 
+/// \param includeGeometries An option to include the descs of the goemeties in the returned string. 
+function String Character.getDesc(String indent, Boolean includeGeometries) {
+  String desc;
+  desc += indent + "Character:{ \n";
+  desc += indent + "  name: " + this.name + " \n";
+  desc += indent + "  skeleton:" + this.skeleton.getDesc(indent +"  ", true) + " \n";
+  desc += indent + "  pose:" + this.pose.getDesc(indent +"  ", true) + " \n";
+  desc += indent + "  num geometries:" + this.geometries.size() + " \n";
+
+  if(includeGeometries){
+    desc += indent + "  geometries:[ \n";
+    for(Integer i=0; i<this.geometries.size(); i++){
+      desc += this.geometries[i].getDesc(true, true) + " \n";
+    }
+    desc += indent + "  ]\n";
+  }
+  desc += indent + "}";
+  return desc;
+}
+
+/// Generates a Description string of this character.
+function String Character.getDesc() {
+  return this.getDesc("", true);
+}
+
+/// changes the time on the clip pose
+function Character.setClipPoseTime!(Float32 time) {
+  ClipPose clipPose = this.getPose();
+  if(!clipPose)
+    return;
+  clipPose.evaluate(time);
+}

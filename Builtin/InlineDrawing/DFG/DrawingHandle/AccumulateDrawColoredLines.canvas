@@ -1,0 +1,62 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "helper function to draw a lines object given a single transform.\nThis method can be called several times by the same DrawingHandle\nwithout overwriting the previous content.\n\nSupported types:\n  this: DrawingHandle\n  transform: Xfo\n  lines: Lines\n  instance: InlineInstance\n"
+    },
+  "title" : "AccumulateDrawColoredLines",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "DrawingHandle"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 249,\n  \"g\" : 157,\n  \"b\" : 28\n  }"
+        },
+      "name" : "transform",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Xfo"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "lines",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Lines"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "instance",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "InlineInstance"
+      }
+    ],
+  "extDeps" : {
+    "InlineDrawing" : "*"
+    },
+  "presetGUID" : "2C5DB3641D016D3DB011B58F13674E9D",
+  "code" : "require InlineDrawing;
+
+dfgEntry {
+  if( !Boolean(this) )
+    return;
+  this.accumulateDrawColoredLines(transform, lines, instance);
+}
+"
+  }

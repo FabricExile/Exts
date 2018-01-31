@@ -1,0 +1,73 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Color.html",
+    "uiTooltip" : "Overload method for the divide Scalar operator\n\n Supported by Color,Vec2,Vec3,Vec4,Mat22,Mat33,Mat44,Quat"
+    },
+  "title" : "DivideScalar[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "$TYPE$[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "other",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          1
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "$TYPE$[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "0E45713420B144A692A0E157C4D35422",
+  "code" : "require Math;
+
+operator Math_Color_divideScalar_task<<<index>>>(
+  io $TYPE$[] result
+, in $TYPE$[] this
+, in Scalar[] other
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].divideScalar(other[index < other.size() ? index : other.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( other.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < other.size()) task_size = other.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Color_divideScalar_task(index, result, this, other);
+    }
+  } else {
+    Math_Color_divideScalar_task<<<task_size>>>(result, this, other);
+  }
+}
+"
+  }

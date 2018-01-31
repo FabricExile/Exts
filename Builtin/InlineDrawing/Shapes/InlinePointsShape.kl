@@ -1,0 +1,49 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+\versionadded 1.12.0
+
+The InlinePointsShape inherits from the InlineGeometryShape object. It provides a shape type for Points objects for direct rendering. The InlinePointsShape keeps a reference to the points, so if the points change (being deformed etc) the shape will updates its buffers automatically.
+
+\example
+    // create some points
+    Points points = Points();
+    points.addPoints(12);
+
+    // create a shape
+    InlineShape shape = InlinePointsShape('points', points);
+\endexample
+\dfgPresetOmit
+*/
+object InlinePointsShape : InlineGeometryShape {
+  Scalar pointSize;
+};
+
+/// default constructor, taking a name and a Points
+function InlinePointsShape(String name, Points points) {
+  this.init(name, points);
+  this.pointSize = 3;
+}
+
+/// returns the Points used by this shape
+function Ref<Points> InlinePointsShape.getPoints() {
+  Ref<Points> points = this.geo;
+  return points;
+}
+
+/// sets the Points used by this shape
+function InlinePointsShape.setPoints!(Points points) {
+  this.geo = points;
+}
+
+/// returns the point size used for rendering
+function Scalar InlinePointsShape.getPointSize() {
+  return this.pointSize;
+}
+
+/// sets the point size used for rendering
+function InlinePointsShape.setPointSize!(Scalar pointSize) {
+  this.pointSize = pointSize;
+}

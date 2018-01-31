@@ -1,0 +1,274 @@
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+function Boolean BaseGeometry.setQuatAttributeValueArray(
+  GeometryAttribute attr,
+  SInt32 mode,
+  UInt32 indices[],
+  Quat values[]
+) {
+
+  Size vertexCount;
+  Size faceCount;
+  Size faceCornerTotalCount;
+  Size resultSize;
+  UInt32 idxs[] = indices;
+  if(!this.setAttributeValueArray_CheckIndex(mode, idxs,
+    vertexCount, faceCount, faceCornerTotalCount, resultSize))
+    return false;
+
+  if(values.size() < resultSize)
+    return false;
+
+  QuatAttribute cast = attr;
+  if(cast == null)
+    return false;
+  Ref<QuatAttribute> castRef = cast;
+
+  Index idx = 0;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      PolygonMesh mesh = this;
+      if(mesh)
+      {
+        for(Size i=0;i<resultSize;i++) {
+          idx = idxs.size() > 0 ? idxs[i] : i;
+          if(idx >= vertexCount)
+            continue;
+          mesh.setPointAttribute(idx, castRef, values[i]);
+        }
+      }
+      else
+      {
+        for(Size i=0;i<resultSize;i++) {
+          idx = idxs.size() > 0 ? idxs[i] : i;
+          if(idx >= vertexCount)
+            continue;
+          cast.values[idx] = values[idx];
+        }
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      PolygonMesh mesh = this;
+      for(Size i=0;i<resultSize;i++) {
+        idx = idxs.size() > 0 ? idxs[i] : i;
+        if(idx > faceCount)
+          continue;
+        Size size = mesh.getPolygonSize(idx);
+        for(Size j=0;j<size;j++)
+          mesh.setPolygonAttribute( idx, j, castRef, values[i] );
+      }
+      break;
+    }
+    case 2: // per face corner
+    {
+      PolygonMesh mesh = this;
+      resultSize = idxs.size() > 0 ? idxs.size() : faceCount;
+      Index offset = 0;
+      for(Size i=0;i<resultSize && offset<values.size();i++) {
+        idx = idxs.size() > 0 ? idxs[i] : i;
+        if(idx > faceCount)
+          continue;
+        Size size = mesh.getPolygonSize(idx);
+        for(Size j=0;j<size && offset<values.size();j++,offset++)
+          mesh.setPolygonAttribute( idx, j, castRef, values[offset] );
+      }
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport SetValueArray mode for QuatAttribute.");
+      return values;
+    }
+  }  
+
+  cast.incrementVersion();
+  return true;
+}
+
+/// \internal
+function Boolean BaseGeometry.setMat33AttributeValueArray(
+  GeometryAttribute attr,
+  SInt32 mode,
+  UInt32 indices[],
+  Mat33 values[]
+) {
+
+  Size vertexCount;
+  Size faceCount;
+  Size faceCornerTotalCount;
+  Size resultSize;
+  UInt32 idxs[] = indices;
+  if(!this.setAttributeValueArray_CheckIndex(mode, idxs,
+    vertexCount, faceCount, faceCornerTotalCount, resultSize))
+    return false;
+
+  if(values.size() < resultSize)
+    return false;
+
+  Mat33Attribute cast = attr;
+  if(cast == null)
+    return false;
+  Ref<Mat33Attribute> castRef = cast;
+
+  Index idx = 0;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      PolygonMesh mesh = this;
+      if(mesh)
+      {
+        for(Size i=0;i<resultSize;i++) {
+          idx = idxs.size() > 0 ? idxs[i] : i;
+          if(idx >= vertexCount)
+            continue;
+          mesh.setPointAttribute(idx, castRef, values[i]);
+        }
+      }
+      else
+      {
+        for(Size i=0;i<resultSize;i++) {
+          idx = idxs.size() > 0 ? idxs[i] : i;
+          if(idx >= vertexCount)
+            continue;
+          cast.values[idx] = values[idx];
+        }
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      PolygonMesh mesh = this;
+      for(Size i=0;i<resultSize;i++) {
+        idx = idxs.size() > 0 ? idxs[i] : i;
+        if(idx > faceCount)
+          continue;
+        Size size = mesh.getPolygonSize(idx);
+        for(Size j=0;j<size;j++)
+          mesh.setPolygonAttribute( idx, j, castRef, values[i] );
+      }
+      break;
+    }
+    case 2: // per face corner
+    {
+      PolygonMesh mesh = this;
+      resultSize = idxs.size() > 0 ? idxs.size() : faceCount;
+      Index offset = 0;
+      for(Size i=0;i<resultSize && offset<values.size();i++) {
+        idx = idxs.size() > 0 ? idxs[i] : i;
+        if(idx > faceCount)
+          continue;
+        Size size = mesh.getPolygonSize(idx);
+        for(Size j=0;j<size && offset<values.size();j++,offset++)
+          mesh.setPolygonAttribute( idx, j, castRef, values[offset] );
+      }
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport SetValueArray mode for Mat33Attribute.");
+      return values;
+    }
+  }  
+
+  cast.incrementVersion();
+  return true;
+}
+
+/// \internal
+function Boolean BaseGeometry.setMat44AttributeValueArray(
+  GeometryAttribute attr,
+  SInt32 mode,
+  UInt32 indices[],
+  Mat44 values[]
+) {
+
+  Size vertexCount;
+  Size faceCount;
+  Size faceCornerTotalCount;
+  Size resultSize;
+  UInt32 idxs[] = indices;
+  if(!this.setAttributeValueArray_CheckIndex(mode, idxs,
+    vertexCount, faceCount, faceCornerTotalCount, resultSize))
+    return false;
+
+  if(values.size() < resultSize)
+    return false;
+
+  Mat44Attribute cast = attr;
+  if(cast == null)
+    return false;
+  Ref<Mat44Attribute> castRef = cast;
+
+  Index idx = 0;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      PolygonMesh mesh = this;
+      if(mesh)
+      {
+        for(Size i=0;i<resultSize;i++) {
+          idx = idxs.size() > 0 ? idxs[i] : i;
+          if(idx >= vertexCount)
+            continue;
+          mesh.setPointAttribute(idx, castRef, values[i]);
+        }
+      }
+      else
+      {
+        for(Size i=0;i<resultSize;i++) {
+          idx = idxs.size() > 0 ? idxs[i] : i;
+          if(idx >= vertexCount)
+            continue;
+          cast.values[idx] = values[idx];
+        }
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      PolygonMesh mesh = this;
+      for(Size i=0;i<resultSize;i++) {
+        idx = idxs.size() > 0 ? idxs[i] : i;
+        if(idx > faceCount)
+          continue;
+        Size size = mesh.getPolygonSize(idx);
+        for(Size j=0;j<size;j++)
+          mesh.setPolygonAttribute( idx, j, castRef, values[i] );
+      }
+      break;
+    }
+    case 2: // per face corner
+    {
+      PolygonMesh mesh = this;
+      resultSize = idxs.size() > 0 ? idxs.size() : faceCount;
+      Index offset = 0;
+      for(Size i=0;i<resultSize && offset<values.size();i++) {
+        idx = idxs.size() > 0 ? idxs[i] : i;
+        if(idx > faceCount)
+          continue;
+        Size size = mesh.getPolygonSize(idx);
+        for(Size j=0;j<size && offset<values.size();j++,offset++)
+          mesh.setPolygonAttribute( idx, j, castRef, values[offset] );
+      }
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport SetValueArray mode for Mat44Attribute.");
+      return values;
+    }
+  }  
+
+  cast.incrementVersion();
+  return true;
+}

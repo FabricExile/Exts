@@ -1,0 +1,502 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+require FabricInterfaces;
+
+namespace Tool {
+
+  interface RawEventHandler {
+    onRawEvent!( io Event event );
+  };
+
+  const Size ToolsManagerEventPriority_raycastClick = 0;
+  const Size ToolsManagerEventPriority_normal = 1;
+
+  interface PathValueTool;
+
+  /// The ToolsManager provides various global services for tools.
+  /// It serves as the entry point for all tools drawing and event propagation.
+  /// It also holds various tool registries and states used by the application.
+  /// Finally, it can provide global access to current context such as
+  /// current drawing context/viewport, event, last mouse position...
+  ///
+  /// The ToolsManager singleton can be accessed by :kl-ref:`BaseTool.getManager` or
+  /// :kl-ref:`GetToolsManager` .
+  object ToolsManager : Manipulator, RenderEngineDrawCallback, AppEventCallback{
+
+    FewObjectsStableList eventHandlersByPriority[];
+
+    FewObjectsStableList drawnTools;
+    // TODO: keep a list of "sleeping, deactivated" manips?
+
+    FewObjectsStableList exclusiveInteractions;
+
+    RenderEngine renderEngine;
+
+    Event currentEvent;
+    Vec2 lastMousePos;
+    Size lastActiveViewportUID;
+    Size viewportChangedRefreshCount;//Trying to fix a Maya refresh issue; needs a few requested refreshes before actually doing it for the main view
+
+    Boolean activeTools;
+    Boolean hasActiveViewportOnlyTools;
+
+    private Type registeredPVToolDrivenDataTypes[Type];
+    private PathValueTool pathValueTools[];
+  };
+
+  ToolsManager() {
+    this.drawnTools = FewObjectsStableList();
+    this.exclusiveInteractions = FewObjectsStableList();
+    this.lastMousePos = Vec2( -1 );
+    RegisterToAppEvent( AppEvent_newScene, this );
+
+    EventDispatcher dispatcher = EventDispatcher_GetInstance();
+    dispatcher.registerManipulator( "_ToolsManager", this );
+    dispatcher.pushManipulator( "_ToolsManager" );
+  }
+
+  ~ToolsManager() {
+    UnregisterFromAppEvent( AppEvent_newScene, this );
+    // Careful on singletons' being destroyed; Singletons_removeAll might have been called
+    EventDispatcher dispatcher = Singleton_get( EventDispatcherSingletonName );
+    if( dispatcher )
+      dispatcher.unregisterManipulator( "_ToolsManager" );
+
+    if( this.renderEngine )
+      this.renderEngine.unregisterCallback( this );
+    this.clear();
+  }
+
+  /// Clears the manager without destroying it.
+  ToolsManager.clear!( ) {
+    this.exclusiveInteractions.clear();
+    this.currentEvent = Event();
+    this.lastMousePos = Vec2( -1 );
+    this.activeTools = false;
+
+    FewObjectsStableListIterator it( this.drawnTools );
+    Ref<Component> component = null;
+    while( component = it.next() ) {
+      if( component )
+        component.invalidate();
+    }
+    this.drawnTools.clear();
+
+    for( Size i = 0; i < this.eventHandlersByPriority.size(); ++i ) {
+      if( this.eventHandlersByPriority[i] ) {
+        FewObjectsStableListIterator it2( this.eventHandlersByPriority[i] );
+        while( component = it.next() ) {
+          if( component )
+            component.invalidate();
+        }
+      }
+    }
+    this.eventHandlersByPriority.resize(0);
+    this.viewportChangedRefreshCount = 0;
+    this.deleteAllPathValueTools();
+  }
+
+  ToolsManager.onAppEvent!( String eventName ) {
+    if( eventName == AppEvent_newScene )
+      this.clear();
+  }
+
+  Boolean ToolsManager.toolsActivated() {
+    return this.activeTools;
+  }
+
+  ToolsManager.onEnable!( ) {
+    // TODO: fix that crap
+
+    Boolean wasActive[];
+    FewObjectsStableListIterator it( this.drawnTools );
+    Ref<BaseTool> drawnTool = null;
+    while( drawnTool = it.next() )
+      wasActive.push( drawnTool.isActive() );// Flag combination is non trivial; delegate
+
+    this.activeTools = true;
+
+    FewObjectsStableListIterator it2( this.drawnTools );
+    Size i;
+    while( drawnTool = it2.next() ) {
+      if( !wasActive[i] && drawnTool.isActive() ) {
+        drawnTool.activatedByManager();
+      }
+    }
+  }
+
+  ToolsManager.onDisable!( ) {
+    // TODO: fix that crap
+
+    Boolean wasActive[];
+    FewObjectsStableListIterator it( this.drawnTools );
+    Ref<BaseTool> drawnTool = null;
+    while( drawnTool = it.next() )
+      wasActive.push( drawnTool.isActive() );// Flag combination is non trivial; delegate
+
+    this.activeTools = false;
+
+    FewObjectsStableListIterator it2( this.drawnTools );
+    Size i;
+    while( drawnTool = it2.next() ) {
+      if( wasActive[i] && !drawnTool.isActive() )
+        drawnTool.deactivatedByManager();
+    }
+  }
+
+  BaseTool[] ToolsManager.getActiveTools( Boolean exclusiveOnly ) {
+    BaseTool result[];
+    if( this.activeTools ) {
+      FewObjectsStableListIterator it( this.drawnTools );
+      Ref<BaseTool> drawnTool = null;
+      while( drawnTool = it.next() ) {
+        if( drawnTool.isActive() ) {
+          if( !exclusiveOnly || drawnTool.isExclusive() )
+            result.push( drawnTool );
+        }
+      }
+    }
+    return result;
+  }
+
+  /// Returns the contextual event, only available while onEvent is being called.
+  Ref<Event> ToolsManager.getCurrentEvent() {
+    return this.currentEvent;
+  }
+
+  RequestRedrawOnEvent( io Event event ) {
+    Ref<BaseEvent> baseEvent = event;
+    if( Boolean( baseEvent ) && Boolean( baseEvent.host ) )
+      baseEvent.host.redrawRequested = true;
+  }
+
+  /// Returns the contextual event, only available while onEvent is being called.
+  ToolsManager.requestRedraw!( ) {
+    Ref<BaseEvent> baseEvent = this.currentEvent;
+    if( Boolean( baseEvent ) && Boolean( baseEvent.host ) )
+      baseEvent.host.redrawRequested = true;
+  }
+
+  ToolsManager.enableActiveViewportOnlyTools!( ) {
+    this.hasActiveViewportOnlyTools = true;
+  }
+
+  /// Returns the position of the last received mouse event, Vec2(-1) if none.
+  Vec2 ToolsManager.getLastMousePosition() {
+    return this.lastMousePos;
+  }
+
+  /// \internal
+  ToolsManager.onEvent!( io Event event ) {
+
+    if( !this.activeTools )
+      return;
+
+    if( RawEventDebugTrace )
+      report( "ToolsManager.onEvent: " + event.describe( true ) );
+
+    // Update contextual values
+    this.currentEvent = event;
+
+    Ref<MouseEvent> mouseEvent = event;
+    if( Boolean( event.getViewport() ) && this.hasActiveViewportOnlyTools ) {
+      if( this.lastActiveViewportUID != event.getViewport().uid() ) {
+        this.lastActiveViewportUID = event.getViewport().uid();
+        this.viewportChangedRefreshCount = 2;
+      }
+    }
+
+    if( mouseEvent )
+      this.lastMousePos = mouseEvent.pos;
+
+    Ref<BaseEvent> baseEvent = event;
+
+    for( Size i = 0; i < this.eventHandlersByPriority.size(); ++i ) {
+      if( !this.eventHandlersByPriority[i] )
+        continue;
+
+      FewObjectsStableListIterator it( this.eventHandlersByPriority[i] );
+      Ref<RawEventHandler> handler = null;
+      while( handler = it.next() ) {
+        Ref<BaseTool> tool = handler;
+        if( Boolean( tool ) && !tool.isActive() )
+          continue;
+
+        handler.onRawEvent( event );
+        if( event.isAccepted() ) {
+          if( Boolean( baseEvent ) && Boolean( baseEvent.host ) )
+            baseEvent.host.redrawRequested = true;
+          //Don't break: others might want that event... up to them to check if it was already accepted
+        }
+      }
+    }
+    //Trying to fix a Maya refresh issue; needs a few requested refreshes before actually doing it for the main view
+    if( this.viewportChangedRefreshCount ) {
+      --this.viewportChangedRefreshCount;
+      this.requestRedraw();
+    }
+
+    this.currentEvent = null;
+  }
+
+  DrawContext ToolsManager.getCurrentEventContext() {
+    DrawContext context;
+    if( this.currentEvent )
+      context.viewport = this.currentEvent.getViewport();
+    context.renderEngine = this.renderEngine;
+    return context;
+  }
+
+  ToolsManager.drawTools!( Ref<RenderEngine> renderEngine, Ref<Viewport> viewport ) {
+    Ref<RenderEngine> currentRenderEngine = this.renderEngine;
+    if( renderEngine !== currentRenderEngine ) {
+      if( this.renderEngine )
+        this.renderEngine.unregisterCallback( this );
+      this.renderEngine = renderEngine;
+      this.renderEngine.registerCallback( this );
+    }
+
+    DrawContext context;
+    context.viewport = viewport;
+    context.renderEngine = renderEngine;
+
+    FewObjectsStableListIterator it( this.drawnTools );
+    Ref<BaseTool> drawnTool = null;
+    while( drawnTool = it.next() ) {
+      drawnTool.updateDrawData( context, this );
+    }
+  }
+
+  ToolsManager.renderEngineDrawCallback!( Ref<Viewport> viewport, Size renderPassIndex ) {
+    DrawContext context;
+    context.viewport = viewport;
+    context.renderEngine = this.renderEngine;
+
+    String pass = GetPassFromIndex( renderPassIndex );
+
+    FewObjectsStableListIterator it( this.drawnTools );
+    Ref<BaseTool> drawnTool = null;
+    while( drawnTool = it.next() ) {
+      if( !drawnTool.forcedHidden() )
+        drawnTool.postDrawInternal( context, pass );
+    }
+  }
+
+  Ref<RenderEngine> ToolsManager.getRenderEngine() {
+    return this.renderEngine;
+  }
+
+  ToolsManager.addDrawnTool!( Ref<BaseTool> tool ) {
+    this.drawnTools.pushBack( tool, false );//not owned
+  }
+
+  ToolsManager.removeDrawnTool!( Ref<BaseTool> tool ) {
+    this.drawnTools.remove_nothrow( tool );
+  }
+
+  ToolsManager.addEventHandler!( Ref<RawEventHandler> handler, Size priority ) {
+    if( priority >= this.eventHandlersByPriority.size() )
+      this.eventHandlersByPriority.resize( priority + 1 );
+    if( !this.eventHandlersByPriority[priority] )
+      this.eventHandlersByPriority[priority] = FewObjectsStableList();
+
+    this.eventHandlersByPriority[priority].pushBack( handler, false );//not owned
+  }
+
+  // \note We don't own the eventHandler; it has to be explicitly removed upon destruction!
+  ToolsManager.addEventHandler!( Ref<RawEventHandler> handler ) {
+    this.addEventHandler( handler, ToolsManagerEventPriority_normal );
+  }
+
+  ToolsManager.removeEventHandler!( Ref<RawEventHandler> handler ) {
+    for( Size i = 0; i < this.eventHandlersByPriority.size(); ++i ) {
+      if( this.eventHandlersByPriority[i] )
+        this.eventHandlersByPriority[i].remove_nothrow( handler );
+    }
+  }
+
+  // NOTE: this is a work-in-progress, unused feature
+  ToolsManager.beginExclusiveInteraction!( Ref<Object> interaction ) {
+    this.exclusiveInteractions.pushBack( interaction, false );
+  }
+
+  // NOTE: this is a work-in-progress, unused feature
+  ToolsManager.endExclusiveInteraction!( Ref<Object> interaction ) {
+    this.exclusiveInteractions.remove_nothrow( interaction );
+  }
+
+  // NOTE: this is a work-in-progress, unused feature
+  Boolean ToolsManager.hasExclusiveInteractions() {
+    return !this.exclusiveInteractions.isEmpty();
+  }
+
+  Ref<ToolsManager> GetToolsManager() {
+    return GetOrCreateSingleton( "ToolsManager", ToolsManager );
+  }
+
+  DrawContext GetCurrentEventContext() {
+    Ref<ToolsManager> man = GetToolsManager();
+    return man.getCurrentEventContext();
+  }
+
+  ToolChanged() {
+    Ref<ToolsManager> man = GetToolsManager();
+    man.requestRedraw();
+  }
+
+  /// \internal
+  ToolsManager.registerPathValueTool!( Type toolType, Type drivenDataType ) {
+    if( !this.registeredPVToolDrivenDataTypes.has( drivenDataType ) )
+      this.registeredPVToolDrivenDataTypes[drivenDataType] = toolType;
+  }
+
+  /// \internal
+  Boolean ToolsManager.canCreatePathValueTool( RTVal value ) {
+    return this.canCreatePathValueTool( value.type() );
+  }
+
+  /// \internal
+  Boolean ToolsManager.canCreatePathValueTool( PathValue pathValue ) {
+    return this.canCreatePathValueTool( pathValue.value );
+  }
+
+  /// \internal
+  Boolean ToolsManager.canCreatePathValueTool( Type drivenDataType ) {
+    return this.registeredPVToolDrivenDataTypes.has( drivenDataType );
+  }
+ 
+  /// \internal
+  BaseTool ToolsManager.createPathValueTool!( Type drivenDataType, String path, Boolean ownedByManager ) {
+    if( !this.canCreatePathValueTool( drivenDataType ) ) {
+      String error = "ToolsManager.createPathValueTool, error:'" +
+        drivenDataType + "' is not supported";
+      throw error;
+    }
+
+    // Create the tool
+    PathValueTool tool = this.registeredPVToolDrivenDataTypes[drivenDataType].createNew();
+    tool.setTargetPath( path );
+
+    if(ownedByManager)
+      this.pathValueTools.push(tool);
+
+    return tool;
+  }
+
+  /// \internal
+  /// Creates a PathValueTool
+  BaseTool ToolsManager.createPathValueTool!( PathValue pathValue, Boolean ownedByManager ) {
+    return this.createPathValueTool(
+      pathValue.value.type(), 
+      pathValue.path,
+      ownedByManager);
+  }
+
+  /// \internal
+  BaseTool ToolsManager.createPathValueTool!( PathValue pathValue ) {
+    return this.createPathValueTool(
+      pathValue,
+      true);
+  }
+
+  /// \internal
+  BaseTool ToolsManager.getPathValueTool( PathValue pathValue ) {
+    return this.getPathValueTool(pathValue.path);
+  }
+
+  /// \internal
+  BaseTool ToolsManager.getPathValueTool( String path ) {
+    for(Index i=0; i<this.pathValueTools.size(); ++i)
+    { 
+      Ref<PathValueTool> tool = this.pathValueTools[i];
+      if(Boolean( tool ) && tool.getTargetPath() == path)
+        return tool;
+    }
+    return null;
+  }
+
+  /// \internal
+  ToolsManager.setPathValueToolValue!( PathValue pathValue ) {
+    this.setPathValueToolValue(pathValue.path, pathValue.value);
+  }
+
+  /// \internal
+  ToolsManager.setPathValueToolValue!( String path, RTVal value ) {
+    for(Index i=0; i<this.pathValueTools.size(); ++i)
+    { 
+      Ref<PathValueTool> tool = this.pathValueTools[i];
+      if(Boolean( tool ) && tool.getTargetPath() == path)
+      {
+        tool.valueChanged(value);
+        break;
+      }
+    }
+  }
+
+  /// \internal
+  ToolsManager.deletePathValueTool!( PathValue pathValue ) {
+    this.deletePathValueTool(pathValue.path);
+  }
+
+  /// \internal
+  ToolsManager.deletePathValueTool!( String path ) {
+
+    for(Index i=0; i<this.pathValueTools.size(); ++i)
+    { 
+      Ref<PathValueTool> tool = this.pathValueTools[i];
+      if(Boolean( tool ) && tool.getTargetPath() == path)
+      {
+        Ref<BaseTool> baseTool = tool;
+        baseTool.invalidate();
+        this.pathValueTools.swap(i, this.pathValueTools.size()-1);
+        this.pathValueTools.pop();
+        break;
+      }
+    }
+  }
+
+  /// \internal
+  ToolsManager.deleteAllPathValueTools!() {
+
+    for(Index i=0; i<this.pathValueTools.size(); ++i)
+    { 
+      Ref<BaseTool> tool = this.pathValueTools[i];
+      if(Boolean( tool ))
+        tool.invalidate();
+    }
+
+    this.pathValueTools.resize(0);
+  }
+
+  /// \internal
+  ToolsManager.renamePathValueToolPath!( PathValue oldPathValue, PathValue newPathValue ) {
+    this.renamePathValueToolPath( oldPathValue.path, newPathValue.path);
+  }
+
+  /// \internal
+  ToolsManager.renamePathValueToolPath!( String oldPath, String newPath ) {
+
+    for(Index i=0; i<this.pathValueTools.size(); ++i)
+    { 
+      Ref<PathValueTool> tool = this.pathValueTools[i];
+      if(Boolean( tool ) && tool.getTargetPath() == oldPath)
+      {
+        tool.setTargetPath(newPath);
+        break;
+      }
+    }
+  }
+
+  /// \internal, C++ helper.
+  /// Need to create a new object, otherwise the previous  
+  /// manager is cleared and replaced by the new one.
+  object AppToolsManager {};
+
+  /// \internal, C++ helper.
+  Ref<ToolsManager> AppToolsManager.getToolsManager() {
+    return GetToolsManager();
+  }
+
+}// namespace Tool

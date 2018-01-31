@@ -1,0 +1,123 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /**
+    The TranslateAlongAxisDragInteraction will change a TransformTarget's translation
+    component based on a DragInteraction movements relative to a direction
+    axis. The direction axis is interpreted in TransformTarget's space, which can be 
+    in world or screen space.
+
+    The :kl-ref:`Tool::TranslateAlongAxisDragInteraction.setLocal` method allows to interpret the 
+    axis can be in TransformTarget's local space or in global space (local space is default).
+
+    The :kl-ref:`Tool::TranslateAlongAxisDragInteraction.usePixelDelta` method allows to 
+    use the pixel delta (X and Y) instead of a projection to the actual axis.
+
+    See :ref:`TPG.interactive-tools` for more information and examples related to tool interactions.
+  */
+  object TranslateAlongAxisDragInteraction : BaseXfoDragInteraction{
+    Boolean local;//Else: global
+    Vec3 direction;
+    Mat44 initialTransform;
+    Boolean enablePixelDelta;
+  };
+
+  TranslateAlongAxisDragInteraction() {
+    this.setLocal( true );
+    this.direction = Vec3( 1, 0, 0 );
+  }
+
+  TranslateAlongAxisDragInteraction( DragInteraction dragInteraction, TransformTarget transformTarget, Vec3 direction, Boolean localDirection ) {
+    this.setInteraction( dragInteraction );
+    this.setTransformTarget( transformTarget );
+    this.setLocal( localDirection );
+    this.direction = direction.unit_safe();
+  }
+
+  TranslateAlongAxisDragInteraction.setLocal!( Boolean localDirection ) {
+    this.local = localDirection;
+  }
+
+  TranslateAlongAxisDragInteraction.usePixelDelta!( Boolean enable ) {
+    this.enablePixelDelta = enable;
+  }
+
+  TranslateAlongAxisDragInteraction.onBegin!( Ref<DragInteraction> interaction ) {
+    this.initialTransform = this.getTransform();
+    this.parent.onBegin( interaction );
+  }
+
+  TranslateAlongAxisDragInteraction.onDrag!( Ref<DragInteraction> interaction ) {
+    // Get the current transfos
+    Mat44 transfo = this.initialTransform;
+    Ref<Viewport> viewport = interaction.getContextualViewport();
+    Vec3 direction = this.direction;
+    if( this.local )
+      direction = ( transfo.upperLeft() * direction ).unit_safe();
+
+    Vec3 delta;
+    String space = this.getTransformSpace();
+
+    if( space == WorldSpace ) {
+      Mat44 viewProj = viewport.getProjectionMat() * viewport.getViewMat();
+      if( this.enablePixelDelta ) {
+        // Simply use a factor of the pixel delta
+
+        // Compute the factor based on the initial transform depth
+        Scalar depth = ( viewProj * transfo.translation() ).z;
+        Mat44 invViewProj = viewProj.inverse();
+
+        Vec2 screenSp = PixelToNormalizedScreenSpace( viewport, Vec2( 0, 0 ) );
+        Vec3 projPixO = invViewProj * Vec3( screenSp.x, screenSp.y, depth );
+
+        screenSp = PixelToNormalizedScreenSpace( viewport, Vec2( 1, 0 ) );
+        Vec3 projPixX = invViewProj * Vec3( screenSp.x, screenSp.y, depth );
+
+        screenSp = PixelToNormalizedScreenSpace( viewport, Vec2( 0, 1 ) );
+        Vec3 projPixY = invViewProj * Vec3( screenSp.x, screenSp.y, depth );
+
+        Vec3 projDX = projPixO - projPixX;
+        Vec3 projDY = projPixO - projPixY;
+
+        Scalar perPixelDelta = 0.5 * ( projDX.length() + projDY.length() );
+        Vec2 pixelDelta = interaction.getCurrentPixelPosition() - interaction.getInitialPixelPosition();
+
+        // Flip if not aligned with axis
+        if( projDX.dot( direction ) > 0 )
+          pixelDelta.x = -pixelDelta.x;
+        if( projDY.dot( direction ) > 0 )
+          pixelDelta.y = -pixelDelta.y;
+
+        delta = direction * ( pixelDelta.x + pixelDelta.y ) * perPixelDelta;
+      } else {
+        // If too toward camera, block to avoid big movements
+        Ray startRay = viewport.calcRayFromScreenPos( interaction.getInitialPixelPosition() );
+        if( abs( startRay.direction.dot( direction ) ) > 0.99 )
+          return;
+
+        Ray currRay = viewport.calcRayFromScreenPos( interaction.getCurrentPixelPosition() );
+
+        Vec3 startIntersPos = transfo.translation() + direction * ( startRay.intersectLine( transfo.translation(), transfo.translation() + direction ) ).y;
+        Vec3 currIntersPos = transfo.translation() + direction * ( currRay.intersectLine( transfo.translation(), transfo.translation() + direction ) ).y;
+
+        // If intersection is out of the view near/far, return
+        Scalar projDepth = ( viewProj * currIntersPos ).z;
+        if( projDepth < -1 || projDepth > 1 )
+          return;
+
+        delta = currIntersPos - startIntersPos;
+      }
+    } else {
+      Vec2 screenDelta = interaction.getCurrentPixelPosition() - interaction.getInitialPixelPosition();
+      Vec2 screenDirection = Vec2(direction.x, direction.y).unit_safe();
+      Scalar screenDeltaFactor = screenDelta.dot( screenDirection );
+      delta = Vec3( screenDirection.x, screenDirection.y, 0 ) * screenDeltaFactor;
+    }
+
+    transfo.setTranslation( this.initialTransform.translation() + delta );
+    this.setTransform( transfo );
+  }
+}// namespace Tool

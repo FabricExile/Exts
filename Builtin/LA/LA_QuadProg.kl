@@ -1,0 +1,565 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+///
+/// Derived from https://sourceforge.net/p/quadprog/code/HEAD/tree/src/QuadProg%2B%2B.cc#l747
+/// This code must remain available in source form.
+///
+
+const Boolean LA_QuadProg_Trace = false;
+
+///
+/// Quadratic Programming function implementing the Goldfarb-Idnani method
+///
+Scalar LA_QuadProg_Solve(
+  io Mat G,
+  io Vec g0,
+  Mat CE,
+  Vec ce0,
+  Mat CI,
+  Vec ci0,
+  io Vec x
+  )
+{
+  Integer n = G.cols(), p = CE.cols(), m = CI.cols();
+  if (Fabric_Guarded) {
+    if (G.rows() != n)
+      throw FUNC + ": G must be a square matrix; G=" + G.sizeDesc();
+    if (CE.cols() > 0 && CE.rows() != n)
+      throw FUNC + ": CE has an incorrect number of rows; CE=" + CE.sizeDesc() + " G=" + G.sizeDesc();
+    if (ce0.size() != p)
+      throw FUNC + ": ce0 has incompatible size; ce0=" + ce0.sizeDesc() + " CE=" + CE.sizeDesc();
+    if (CI.cols() > 0 && CI.rows() != n)
+      throw FUNC + ": CI has an incorrect number of rows; CI=" + CI.sizeDesc() + " G=" + G.sizeDesc();
+    if (ci0.size() != m)
+      throw FUNC + ": ci0 has incompatible size; ci0=" + ci0.sizeDesc() + " CE=" + CI.sizeDesc();
+  }
+
+  x.resize(n);
+
+  Integer l, ip;
+  Mat R(n,n), J(n,n);
+  Vec s(m + p), z(n), r(m + p), d(n), np(n), u(m + p), x_old(n), u_old(m + p);
+  Scalar f_value, psi, c1, c2, sum, ss, R_norm;
+  const Scalar inf = 1e37;
+  Scalar t, t1, t2;
+  Vec_i A(m + p), A_old(m + p), iai(m + p);
+  Integer q, iq, iter = 0;
+  Boolean iaexcl[](m + p);
+
+  q = 0;
+
+  if (LA_QuadProg_Trace) {
+    report("Starting LA_QuadProg");
+    report("G=" + G);
+    report("g0=" + g0);
+    report("CE=" + CE);
+    report("ce0=" + ce0);
+    report("CI=" + CI);
+    report("ci0=" + ci0);
+  }
+
+  c1 = G.trace();
+
+  LA_Cholesky_Decompose(G);
+  if (LA_QuadProg_Trace)
+    report("G=" + G);
+  d.setNull();
+  R.setNull();
+  R_norm = 1;
+
+  c2 = 0;
+  for (Integer i = 0; i < n; ++i) {
+    d.set(i, 1);
+    LA_Elimination_Forward(G, z, d);
+    for (Integer j = 0; j < n; ++j)
+      J.set(i, j, z.get(j));
+    c2 += z.get(i);
+    d.set(i, 0);
+  }
+  if (LA_QuadProg_Trace)
+    report("J=" + J);
+
+  LA_Cholesky_Solve(G, x, g0);
+  for (Integer i = 0; i < n; ++i)
+    x.set(i, -x.get(i));
+  f_value = 0.5 * g0.dot(x);
+  if (LA_QuadProg_Trace) {
+    report("Unconstrained solution:");
+    report("x=" + x);
+  }
+
+  /* Add equality constraints to the working set A */
+  iq = 0;
+  for (Integer i = 0; i < p; ++i) {
+    for (Integer j = 0; j < n; ++j)
+      np.set(j, CE.get(j, i));
+    LA_QuadProg_compute_d(d, J, np);
+    LA_QuadProg_update_z(z, J, d, iq);
+    LA_QuadProg_update_r(R, r, d, iq);
+    if (LA_QuadProg_Trace) {
+      report("x=" + x);
+      report("R=" + R.topLeft(n, iq));
+      report("z=" + z);
+      report("r=" + r.head(iq));
+      report("d=" + d);
+    }
+
+    /* compute full step length t2: i.e., the minimum step in primal space s.t. the contraint 
+      becomes feasible */
+    t2 = 0;
+    if (z.lengthSquared() > PRECISION) // i.e. z != 0
+      t2 = (-np.dot(x) - ce0.get(i)) / z.dot(np);
+
+    /* set x = x + t2 * z */
+    for (Integer k = 0; k < n; ++k)
+      x.set(k, x.get(k) + t2 * z.get(k));
+    
+    /* set u = u+ */
+    u.set(iq, t2);
+    for (Integer k = 0; k < iq; ++k)
+      u.set(k, u.get(k) - t2 * r.get(k));
+    
+    /* compute the new solution value */
+    f_value += 0.5 * (t2 * t2) * z.dot(np);
+    A.set(i, -i - 1);
+    
+    if (!LA_QuadProg_add_constraint(R, J, d, iq, R_norm))
+      throw FUNC + ": constraints are linearly dependent";
+  }
+
+  /* set iai = K \ A */
+  for (Integer i = 0; i < m; ++i)
+    iai.set(i, i);
+
+  // ll:
+  for (;;) {
+    ++iter;
+    if (LA_QuadProg_Trace)
+      report("x=" + x);
+
+    /* step 1: choose a violated constraint */
+    for (Integer i = p; i < iq; ++i)
+    {
+      ip = A.get(i);
+      iai.set(ip, -1);
+    }
+    
+    /* compute s[x] = ci^T * x + ci0 for all elements of K \ A */
+    ss = 0.0;
+    psi = 0.0; /* this value will contain the sum of all infeasibilities */
+    ip = 0; /* ip will be the index of the chosen violated constraint */
+    for (Integer i = 0; i < m; ++i)
+    {
+      iaexcl[i] = true;
+      sum = 0.0;
+      for (Integer j = 0; j < n; ++j)
+        sum += CI.get(j, i) * x.get(j);
+      sum += ci0.get(i);
+      s.set(i, sum);
+      psi += Math_min(0.0, sum);
+    }
+    if (LA_QuadProg_Trace)
+      report("s=" + s.head(m));
+   
+    if (abs(psi) <= m * PRECISION * c1 * c2 * 100.0) {
+      /* numerically there are not infeasibilities anymore */
+      q = iq;
+      return f_value;
+    }
+    
+    /* save old values for u and A */
+    for (Integer i = 0; i < iq; ++i) {
+      u_old.set(i, u.get(i));
+      A_old.set(i, A.get(i));
+    }
+    /* and for x */
+    for (Integer i = 0; i < n; ++i)
+      x_old.set(i, x.get(i));
+
+    // l2: /* Step 2: check for feasibility and determine a new S-pair */
+    Boolean done_l2 = false;
+    while (!done_l2) {
+      for (Integer i = 0; i < m; ++i) {
+        if (s.get(i) < ss && iai.get(i) != -1 && iaexcl[i]) {
+          ss = s.get(i);
+          ip = i;
+        }
+      }
+      if (ss >= 0.0) {
+        q = iq;
+        return f_value;
+      }
+
+      /* set np = n[ip] */
+      for (Integer i = 0; i < n; ++i)
+        np.set(i, CI.get(i, ip));
+      /* set u = [u 0]^T */
+      u.set(iq, 0.0);
+      /* add ip to the active set A */
+      A.set(iq, ip);
+      
+      if (LA_QuadProg_Trace) {
+        report("Trying with constraint " + ip);
+        report("np=" + np);
+      }
+      
+      // l2a:/* Step 2a: determine step direction */
+      Boolean done_l2a = false;
+      while (done_l2a) {
+        /* compute z = H np: the step direction in the primal space (through J, see the paper) */
+        LA_QuadProg_compute_d(d, J, np);
+        LA_QuadProg_update_z(z, J, d, iq);
+        /* compute N* np (if q > 0): the negative of the step direction in the dual space */
+        LA_QuadProg_update_r(R, r, d, iq);
+        if (LA_QuadProg_Trace) {
+          report("Step direction z");
+          report("z=" + z);
+          report("r=" + r.head(iq + 1));
+          report("u=" + u.head(iq + 1));
+          report("d=" + d);
+          report("A=" + A.head(iq + 1));
+        }
+
+        /* Step 2b: compute step length */
+        l = 0;
+        /* Compute t1: partial step length (maximum step in dual space without violating dual feasibility */
+        t1 = inf; /* +inf */
+        /* find the index l s.t. it reaches the minimum of u+[x] / r */
+        for (Integer k = p; k < iq; ++k) {
+          if (r.get(k) > 0.0) {
+            if (u.get(k) / r.get(k) < t1) {
+              t1 = u.get(k) / r.get(k);
+              l = A.get(k);
+            }
+          }
+        }
+        /* Compute t2: full step length (minimum step in primal space such that the constraint ip becomes feasible */
+        if (abs(z.lengthSquared()) > PRECISION) // i.e. z != 0
+          t2 = -s.get(ip) / z.dot(np);
+        else
+          t2 = inf; /* +inf */
+        
+        /* the step is chosen as the minimum of t1 and t2 */
+        t = Math_min(t1, t2);
+        if (LA_QuadProg_Trace)
+          report("Step sizes: " + t + " (t1 = " + t1 + ", t2 = " + t2 + ")");
+        
+        /* Step 2c: determine new S-pair and take step: */
+        
+        /* case (i): no step in primal or dual space */
+        if (t >= inf) {
+          /* QPP is infeasible */
+          // FIXME: unbounded to raise
+          q = iq;
+          return inf;
+        }
+        /* case (ii): step in dual space */
+        if (t2 >= inf) {
+          /* set u = u +  t * [-r 1] and drop constraint l from the active set A */
+          for (Integer k = 0; k < iq; ++k)
+            u.set(k, u.get(k) - t * r.get(k));
+          u.set(iq, u.get(iq) + t);
+          iai.set(l, l);
+          LA_QuadProg_delete_constraint(R, J, A, u, n, p, iq, l);
+          if (LA_QuadProg_Trace) {
+            report(" in dual space: " + f_value);
+            report("x=" + x);
+            report("z=" + z);
+            report("A=" + A.head(iq + 1));
+          }
+          continue; // goto l2a
+        }
+        
+        /* case (iii): step in primal and dual space */
+        
+        /* set x = x + t * z */
+        for (Integer k = 0; k < n; ++k)
+          x.set(k, x.get(k) + t * z.get(k));
+        /* update the solution value */
+        f_value += t * z.dot(np) * (0.5 * t + u.get(iq));
+        /* u = u + t * [-r 1] */
+        for (Integer k = 0; k < iq; ++k)
+          u.set(k, u.get(k) - t * r.get(k));
+        u.set(iq, u.get(iq) + t);
+        if (LA_QuadProg_Trace) {
+          report(" in both spaces: " + f_value);
+          report("x=" + x);
+          report("u=" + u.head(iq + 1));
+          report("r=" + r.head(iq + 1));
+          report("A=" + A.head(iq + 1));
+        }
+
+        if (abs(t - t2) < PRECISION)
+        {
+          if (LA_QuadProg_Trace) {
+            report("Full step has taken " + t);
+            report("x=" + x);
+          }
+          /* full step has taken */
+          /* add constraint ip to the active set*/
+          if (!LA_QuadProg_add_constraint(R, J, d, iq, R_norm))
+          {
+            iaexcl[ip] = false;
+            LA_QuadProg_delete_constraint(R, J, A, u, n, p, iq, ip);
+            if (LA_QuadProg_Trace) {
+              report("R=" + R);
+              report("A=" + A.head(iq));
+              report("iai=" + iai);
+            }
+            for (Integer i = 0; i < m; ++i)
+              iai.set(i, i);
+            for (Integer i = p; i < iq; ++i) {
+              A.set(i, A_old.get(i));
+              u.set(i, u_old.get(i));
+              iai.set(A.get(i), -1);
+            }
+            for (Integer i = 0; i < n; ++i)
+              x.set(i, x_old.get(i));
+            done_l2a = true;
+            continue; // goto l2; /* go to step 2 */
+          }    
+          else iai.set(ip, -1);
+          if (LA_QuadProg_Trace) {
+            report("R=" + R);
+            report("A=" + A.head(iq));
+            report("iai=" + iai);
+          }
+          done_l2a = true;
+          done_l2 = true;
+          continue; // goto l1;
+        }
+ 
+        /* a patial step has taken */
+        if (LA_QuadProg_Trace) {
+          report("Partial step has taken " + t);
+          report("x=" + x);
+        }
+        /* drop constraint l */
+        iai.set(l, l);
+        LA_QuadProg_delete_constraint(R, J, A, u, n, p, iq, l);
+        if (LA_QuadProg_Trace) {
+          report("R=" + R);
+          report("A=" + A.head(iq));
+        }
+        
+        /* update s[ip] = CI * x + ci0 */
+        sum = 0.0;
+        for (Integer k = 0; k < n; ++k)
+          sum += CI.get(k, ip) * x.get(k);
+        s.set(ip, sum + ci0.get(ip));
+        
+        if (LA_QuadProg_Trace)
+          report("s=" + s.head(m));
+      }
+    }
+  }
+
+  return 0; // should never get here
+}
+
+/// \internal
+inline LA_QuadProg_compute_d(io Vec d, Mat J, Vec np) {
+  /* compute d = H^T * np */
+  Integer n = d.size();
+  for (Integer i = 0; i < n; ++i) {
+    Scalar sum;
+    for (Integer j = 0; j < n; ++j)
+      sum += J.get(j, i) * np.get(j);
+    d.set(i, sum);
+  }
+}
+
+
+/// \internal
+inline LA_QuadProg_update_z(io Vec z, Mat J, Vec d, Integer iq) {
+  Integer n = z.size();
+  
+  /* setting of z = H * d */
+  for (Integer i = 0; i < n; ++i) {
+    Scalar sum;
+    for (Integer j = iq; j < n; ++j)
+      sum += J.get(i, j) * d.get(j);
+    z.set(i, sum);
+  }
+}
+
+/// \internal
+inline LA_QuadProg_update_r(Mat R, io Vec r, Vec d, Integer iq) {
+  /* setting of r = R^-1 d */
+  for (Integer i = iq - 1; i >= 0; --i) {
+    Scalar sum = 0.0;
+    for (Integer j = i + 1; j < iq; ++j)
+      sum += R.get(i, j) * r.get(j);
+    r.set(i, (d.get(i) - sum) / R.get(i, i));
+  }
+}
+
+/// \internal
+inline Boolean LA_QuadProg_add_constraint(
+  io Mat R,
+  io Mat J,
+  io Vec d,
+  io Integer iq,
+  io Scalar R_norm
+  )
+{
+  Integer n = d.size();
+  if (LA_QuadProg_Trace)
+    report("Add constraint " + iq + '/');
+  Scalar cc, ss, h, t1, t2, xny;
+  
+  /* we have to find the Givens rotation which will reduce the element
+    d[j] to zero.
+    if it is already zero we don't have to do anything, except of
+    decreasing j */  
+  for (Integer j = n - 1; j >= iq + 1; --j) {
+    /* The Givens rotation is done with the matrix (cc cs, cs -cc).
+    If cc is one, then element (j) of d is zero compared with element
+    (j - 1). Hence we don't have to do anything. 
+    If cc is zero, then we just have to switch column (j) and column (j - 1) 
+    of J. Since we only switch columns in J, we have to be careful how we
+    update d depending on the sign of gs.
+    Otherwise we have to apply the Givens rotation to these columns.
+    The i - 1 element of d has to be updated to h. */
+    cc = d.get(j-1);
+    ss = d.get(j);
+    h = LA_QuadProg_distance(cc, ss);
+    if (abs(h) < PRECISION) // h == 0
+      continue;
+    d.set(j, 0.0);
+    ss = ss / h;
+    cc = cc / h;
+    if (cc < 0.0) {
+      cc = -cc;
+      ss = -ss;
+      d.set(j - 1, -h);
+    }
+    else d.set(j - 1, h);
+    xny = ss / (1.0 + cc);
+    for (Integer k = 0; k < n; ++k) {
+      t1 = J.get(k, j - 1);
+      t2 = J.get(k, j);
+      J.set(k, j - 1, t1 * cc + t2 * ss);
+      J.set(k, j, xny * (t1 + J.get(k, j - 1)) - t2);
+    }
+  }
+  /* update the number of constraints added*/
+  iq++;
+  /* To update R we have to put the iq components of the d vector
+    into column iq - 1 of R
+    */
+  for (Integer i = 0; i < iq; ++i)
+    R.set(i, iq - 1, d.get(i));
+  if (LA_QuadProg_Trace) {
+    report(iq);
+    report("R=" + R.topLeft(iq, iq));
+    report("J=" + J);
+    report("d=" + d.head(iq));
+  }
+  
+  if (abs(d.get(iq - 1)) <= PRECISION * R_norm) {
+    // problem degenerate
+    return false;
+  }
+  R_norm = Math_max(R_norm, abs(d.get(iq - 1)));
+  return true;
+}
+
+/// \internal
+inline LA_QuadProg_delete_constraint(
+  io Mat R,
+  io Mat J,
+  io Vec_i A,
+  io Vec u,
+  Integer n,
+  Integer p,
+  io Integer iq,
+  Integer l
+  )
+{
+  if (LA_QuadProg_Trace)
+    report("Delete constraint " + l + ' ' + iq);
+  
+  /* Find the index qq for active constraint l to be removed */
+  Integer qq = -1; // just to prevent warnings from smart compilers
+  for (Integer i = p; i < iq; ++i)
+    if (A.get(i) == l) {
+      qq = i;
+      break;
+    }
+      
+  /* remove the constraint from the active set and the duals */
+  for (Integer i = qq; i < iq - 1; ++i) {
+    A.set(i, A.get(i + 1));
+    u.set(i, u.get(i + 1));
+    for (Integer j = 0; j < n; j++)
+      R.set(j, i, R.get(j, i + 1));
+  }
+      
+  A.set(iq - 1, A.get(iq));
+  u.set(iq - 1, u.get(iq));
+  A.set(iq, 0);
+  u.set(iq, 0.0);
+  for (Integer j = 0; j < iq; ++j)
+    R.set(j, iq - 1, 0.0);
+  /* constraint has been fully removed */
+  iq--;
+  if (LA_QuadProg_Trace)
+    report('/' + iq);
+  
+  if (iq == 0)
+    return;
+  
+  for (Integer j = qq; j < iq; ++j) {
+    Scalar cc = R.get(j, j);
+    Scalar ss = R.get(j + 1, j);
+    Scalar h = LA_QuadProg_distance(cc, ss);
+    if (abs(h) < PRECISION) // h == 0
+      continue;
+    cc /= h;
+    ss /= h;
+    R.set(j + 1, j, 0.0);
+    if (cc < 0.0)
+    {
+      R.set(j, j, -h);
+      cc = -cc;
+      ss = -ss;
+    }
+    else R.set(j, j, h);
+    
+    Scalar xny = ss / (1.0 + cc);
+    for (Integer k = j + 1; k < iq; ++k) {
+      Scalar t1 = R.get(j, k);
+      Scalar t2 = R.get(j + 1, k);
+      R.set(j, k, t1 * cc + t2 * ss);
+      R.set(j + 1, k, xny * (t1 + R.get(j, k)) - t2);
+    }
+    for (Integer k = 0; k < n; ++k) {
+      Scalar t1 = J.get(k, j);
+      Scalar t2 = J.get(k, j + 1);
+      J.set(k, j, t1 * cc + t2 * ss);
+      J.set(k, j + 1, xny * (J.get(k, j) + t1) - t2);
+    }
+  }
+}
+
+/// \internal
+inline Scalar LA_QuadProg_distance(Scalar a, Scalar b)
+{
+  Scalar a1 = abs(a);
+  Scalar b1 = abs(b);
+  if (a1 > b1) 
+  {
+    Scalar t = (b1 / a1);
+    return a1 * sqrt(1.0 + t * t);
+  }
+  else if (b1 > a1)
+  {
+    Scalar t = (a1 / b1);
+    return b1 * sqrt(1.0 + t * t);
+  }
+  else return a1 * 1.41421f; // sqrt(2)
+}
+

@@ -1,0 +1,426 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+UInt32 CurvesStructure.openOrCloseCurve_getReservedPointCount!( io Curves_data curveData, Boolean open ) {
+  switch( curveData.curveType ) {
+    case curveType_linear:
+      return curveData.pointCount;// no change
+    case curveType_bezier:
+      return this.bezier_openOrCloseCurve_getReservedPointCount( curveData, open );
+    case curveType_NURBS:
+      return this.NURBS_openOrCloseCurve_getReservedPointCount( curveData, open );
+  }
+  return curveData.pointCount;
+}
+
+CurvesStructure.openOrCloseCurve_reservedPoints!( io Curves_data curveData, Boolean open, io LocalL8UInt32Array copyAttrFrom, io LocalL8UInt32Array copyAttrTo ) {
+  switch( curveData.curveType ) {
+    case curveType_linear:
+      this.linear_openOrCloseCurve_reservedPoints( curveData, open );
+      return;
+    case curveType_bezier:
+      this.bezier_openOrCloseCurve_reservedPoints( curveData, open, copyAttrFrom, copyAttrTo );
+      return;
+    case curveType_NURBS:
+      this.NURBS_openOrCloseCurve_reservedPoints( curveData, open, copyAttrFrom, copyAttrTo );
+      return;
+  }
+}
+
+CurvesStructure.resizePoints!( io Curves_data curveData, UInt32 newPointCount, io UInt32 prevFirstPointIfMoved, io UInt32 prevPointCountIfMoved ) {
+  // Ensure we have enough place
+  UInt32 prevPointCount = curveData.pointCount;
+  this.resizePoints( curveData, newPointCount, prevFirstPointIfMoved );
+  if( prevFirstPointIfMoved != InvalidIndex )
+    prevPointCountIfMoved = prevPointCount;
+
+  switch( curveData.curveType ) {
+    case curveType_linear:
+      this.linear_updateDomainAndSpanCountFromPoints( curveData );
+      break;
+    case curveType_bezier:
+      this.bezier_updateDomainAndSpanCountFromPoints( curveData );
+      break;
+    case curveType_NURBS:
+      this.NURBS_resizedPoints( curveData, prevPointCount );
+      break;
+  }
+}
+
+CurvesStructure.insertPoint!( io Curves_data curveData, UInt32 offset, io UInt32 prevFirstPointIfMoved, io UInt32 prevPointCountIfMoved ) {
+  // Ensure we have enough place
+  UInt32 prevPointCount = curveData.pointCount;
+  this.resizePoints( curveData, prevPointCount+1, prevFirstPointIfMoved );
+  if( prevFirstPointIfMoved != InvalidIndex )
+    prevPointCountIfMoved = prevPointCount;
+
+  switch( curveData.curveType ) {
+    case curveType_linear:
+      this.linear_updateDomainAndSpanCountFromPoints( curveData );
+      break;
+    case curveType_bezier:
+      this.bezier_updateDomainAndSpanCountFromPoints( curveData );
+      break;
+    case curveType_NURBS:
+      this.NURBS_insertedPoint( curveData, offset );
+      break;
+  }
+}
+
+CurvesStructure.deletePoint!( io Curves_data curveData, UInt32 curvePointIndex ) {
+  this.decreasePointCount( curveData );
+  switch( curveData.curveType ) {
+    case curveType_linear:
+      this.linear_updateDomainAndSpanCountFromPoints( curveData );
+      break;
+    case curveType_bezier:
+      this.bezier_updateDomainAndSpanCountFromPoints( curveData );
+      break;
+    case curveType_NURBS:
+      this.NURBS_deletedPoint( curveData, curvePointIndex );
+      break;
+  }
+}
+
+/******************************************************************************
+EVALUATION
+******************************************************************************/
+
+Vec2 CurvesStructure.getSpanRange( Curves_data curveData, UInt32 spanIndex ) {
+  if( curveData.curveType == curveType_NURBS )
+    return this.NURBS_getSpanRange( curveData, spanIndex );
+  else {
+    Float32 start = spanIndex + curveData.domainStart;
+    return Vec2( start, start + 1.0f );
+  }
+}
+
+inline CurvesStructure.getPoints( Curves_data curveData, UInt32 spanIndex, io UInt32 count, io UInt32 pointIndices<> ) {
+  switch( curveData.curveType ) {
+    case curveType_linear:
+      this.linear_getPoints( curveData, spanIndex, count, pointIndices );
+      return;
+    case curveType_bezier:
+      this.bezier_getPoints( curveData, spanIndex, count, pointIndices );
+      return;
+    case curveType_NURBS:
+      this.NURBS_getPoints( curveData, spanIndex, count, pointIndices );
+      return;
+  }
+}
+
+inline CurvesStructure.getWeights( Curves_data curveData, UInt32 spanIndex, Float32 spanParam, UInt32 count, UInt32 pointIndices<>, io Float32 weights<> ) {
+  switch( curveData.curveType ) {
+    case curveType_linear:
+      this.linear_getWeights( curveData, spanParam, weights );
+      return;
+    case curveType_bezier:
+      this.bezier_getWeights( curveData, spanParam, count, pointIndices, weights );
+      return;
+    case curveType_NURBS:
+      this.NURBS_getWeights( curveData, spanIndex, spanParam, count, pointIndices, weights );
+      return;
+  }
+}
+
+inline CurvesStructure.getWeights( Curves_data curveData, UInt32 spanIndex, Float32 spanParam, UInt32 count, UInt32 pointIndices<>, io Float32 weights<>, io Float32 derWeights<> ) {
+  switch( curveData.curveType ) {
+    case curveType_linear:
+      this.linear_getWeights( curveData, spanIndex, spanParam, weights, derWeights );
+      return;
+    case curveType_bezier:
+      this.bezier_getWeights( curveData, spanParam, count, pointIndices, weights, derWeights );
+      return;
+    case curveType_NURBS:
+      this.NURBS_getWeights( curveData, spanIndex, spanParam, count, pointIndices, weights, derWeights );
+      return;
+  }
+}
+
+inline CurvesStructure.getPointsAndWeights( Curves_data curveData, UInt32 spanIndex, Float32 spanParam, io UInt32 count, io UInt32 pointIndices<>, io Float32 weights<> ) {
+  switch( curveData.curveType ) {
+    case curveType_linear:
+      this.linear_getPointsAndWeights( curveData, spanIndex, spanParam, count, pointIndices, weights );
+      return;
+    case curveType_bezier:
+      this.bezier_getPointsAndWeights( curveData, spanIndex, spanParam, count, pointIndices, weights );
+      return;
+    case curveType_NURBS:
+      this.NURBS_getPointsAndWeights( curveData, spanIndex, spanParam, count, pointIndices, weights );
+      return;
+  }
+}
+
+inline CurvesStructure.getPointsAndWeights( Curves_data curveData, Float32 param, io UInt32 count, io UInt32 pointIndices<>, io Float32 weights<> ) {
+  Float32 spanParam;
+  UInt32 spanIndex;
+  switch( curveData.curveType ) {
+    case curveType_linear:
+      this.unitUniform_getSpanParam( curveData, param, spanIndex, spanParam );
+      this.linear_getPointsAndWeights( curveData, spanIndex, spanParam, count, pointIndices, weights );
+      return;
+    case curveType_bezier:
+      this.unitUniform_getSpanParam( curveData, param, spanIndex, spanParam );
+      this.bezier_getPointsAndWeights( curveData, spanIndex, spanParam, count, pointIndices, weights );
+      return;
+    case curveType_NURBS:
+      this.NURBS_getSpanParam( curveData, param, spanIndex, spanParam );
+      this.NURBS_getPointsAndWeights( curveData, spanIndex, spanParam, count, pointIndices, weights );
+      return;
+  }
+}
+
+inline CurvesStructure.getPointsAndWeights( Curves_data curveData, UInt32 spanIndex, Float32 spanParam, io UInt32 count, io UInt32 pointIndices<>, io Float32 weights<>, io Float32 derivativePointWeights<> ) {
+  switch( curveData.curveType ) {
+    case curveType_linear:
+      this.linear_getPointsAndWeights( curveData, spanIndex, spanParam, count, pointIndices, weights, derivativePointWeights );
+      return;
+    case curveType_bezier:
+      this.bezier_getPointsAndWeights( curveData, spanIndex, spanParam, count, pointIndices, weights, derivativePointWeights );
+      return;
+    case curveType_NURBS:
+      this.NURBS_getPointsAndWeights( curveData, spanIndex, spanParam, count, pointIndices, weights, derivativePointWeights );
+      return;
+  }
+}
+
+inline CurvesStructure.getPointsAndWeights( Curves_data curveData, Float32 param, io UInt32 count, io UInt32 pointIndices<>, io Float32 weights<>, io Float32 derivativePointWeights<> ) {
+  Float32 spanParam;
+  UInt32 spanIndex;
+
+  switch( curveData.curveType ) {
+    case curveType_linear:
+      this.unitUniform_getSpanParam( curveData, param, spanIndex, spanParam );
+      this.linear_getPointsAndWeights( curveData, spanIndex, spanParam, count, pointIndices, weights, derivativePointWeights );
+      return;
+    case curveType_bezier:
+      this.unitUniform_getSpanParam( curveData, param, spanIndex, spanParam );
+      this.bezier_getPointsAndWeights( curveData, spanIndex, spanParam, count, pointIndices, weights, derivativePointWeights );
+      return;
+    case curveType_NURBS:
+      this.NURBS_getSpanParam( curveData, param, spanIndex, spanParam );
+      this.NURBS_getPointsAndWeights( curveData, spanIndex, spanParam, count, pointIndices, weights, derivativePointWeights );
+      return;
+  }
+}
+
+CurvesStructure.getPointIndicesAndWeightsAtParam( Curves_data curveData, Float32 param, io LocalL8UInt32Array pointIndices, io LocalL8ScalarArray pointWeights ) {
+  UInt32 pointIndicesArray<> = pointIndices.first8;
+  Float32 pointWeightsArray<> = pointWeights.first8;
+  UInt32 count;
+  this.getPointsAndWeights( curveData, param, count, pointIndicesArray, pointWeightsArray );
+  pointIndices.count = count;
+  pointWeights.count = count;
+}
+
+inline CurvesStructure.getPointIndicesAndWeightsAtNormalizedParam( Curves_data curveData, Float32 normalizedParam, io LocalL8UInt32Array pointIndices, io LocalL8ScalarArray pointWeights ) {
+  this.getPointIndicesAndWeightsAtParam( curveData, curveData.getParamFromNormalizedParam( normalizedParam ), pointIndices, pointWeights );
+}
+
+CurvesStructure.getPointIndicesAndWeightsAtParam( Curves_data curveData, Float32 param, io LocalL8UInt32Array pointIndices, io LocalL8ScalarArray pointWeights, io LocalL8ScalarArray derivativePointWeights ) {
+  UInt32 pointIndicesArray<> = pointIndices.first8;
+  Float32 pointWeightsArray<> = pointWeights.first8;
+  Float32 derivativePointWeightsArray<> = derivativePointWeights.first8;
+  UInt32 count;
+  this.getPointsAndWeights( curveData, param, count, pointIndicesArray, pointWeightsArray, derivativePointWeightsArray );
+  pointIndices.count = count;
+  pointWeights.count = count;
+  derivativePointWeights.count = count;
+}
+
+inline CurvesStructure.getPointIndicesAndWeightsAtNormalizedParam( Curves_data curveData, Float32 normalizedParam, io LocalL8UInt32Array pointIndices, io LocalL8ScalarArray pointWeights, io LocalL8ScalarArray derivativePointWeights ) {
+  this.getPointIndicesAndWeightsAtParam( curveData, curveData.getParamFromNormalizedParam( normalizedParam ), pointIndices, pointWeights, derivativePointWeights );
+  for( Size i = 0; i < derivativePointWeights.size(); ++i )//Normalize dU
+    derivativePointWeights.set( i, curveData.domainRange * derivativePointWeights.get( i ) );
+}
+
+inline CurvesStructure.getSpanParam( Curves_data curveData, Float32 param, io UInt32 spanIndex, io Float32 spanParam ) {
+  switch( curveData.curveType ) {
+    case curveType_linear:
+    case curveType_bezier:
+      this.unitUniform_getSpanParam( curveData, param, spanIndex, spanParam );
+      return;
+    case curveType_NURBS:
+      this.NURBS_getSpanParam( curveData, param, spanIndex, spanParam );
+      return;
+  }
+}
+
+Vec3 CurvesStructure.getPositionAtParam( Curves_data curveData, Float32 param ) {
+  UInt32 pointIndices[8]; //[curves_maxDegree]
+  UInt32 pointIndicesArray<> = pointIndices;
+  Float32 pointWeights[8];
+  Float32 pointWeightsArray<> = pointWeights;
+  UInt32 count;
+  this.getPointsAndWeights( curveData, param, count, pointIndicesArray, pointWeightsArray );
+
+  if( this.useDoubles ) {
+    Vec3_d result;
+    for( Size i = 0; i < ( count&curves_maxDegreeMask ); ++i )//count & curves_maxDegreeMask: tell the compiler we won't access out of range
+      result += this.positions_d[pointIndices[i]] * pointWeights[i];
+    return result.toVec3();
+  } else {
+    Vec3 result;
+    for( Size i = 0; i < ( count&curves_maxDegreeMask ); ++i )//count & curves_maxDegreeMask: tell the compiler we won't access out of range
+      result += this.positions[pointIndices[i]] * pointWeights[i];
+    return result;
+  }
+}
+
+Vec3_d CurvesStructure.getPositionAtParam_d( Curves_data curveData, Float32 param ) {
+  UInt32 pointIndices[8]; //[curves_maxDegree]
+  UInt32 pointIndicesArray<> = pointIndices;
+  Float32 pointWeights[8];
+  Float32 pointWeightsArray<> = pointWeights;
+  UInt32 count;
+
+  this.getPointsAndWeights( curveData, param, count, pointIndicesArray, pointWeightsArray );
+  if( this.useDoubles ) {
+    Vec3_d result;
+    for( Size i = 0; i < ( count&curves_maxDegreeMask ); ++i )//count & curves_maxDegreeMask: tell the compiler we won't access out of range
+      result += this.positions_d[pointIndices[i]] * pointWeights[i];
+    return result;
+  } else {
+    Vec3 result;
+    for( Size i = 0; i < ( count&curves_maxDegreeMask ); ++i )//count & curves_maxDegreeMask: tell the compiler we won't access out of range
+      result += this.positions[pointIndices[i]] * pointWeights[i];
+    Vec3_d vec;
+    vec.set( result );
+    return vec;
+  }
+}
+
+inline Vec3 CurvesStructure.getPositionAtNormalizedParam( Curves_data curveData, Float32 normalizedParam ) {
+  return this.getPositionAtParam( curveData, curveData.getParamFromNormalizedParam( normalizedParam ) );
+}
+
+inline Vec3_d CurvesStructure.getPositionAtNormalizedParam_d( Curves_data curveData, Float32 normalizedParam ) {
+  return this.getPositionAtParam_d( curveData, curveData.getParamFromNormalizedParam( normalizedParam ) );
+}
+
+inline Vec3 CurvesStructure.getNormalAtParam( Curves_data curveData, Float32 param ) {
+  Vec3 T, K;
+  this.getCurvature( curveData, param, T, K );
+  Float32 arcLen = K.length();
+  if( arcLen < 1e-6 )//Error code + small curvature
+    return Vec3( 0 );
+  else
+    return K / arcLen;
+}
+
+inline Vec3 CurvesStructure.getNormalAtNormalizedParam( Curves_data curveData, Float32 normalizedParam ) {
+  return this.getNormalAtParam( curveData, curveData.getParamFromNormalizedParam( normalizedParam ) );
+}
+
+Vec3 CurvesStructure.getTangentAtParam( Curves_data curveData, Float32 param ) {
+  Vec3 der = this.getDerivativeAtParam( curveData, param );
+  if( der != Vec3() )
+    der = der / der.length();
+  // Note: in case der is very small, openNURBS has complex handling to have a better answer in some case, based
+  // on 2nd derivative. TODO: translate that code.
+  return der;
+}
+
+inline Vec3 CurvesStructure.getTangentAtNormalizedParam( Curves_data curveData, Float32 normalizedParam ) {
+  return this.getTangentAtParam( curveData, curveData.getParamFromNormalizedParam( normalizedParam ) );
+}
+
+inline Vec3 CurvesStructure.getCurvatureAtParam( Curves_data curveData, Float32 param ) {
+  Vec3 T, K;
+  this.getCurvature( curveData, param, T, K );
+  return K;
+}
+
+inline Vec3 CurvesStructure.getCurvatureAtNormalizedParam( Curves_data curveData, Float32 normalizedParam ) {
+  return this.getCurvatureAtParam( curveData, curveData.getParamFromNormalizedParam( normalizedParam ) );
+}
+
+inline CurvesStructure.getTangentAndCurvatureAtParam( Curves_data curveData, Float32 param, io Vec3 tangent, io Vec3 curvature ) {
+  this.getCurvature( curveData, param, tangent, curvature );
+}
+
+inline CurvesStructure.getTangentAndCurvatureAtNormalizedParam( Curves_data curveData, Float32 normalizedParam, io Vec3 tangent, io Vec3 curvature ) {
+  this.getTangentAndCurvatureAtParam( curveData, curveData.getParamFromNormalizedParam( normalizedParam ), tangent, curvature );
+}
+
+inline Vec3 CurvesStructure.getDerivativeAtParam( Curves_data curveData, Float32 param ) {
+  switch( curveData.curveType ) {
+    case curveType_linear:
+      return this.linear_getDerivativeAtParam( curveData, param );
+    case curveType_bezier:
+      return this.bezier_getDerivativeAtParam( curveData, param );
+    case curveType_NURBS:
+      return this.NURBS_getDerivativeAtParam( curveData, param );
+  }
+  return Vec3();
+}
+
+inline Vec3 CurvesStructure.getDerivativeAtNormalizedParam( Curves_data curveData, Float32 normalizedParam ) {
+  return this.getDerivativeAtParam( curveData, curveData.getParamFromNormalizedParam( normalizedParam ) ) * curveData.domainRange;//Normalize dU
+}
+
+inline CurvesStructure.getDerivativesAtParam( Curves_data curveData, Float32 param, io Vec3 dU, io Vec3 dUU ) {
+  switch( curveData.curveType ) {
+    case curveType_linear:
+      this.linear_getDerivativesAtParam( curveData, param, dU, dUU );
+      return;
+    case curveType_bezier:
+      this.bezier_getDerivativesAtParam( curveData, param, dU, dUU );
+      return;
+    case curveType_NURBS:
+      this.NURBS_getDerivativesAtParam( curveData, param, dU, dUU );
+      return;
+  }
+  dU = Vec3();
+  dUU = Vec3();
+}
+
+/// The normalizedParam shoud be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.
+inline CurvesStructure.getDerivativesAtNormalizedParam( Curves_data curveData, Float32 normalizedParam, io Vec3 dU, io Vec3 dUU ) {
+  this.getDerivativesAtParam( curveData, curveData.getParamFromNormalizedParam( normalizedParam ), dU, dUU );
+  dU *= curveData.domainRange;//Normalize dU
+  dUU *= curveData.domainRange;//Normalize dUU
+}
+
+/// getCurvature: based on OpenNURBS's ON_Curve::EvCurvature <http://www.opennurbs.org>.
+/// T = unit tangent
+/// K = curvature (kappa)
+/// Null vectors (Vec3()) are returned in case of error.
+CurvesStructure.getCurvature( Curves_data curveData, Float32 param, io Vec3 T, io Vec3 K ) {
+
+  Vec3 D1, D2;
+  this.getDerivativesAtParam( curveData, param, D1, D2 );
+  if( D2 == Vec3() ) {
+    T = Vec3();
+    K = Vec3();
+    return;
+  }
+
+  // Evaluate unit tangent and curvature from first and second derivatives
+  // T = D1 / |D1|
+  // K = ( D2 - (D2 o T)*T )/( D1 o D1)
+
+  Float32 d1 = D1.length();
+
+  if( d1 == 0.0f ) {
+    // Use L'hopital's rule to show that if the unit tanget
+    // exists and the 1rst derivative is zero and the 2nd derivative is
+    // nonzero, then the unit tangent is equal to +/-the unitized 
+    // 2nd derivative.  The sign is equal to the sign of D1(s) o D2(s)
+    // as s approaches the evaluation parameter.
+    //
+    d1 = D2.length();
+    if( d1 > 0.0f ) {
+      T = D2 / d1;
+    } else {
+      T = Vec3();
+    }
+    K = Vec3();
+  } else {
+    T = D1 / d1;
+    Float32 negD2oT = -( D2.dot( T ) );
+    d1 = 1.0f / ( d1*d1 );
+    K = d1 * ( D2 + negD2oT*T );
+  }
+}

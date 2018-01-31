@@ -1,0 +1,235 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Alembic;
+require Geometry;
+
+/**
+  The :kl-ref:`AlembicSubDWriter` specializes the :kl-ref:`AlembicObjectWriter` interface for writing :kl-ref:`AlembicOSubD` data. 
+  It can be created using the :kl-ref:`AlembicArchiveWriter.addSubD` methods.
+  Please refer to the :kl-ref:`AlembicPolyMeshWriter` for a source code example.
+  \seealso AlembicSubDReader
+  \dfgArrayPexDisable true
+*/
+object AlembicSubDWriter : AlembicObjectWriter{
+  /// \internal
+  private AlembicOSubD _subd;
+  /// \internal
+  private AlembicOSubDSchema _schema;
+  /// \internal
+  private AlembicOSubDSample _sample;
+  /// \internal
+  private SInt32 _faceCounts[];
+  /// \internal
+  private SInt32 _faceIndices[];
+  /// \internal
+  private Vec3 _positions[];
+  /// \internal
+  private Vec3 _velocities[];
+  /// \internal
+  private Vec2 _uvs[];
+  /// \internal
+  private AlembicOVec2VfGeomParamSample _uvsSample;
+  /// \internal
+  private UInt32 _numSamples;
+  /// \internal
+  private UInt32 _storedSamples;
+  /// \internal
+  private SInt32 _timeSamplingIndex;
+  /// \internal
+  private UInt32 _versions[String];
+  /// \internal
+  private AlembicGeometryAttributesWriter _attributeWriter;
+  /// \internal
+  private UInt64 _geometryUid;
+};
+
+/// \internal
+private function AlembicSubDWriter(AlembicOObject parent, String name, SInt32 timeSampling) {
+  this._subd = AlembicOSubD(parent, name, timeSampling);
+  this._schema = this._subd.getSchema();
+  this._sample = AlembicOSubDSample();
+  this._uvsSample = AlembicOVec2VfGeomParamSample(this._uvs, Alembic_kFacevaryingScope);
+  this._numSamples = this._schema.getTimeSampling().getNumStoredTimes();
+  if(this._numSamples == 0)
+    this._numSamples = 1;
+  this._storedSamples = 0;
+  this._timeSamplingIndex = timeSampling;
+  this._attributeWriter = AlembicGeometryAttributesWriter();
+}
+
+/// returns the full path of the wrapped AlembicOSubD
+function String AlembicSubDWriter.getPath() {
+  return this._subd.asOObject().getFullName();
+}
+
+/// returns true if this writer wraps a valid AlembicOSubD
+function Boolean AlembicSubDWriter.valid() {
+  return this._subd.valid();
+}
+
+/// clears all pointers and releases all alembic containers
+function AlembicSubDWriter.reset!() {
+  this._subd.reset();
+  this._schema.reset();
+  this._sample = null;
+  this._uvsSample = null;
+  this._attributeWriter.reset();
+}
+
+/// returns the wrapped AlembicOObject
+function AlembicOObject AlembicSubDWriter.getOObject() {
+  return this._subd.asOObject();
+}
+
+/// provide access to the wrapped AlembicGeometryAttributesWriter.
+function Ref<AlembicGeometryAttributesWriter> AlembicSubDWriter.getGeometryAttributesWriter() {
+  return this._attributeWriter;
+}
+
+/// Store a new AlembicGeometryParamReader based on an existing attribute
+function AlembicSubDWriter.addParamWriter!(GeometryAttribute attribute, AlembicGeometryScope scope, SInt32 timeSampling) {
+  AlembicOCompoundProperty props = this._schema.getArbGeomParams();
+  this._attributeWriter.addParamWriter(props, attribute.getName(), scope, timeSampling, attribute);
+}
+
+/// writes a single sample into the file based on the provided PolygonMesh.
+function Boolean AlembicSubDWriter.writeSample!(Ref<PolygonMesh> mesh, SInt32 featureMask) {
+
+  if(this == null)
+    return false;
+  
+  if(mesh == null)
+    return false;
+  if(this._storedSamples == this._numSamples) {
+    // setError('AlembicSubDWriter: Max number of samples reached.');
+    return false;
+  }
+
+  Boolean theSameGeo = mesh.uid() == this._geometryUid;
+  this._geometryUid = mesh.uid();
+
+  // init on first frame
+  if(this._storedSamples == 0) {
+
+    if(!mesh.has('positions')) {
+      setError('AlembicSubDWriter: Provided PolygonMesh does not contain positions.');
+      return false;
+    }
+
+    if((featureMask == 0 || (featureMask & AlembicExportFeature_VertexColors) == AlembicExportFeature_VertexColors) && mesh.has('vertexColors')) {
+      AlembicOCompoundProperty props = this._schema.getArbGeomParams();
+      ColorAttribute attr = mesh.getAttribute('vertexColors', ColorAttribute);
+      AlembicGeometryParamWriter writer = AlembicGeometryParamWriter(props, 'vertexColors', Alembic_kVertexScope, this._timeSamplingIndex, attr);
+      this._attributeWriter.addParamWriter(writer);
+    }
+
+    if((featureMask == 0 || (featureMask & AlembicExportFeature_TextureRefs) == AlembicExportFeature_TextureRefs) && mesh.has('textureRefs')) {
+      AlembicOCompoundProperty props = this._schema.getArbGeomParams();
+      Vec3Attribute attr = mesh.getAttribute('textureRefs', ColorAttribute);
+      AlembicGeometryParamWriter writer = AlembicGeometryParamWriter(props, 'textureRefs', Alembic_kVertexScope, this._timeSamplingIndex, attr);
+      this._attributeWriter.addParamWriter(writer);
+    }
+  }
+
+  Vec3Attribute positionsAttr = mesh.getAttribute('positions', Vec3Attribute);
+  if(positionsAttr.getVersion() != this._versions.get('positions', 0) || !theSameGeo) {
+    Box3 bounds;
+    this._positions.resize(mesh.pointCount());
+    for(Size i=0;i<this._positions.size();i++) {
+      this._positions[i] = positionsAttr.values[i];
+      bounds.merge(positionsAttr.values[i]);
+    }
+    this._sample.setSelfBounds(bounds);
+    this._sample.setPositions(this._positions);
+    this._versions['positions'] = positionsAttr.getVersion();
+  }
+
+  if((featureMask == 0 || (featureMask & AlembicExportFeature_Velocities) == AlembicExportFeature_Velocities) && mesh.has('velocities')) {
+    Vec3Attribute attr = mesh.getAttribute('velocities', Vec3Attribute);
+    if(attr.getVersion() != this._versions.get('velocities', 0) || !theSameGeo) {
+      this._velocities.resize(mesh.pointCount());
+      for(Size i=0;i<this._velocities.size();i++)
+        this._velocities[i] = attr.values[i];
+      this._sample.setVelocities(this._velocities);
+      this._versions['velocities'] = attr.getVersion();
+    }
+  }
+
+  if((featureMask == 0 || (featureMask & AlembicExportFeature_Uvs) == AlembicExportFeature_Uvs) && mesh.has('uvs0')) {
+    Vec2Attribute attr = mesh.getAttribute('uvs0', Vec2Attribute);
+    if(attr.getVersion() != this._versions.get('uvs0', 0) || !theSameGeo) {
+      if(attr.values.size() == mesh.pointCount()) {
+        this._uvsSample.setScope(Alembic_kVertexScope);
+        this._uvs.resize(mesh.pointCount());
+        for(Size i=0;i<this._uvs.size();i++)
+          this._uvs[i] = attr.values[i];
+      } else {
+        this._uvsSample.setScope(Alembic_kFacevaryingScope);
+        this._uvs.resize(mesh.polygonPointsCount());
+        Size offset = 0;
+        for(Size i=0;i<mesh.polygonCount();i++) {
+          Size count = mesh.getPolygonSize(i);
+          for(Size j=0;j<count;j++) {
+            Size attrIndex = mesh.getPolygonAttributeIndex(i, j);
+            this._uvs[offset++] = attr.values[attrIndex];
+          }
+        }
+      }
+
+      this._uvsSample.setVals(this._uvs);
+      this._sample.setUVs(this._uvsSample);
+      this._versions['uvs0'] = attr.getVersion();
+    }
+  }
+
+  // topology
+  if(featureMask == 0 || (featureMask & AlembicExportFeature_Topology) == AlembicExportFeature_Topology) {
+    if(this._faceCounts.size() != mesh.polygonCount() || this._faceIndices.size() != mesh.polygonPointsCount()) {
+      this._faceCounts.resize(0);
+      this._faceIndices.resize(0);
+      this._faceCounts.resize(mesh.polygonCount());
+      this._faceIndices.resize(mesh.polygonPointsCount());
+
+      Size countOffset = 0;
+      Size indexOffset = 0;
+
+      LocalIndexArray vertices;
+      for(Size i=0;i<mesh.polygonCount();i++) {
+        mesh.getPolygonPoints(i, vertices);
+        this._faceCounts[countOffset++] = vertices.size();
+        for(UInt32 j=0;j<vertices.size();j++) {
+          this._faceIndices[indexOffset++] = vertices.get(j);
+        }
+      }
+      this._sample.setFaceCounts(this._faceCounts);
+      this._sample.setFaceIndices(this._faceIndices);
+    }
+  } else {
+    // skip storing topologuy
+    this._faceCounts.resize(0);
+    this._faceIndices.resize(0);
+    if(this._positions.size() > 2)
+    {
+      this._faceCounts.push(3);
+      this._faceIndices.push(0);
+      this._faceIndices.push(1);
+      this._faceIndices.push(2);
+    }
+    this._sample.setFaceCounts(this._faceCounts);
+    this._sample.setFaceIndices(this._faceIndices);
+  }
+  
+  this._schema.set(this._sample);
+  this._attributeWriter.writeSample(mesh, mesh.getAttributes());
+
+  this._storedSamples++;
+  return true;
+}
+
+/// writes a single sample into the file based on the provided PolygonMesh.
+function Boolean AlembicSubDWriter.writeSample!(Ref<PolygonMesh> mesh)
+{
+  return this.writeSample(mesh, AlembicExportFeature_Complete);
+}

@@ -1,0 +1,49 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Box3.html",
+    "uiTooltip" : "Setting this box to an infinite box\n\n Supported by Box3"
+    },
+  "title" : "SetInfinite[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Box3[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "394EDD28F96417DC00CBE7D6514950EB",
+  "code" : "require Math;
+
+operator Math_Box3_setInfinite_task<<<index>>>(
+  io Box3[] this
+) {
+  this[index < this.size() ? index : this.size() - 1].setInfinite();
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Box3_setInfinite_task(index, this);
+    }
+  } else {
+    Math_Box3_setInfinite_task<<<task_size>>>(this);
+  }
+}
+"
+  }

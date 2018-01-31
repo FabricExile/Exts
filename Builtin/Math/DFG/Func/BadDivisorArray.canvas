@@ -1,0 +1,63 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiTooltip" : "Returns true if a divisor inside the safe range of Float32 divisor values\n\n Supported by Boolean"
+    },
+  "title" : "BadDivisor[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "s",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float32[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float32[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "7FD4FA8D1BC68CDC45184A3A5B8EB228",
+  "code" : "require Math;
+
+operator Math_Math_badDivisor_task<<<index>>>(
+  io Boolean[] result
+, in Float32[] s
+) {
+  result[index] = Math_badDivisor(s[index < s.size() ? index : s.size() - 1]);
+}
+
+dfgEntry {
+  if( s.size() == 0) return;
+  Size task_size = 0;
+  if(task_size < s.size()) task_size = s.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Math_badDivisor_task(index, result, s);
+    }
+  } else {
+    Math_Math_badDivisor_task<<<task_size>>>(result, s);
+  }
+}
+"
+  }

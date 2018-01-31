@@ -1,0 +1,27 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  This function can be used to compute a batchsize for a given number of tasks.
+  \example
+  Size numTasks = 100;
+  Size minBatchSize = 4;
+  Size numBatches, batchSize;
+  GetBatchSizeAndCountForParallel(numTasks, minBatchSize, 12, numBatches, batchSize);
+  report('numBatches: '+numBatches);
+  report('batchSize: '+batchSize);
+  \endexample
+*/
+inline GetBatchSizeAndCountForParallel( Size numIndices, Size workloadMultiplier, Size minBatchSize, io Size numBatches, io Size batchSize ) {
+  batchSize = numIndices/(4*workloadMultiplier);
+  if( batchSize < minBatchSize )
+    batchSize = minBatchSize;
+
+  numBatches = (numIndices / batchSize);
+  if( numBatches == 0 ) {
+    numBatches = 1;
+    batchSize = numIndices;
+  } else if( numBatches * batchSize < numIndices )
+    batchSize = (numIndices / numBatches)+1;
+}

@@ -1,0 +1,35 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+using namespace Tool;
+
+object ViewportTransformsExample : BaseTool{};
+
+ViewportTransformsExample() {
+
+  // create a sphere in 3D space (drawn first)
+  BaseTool worldSphere = this.addChild( "worldSphere", SphereShape( 1 ) );
+  worldSphere.setMaterial( HeadLightShadedMaterial() );
+
+  // sphere child at the origin, with a radius of 1; map to (-0.25..0.25) normalized viewport space
+  BaseTool sphere = this.addChild( "sphere", SphereShape( 1 ) );
+  sphere.setTransformSpace( Tool::NormalizedViewportSpace );
+  Xfo sphereXfo;
+  sphereXfo.sc = Vec3( 0.25 );
+  sphere.setLocalTransform( sphereXfo );
+  sphere.setColor( Color( 1.0, 0.0, 0.0 ) );//red
+
+  // create a screen rectangle
+  BaseTool rect1 = this.addChild( "rect1", RectangleLinesShape() );
+  // set make it draw in a [100..200] pixel rectangle, for any viewport
+  rect1.setPixelCoordinatesTransform( Vec2(100), Vec2(200), Tool::DrawContext() );
+  rect1.setColor( Color( 1.0, 1.0, 0.0 ) );//yellow
+
+  // Create a solid sub-rectangle, make it half the size of its rect1 parent
+  BaseTool rect2 = rect1.addChild( "rect2", RectangleShape() );
+  Xfo rect2Xfo;
+  rect2Xfo.sc = Vec3( 0.5 );
+  rect2.setLocalTransform( rect2Xfo );
+  rect2.setColor( Color( 0.0, 1.0, 0.0 ) );//green
+}

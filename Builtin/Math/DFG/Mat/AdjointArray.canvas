@@ -1,0 +1,72 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Mat22.html",
+    "uiTooltip" : "Returns the adjoint matrix of this matrix\n\n Supported by Mat22,Mat22_d,Mat22_i,Mat33,Mat33_d,Mat33_i,Mat44,Mat44_d,Mat44_i"
+    },
+  "title" : "Adjoint[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Mat22[]" : [
+          {
+            "row0" : {
+              "x" : 1,
+              "y" : 0
+              },
+            "row1" : {
+              "x" : 0,
+              "y" : 1
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "$TYPE$[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "$TYPE$[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "0EE5F4AEF054A8FD12C5B5A863377A1C",
+  "code" : "require Math;
+
+operator Math_Mat22_adjoint_task<<<index>>>(
+  io $TYPE$[] result
+, in $TYPE$[] this
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].adjoint();
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  Size task_size = this.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Mat22_adjoint_task(index, result, this);
+    }
+  } else {
+    Math_Mat22_adjoint_task<<<task_size>>>(result, this);
+  }
+}
+"
+  }

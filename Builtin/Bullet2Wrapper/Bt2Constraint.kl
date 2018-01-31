@@ -1,0 +1,158 @@
+//
+// Copyright 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/// \dfgPresetOmit
+struct Bt2Constraint : Bt2Item permits Bt2World
+{
+  protected btTypedConstraint constraint;
+  protected btConeTwistConstraint coneTwistConstraint;
+  protected btHingeConstraint hingeConstraint;
+  protected btSliderConstraint sliderConstraint;
+};
+
+function Bt2RigidBody Bt2Constraint.getRigidBodyA()
+{
+  if(!this.isValid())
+    return Bt2RigidBody();
+  btRigidBody body = this.constraint.getRigidBodyA();
+  if(!body.cxx_isValid())
+    return Bt2RigidBody();
+  return this.world.getRigidBody(body.getUserIndex());
+}
+
+function Bt2RigidBody Bt2Constraint.getRigidBodyB()
+{
+  if(!this.isValid())
+    return Bt2RigidBody();
+  btRigidBody body = this.constraint.getRigidBodyB();
+  if(!body.cxx_isValid())
+    return Bt2RigidBody();
+  return this.world.getRigidBody(body.getUserIndex());
+}
+
+function Boolean Bt2Constraint.isEnabled()
+{
+  if(!this.isValid())
+    return false;
+  return this.constraint.isEnabled();
+}
+
+/// \dfgPresetDefault enabled false
+function Bt2Constraint.setEnabled!(Boolean enabled)
+{
+  if(!this.isValid())
+    return;
+  this.constraint.setEnabled(enabled);
+}
+
+function Float32 Bt2Constraint.getBreakingImpulseThreshold()
+{
+  if(!this.isValid())
+    return 0.0;
+  return this.constraint.getBreakingImpulseThreshold();
+}
+
+/// \dfgPresetDefault threshold 10.0
+function Bt2Constraint.setBreakingImpulseThreshold!(Float32 threshold)
+{
+  if(!this.isValid())
+    return;
+  this.constraint.setBreakingImpulseThreshold(threshold);
+}
+
+function SInt32 Bt2Constraint.getOverrideNumSolverIterations()
+{
+  if(!this.isValid())
+    return 0.0;
+  return this.constraint.getOverrideNumSolverIterations();
+}
+
+/// \dfgPresetDefault iterations 1
+function Bt2Constraint.setOverrideNumSolverIterations!(SInt32 iterations)
+{
+  if(!this.isValid())
+    return;
+  this.constraint.setOverrideNumSolverIterations(iterations);
+}
+
+function Boolean Bt2Constraint.isMotorEnabled!()
+{
+  if(!this.isValid())
+    return false;
+  if(this.coneTwistConstraint.cxx_isValid())
+  {
+    return this.coneTwistConstraint.isMotorEnabled();
+  }
+  else if(this.hingeConstraint.cxx_isValid())
+  {
+    return this.hingeConstraint.getEnableAngularMotor();
+  }
+  else if(this.sliderConstraint.cxx_isValid())
+  {
+    return this.sliderConstraint.getPoweredLinMotor() ||
+      this.sliderConstraint.getPoweredAngMotor();
+  }
+  else
+  {
+    report('Warning: Constraint type not supported for isMotorEnabled.');
+  }
+  return false;
+}
+
+function Bt2Constraint.controlMotor!(
+  Float32 motorVelocity,
+  Float32 maxMotorImpulse
+) {
+  if(!this.isValid())
+    return;
+
+  if(this.coneTwistConstraint.cxx_isValid())
+  {
+    if(maxMotorImpulse > 0)
+    {
+      this.coneTwistConstraint.enableMotor(true);
+      this.coneTwistConstraint.setMaxMotorImpulse(maxMotorImpulse);
+    }
+    else
+    {
+      this.coneTwistConstraint.enableMotor(false);
+    }
+  }
+  else if(this.hingeConstraint.cxx_isValid())
+  {
+    if(maxMotorImpulse > 0)
+    {
+      this.hingeConstraint.enableMotor(true);
+      this.hingeConstraint.setMotorTargetVelocity(motorVelocity);
+      this.hingeConstraint.setMaxMotorImpulse(maxMotorImpulse);
+    }
+    else
+    {
+      this.hingeConstraint.enableMotor(false);
+    }
+  }
+  else if(this.sliderConstraint.cxx_isValid())
+  {
+    this.sliderConstraint.setTargetLinMotorVelocity(motorVelocity);
+    this.sliderConstraint.setMaxLinMotorForce(maxMotorImpulse);
+    this.sliderConstraint.setTargetAngMotorVelocity(motorVelocity);
+    this.sliderConstraint.setMaxAngMotorForce(maxMotorImpulse);
+  }
+  else
+  {
+    report('Warning: Constraint type not supported for isMotorEnabled.');
+  }
+}
+
+function Float32 Bt2Constraint.getHingeAngle!()
+{
+  if(!this.isValid())
+    return Float32();
+
+  if(this.hingeConstraint.cxx_isValid())
+    return this.hingeConstraint.getHingeAngle();
+
+  report('Warning: Constraint type not supported for getHingeAngle.');
+  return Float32();
+}

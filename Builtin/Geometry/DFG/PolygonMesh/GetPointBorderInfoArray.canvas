@@ -1,0 +1,101 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/PolygonMesh.html",
+    "uiTooltip" : "For a point neighbor polygon, returns border and wing information (see :ref:`borderAndWings`\nfor definitions and an example of usage)\n\n Supported by PolygonMesh"
+    },
+  "title" : "GetPointBorderInfo[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "PolygonMesh[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "point",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Size[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Size[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "neighborPolygonIndex",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Size[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Size[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "precededByBorder",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "atClosedWingStart",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "5ECE3F15D43A213029C06A4D2D84AAF6",
+  "code" : "require Geometry;
+
+operator Geometry_PolygonMesh_getPointBorderInfo_task<<<index>>>(
+  in PolygonMesh[] this
+, in Size[] point
+, in Size[] neighborPolygonIndex
+, out Boolean[] precededByBorder
+, out Boolean[] atClosedWingStart
+) {
+  this[index < this.size() ? index : this.size() - 1].getPointBorderInfo(point[index < point.size() ? index : point.size() - 1], neighborPolygonIndex[index < neighborPolygonIndex.size() ? index : neighborPolygonIndex.size() - 1], precededByBorder[index < precededByBorder.size() ? index : precededByBorder.size() - 1], atClosedWingStart[index < atClosedWingStart.size() ? index : atClosedWingStart.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( point.size() == 0) return;
+  if( neighborPolygonIndex.size() == 0) return;
+  if( precededByBorder.size() == 0) return;
+  if( atClosedWingStart.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < point.size()) task_size = point.size();
+  if(task_size < neighborPolygonIndex.size()) task_size = neighborPolygonIndex.size();
+  precededByBorder.resize(task_size);
+  atClosedWingStart.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Geometry_PolygonMesh_getPointBorderInfo_task(index, this, point, neighborPolygonIndex, precededByBorder, atClosedWingStart);
+    }
+  } else {
+    Geometry_PolygonMesh_getPointBorderInfo_task<<<task_size>>>(this, point, neighborPolygonIndex, precededByBorder, atClosedWingStart);
+  }
+}
+"
+  }

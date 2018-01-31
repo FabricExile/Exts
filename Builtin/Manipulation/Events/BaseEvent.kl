@@ -1,0 +1,129 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 1.12.0
+
+  :kl-ref:`BaseEvent` is the base class for all Event object types.
+
+  \seealso EventDispatcher, handler, Event, KeyEvent, MouseEvent, MouseWheelEvent
+  
+  \dfgPresetOmit
+*/
+object BaseEvent : Event {
+  /// The Host object providing a method to query data about the host
+  /// and propagate data back to the host.
+  Host host;
+
+  /// The viewport that was in focus when the event was generated.
+  Viewport_Virtual viewport;
+
+  /// The id specifying the type of event. 
+  EventType eventType;
+
+  /// A boolean flag indicating that the event has been accepted, and no should
+  /// not be handled by other handlers or the host DCC application.
+  Boolean accepted;
+
+  /// A boolean flag indicating if all viewports must be redrawn.
+  /// If false, only event's viewport must be redrawn.
+  Boolean redrawAllViewportsIfAccepted;
+
+  /// The keyboard modifier keys that were held when the event occurred.
+  ModiferKey modifiers;
+
+  /// Path of the DFG node containing the tool.
+  /// Uses to propagate the manipulated value throuht ports.
+  String dfgToolPath;
+};
+
+/// Constructor.
+BaseEvent() {
+  this.redrawAllViewportsIfAccepted = true;
+}
+
+/// Initializes the base event members.
+/// \param host The host ('Maya', ...).
+/// \param viewport The viewport interface.
+/// \param eventType The event type.
+/// \param modifiers The key modifier associatede with the event.
+BaseEvent.init!(
+  Host host, 
+  Viewport_Virtual viewport, 
+  EventType eventType, 
+  ModiferKey modifiers) 
+{
+  this.host = host;
+  this.viewport = viewport;
+  this.eventType = eventType;
+  this.modifiers = modifiers;
+}
+
+/// Implementation of :kl-ref:`Event`.
+Host BaseEvent.getHost() {
+  return this.host;
+}
+ 
+/// Implementation of :kl-ref:`Event`.
+Viewport_Virtual BaseEvent.getViewport() {
+  return this.viewport;
+}
+
+/// Implementation of :kl-ref:`Event`.
+BaseEvent.setViewport!(Viewport_Virtual viewport) {
+  this.viewport = viewport;
+}
+
+/// Implementation of :kl-ref:`Event`.
+BaseEvent.accept!() {
+  this.accepted = true;
+}
+ 
+/// Implementation of :kl-ref:`Event`.
+BaseEvent.ignore!() {
+  this.accepted = false;
+}
+  
+/// Implementation of :kl-ref:`Event`.
+Boolean BaseEvent.isAccepted() {
+  return this.accepted;
+}
+
+/// Implementation of :kl-ref:`Event`.
+BaseEvent.setAccepted!(Boolean accepted) {
+  this.accepted = accepted;
+}
+
+/// Implementation of :kl-ref:`Event`.
+EventType BaseEvent.eventType() {
+  return this.eventType;
+}
+
+/// Implementation of :kl-ref:`Event`.
+ModiferKey BaseEvent.getModifiers() {
+  return this.modifiers;
+}
+
+/// Returns true if all viewports need to be redrawn, and not only the contextual one.
+Boolean BaseEvent.redrawAllViewports() {
+  return this.accepted && this.redrawAllViewportsIfAccepted;
+}
+
+String BaseEvent.describe( Boolean includeContext ) {
+  String result = this.type();
+  result += " event=" + DescribeEventType( this.eventType );
+  if( includeContext )
+    result += " " + this.describeContext();
+  return result;
+}
+
+String BaseEvent.describeContext() {
+  String result;
+  if( this.viewport )
+    result += "viewport=" + this.viewport.getName() + ", ";
+  result += " accepted=" + this.accepted;
+  if( this.redrawAllViewportsIfAccepted )
+    result += ", redrawAll=true";
+  return result;
+}

@@ -1,0 +1,56 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "returns the schema of this reader\n\nSupported types:\n  this: AlembicPointsReader\n  result: AlembicIPointsSchema\n"
+    },
+  "title" : "GetSchema[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "AlembicPointsReader[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "AlembicIPointsSchema[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "7B0E46A0336E8F8F38CFE55D25545834",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicPointsReader_getSchema_task<<<index>>>(
+  io AlembicIPointsSchema[] result
+, in AlembicPointsReader[] this
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].getSchema();
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  Size task_size = this.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      AlembicWrapper_AlembicPointsReader_getSchema_task(index, result, this);
+    }
+  } else {
+    AlembicWrapper_AlembicPointsReader_getSchema_task<<<task_size>>>(result, this);
+  }
+}
+"
+  }

@@ -1,0 +1,460 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+using namespace Tool;
+
+/// ChainExampleData: the actual data that this tool is editing
+/// Note: since this is a structure composed of simple types 
+/// (no Object), it doesn't need additional persistance code 
+/// for Canvas (see PersistablePoints for an example of 
+/// manipulated Object persistance).
+struct ChainExampleData {
+  Xfo jointXfos[];
+  Float32 jointDrawSize;
+};
+
+ChainExampleData() {
+  this.jointDrawSize = 10;
+
+  // make it simple: 8 joints, spaced by Y = 1
+  Size jointCount = 8;
+  this.jointXfos.resize( jointCount );
+  for( Size i = 0; i < jointCount; ++i )
+    this.jointXfos[i].tr = Vec3(0,1,0);
+}
+
+/// This command sets the Xfo of a chain joint
+object MoveChainJointExampleCommand : BaseScriptableCommand{};
+
+MoveChainJointExampleCommand() {
+  this.declareArg( "jointIndex", // name
+                   UInt32, // arg data type
+                   CommandArgFlag_IN ); // input arg
+
+  this.declareArg( "xfo", // name
+                   Xfo, // arg data type
+                   CommandArgFlag_IN ); // input arg
+
+  this.declareArg( "chain", // name
+                   ChainExampleData, // arg data type
+                   CommandArgFlag_IO // input and output arg
+                   | CommandArgFlag_CLONE_FOR_UNDO ); // Be lazy; just restore clone when undoing
+
+  // Note: since we use the CommandArgFlag_CLONE_FOR_UNDO flag, we don't need to write a specialized undoIt()
+  // Also, since merged commands simply overwrite each others, and don't accumulate, and since
+  // undo data is managed by base class (CommandArgFlag_CLONE_FOR_UNDO flag) the we don't need 
+  // to write a specialized merge(). See DrawColoredPointsExampleCommand for an example of
+  // a command which implements all these methods.
+}
+
+Boolean MoveChainJointExampleCommand.canUndo() { return true; }
+
+Boolean MoveChainJointExampleCommand.doIt!( io String error ) {
+  if( !this.parent.doIt( error ) )// Call parent first
+    return false;
+
+  return this.redoIt();
+}
+
+Boolean MoveChainJointExampleCommand.redoIt!( ) {
+  if( !this.parent.redoIt() )// Call parent first
+    return false;
+
+  // fetch agr values
+  UInt32 jointIndex = this.getArgValue( "jointIndex" );
+  Xfo xfo = this.getArgValue( "xfo" );
+  ChainExampleData chain = this.getArgValue( "chain" );
+
+  // do the modification
+  chain.jointXfos[jointIndex] = xfo;
+
+  // set back results
+  this.setArgValue( "chain", RTVal( chain ) );
+
+  return true;
+}
+
+/// The MoveChainTransformTarget object contains the chainData to be modified, but also implements TransformTarget, 
+/// which allows to use built-in transform interaction components and simplify the tool.
+object MoveChainTransformTarget : TransformTarget{
+  ChainExampleData chain;
+  UInt32 selectedElement;
+
+  // We merge commands for a single click-and-drag; see :ref:`TPG.command_merge` 
+  // (12_SimpleDrawPointsTool.kl) for more details
+  String targetPath;
+  SInt32 commandMergeID;
+};
+
+MoveChainTransformTarget() {
+  this.commandMergeID = NoCanMergeID;// set as uninitialized
+  this.selectedElement = InvalidIndex;// set as uninitialized
+}
+
+MoveChainTransformTarget.update!( String targetPath, ChainExampleData chain ) {
+  this.targetPath = targetPath;
+  // Because we're setting directly chain.jointXfos[],
+  // and arrays are shared, and the command copies the chain
+  // for undo, keep it simple and just clone to preserve
+  // the previous values.
+  this.chain = chain.clone();
+}
+
+/// TransformTarget interface implementation.
+String MoveChainTransformTarget.getTransformSpace() {
+  return WorldSpace;
+}
+
+/// TransformTarget interface implementation.
+Xfo MoveChainTransformTarget.getLocalTransform() {
+  if( this.selectedElement == InvalidIndex )
+    return Xfo();
+  else
+    return this.chain.jointXfos[this.selectedElement];
+}
+
+/// TransformTarget interface implementation.
+Mat44 MoveChainTransformTarget.getParentTransform() {
+  if( this.selectedElement == InvalidIndex )
+    return Mat44();
+  else {
+    Mat44 parentTransform();
+    // Return the proper composition of previous transforms
+    for( Size i = 1; i <= this.selectedElement; ++i )
+      parentTransform = parentTransform * this.chain.jointXfos[i-1].toMat44();
+    return parentTransform;
+  }
+}
+
+/// TransformTarget interface implementation.
+MoveChainTransformTarget.setLocalTransform!( Xfo transform ) {
+  if( this.selectedElement != InvalidIndex ) {// ignore if no joint is selected
+    this.chain.jointXfos[this.selectedElement] = transform;
+    this.createCommand( false );
+  }
+}
+
+/// TransformTarget interface implementation.
+MoveChainTransformTarget.beginChanges!( ) {
+  this.commandMergeID = GetCommandManager().getNewCanMergeID();
+}
+
+/// TransformTarget interface implementation.
+MoveChainTransformTarget.endChanges!( ) {
+  if( this.selectedElement != InvalidIndex )// ignore if no joint is selected
+    this.createCommand( true );
+}
+
+/// Create the command that will set the selected joint's Xfo (this.selectedElement)
+MoveChainTransformTarget.createCommand!( Boolean endChanges ) {
+  // Might seem redundant since the tool has already
+  // set this.chain.jointXfos[this.selectedElement],
+  // but the Xfo needs to be set on the
+  // external data corresponding to this.targetPath
+  // so undo/redo and scripting works properly.
+  RTVal args[String];
+  args["chain"] = PathValue( this.targetPath );
+  args["jointIndex"] = this.selectedElement;
+  args["xfo"] = this.chain.jointXfos[this.selectedElement];
+
+  // create and schedule the command
+  Ref<CommandManager> commandManager = GetCommandManager();
+  MoveChainJointExampleCommand cmd = commandManager.scheduleCommand( "MoveChainJointExampleCommand", args, this.commandMergeID );
+
+  // Managing the fact that we only want the command to be logged
+  // and added to the undo stack at the end of the drag move
+  if( endChanges )
+    this.commandMergeID = NoCanMergeID;// Next click/move will be a new move (logged command)
+  else
+    cmd.blockLog();
+}
+
+/// The MoveChainToolData object specializes MoveChainTransformTarget by implementing low-level drawing
+/// and selection routines (SelectionDrawableItem). While it could have been simpler to use Tool shapes or 
+/// InlineDrawing instances to do this, this example shows how to control drawing and selection at a low level.
+///
+/// The MoveChainInlineDrawingToolData example does the same, but by using InlineDrawing to draw
+/// and selection. Another high-level way to do it which uses only the tool framework
+/// and not InlineDrawing is to use the Tool::BaseShape.getSelectionDrawableItem()
+/// service as done by GeometrySelectionTool.
+///
+/// Note: we separated MoveChainToolData from MoveChainTransformTarget since the MoveChainInlineDrawingExampleTool 
+/// will implement a different specialization.
+///
+object MoveChainToolData : MoveChainTransformTarget, SelectionDrawableItem{
+
+  OGLBuffer_ positions;
+  OGLBuffer_ colors;
+  OGLBuffer_ lineElements;
+  OGLContext glContext;
+
+  OGLProgramParamValues shaderValues;
+  OGLProgram shader;
+
+  UInt32 highlightElement;
+};
+
+MoveChainToolData() {
+  // Internal detail (we're using OGLWrappers services)
+  this.glContext = OGLContext();
+  this.highlightElement = InvalidIndex;// set as uninitialized
+}
+
+/// SelectionDrawableItem interface implementation.
+/// This method draws the chain in OpenGL using low-level wrappers,
+/// and sets a different color for highlit and selected elements.
+/// The code itself is mostly internal details.
+MoveChainToolData.draw!( Ref<Viewport> viewport ) {
+  // Please don't read this unless you're very curious about
+  // how to use Fabric's OGLWrapper objects :-)
+
+  // GL object must be created at draw time, since they
+  // required that a valid GL draw context is bound.
+
+  // Reset glContext from current
+  Ref<OGLContext> context = this.glContext;
+  context.initializeFromCurrentContext();
+  context.stateCache.reset();
+
+  // Initialize GL objects if not done already
+  if( !this.positions ) {
+    this.shader = OGLProgram();
+    this.shaderValues = OGLProgramParamValues();
+
+    // Build a simple shader for vertex colors
+    this.shader.addShader( "
+      #version 150
+      uniform mat4 transform;
+      in vec4 positions;
+      in vec4 colors;
+      out vec4 v_color;
+
+      void main() {
+        gl_Position = transform * positions;
+        v_color = colors;
+      }
+    ", GL_VERTEX_SHADER );
+
+    this.shader.addShader( "
+      #version 150
+      in vec4 v_color;
+      out vec4 out_fragColor;
+
+      void main() {
+        out_fragColor = v_color;
+      }
+    ", GL_FRAGMENT_SHADER);
+
+    // compile
+    this.shader.create( context );
+    this.shaderValues.initialize( this.shader, null );
+
+    // Assign buffers
+    this.positions = OGLBuffer_();
+    this.lineElements = OGLBuffer_();
+    this.colors = OGLBuffer_();
+
+    this.shaderValues.setVertexAttrib( this.shader.getParameterKey( "positions" ), this.positions );
+    this.shaderValues.setVertexAttrib( this.shader.getParameterKey( "colors" ), this.colors );
+  }
+
+  Mat44 transform = viewport.getProjectionMat() * viewport.getViewMat();
+  this.shaderValues.setUniform( this.shader.getParameterKey( "transform" ), transform );
+
+  // Always update buffers; don't care about performance here
+  Vec3 positions[];
+  Color colors[];
+  UInt32 lineElements[];
+
+  positions.resize( this.chain.jointXfos.size() );
+  colors.resize( this.chain.jointXfos.size() );
+  Mat44 cumulativeTransform;
+
+  for( Size i = 0; i < this.chain.jointXfos.size(); ++i ) {
+    cumulativeTransform = cumulativeTransform * this.chain.jointXfos[i].toMat44();
+    positions[i] = cumulativeTransform.translation();
+
+    // Draw highlight as white, >= selected as red,
+    // else gray.
+    colors[i] = Color( 0.6f );
+    if( this.highlightElement == i )
+      colors[i] = Color( 1.0f );
+    else if( i >= this.selectedElement )
+      colors[i] = Color(1.0f,0.0,0.0);
+
+    if( i ) {
+      // Add line indices
+      lineElements.push( i-1 );
+      lineElements.push( i );
+    }
+  }
+
+  this.lineElements.loadElementArray( lineElements, context );
+  this.positions.load( positions, context );
+  this.colors.load( colors, context );
+
+  this.shaderValues.activate( context );
+
+  // Draw
+  context.stateCache.pointSize( this.chain.jointDrawSize );
+  glDrawArrays( GL_POINTS, 0, positions.size() );
+
+  Data NULL;
+  context.stateCache.bindBuffer( GL_ELEMENT_ARRAY_BUFFER, this.lineElements.bufferID );
+  glDrawElements( GL_LINES, this.lineElements.elementCount, this.lineElements.elementGLType, NULL );
+}
+
+/// SelectionDrawableItem interface implementation.
+String MoveChainToolData.getCustomTransformShaderName() {
+  return String();// no custom shader in this case
+}
+
+/// SelectionDrawableItem interface implementation.
+MoveChainToolData.buildCustomTransformShader( String shaderName, io OGLProgram shader ) {}// no custom shader
+
+/// SelectionDrawableItem interface implementation.
+MoveChainToolData.prepareForSelectionDraw!(
+  SelectionManagerDrawListKey userKey,
+  UInt8 selectionMode,
+  Ref<Viewport> viewport,
+  io UInt32 glInstanceCount,
+  io Mat44 transform,
+  io OGLBuffer_ positionsBuffer,
+  io OGLBuffer legacyPositionsBuffer,
+  io Ref<OGLProgramParamValues> shaderParamValues,
+  io Ref<OGLContext> context ) {
+
+  // Here we can assume that the chain was drawn already, so GL buffers already exist.
+  transform = viewport.getProjectionMat() * viewport.getViewMat();
+  positionsBuffer = this.positions;
+}
+
+/// SelectionDrawableItem interface implementation.
+Ref<Geometry> MoveChainToolData.getGeometry( SelectionManagerDrawListKey userKey ) {
+  // not applicable in this case; this allows built-in component services for existing geometries
+  return null;
+}
+
+/// Draw the GL primitives. The shader and its values
+/// has already been setup by the selection manager.
+MoveChainToolData.drawGLPrimitivesForSelection!(
+  SelectionManagerDrawListKey userKey,
+  UInt8 selectionMode,
+  Mat44 positionsTransform,
+  UInt32 shaderPrimitiveIndex,
+  io Ref<OGLContext> context ) {
+
+  context.stateCache.pointSize( this.chain.jointDrawSize );
+  glDrawArrays( GL_POINTS, 0, this.chain.jointXfos.size() );
+}
+
+/// Returns the mapping from primitiveIDs to component indices.
+/// In this case it's a direct match.
+UInt32[] MoveChainToolData.primitiveIDsToComponents( UInt8 selectionMode, IndexSet primitiveIDs ) {
+  UInt32 indices<> = primitiveIDs.getIndices();
+  UInt32 result[];
+  for( Size i = 0; i < indices.size(); ++i )
+    result.push( indices[i] );
+  return result;
+}
+
+/// SelectionDrawableItem interface implementation.
+/// We don't need to support this, since we don't integrate with the BaseSelectionTool or its specializations
+MoveChainToolData.drawGLComponents!( SelectionManagerDrawListKey userKey, io Ref<ItemReference> itemAndComponents, Ref<Viewport> viewport, io Ref<OGLContext> context ) {}
+
+/// The tool contains a MoveChainToolData, and
+/// manages its selection, draw and modification.
+///
+/// The tool manages its states and interactions
+/// at an intermediate level; it doesn't use
+/// built-in tools such as the GeometrySelection tool
+/// or the TransformTool, but it uses some interaction
+/// components such as TranslateDragInteraction.
+object MoveChainLowLevelExampleTool : Tool::BaseTool{
+  MoveChainToolData chainData;
+};
+
+MoveChainLowLevelExampleTool() {
+  this.chainData = MoveChainToolData();
+
+  // Register to raw UI events so we get the mouse moves directly
+  this.registerToRawEvents( true );
+
+  // We use a TranslateDragInteraction to simplify the example.
+  // This maps mouse moves to Xfo translation changes, in viewport
+  // aligned space. Note that we cannot use the higher-level
+  // TranslateInViewportTool since we are not building a gizmo (3D handle)
+  // but rather working directly on the source data.
+  TranslateDragInteraction translateDrag( MouseClickDragInteraction(), this.chainData );
+  this.attachComponent( translateDrag );
+}
+
+MoveChainLowLevelExampleTool.update!( String targetPath, ChainExampleData chainData ) {
+  this.chainData.update( targetPath, chainData );
+}
+
+/// We manage the drawing ourselves at the low level; call into MoveChainToolData.draw()
+MoveChainLowLevelExampleTool.postDraw!( Tool::DrawContext context, String drawPass, io Boolean drawChildren ) {
+  this.parent.postDraw( context, drawPass, drawChildren );
+  if( drawPass == OnTopWithRelativeDepthRenderPass )
+    this.chainData.draw( context.viewport );
+}
+
+MoveChainLowLevelExampleTool.onRawEvent!( io Event event ) {
+  MouseEvent mouseEvent = event;
+  if( Boolean(mouseEvent) && !mouseEvent.isAccepted() ) {
+    Boolean mouseOver = !mouseEvent.buttons && mouseEvent.eventType() == Event_MouseMove;
+    Boolean mouseClick = (mouseEvent.buttons | mouseEvent.button ) == MouseButton_LeftButton && mouseEvent.eventType() == Event_MouseButtonPress;
+
+    if( mouseOver || mouseClick ) {
+
+      if( mouseClick )
+        this.chainData.selectedElement = InvalidIndex;
+
+      // Setup a draw list to be used by the selection manager and query the selected primitives.
+      // In this case there is only one SelectionDrawableItem, and it's the chain.
+      SelectionManagerDrawList drawList();
+      drawList.addItem( this.chainData, SelectionManagerDrawListKey() );
+
+      UInt32 itemIndices[];
+      UInt32 primitivesPerItem[][];
+
+      // Select the closest point that is under the mouse (rectangle of 6X6).
+      // The SelectionManager has a lot of flexibility in its options;
+      // see BaseSelectionTool for examples of advanced usage.
+      Ref<SelectionManager> selectionManager = GetSelectionManager();
+      selectionManager.select( drawList, GetCurrentEventContext().viewport,
+                               mouseEvent.pos - Vec2( 3 ), mouseEvent.pos + Vec2( 3 ), // select in a slightly larger window, so the mouse can be at a distance of 3 pixels
+                               SelectionMode_Points, // we are selecting points
+                               SelectedGroupType_closest, // select only the closest one (not all overlaps)
+                               false, // don't depth mask with geometry
+                               itemIndices, primitivesPerItem ); // results
+
+      if( itemIndices ) {
+        // We're selecting closest component only, so there must be one index only
+        Size jointIndex = primitivesPerItem[0][0];
+
+        if( this.chainData.highlightElement != jointIndex ) {
+          report( "Mouse is over joint #" + jointIndex );
+          this.chainData.highlightElement = jointIndex;
+        }
+
+        this.chainData.highlightElement = jointIndex;
+
+        if( mouseClick ) {
+          // Change selected component. We could also check for modifiers (shift, ctrl) for
+          // adding/removing to/from selection. Also, instead of using a single selection, 
+          // we could use the generic, persistable ItemReferences container.
+          // See BaseSelectionTool for an example of how to implement these
+          // higher-level behaviors using the tool framework.
+          this.chainData.selectedElement = jointIndex;
+          report( "Selected joint #" + jointIndex );
+        }
+      } else
+        this.chainData.highlightElement = InvalidIndex;
+
+      ToolChanged(); // Tell the tool manager that we need to redraw
+    }
+  }
+}

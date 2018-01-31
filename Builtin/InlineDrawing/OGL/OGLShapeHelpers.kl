@@ -1,0 +1,126 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Geometry;
+
+
+/// \internal
+/// Returns the max value of the array.
+function UInt32 OGLShape_GetArrayMaxValue(UInt32 array[]) {
+  UInt32 maxRange = 0;
+  for( Size i = 0; i < array.size(); ++i )
+  {
+    if(array[i] > maxRange )
+      maxRange = array[i];
+  }
+  return maxRange;
+}
+
+/// \internal
+/// Returns the max value of the array.
+function UInt32 OGLShape_GetArrayMaxValue(SInt32 array[]) {
+  UInt32 maxRange = 0;
+  for( Size i = 0; i < array.size(); ++i )
+  {
+    if(array[i] > maxRange )
+      maxRange = array[i];
+  }
+  return maxRange;
+}
+
+/// \internal
+/// Checks that the GeometryAttributes arrays are in the range of the indices
+function Boolean OGLShape_CheckGeometryAttributesIndicesRange(GeometryAttributes attributes, UInt32 maxIndicesRange) {
+
+  GeometryAttributesIterator ite = attributes.getAttributesIterator();
+  Ref<GeometryAttribute> attr = ite.getNext();
+  while(attr)
+  {
+    if(attr.size() - 1 < maxIndicesRange)
+    {
+      setError("OGLShape_CheckGeometryAttributesIndicesRange : " + attr.getName() + " attribute, " +
+        "the attribute array dimension is out of the indices range : " + String(attr.size() - 1) + " < " + maxIndicesRange + "), bad allocation");
+      return false;
+    }
+    attr = ite.getNext();
+  }
+
+  return true;
+}
+
+/// \internal
+function OGLShape_updateGeometryAttributeBuffers(io DrawContext context, io OGLBufferDictionary buffers, GeometryAttributes attributes) {
+  
+
+  Data NULL;
+  Ref<InlineShader> shader = context.getMetaData('currentShader');
+  InlineInstance instance = context.getMetaData('currentInstance');
+
+  for(Size i=0; i<shader.getAttributeCount(); i++) 
+  {
+    String name = shader.getAttributeName(i);
+    Integer locationInt = shader.getAttributeID(name);
+    if(locationInt == -1)
+    {
+      report("WARNING: Shader was not compiled with the attribute:" + name);
+      continue;
+    }
+
+    String attributeName = instance.getMappedAttributeName(name);
+    if(!attributes.has(attributeName))
+    {
+      if(!attributeName.startsWith('hw_inst_'))
+      {
+        report("Error rendering :'"+instance.getName() +"' geometry with shader '" + shader.getName() + "' : Geometry does not have the attribute:" + attributeName);
+      }
+      continue;
+    }
+
+
+    OGLBuffer buffer = buffers.get(name);
+    if(buffer == null) 
+    {
+      buffer = OGLBuffer();
+      buffer.bufferType = GL_ARRAY_BUFFER;
+      buffer.bufferUsage = GL_DYNAMIC_DRAW;
+      buffers.set(name, buffer);
+    }
+
+    GeometryAttribute attr = attributes.getAttribute(attributeName);
+    if( Fabric_Guarded && !Fabric_OnGPU )
+    {
+      if(!attr.checkConsistency())
+      {
+        setError("OGLShape_updateGeometryAttributeBuffers : " + attr.getName() + ", bad allocation");
+        return;
+      }
+    }
+
+    UInt32 version = attr.getVersion();
+    if(version == 0 && attr.size() > 0)
+    {
+      InlineShape shape = context.getMetaData('shape');
+      report("Warning when drawing "+shape.getName() + ": attribute '"+attributeName+"' version has not been incremented. Call attribute.incrementVersion after making data changes.");
+      return;
+    }
+
+    if(buffers.getVersion(name) != version) 
+    {
+      RTRAttributeWrapper wrapper = CreateGeneratorAttributeWrapper(attr);
+      buffer.elementCount = attr.size();
+      wrapper.loadToOGLBuffer(buffer);
+      buffers.setVersion(name, attr.getVersion());
+    }
+
+    Size location = locationInt;
+
+    glBindBuffer(buffer.bufferType, buffer.bufferID);
+    glEnableVertexAttribArray(location);
+    glVertexAttribPointer(location, buffer.numBufferElementComponents, buffer.bufferElementComponentType, GL_FALSE, 0, NULL);
+
+    glBindBuffer(buffer.bufferType, 0);
+  }
+
+  return;
+}

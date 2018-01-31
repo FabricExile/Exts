@@ -1,0 +1,154 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// \internal
+  interface AddComponentAction_virtuals {
+    Ref<Component> getParentComponent();
+  };
+
+/**
+
+\versionadded 2.6.0
+\rst
+
+The AddComponentAction will add a child component to a target parent, and
+optionally remove it (undo) upon destruction (~AddComponentAction).
+
+The target parent can be set explicitly, else the parent of the AddChildAction will be used.
+
+An AddChildAction is useful for temporarily adding a child to a BaseTool,
+particularly by linking that child lifetime to a state. For example:
+
+.. code-block:: kl
+
+  MyTool.onEnterState!( String newState, Boolean mainState ) {
+    if( newState == MyState ) {
+      MouseClickDragInteraction clickAndDragInteraction( MouseButton_MiddleButton );
+      this.attachAndDoStateSpecificAction( "ActiveTool", AddComponentAction( clickAndDragInteraction, true ) );
+      ...
+      return;
+    }
+  }
+
+The action can also be triggered (do + undo) by connected events; see :kl-ref:`Tool::BaseAction.connectToDo` and :kl-ref:`Tool::BaseAction.connectToUndo` .
+See :ref:`TPG.state-actions` for more details and examples related to states and actions.
+
+\endrst
+*/
+
+  object AddComponentAction : BaseAction, AddComponentAction_virtuals{
+    Component explicitParent;
+
+    Component component;
+    Boolean wasAdded;
+
+    Boolean removeOnDestroyEnabled;
+  };
+
+  /// Connects and attaches to the eventSource.
+  AddComponentAction( Ref<EventSource> eventSource, EventName sourceEventName, Ref<Component> component, Boolean removeOnDestroy ) {
+    this.removeOnDestroy( removeOnDestroy );
+    this.setComponent( component );
+    this.connectAndAttach( eventSource, sourceEventName );
+  }
+
+  AddComponentAction( Ref<Component> component, Boolean removeOnDestroy ) {
+    this.removeOnDestroy( removeOnDestroy );
+    this.setComponent( component );
+  }
+
+  /// \internal
+  AddComponentAction.removeComponentIfApplicable!( ) {
+    if( this.wasAdded && Boolean( this.component ) ) {
+      this.component.setParent( null );// detach
+      this.component = null;
+    }
+  }
+
+  AddComponentAction.setComponent!( Ref<Component> component ) {
+    this.removeComponentIfApplicable();
+
+    this.component = component;
+    if( this.wasAdded ) {
+      // If it was added already, replace right now
+      this.wasAdded = false;
+      this.doAction();
+    }
+  }
+
+  AddComponentAction.setExplicitParent!( Ref<Component> explicitParent ) {
+    if( this.explicitParent !== explicitParent ) {
+      if( Boolean( this.explicitParent ) && this.wasAdded )
+        setError( "AddComponentAction.setExplicitParent: unsupported: setting an explicit parent after the component was added" );
+      else
+        this.explicitParent = explicitParent;
+    }
+  }
+
+  /// Enable undo on delete
+  AddComponentAction.removeOnDestroy!( Boolean enable ) {
+    this.removeOnDestroyEnabled = enable;
+  }
+
+  AddComponentAction.connectAndAttach!( Ref<EventSource> eventSource, EventName sourceEventName, Ref<Component> component ) {
+    this.setComponent( component );
+    this.connectToDoAndAttach( eventSource, sourceEventName );
+  }
+
+  /// \internal
+  Ref<Component> AddComponentAction.getParentComponent() {
+    if( this.explicitParent )
+      return this.explicitParent;
+
+    Ref<Component> parent_ = GetParentHierarchyNode( this );
+    if( !parent_ )
+      parent_ = this.getParent();
+    return parent_;
+  }
+
+  /// \internal
+  AddComponentAction.doAction!( ) {
+    if( Boolean( this.component ) && !this.wasAdded ) {
+      Ref<Component> parentComponent = this.getParentComponent();
+      if( !parentComponent ) {
+        setError( "AddComponentAction.doAction: no parent was returned by getParentComponent(); you need to attach this action first" );
+        return;
+      }
+
+      if( ToolEventDebugTrace )
+        report( "AddComponentAction: " + GetComponentName( parentComponent ) + "/" + this.component.getName() );
+
+      this.component.setParent( parentComponent );
+      this.wasAdded = true;
+    }
+    this.parent.doAction();
+  }
+
+  /// \internal
+  /// Non-virtual version that can be safely called from the destructor
+  /// This can be removed once KL is fixed to not call specialized methods in destructors
+  AddComponentAction.undoActionInternal!( ) {
+    this.removeComponentIfApplicable();
+    this.wasAdded = false;
+    this.parent.undoAction();
+  }
+
+  /// \internal
+  AddComponentAction.undoAction!( ) {
+    this.undoActionInternal();
+  }
+
+  AddComponentAction.invalidate!( ) {
+    if( this.removeOnDestroyEnabled )
+      this.undoActionInternal();
+    this.parent.invalidate();
+  }
+
+  ~AddComponentAction() {
+    if( this.removeOnDestroyEnabled )
+      this.undoActionInternal();
+  }
+}// namespace Tool

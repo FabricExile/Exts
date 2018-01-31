@@ -1,0 +1,76 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "stores the value in the property as a Box2.\n\nSupported types:\n  this: AlembicPropertyWriter\n  value: Box2\n  result: Boolean\n"
+    },
+  "title" : "WriteBox2Sample[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicPropertyWriter[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "value",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Box2[]" : [
+          {
+            "min" : {
+              "x" : null,
+              "y" : null
+              },
+            "max" : {
+              "x" : null,
+              "y" : null
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Box2[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "25834F65070B1361327A9B15B5469A89",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicPropertyWriter_writeBox2Sample_task<<<index>>>(
+  io Boolean[] result
+, io AlembicPropertyWriter[] this
+, in Box2[] value
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].writeBox2Sample(value[index < value.size() ? index : value.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( value.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < value.size()) task_size = value.size();
+  result.resize(task_size);
+  for(Size index = 0; index < task_size; index++) {
+    AlembicWrapper_AlembicPropertyWriter_writeBox2Sample_task(index, result, this, value);
+  }
+}
+"
+  }

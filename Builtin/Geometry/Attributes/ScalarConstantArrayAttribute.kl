@@ -1,0 +1,175 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  Specialized GeometryAttribute containing a constant sized arrays of Scalar, packed as a single memory buffer.
+  The ScalarConstantArrayAttribute.setArraySize method sets a constant array size for all values.
+  Values can be accessed with the ScalarConstantArrayAttribute.values array member, but its usage might be restricted by the owner Geometry.
+*/
+//Scalar constant array attribute: scalar vectors of uniform size
+object ScalarConstantArrayAttribute : BaseAttribute {
+  /// Values array container
+  Scalar values[];
+  /// \internal
+  Size arraySize;
+};
+
+function StatisticRecord[] ScalarConstantArrayAttribute.getStatistics() {
+  StatisticRecord stats[] = this.parent.getStatistics();
+  stats.push( StatisticRecord( Statistic_MemoryUsage, this.values.size()*4 ) );
+  return stats;
+}
+
+/// \dfgPresetOmit
+ScalarConstantArrayAttribute.cloneMembersTo( io ScalarConstantArrayAttribute that ) {
+  //The difference with default clone() is that new.parent.autoStat will point to 'new' (from constructor)
+  this.parent.cloneMembersTo(that);//Copies all but the values
+  that.arraySize = this.arraySize;
+  that.copyFrom(this);
+}
+
+inline ScalarConstantArrayAttribute.setArraySize!(Size arraySize) {
+  if( this.arraySize != arraySize ) {
+    this.arraySize = arraySize;
+    this.resize(this.count);
+  }
+}
+
+inline ScalarConstantArrayAttribute.resize!(Size count) {
+  this.parent.resize(count);
+  this.values.resize(count * this.arraySize);
+}
+
+inline Data ScalarConstantArrayAttribute.data() {
+  return this.values.data();
+}
+
+inline Boolean ScalarConstantArrayAttribute.checkConsistency() {
+  if( this.size() != this.values.size()/this.arraySize )
+    return false;
+  return this.parent.checkConsistency();
+}
+
+inline UInt32 ScalarConstantArrayAttribute.getElementsMemType( ) {
+  return this.values.getElementsMemType();
+}
+
+inline ScalarConstantArrayAttribute.convertToGPU!( ) {
+  this.values.convertToGPU();
+  this.incrementVersion();
+}
+
+inline ScalarConstantArrayAttribute.convertToCPU!( ) {
+  this.values.convertToCPU();
+  this.incrementVersion();
+}
+
+inline Scalar ScalarConstantArrayAttribute.get(Size index, Size offset) {
+  return this.values[index * this.arraySize + offset];
+}
+
+inline ScalarConstantArrayAttribute.copyValue!( Size sourceIndex, Size targetIndex ) {
+  for(Size i = 0; i < this.arraySize; ++i)
+    this.values[targetIndex*this.arraySize+i] = this.values[sourceIndex*this.arraySize+i];
+}
+
+inline ScalarConstantArrayAttribute.copyValue!( Ref<Object> sourceAttr, Size sourceIndex, Size targetIndex ) {
+  Ref<ScalarConstantArrayAttribute> source = sourceAttr;
+  for(Size i = 0; i < this.arraySize; ++i)
+    this.values[targetIndex*this.arraySize+i] = source.values[sourceIndex*this.arraySize+i];
+}
+
+inline ScalarConstantArrayAttribute.copyFrom!( Ref<Object> otherAttr ) {
+  this.parent.copyFrom( otherAttr );
+  Ref<ScalarConstantArrayAttribute> other = otherAttr;
+  other.values.copyTo(this.values);
+}
+
+/** Returns a linear combination of source values.
+    \param sourceIndices The array of source indices
+    \param sourceWeights The array of source weights, which need to correspond to each sourceIndices. Normally the sum of the weights should be 1.0
+*/
+inline LocalL16ScalarArray ScalarConstantArrayAttribute.getLinearCombination( LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights ) {
+  LocalL16ScalarArray resultVector;
+  resultVector.resize(this.arraySize);
+  for(Size i = 0; i < this.arraySize; ++i) {
+    //Could be optimized for SIMD..
+    Scalar result;
+    for( Size j = 0; j < sourceIndices.size(); ++j )
+      result += this.values[sourceIndices.get(j)*this.arraySize+i]*sourceWeights.get(j);
+    resultVector.set(i, result);
+  }
+  return resultVector;
+}
+
+inline ScalarConstantArrayAttribute.linearCombine!( Ref<Object> sourceAttr, LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights, Size targetIndex ) {
+  Ref<ScalarConstantArrayAttribute> source = sourceAttr;
+  for(Size i = 0; i < this.arraySize; ++i) {
+    //Could be optimized for SIMD..
+    Scalar result;
+    for( Size j = 0; j < sourceIndices.size(); ++j )
+      result += source.values[sourceIndices.get(j)*this.arraySize+i]*sourceWeights.get(j);
+    this.values[targetIndex*this.arraySize+i] = result;
+  }
+}
+
+inline ScalarConstantArrayAttribute.setValue!( Size index, LocalL16ScalarArray value ) {
+  for(Size i = 0; i < this.arraySize; ++i)
+    this.values[index*this.arraySize+i] = value.get(i);
+}
+
+inline ScalarConstantArrayAttribute.setFromScalar!( Size index, LocalL16ScalarArray value ) {
+  this.setValue(index, value);
+}
+
+inline Size ScalarConstantArrayAttribute.getScalarValueSize() {
+  return this.arraySize;
+}
+
+inline Boolean ScalarConstantArrayAttribute.equalValues( Size index1, Size index2 ) {
+  for(Size i = 0; i < this.arraySize; ++i) {
+    if( this.values[index1*this.arraySize+i] != this.values[index2*this.arraySize+i])
+      return false;
+  }
+  return true;
+}
+
+function String ScalarConstantArrayAttribute.valueDesc( Size index ) {
+  String desc = "[";
+  for(Size i = 0; i < this.arraySize; ++i) {
+    if(i)
+      desc += ', ';
+    desc += this.values[index*this.arraySize+i];
+  }
+  desc += "]";
+  return desc;
+}
+
+require Util;
+function String ScalarConstantArrayAttribute.unitTestPrint( Size index ) {
+  String desc = "[";
+  for(Size i = 0; i < this.arraySize; ++i) {
+    if(i)
+      desc += ', ';
+    desc += unitTestPrint(this.values[index*this.arraySize+i]);
+  }
+  desc += "]";
+  return desc;
+}
+
+function String ScalarConstantArrayAttribute.truncateDecimalsPrint( Size index, UInt32 n ) {
+  String desc = "[";
+  for(Size i = 0; i < this.arraySize; ++i) {
+    if(i)
+      desc += ', ';
+    desc += truncateDecimalsPrint(this.values[index*this.arraySize+i], n);
+  }
+  desc += "]";
+  return desc;
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+function Ref<ScalarConstantArrayAttribute> GeometryAttributes.getOrCreateScalarConstantArrayAttribute!( String name ) {
+  return this.getOrCreateAttribute( name, ScalarConstantArrayAttribute );
+}

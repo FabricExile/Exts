@@ -1,0 +1,27 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// Unit sphere shape (radius = 1)
+  ///
+  /// See :ref:`TPG.drawing` for more information about drawing tool shapes.
+  object SphereShape : GeometricShape{};
+
+  SphereShape( Scalar radius ) {
+    this.setRadius( radius );
+  }
+
+  SphereShape() {
+    this.setRadius( 1 );
+  }
+
+  SphereShape.setRadius!( Scalar radius ) {
+    // TODO: share that mesh for all sphere shapes (use ToolSharedData)
+    PolygonMesh mesh();
+    mesh.addSphere( Xfo(), radius, 20, 20, true, true );
+    this.setGeometry( mesh );
+  }
+
+}// namespace Tool

@@ -1,0 +1,111 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Xfo.html",
+    "uiTooltip" : "Transforms a vector with this transform\n\n Supported by Xfo"
+    },
+  "title" : "TransformRay[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 249,\n  \"g\" : 157,\n  \"b\" : 28\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Xfo[]" : [
+          {
+            "ori" : {
+              "v" : {
+                "x" : 0,
+                "y" : 0,
+                "z" : 0
+                },
+              "w" : 1
+              },
+            "tr" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              },
+            "sc" : {
+              "x" : 1,
+              "y" : 1,
+              "z" : 1
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Xfo[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "ray",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Ray[]" : [
+          {
+            "start" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              },
+            "direction" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Ray[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Ray[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "FB1D278C41A9886023A6384F85A951BB",
+  "code" : "require Math;
+
+operator Math_Xfo_transformRay_task<<<index>>>(
+  io Ray[] result
+, in Xfo[] this
+, in Ray[] ray
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].transformRay(ray[index < ray.size() ? index : ray.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( ray.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < ray.size()) task_size = ray.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Xfo_transformRay_task(index, result, this, ray);
+    }
+  } else {
+    Math_Xfo_transformRay_task<<<task_size>>>(result, this, ray);
+  }
+}
+"
+  }

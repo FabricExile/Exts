@@ -1,0 +1,192 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  const String CheckBoxWidget_onClicked = "checkBoxClicked";
+  const String CheckBoxWidget_onChecked = "checkBoxChecked";
+  const String CheckBoxWidget_onUnchecked = "checkBoxUnchecked";
+
+  /// Allows to abstract the data container linked to a CheckBoxWidget.
+  interface CheckBoxTarget {
+    Boolean getValue();
+    setValue!( Boolean value );
+  };
+
+  /// The CheckBoxWidget allows to control a Boolean data (abstracted by the CheckBoxTarget)
+  /// with a 2D HUD checkbox widget (which can be textured).
+  /// A group of CheckBoxWidget can also collectively act as a radio button widget
+  /// by linking them with a :kl-ref:`Tool::RadioButtonBehavior`.
+  ///
+  /// See :ref:`TPG.2Dwidgets` for an overview of available 2D tool widgets and examples.
+  object CheckBoxWidget : IconWidget{
+    RTVal uncheckedColor;
+    RTVal uncheckedHighlightColor;
+    RTVal checkedColor;
+    RTVal checkedHighlightColor;
+    Boolean disableUncheckClick;
+
+    Key assignedKey;
+
+    CheckBoxTarget target;
+  };
+
+  CheckBoxWidget( CheckBoxTarget target, Vec2 pixelSize, Image2D uncheckedTexture, Image2D uncheckedHighlightTexture, Image2D checkedTexture, Image2D checkedHighlightTexture ) {
+    this.construct( target, pixelSize, RTVal( uncheckedTexture ), RTVal( uncheckedHighlightTexture ), RTVal( checkedTexture ), RTVal( checkedHighlightTexture ) );
+  }
+
+  CheckBoxWidget( CheckBoxTarget target, Vec2 pixelSize, Color uncheckedColor, Color uncheckedHighlightColor, Color checkedColor, Color checkedHighlightColor ) {
+    this.construct( target, pixelSize, RTVal( uncheckedColor ), RTVal( uncheckedHighlightColor ), RTVal( checkedColor ), RTVal( checkedHighlightColor ) );
+  }
+
+  CheckBoxWidget.construct!( CheckBoxTarget target, Vec2 pixelSize, RTVal uncheckedColor, RTVal uncheckedHighlightColor, RTVal checkedColor, RTVal checkedHighlightColor ) {
+    this.parent.construct( pixelSize, uncheckedColor, uncheckedHighlightColor );
+    if( target )
+      this.target = target;
+    else
+      this.target = BasicCheckBoxTarget();
+
+    // When clicking on the bar, toggle the value
+    MouseClickRaycastInteraction clickInter();
+    this.iconShape.attachComponent( clickInter );
+    clickInter.addListener( this, false, MouseClickRaycastInteraction_SuccessEvent, CheckBoxWidget_onClicked );
+    this.setColors( uncheckedColor, uncheckedHighlightColor, checkedColor, checkedHighlightColor );
+    this.updateColors();// the target might be true already
+  }
+
+  CheckBoxWidget.setTarget!( CheckBoxTarget target ) {
+    this.target = target;
+    this.updateColors();
+  }
+
+  /// Assigns a key that will toggle (check/uncheck).
+  /// 0 == no assigned key.
+  CheckBoxWidget.assignKey!( Key key ) {
+    if( key != this.assignedKey ) {
+      if( !this.assignedKey )
+        this.registerToRawEvents( true );
+      this.assignedKey = key;
+    }
+  }
+
+  CheckBoxWidget.setColors!( RTVal uncheckedColor, RTVal uncheckedHighlightColor, RTVal checkedColor, RTVal checkedHighlightColor ) {
+    this.parent.setColors( uncheckedColor, uncheckedHighlightColor );
+    this.uncheckedColor = uncheckedColor;
+    this.uncheckedHighlightColor = uncheckedHighlightColor;
+    this.checkedColor = checkedColor;
+    this.checkedHighlightColor = checkedHighlightColor;
+  }
+
+  CheckBoxWidget.setChecked!( Boolean checked ) {
+    if( checked != this.target.getValue() ) {
+      this.target.setValue( checked );
+      this.updateColors();
+      this.sendEventToListeners( checked ? CheckBoxWidget_onChecked : CheckBoxWidget_onUnchecked );
+    }
+  }
+
+  /// \internal
+  CheckBoxWidget.updateColors!( ) {
+    if( this.target.getValue() )
+      this.parent.setColors( this.checkedColor, this.checkedHighlightColor );
+    else
+      this.parent.setColors( this.uncheckedColor, this.uncheckedHighlightColor );
+  }
+
+  CheckBoxWidget.toggle!() {
+    if( !this.disableUncheckClick || !this.target.getValue() )
+      this.setChecked( !this.target.getValue() );//Toggle
+  }
+
+  /// \internal
+  CheckBoxWidget.onRawEvent!( io Event event ) {
+    if( !this.isActive() )
+      return;
+
+    // TODO: use keymap global settings for QWER
+    Ref<KeyEvent> key = event;
+    if( Boolean( key ) && key.eventType == Event_KeyPress && key.key == this.assignedKey )
+      this.toggle();
+  }
+
+  /// \internal
+  CheckBoxWidget.onEvent!( ToolEvent event, ToolEventUserID userID ) {
+    if( event.name == CheckBoxWidget_onClicked )
+      this.toggle();
+    else
+      this.parent.onEvent( event, userID );
+  }
+
+  /// Advanced: replaces the interaction with MouseClickDragRaycastInteraction, and returns it.
+  /// Then, the checkbox will be clicked if the ToolEvent_DragBeginEndNoMove is sent. The DragBegin/Move/End
+  /// events can be used by the caller of this function.
+  Ref<MouseClickDragRaycastInteraction> CheckBoxWidget.useClickDragInteraction!( ) {
+    Component components[] = this.iconShape.getComponentsByType( MouseClickRaycastInteraction );
+    if( components )
+      this.iconShape.removeComponent( components[0] );
+
+    components = this.iconShape.getComponentsByType( MouseClickDragRaycastInteraction );
+    if( !components ) {
+      MouseClickDragRaycastInteraction clickInter();
+      this.iconShape.attachComponent( clickInter );
+      clickInter.addListener( this, false, ToolEvent_DragBeginEndNoMove, CheckBoxWidget_onClicked );
+      components.push( clickInter );
+    }
+    return components[0];
+  }
+
+  // Simple test checkbox target
+  object BasicCheckBoxTarget : CheckBoxTarget{
+    Boolean value;
+  };
+
+  BasicCheckBoxTarget() {
+    this.value = true;
+  }
+
+  Boolean BasicCheckBoxTarget.getValue() { return this.value; }
+  BasicCheckBoxTarget.setValue!( Boolean value ) { this.value = value; }
+  String BasicCheckBoxTarget.getDisplayValueString() { return this.value; }
+
+  CheckBoxWidget CreateDefaultSelectCheckBox() {
+    CheckBoxWidget checkBox( null, Vec2( 30 ),
+                             ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/Arrow.png" ),
+                             ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/ArrowHighlight.png" ),
+                             ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/ArrowChecked.png" ),
+                             ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/ArrowCheckedHighlight.png" ) );
+    checkBox.setToolTip( "Select" );
+    return checkBox;
+  }
+
+  CheckBoxWidget CreateDefaultTranslateCheckBox() {
+    CheckBoxWidget checkBox( null, Vec2( 30 ),
+                             ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/Translate.png" ),
+                             ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/TranslateHighlight.png" ),
+                             ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/TranslateChecked.png" ),
+                             ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/TranslateCheckedHighlight.png" ) );
+    checkBox.setToolTip( "Translate" );
+    return checkBox;
+  }
+
+  CheckBoxWidget CreateDefaultRotateCheckBox() {
+    CheckBoxWidget checkBox( null, Vec2( 30 ),
+                             ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/Rotate.png" ),
+                             ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/RotateHighlight.png" ),
+                             ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/RotateChecked.png" ),
+                             ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/RotateCheckedHighlight.png" ) );
+    checkBox.setToolTip( "Rotate" );
+    return checkBox;
+  }
+
+  CheckBoxWidget CreateDefaultScaleCheckBox() {
+    CheckBoxWidget checkBox( null, Vec2( 30 ),
+                             ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/Scale.png" ),
+                             ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/ScaleHighlight.png" ),
+                             ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/ScaleChecked.png" ),
+                             ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/ScaleCheckedHighlight.png" ) );
+    checkBox.setToolTip( "Scale" );
+    return checkBox;
+  }
+
+}// namespace Tool

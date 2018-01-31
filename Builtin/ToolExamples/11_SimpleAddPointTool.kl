@@ -1,0 +1,56 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+using namespace Tool;
+
+/// Simple "click and add point" tool which creates a AddPersistablePointsExampleCommand
+/// to add points when the mouse is clicked
+object SimpleAddPointTool : Tool::BaseTool{
+  String targetPath;
+  Points points;
+};
+
+SimpleAddPointTool() {
+  // register to raw events (mouse clicks)
+  this.registerToRawEvents( true );
+}
+
+SimpleAddPointTool.update!( String targetPath, Points points ) {
+  // Copy the target path so the command can target the right data
+  this.targetPath = targetPath;
+
+  // We don't actually need "points" in this simple example, but we could use it to display hints or various computations
+  this.points = points;
+}
+
+SimpleAddPointTool.onRawEvent!( io Event event ) {
+
+  Ref<MouseEvent> mouseEvent = event;
+  if( Boolean(mouseEvent) 
+      && mouseEvent.eventType() == Event_MouseButtonPress
+      && !mouseEvent.isAccepted() // not used by another tool
+      && ( mouseEvent.buttons | mouseEvent.button ) == MouseButton_LeftButton
+      && !mouseEvent.modifiers ) { // leave 'Alt-click' to camera tool
+
+      // Add a point at the current mouse position.
+      // Make this very simple: add a point at a distance of 5 from the camera
+      Viewport viewport = this.getManager().getCurrentEventContext().viewport;
+      Ray mouseRay = viewport.calcRayFromScreenPos( mouseEvent.pos );
+      Vec3 position = mouseRay.start + mouseRay.direction * 5;
+
+      RTVal args[String];
+      // set the pointCloud as a target path instead of an actual value
+      // to instruct the CommandManager that it must be fetched before/after
+      // executing the command
+      args["pointCloud"] = PathValue( this.targetPath );
+      args["pos"] = position;
+
+      // create and schedule the command
+      Ref<CommandManager> commandManager = GetCommandManager();
+      commandManager.scheduleCommand( "AddPersistablePointsExampleCommand", args );
+
+      mouseEvent.accept();//we used that mouse event
+  }
+}
+

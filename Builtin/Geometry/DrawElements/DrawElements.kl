@@ -1,0 +1,357 @@
+/*
+ *  Copyright 2010-2015 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+The DrawElements allows to define a simple mix of points, lines and triangles for debug drawing purposes.
+
+\example
+    DrawElements elements('debug');
+
+    // draw a couple of points
+    elements.drawPoint(Vec3(5, 0, 0));
+    elements.drawPoint(Vec3(0, 5, 0));
+    elements.drawPoint(Vec3(0, 0, 5));
+
+    // draw a couple of lines
+    elements.drawLine(Vec3(0, 0, 0), Vec3(5, 0, 0));
+    elements.drawLine(Vec3(0, 0, 0), Vec3(0, 5, 0));
+    elements.drawLine(Vec3(0, 0, 0), Vec3(0, 0, 5));
+
+    // for more methods check the method description below.
+\endexample
+*/
+object DrawElements : BaseGeometry, Geometry {
+  /// Line width in pixels
+  Scalar lineWidth;
+  /// \internal
+  UInt32 pointsIndices[];
+  /// \internal
+  UInt32 linesIndices[];
+  /// \internal
+  UInt32 trianglesIndices[];
+  /// \internal
+  UInt32 pointsIndicesOffset;
+  /// \internal
+  UInt32 linesIndicesOffset;
+  /// \internal
+  UInt32 trianglesIndicesOffset;
+  /// \internal
+  Vec3 defaultNormal;
+  /// \internal
+  Boolean penIsActive;
+  /// \internal
+  Color penColor;
+  /// \internal
+  Scalar penRadius;
+  /// \internal
+  Ref<ColorAttribute> vertexColors;
+  /// \internal
+  Ref<Vec3Attribute> positionsAttr, normalsAttr;
+};
+
+
+/// default constructor
+/// \dfgPresetOmit
+function DrawElements() {
+  this.init('DrawElements');
+}
+
+// default constructor with a name
+/// \dfgPresetOmit
+function DrawElements(String name) {
+  this.init(name);
+}
+
+// default constructor
+/// \dfgPresetOmit
+function DrawElements.init!(String name) {
+  this.parent._init(name);
+  this.defaultNormal = Vec3(0, 1, 0);
+  this.lineWidth = 1.0;
+  this.penIsActive = false;
+  this.setPen( Color( 1.0, 0.0, 0.0 ), 1.0 );
+}
+
+/// Returns the debug name used when constructing the geometry.
+function String DrawElements.getDebugName() {
+  return this.debugName;
+}
+
+/// Returns the version of the geometry including attribute values
+inline UInt32 DrawElements.getVersion() {
+  return this.parent.getVersion();
+}
+
+/// Returns the version of the geometry structure including the the attribute set (but not attribute values).
+inline UInt32 DrawElements.getStructureVersion() {
+  return this.parent.getStructureVersion();
+}
+
+/// Returns the metaData container for this Geometry.
+function Ref<ThreadsafeMetaDataContainer> DrawElements.getMetaData() {
+  return this.metaData;
+}
+
+inline Ref<GeometryAttributes> DrawElements.getAttributes() {
+  return this.attributes; 
+}
+
+/// \internal
+DrawElements.convertToGPU!() {
+  setError("DrawElements.convertToGPU: not supported");
+}
+
+/// \internal
+DrawElements.convertToCPU!() {
+}
+
+/// \internal
+UInt32 DrawElements.getMemType() {
+  return 0;
+}
+
+Size DrawElements.elementCount() {
+  return this.pointsIndicesOffset + this.linesIndicesOffset/2 + this.trianglesIndicesOffset/3;
+}
+
+/// Returns the local bounding volume of the geometry (typically a bounding box around the point positions)
+LocalBoundingVolume DrawElements.getBoundingVolume() {
+  return this.parent.getBoundingVolume();
+}
+
+/// Element index: points then lines then triangles
+LocalBoundingVolume DrawElements.getElementBoundingVolume( Size index ) {
+  Size offset = index;
+  LocalBoundingVolume bbox;
+  bbox.bBoxInit();
+
+  if( offset < this.pointsIndicesOffset )
+    bbox.bBoxAdd( this.positionsAttr.values[this.pointsIndices[index]] );
+  else {
+    offset -= this.pointsIndicesOffset;
+    if( offset < this.linesIndicesOffset/2 ) {
+      bbox.bBoxAdd( this.positionsAttr.values[this.linesIndices[offset * 2]] );
+      bbox.bBoxAdd( this.positionsAttr.values[this.linesIndices[offset * 2 + 1]] );
+    } else {
+      offset -= this.linesIndicesOffset/2;
+      bbox.bBoxAdd( this.positionsAttr.values[this.trianglesIndices[offset * 3]] );
+      bbox.bBoxAdd( this.positionsAttr.values[this.trianglesIndices[offset * 3 + 1]] );
+      bbox.bBoxAdd( this.positionsAttr.values[this.trianglesIndices[offset * 3 + 2]] );
+    }
+  }
+  return bbox;
+}
+
+/// Copies the content from the source Points.
+function DrawElements.copy!( DrawElements src ) {
+  this.attributes.copy( src.attributes );
+  if( src.positionsAttr )
+    this.getOrCreatePositionsAttribute();//Refresh pointer
+  if( src.normalsAttr )
+    this.getOrCreateNormalsAttribute();//Refresh pointer
+  if( src.vertexColors )
+    this.getOrCreateColorAttribute();//Refresh pointer
+  this.structureVersion += src.structureVersion + 1;
+}
+
+/// Copies the content from the source Geometry.
+function DrawElements.copy!( Geometry src ) {
+  DrawElements srcDrawElements = src;
+  if(!srcDrawElements)
+    throw("DrawElements Cannot copy data from a non-DrawElements. Src Geometry is a :"+src.type());
+  this.copy(srcDrawElements);
+}
+
+/// \dfgPresetCreate
+DrawElements.cloneMembersTo(io DrawElements that) {
+  //The difference with default clone() is that new.parent.autoStat will point to 'new' (from constructor)
+  that.copy( DrawElements(this) );
+  that.debugName = this.debugName;
+}
+
+/// Returns a description of the Geometry.
+/// \param withAttributes If true, will print all attributes and their values
+/// \param useUnitTestPrint If true, floats will use a numerically stable, unit test friendly output
+function String DrawElements.getDesc?( Boolean withAttributes, Boolean useUnitTestPrint ) {
+  String desc;
+  desc += "DrawElements "+ this.debugName + ": pointCount: " + this.pointsIndicesOffset + " linesCount: " + this.linesIndicesOffset/2 + " trianglesCount: " + this.trianglesIndicesOffset/3 + '\n';
+  for( Size i = 0; i < this.linesIndicesOffset/2; ++i ) {
+    desc += "  Line "+i+" = [" + this.linesIndices[i*2] + ", " + this.linesIndices[i*2+1] + "]\n";
+  }
+  for( Size i = 0; i < this.trianglesIndicesOffset/3; ++i ) {
+    desc += "  Triangle "+i+" = [" + this.trianglesIndices[i*3] + ", " + this.trianglesIndices[i*3+1] + ", " + this.trianglesIndices[i*3+2] + "]\n";
+  }
+
+  if( withAttributes )
+    desc += this.attributes.getDesc(useUnitTestPrint) + '\n';
+
+  return desc;
+}
+
+/// returns the position of a point.
+inline Vec3 DrawElements.getPointPosition( Size point ) {
+  return this.parent.getPosition( point );
+}
+
+/// sets the positions of a point.
+inline DrawElements.setPointPosition!( Size point, Vec3 position ) {
+  this.parent.setPosition( point, position );
+}
+
+/// Geometry interface: transforms the positions of the geometry (and normals if applicable)
+inline DrawElements.applyTransform!( Mat44 transform ) {
+  this.parent.applyTransform( transform );
+}
+
+/// Geometry interface: transforms the positions of the geometry (and normals if applicable)
+inline DrawElements.applyTransform!( Xfo transform ) {
+  this.parent.applyTransform( transform );
+}
+
+/// Geometry interface: returns all point positions
+Vec3[] DrawElements.getAllPointPositions() {
+  return this.parent.getAllPointPositions();
+}
+
+/// Geometry interface: sets all point positions
+DrawElements.setAllPointPositions!( Vec3 positions[] ) {
+  this.parent.setAllPointPositions( positions );
+}
+
+/// return the current point size used
+function Scalar DrawElements.getPointSize() {
+  return this.penRadius;
+}
+
+/// sets the current point size used
+/// \dfgPresetDefault value 1.0
+function DrawElements.setPointSize!( Scalar value ) {
+  this.setPen( this.penColor, value );
+}
+
+/// return the current line width used
+function Scalar DrawElements.getLineWidth() {
+  return this.lineWidth;
+}
+
+/// sets the current line width used
+inline DrawElements.setLineWidth!(Scalar value) {
+  this.lineWidth = value;
+}
+
+/// sets the current pen
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault radius 1.0
+function DrawElements.setPen!( Color color, Float32 radius ) {
+  this.penIsActive = true;
+  this.penColor = color;
+  this.penRadius = radius;
+}
+
+/// \internal
+inline Ref<ColorAttribute> DrawElements.getOrCreateColorAttribute!() {
+  if( !this.vertexColors )
+    this.vertexColors = this.attributes.getOrCreateColorAttribute('vertexColors');
+  return this.vertexColors;
+}
+
+/// \internal
+inline Ref<Vec3Attribute> DrawElements.getOrCreatePositionsAttribute!() {
+  if( !this.positionsAttr )
+    this.positionsAttr = this.attributes.getOrCreateVec3Attribute('positions');
+  return this.positionsAttr;
+}
+
+/// \internal
+inline Ref<Vec3Attribute> DrawElements.getOrCreateNormalsAttribute!() {
+  if( !this.normalsAttr )
+    this.normalsAttr = this.attributes.getOrCreateVec3Attribute('normals');
+  return this.normalsAttr;
+}
+
+/// disables the current pen
+inline DrawElements.disablePen!() {
+  this.penIsActive = false;
+}
+
+/// fills the vertex color attributes with the pen color
+/// \internal
+function DrawElements.drawPenColors!(UInt32 firstPoint) {
+  if(!this.penIsActive)
+    return;
+
+  ColorAttribute vertexColors = this.getOrCreateColorAttribute();
+  ScalarAttribute pointSizes = this.attributes.getOrCreateScalarAttribute( 'pointSizes' );
+  Color values[] = vertexColors.values;
+  Float32 sizes[] = pointSizes.values;
+  for( UInt32 i = firstPoint; i < values.size(); i++ ) {
+    values[i] = this.penColor;
+    sizes[i] = this.penRadius;
+  }
+  vertexColors.incrementVersion();
+}
+
+////////////////////////////////////////////////////////////////
+
+/// resets all offsets of this DrawElements
+/// \dfgPresetOmit
+function DrawElements.reset!() {
+  this.pointsIndicesOffset = 0;
+  this.linesIndicesOffset = 0;
+  this.trianglesIndicesOffset = 0;
+  this.attributes.resize(0);
+  this.penIsActive = false;
+  this.incrementVersion();
+}
+
+/// clears the content of the DrawElements
+/// \dfgPresetOmit
+function DrawElements.clear!() {
+  this.pointsIndices.resize(0);
+  this.linesIndices.resize(0);
+  this.trianglesIndices.resize(0);
+  this.reset();
+}
+
+/// allocates space for new vertices
+/// \dfgPresetOmit
+function Index DrawElements.allocateVertices!(Size nbVertices) {
+  Index firstIndex = this.attributes.size();
+  Index colorIndex = firstIndex;
+  this.attributes.resize(firstIndex + nbVertices);
+  this.structureVersion++;
+  return firstIndex;
+}
+
+/// allocates space for new points
+/// \dfgPresetOmit
+function Index DrawElements.allocatePoints!(Size nbPoints) {
+  Index firstIndex = this.allocateVertices(nbPoints);
+  Index colorIndex = firstIndex;
+  Size expectedSize = this.pointsIndicesOffset + nbPoints;
+  if(expectedSize > this.pointsIndices.size())
+    this.pointsIndices.resize(expectedSize);
+  return firstIndex;
+}
+
+/// allocates space for new lines
+function Index DrawElements.allocateLines!(Size nbPoints, Size nbLines) {
+  Index firstIndex = this.allocateVertices(nbPoints);
+  Index colorIndex = firstIndex;
+  Size expectedSize = this.linesIndicesOffset + nbLines * 2;
+  if(expectedSize > this.linesIndices.size())
+    this.linesIndices.resize(expectedSize);
+  return firstIndex;
+}
+
+/// allocates space for new point, retirns the first point index
+/// \dfgPresetOmit
+function Index DrawElements.allocateTriangles!(Size nbPoints, Size nbTriangles) {
+  Index firstIndex = this.allocateVertices(nbPoints);
+  Index colorIndex = firstIndex;
+  Size expectedSize = this.trianglesIndicesOffset + nbTriangles * 3;
+  if(expectedSize > this.trianglesIndices.size())
+    this.trianglesIndices.resize(expectedSize);
+  return firstIndex;
+}

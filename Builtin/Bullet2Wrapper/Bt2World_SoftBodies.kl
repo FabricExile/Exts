@@ -1,0 +1,290 @@
+//
+// Copyright 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+private Bt2SoftBody Bt2World.addSoftBody!(btSoftBody body, btSoftBody_Material mat, Ref<Geometry> geo, Xfo xfo, Color color)
+{
+  // todo: add a lock
+  Bt2SoftBody result;
+  result.world = this;
+  result.index = this.softBodies.size();
+  result.body = body;
+  result.body.setUserIndex(result.index);
+  result.numNodes = UInt32(btSoftBody_getNumNodes(result.body));
+  result.material = mat;
+  result.geometry = geo;
+  result.initialXfo = xfo;
+  result.color = color;
+
+  this.softBodies.push(result);
+  if(this.softDynamicsWorld.cxx_isValid())
+    this.softDynamicsWorld.addSoftBody(body);
+  if(this.mbSoftBodyWorld.cxx_isValid())
+    this.mbSoftBodyWorld.addSoftBody(body);
+  return result;
+}
+
+/// \dfgPresetFolder SoftBodies
+Bt2SoftBody Bt2World.getSoftBody(SInt32 index)
+{
+  if(index < 0 || index >= this.softBodies.size())
+    return Bt2SoftBody();
+  return this.softBodies[index];
+}
+
+/// \dfgPresetFolder SoftBodies
+/// \dfgPresetDefault all true
+Bt2SoftBody[] Bt2World.getSoftBodies(Boolean all, SInt32 idxs[])
+{
+  if(all)
+    return this.softBodies.clone();
+
+  Bt2SoftBody bodies[](idxs.size());
+  for(Size i=0;i<idxs.size();i++)
+    bodies[i] = this.getSoftBody(idxs[i]);
+
+  return bodies;
+}
+
+/// \dfgPresetFolder SoftBodies
+/// \dfgPresetDefault mass 1.0
+/// \dfgPresetDefault bendingConstraints 0
+/// \dfgPresetRange bendingConstraints (0, 4)
+/// \dfgPresetDefault randomizeConstraints false
+/// \dfgPresetDefault clusters 0
+/// \dfgPresetDefault selfCollision false
+/// \dfgPresetDefault color {"r": 0.4, "g": 0.4, "b": 0.4, "a": 1.0}
+Bt2SoftBody Bt2World.addSoftBody!(
+  Vec3 points[],
+  SInt32 limit,
+  UInt32 links[],
+  UInt32 triangles[],
+  Float32 mass,
+  Xfo xfo,
+  Color color,
+  SInt32 bendingConstraints,
+  Boolean randomizeConstraints,
+  SInt32 clusters,
+  Boolean selfCollision,
+  Ref<Geometry> geo
+) {
+  if(!this.supportsSoftBodies)
+  {
+    report("This Bullet2 world does not support soft bodies. Switch the world type.");
+    return Bt2SoftBody();
+  }
+  if(points.size() == 0)
+    return Bt2SoftBody();
+  if(links.size() == 0 && triangles.size() == 0)
+    return Bt2SoftBody();
+
+  SInt32 count = limit;
+  if(count == 0 || count > points.size())
+    count = points.size();
+
+  btSoftBody softBody = btSoftBody(this.softBodyWorldInfo);
+  btSoftBody_Material mat = softBody.appendMaterial();
+  mat.set_m_kLST(1);
+  mat.set_m_kAST(1);
+  mat.set_m_kVST(1);
+  mat.set_m_flags(0x0001); //fMaterial::Default
+
+  for(Size i=0;i<count;i++)
+  {
+    softBody.appendNode(xfo.transformVector(points[i]), 1 /* mass */);
+  }
+
+  softBody.setTotalMass(mass);
+  softBody.set_m_initialWorldTransform(xfo);
+
+  for(Size i=0;i<links.size();i+=2)
+  {
+    softBody.appendLink(links[i], links[i+1]);
+  }
+  for(Size i=0;i<triangles.size();i+=3)
+  {
+    softBody.appendFace(triangles[i], triangles[i+1], triangles[i+2]);
+    softBody.appendLink(triangles[i], triangles[i+1]);
+    softBody.appendLink(triangles[i+1], triangles[i+2]);
+    softBody.appendLink(triangles[i+2], triangles[i]);
+  }
+
+  if(bendingConstraints > 0)
+    softBody.generateBendingConstraints(bendingConstraints);
+  if(randomizeConstraints)
+    softBody.randomizeConstraints();
+
+  btSoftBody_Config cfg = btSoftBody_getConfig(softBody);
+  if(clusters > 0)
+  {
+    softBody.generateClusters(clusters);
+    if(selfCollision)
+      cfg.set_collisions(Bt2SoftBody_Collision_CL_RS | Bt2SoftBody_Collision_CL_SS | Bt2SoftBody_Collision_CL_SELF);
+    else
+      cfg.set_collisions(Bt2SoftBody_Collision_CL_RS | Bt2SoftBody_Collision_CL_SS);
+  }
+  else
+  {
+    cfg.set_collisions(Bt2SoftBody_Collision_SDF_RS | Bt2SoftBody_Collision_VF_SS);
+  }
+
+  return this.addSoftBody(softBody, mat, geo, xfo, color);
+}
+
+/// \dfgPresetFolder SoftBodies
+/// \dfgPresetDefault mass 1.0
+/// \dfgPresetDefault color {"r": 0.4, "g": 0.4, "b": 0.4, "a": 1.0}
+/// \dfgPresetDefault bendingConstraints 0
+/// \dfgPresetRange bendingConstraints (0, 4)
+/// \dfgPresetDefault randomizeConstraints false
+/// \dfgPresetDefault clusters 0
+/// \dfgPresetDefault selfCollision false
+Bt2SoftBody Bt2World.addSoftBodyFromMesh!(
+  PolygonMesh mesh,
+  Float32 mass,
+  Xfo xfo,
+  Color color,
+  SInt32 bendingConstraints,
+  Boolean randomizeConstraints,
+  SInt32 clusters,
+  Boolean selfCollision
+) {
+  if(!this.supportsSoftBodies)
+  {
+    report("This Bullet2 world does not support soft bodies. Switch the world type.");
+    return Bt2SoftBody();
+  }
+  if(!mesh)
+    return Bt2SoftBody();
+  if(mesh.pointCount() == 0)
+    return Bt2SoftBody();
+  if(mesh.polygonCount() == 0)
+    return Bt2SoftBody();
+
+  GeometryAttributes attributes = mesh.getAttributes();
+  Vec3Attribute positions = attributes.getAttribute('positions');
+
+  UInt32 links[];
+  UInt32 triangles[] = mesh.generateTriangleList();
+
+  Bt2SoftBody result = this.addSoftBody(positions.values, mesh.pointCount(), links, triangles, mass, xfo, color, bendingConstraints, randomizeConstraints, clusters, selfCollision, mesh.clone());
+
+   // debug drawing
+  if(result.isValid() && this.handle != null && color.a > 0.0)
+  {
+    Bt2World_DrawSbdInfo info = this.drawSbdInfos.get(result.index, Bt2World_DrawSbdInfo());
+    if(info.transform == null)
+    {
+      InlineDrawing draw = this.handle.getDrawing();
+      InlineShape drawShape = InlineMeshShape(this.uid() + '_softbody_' + result.index, result.geometry);
+      draw.registerShape(drawShape);
+
+      info.transform = StaticInlineTransform(this.uid() + '_softbody_' + result.index, xfo);
+      info.bodyIdx = result.index;
+      this.handle.rootTransform.addChild(info.transform);
+
+      InlineShader shader = draw.registerShader(OGLWireFrameShader('Bt2WorldSurfaceShader', OGLSurfaceShader()));
+
+      Ref<OGLWireFrameShader> wireFrameShader = shader;
+
+      InlineMaterial mat = shader.getOrCreateMaterial('Bt2World_'+this.uid()+'_'+result.geometry.uid());
+      mat.setUniform('u_diffuseColor', color);
+      mat.setUniform('u_specularColor', Color(0.0, 0.0, 0.0));
+      mat.setUniform('u_specularFactor', 16.0);
+      mat.setUniform('u_doubleSided', Integer(1));
+
+      info.instance = SimpleInlineInstance(
+        this.uid() + '_instance_' + result.geometry.uid(), info.transform, drawShape, this.handle.visibility, mat);
+      info.instance.setTransformUniform(InlineUniform('u_diffuseColor', color), 0);
+
+      this.drawSbdInfos[result.index] = info;
+    }
+  }
+
+  return result; 
+}
+
+/// \dfgPresetFolder SoftBodies
+/// \dfgPresetDefault mass 1.0
+/// \dfgPresetDefault color {"r": 0.4, "g": 0.4, "b": 0.4, "a": 1.0}
+/// \dfgPresetDefault bendingConstraints 0
+/// \dfgPresetRange bendingConstraints (0, 4)
+/// \dfgPresetDefault randomizeConstraints false
+/// \dfgPresetDefault clusters 0
+/// \dfgPresetDefault selfCollision false
+Bt2SoftBody Bt2World.addSoftBodyFromCurves!(
+  Curves curves,
+  Float32 mass,
+  Xfo xfo,
+  Color color,
+  SInt32 bendingConstraints,
+  Boolean randomizeConstraints,
+  SInt32 clusters,
+  Boolean selfCollision
+) {
+  if(!this.supportsSoftBodies)
+  {
+    report("This Bullet2 world does not support soft bodies. Switch the world type.");
+    return Bt2SoftBody();
+  }
+  if(!curves)
+    return Bt2SoftBody();
+  if(curves.pointCount() == 0)
+    return Bt2SoftBody();
+  if(curves.curveCount() == 0)
+    return Bt2SoftBody();
+
+  GeometryAttributes attributes = curves.getAttributes();
+  Vec3Attribute positions = attributes.getAttribute('positions');
+
+  UInt32 links[];
+  UInt32 triangles[];
+
+  for(Size i=0;i<curves.curveCount();i++)
+  {
+    UInt32 a, b;
+    curves.getPointRange(i, a, b);
+    for(UInt32 j=a; j<b-1; j++)
+    {
+      links.push(j);
+      links.push(j+1);
+    }
+    if(!curves.isOpen(i))
+    {
+      links.push(b);
+      links.push(a);
+    }
+  }
+
+  Bt2SoftBody result = this.addSoftBody(positions.values, curves.pointCount(), links, triangles, mass, xfo, color, bendingConstraints, randomizeConstraints, clusters, selfCollision, curves.clone());
+
+   // debug drawing
+  if(result.isValid() && this.handle != null && color.a > 0.0)
+  {
+    Bt2World_DrawSbdInfo info = this.drawSbdInfos.get(result.index, Bt2World_DrawSbdInfo());
+    if(info.transform == null)
+    {
+      InlineDrawing draw = this.handle.getDrawing();
+      InlineShape drawShape = InlineCurvesShape(this.uid() + '_softbody_' + result.index, result.geometry);
+      draw.registerShape(drawShape);
+
+      info.transform = StaticInlineTransform(this.uid() + '_softbody_' + result.index, xfo);
+
+      info.bodyIdx = result.index;
+      this.handle.rootTransform.addChild(info.transform);
+
+      InlineShader shader = draw.registerShader(OGLFlatShader());
+
+      InlineMaterial mat = shader.getOrCreateMaterial('Bt2World_'+this.uid()+'_'+result.geometry.uid());
+      mat.setUniform('u_color', color);
+
+      info.instance = SimpleInlineInstance(
+        this.uid() + '_instance_' + result.geometry.uid(), info.transform, drawShape, this.handle.visibility, mat);
+      info.instance.setTransformUniform(InlineUniform('u_diffuseColor', color), 0);
+
+      this.drawSbdInfos[result.index] = info;
+    }
+  }
+
+  return result;  
+}

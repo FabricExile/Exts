@@ -1,0 +1,61 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+\versionadded 1.12.0
+
+The OGLMatrixArrayTextureAdaptor is used to render objects such as the InlineMatrixArrayTexture.
+\dfgPresetOmit
+*/
+object OGLMatrixArrayTextureAdaptor : InlineTextureAdaptor {};
+
+/// returns the types this adaptor is capable of drawing
+function String[] OGLMatrixArrayTextureAdaptor.getTextureTypes() {
+  String result[];
+  result.push('InlineMatrixArrayTexture');
+  return result;
+}
+
+/// standard constructor
+function OGLMatrixArrayTextureAdaptor() {}
+
+/// draws the texture to the screen. this
+/// should not be called manually.
+/// \internal
+function Boolean OGLMatrixArrayTextureAdaptor.draw!(io DrawContext context, io InlineTexture texture, Object metaData) {
+
+  OGLTexture2DAdaptorMetaData localMetaData = metaData;
+  if(localMetaData == null)
+    return false;
+
+  if(texture.type() != InlineMatrixArrayTexture) {
+    setError(texture.type()+' not supported by OGLMatrixArrayTextureAdaptor.');
+    return false;
+  }
+
+  InlineMatrixArrayTexture matrixTex = texture;
+  Mat44 matrices[] = matrixTex.matrices;
+
+  // upload if we have received pixels
+  if(matrices.size() > 0) {
+    if(localMetaData.texture == null)
+      localMetaData.texture = OGLTexture2D();
+    if(localMetaData.textureVersion != texture.getVersion()){
+      localMetaData.texture.configureImageMatrixArray(matrices);
+      localMetaData.textureVersion = texture.getVersion();
+    }
+  }
+
+  if(localMetaData.texture != null) {
+    localMetaData.texture.bind(localMetaData.textureUnit);
+  }
+
+  localMetaData.texture.bind(localMetaData.textureUnit);
+
+  // If the texture size uniform is also required, bind that also. 
+  if(localMetaData.textureSizeLocation != -1)
+    glUniform2f( localMetaData.textureSizeLocation, Scalar(localMetaData.texture.width), Scalar(localMetaData.texture.height) );
+
+  return true;
+}

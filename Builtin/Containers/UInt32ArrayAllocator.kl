@@ -1,0 +1,523 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+const Boolean UInt32ArrayAllocator_enableChecks = false;
+/// \internal
+//const Boolean UInt32ArrayAllocator_enableStats = false;
+/// \internal
+/// \internal
+const UInt32 UInt32NoHighBitMask = 2147483647;
+/// \internal
+const UInt32 PrevIsHeadSkip = 4294967294;
+
+/**
+  The :kl-ref:`UInt32ArrayAllocator` is used to efficiently allocate of many UInt32 arrays within the same memory buffer.
+  This allocator is used internally by various performance oriented objects, like the :kl-ref:`Octree` or the :kl-ref:`PolygonMesh`.
+
+  The :kl-ref:`UInt32ArrayAllocator` was written for optimal performance and not simplicity. One example is that it is not storing the stored array sizes, as
+  the owner can use a more compact encoding for the size. A simple way is to use the 1st array data to store the array size.
+
+  Using a single buffer has multiple performance benefits, such as avoiding multiple heap allocation calls (slow),
+  avoiding memory fragmentation (reduces global memory usage) and making the data access CPU cache friendly.
+  This allocator is not threadsafe, but supporting a single thread avoids locking checks overhead.
+
+  For performance reason, this allocator will only grow, unless :kl-ref:`UInt32ArrayAllocator.clear` or :kl-ref:`UInt32ArrayAllocator.recompact` is called.
+  A proper usage of this allocator should call :kl-ref:`UInt32ArrayAllocator.recompact` when a large enough portion of the memory is unused (eg: 25% or 50%).
+
+  Although the :kl-ref:`UInt32ArrayAllocator` is able to reused free storage by using simplified heap-like structure, the user that cares
+  about memory usage should monitor the portion of unused data (internal fragmentation) and recompact it when this portion is large
+  enough (eg: 50%). This can be done through a call to :kl-ref:`UInt32ArrayAllocator.recompact`, however the caller needs to remap all its indices
+  accordingly.
+
+  For optimal performance, the array indices (keys) are not safeguarded. The user should do the safeguarding if required.
+
+  \note This allocator is not threadsafe, unless all threads are having a read-only access.
+  \note Technical detail: UInt32ArrayAllocator.data[0] is a reserved entry, so 0 can always be used as a 'null' index for convenience
+
+  \example
+    UInt32ArrayAllocator allocator;
+
+    //Allocate array1 with size 2
+    UInt32 array1Key = allocator.allocate(2, 0);
+    allocator.data[array1Key] = 10;
+    allocator.data[array1Key+1] = 11;
+
+    //Allocate array2 with size 1 + 1 reserved entry for future growth
+    UInt32 array2Key = allocator.allocate(1, 1);
+    allocator.data[array2Key] = 20;
+
+    //Reallocate array1 to size 3, and update its key with the new one
+    array1Key = allocator.reallocate(array1Key, 2, 3, 0);
+    allocator.data[array1Key+2] = 12;
+
+    //Reallocate array2 to size 2, but we don't expect the key to change since there was 1 reserved entry
+    if( allocator.reallocate(array2Key, 1, 2, 0) != array2Key )
+      report("UNEXPECTED");
+    allocator.data[array2Key+1] = 21;
+
+    //Recompact the array
+    report( "Unused data after reallocates: " + allocator.unusedSize() );
+    UInt32 oldIndexToNewIndex[];
+    allocator.recompact( oldIndexToNewIndex );
+    //Remap our array keys
+    array1Key = oldIndexToNewIndex[array1Key];
+    array2Key = oldIndexToNewIndex[array2Key];
+    report( "Unused data after recompact: " + allocator.unusedSize() );
+
+    report( "Array1 content: " 
+            + allocator.data[array1Key] 
+            + " " + allocator.data[array1Key+1] 
+            + " " + allocator.data[array1Key+2] );
+
+    report( "Array2 content: " 
+            + allocator.data[array2Key] 
+            + " " + allocator.data[array2Key+1] );
+  \endexample
+*/
+struct UInt32ArrayAllocator {
+  /// The UInt32 buffer containing all data. Users need to use this data member directly to read or write their UInt32 data.
+  UInt32 data[];
+  /// \internal
+  BitVector freeData;
+  /// \internal
+  UInt32 freeDataCount;
+  /// \internal
+  UInt32 freeBlocsListUpperPow2[];
+
+  //used if UInt32ArrayAllocator_enableStats
+/*  UInt32 removeNodeCount;  
+  UInt32 removeMergeNodeCount;
+  UInt32 addNodeCount;
+  UInt32 reallocUpCount;
+  UInt32 reallocUpReuseCount;
+  UInt32 reallocUpReuseFreeCount;
+  UInt32 reallocDownCount;
+  UInt32 reallocDownFreeCount;
+  UInt32 allocResizeNodeCount;
+  UInt32 allocReuseNodeCount;
+  UInt32 allocReuseSameLog2NodeCount;
+  UInt32 allocReuseSplitNodeCount;*/
+};
+
+/// \internal
+function UInt32ArrayAllocator() {
+  this.data.resize(1);//0 is reserved (NULL key)
+  this.freeData.resize(1);
+}
+
+/// clears the managed array
+function UInt32ArrayAllocator.clear!() {
+  this.data.resize(1);
+  this.freeData.resize(1);
+  this.freeDataCount = 0;
+  this.freeBlocsListUpperPow2.resize(0);
+}
+
+/// copies another UInt32ArrayAllocator into this one
+function UInt32ArrayAllocator.copy!( UInt32ArrayAllocator src ) {
+  this.freeDataCount = src.freeDataCount;
+  this.freeData.copy( src.freeData );
+
+  src.data.copyTo(this.data);
+
+  UInt32 srcDataSize = src.freeBlocsListUpperPow2.size();
+  this.freeBlocsListUpperPow2.resize( srcDataSize );
+  for( Size i = 0; i < srcDataSize; ++i )
+    this.freeBlocsListUpperPow2[i] = src.freeBlocsListUpperPow2[i];
+}
+
+function Size UInt32ArrayAllocator.memUsage() {
+  return this.data.size()*4 + this.freeData.memUsage();
+}
+
+/// \internal
+struct _UInt32ArrayAllocator_FreeNodeInfo {
+  UInt32 prev;
+  UInt32 next;
+  UInt32 count;
+};
+
+/// \internal
+function _UInt32ArrayAllocator_FreeNodeInfo UInt32ArrayAllocator._getFreeNodeInfo( UInt32 head ) {
+  _UInt32ArrayAllocator_FreeNodeInfo info;
+  if( head ) {
+    if( UInt32ArrayAllocator_enableChecks && !this.freeData.get(head) )
+      throw("UInt32ArrayAllocator._getFreeNodeInfo: corrupt freeData");
+
+    info.next = this.data[head];
+    if( info.next == InvalidIndex ) {
+        info.prev = 0;
+        info.next = 0;
+        info.count = 1;
+    } else {
+      if( info.next & UInt32HighBit ) {
+        info.next &= UInt32NoHighBitMask;
+        info.count = 2;
+      } else
+        info.count = this.data[head+2];
+      info.prev = this.data[head+1];
+    }
+  }
+  return info;
+}
+
+/// \internal
+function UInt32ArrayAllocator._removeFreeNode!( Size head, _UInt32ArrayAllocator_FreeNodeInfo info ) {
+  if( info.count < 2 ) {
+    if( info.count )
+      this.data[head] = 0;//Remove 'InvalidIndex'
+    return;//Not tracked
+  }
+  //Remove end marker
+  if( info.count > 5 )
+    this.data[head+info.count-1] = 0;
+
+  if( info.prev ) {
+    this.data[info.prev] = info.next | (this.data[info.prev] & UInt32HighBit);
+  } else {
+    //head of the list
+    UInt32 listIndex = Log2RoundUp(info.count);
+    this.freeBlocsListUpperPow2[listIndex] = info.next;
+    if( !info.next ) {//Cleanup free lists
+      while( this.freeBlocsListUpperPow2.size() != 0 && this.freeBlocsListUpperPow2[this.freeBlocsListUpperPow2.size()-1] == 0 )
+        this.freeBlocsListUpperPow2.resize(this.freeBlocsListUpperPow2.size()-1);
+    }
+  }
+  if( info.next )
+    this.data[info.next+1] = info.prev;
+//  if(UInt32ArrayAllocator_enableStats)++this.removeNodeCount;
+}
+
+/// returns true if a given index is used
+function Boolean UInt32ArrayAllocator.isUsed( UInt32 i ) {
+  return !this.freeData.get(i);
+}
+
+/// \internal
+function UInt32ArrayAllocator._addFreeNode!( UInt32 head, UInt32 count, UInt32 pow2Index ) {
+  if( UInt32ArrayAllocator_enableChecks ) {
+    for( Size i = 0; i < count; ++i ) {
+      if( !this.freeData.get(head+i) )
+        throw("UInt32ArrayAllocator._addFreeNode: not marked as free");
+    }
+  }
+  if( pow2Index >= this.freeBlocsListUpperPow2.size() )
+    this.freeBlocsListUpperPow2.resize(pow2Index+1);
+
+  UInt32 next = this.freeBlocsListUpperPow2[pow2Index];
+  this.data[head] = (count == 2) ? (next|UInt32HighBit) : next;
+  this.data[head+1] = 0;//prev
+  if(count > 2)
+    this.data[head+2] = count;
+
+  this.freeBlocsListUpperPow2[pow2Index] = head;
+  if(next)
+    this.data[next+1] = head;
+
+  //Put end 'skip' marker
+  if( count > 5 ) {
+    this.data[head+count-1] = PrevIsHeadSkip;
+    this.data[head+count-2] = count-2;//How many to skip down
+  }
+//  if(UInt32ArrayAllocator_enableStats)++this.addNodeCount;
+}
+
+/// \internal
+inline UInt32ArrayAllocator._addFreeNode!( UInt32 head, UInt32 count ) {
+  if( count == 1 ) {
+    //Untracked
+    this.data[head] = InvalidIndex;
+  } else {
+    UInt32 listIndex = Log2RoundUp(count);
+    this._addFreeNode( head, count, listIndex );
+  }
+}
+
+/// allocate an array of a certain allocated size, but can reserve a additional entries.
+/// \note Reserved additional entries will allow the array to grow in that space without reallocating. However, UInt32ArrayAllocator.recompact will remove all reserved space.
+function UInt32 UInt32ArrayAllocator.allocate!( UInt32 allocateCount, UInt32 reserveCount ) {
+  UInt32 total = allocateCount + reserveCount;
+
+  UInt32 freeBlocsUpperPow2 = this.freeBlocsListUpperPow2.size();
+
+  if( total > 1 && (1 << freeBlocsUpperPow2) >= total ) {
+    //Check for existing blocs. This is not retrieving the optimal bloc, but slows down degradation.
+    UInt32 best = 0;
+    _UInt32ArrayAllocator_FreeNodeInfo bestFreeNodeInfo;
+    bestFreeNodeInfo.count = InvalidIndex;
+
+    UInt32 log2 = Log2RoundUp(total);
+    while( log2 < this.freeBlocsListUpperPow2.size() ) {
+      UInt32 head = this.freeBlocsListUpperPow2[log2];
+
+      Size nbToCheck = 4;//check a few of the first entries since on the 1st iteration it is not garanteed to be large enough
+      while( head && nbToCheck ) {
+        _UInt32ArrayAllocator_FreeNodeInfo freeNodeInfo;
+        freeNodeInfo = this._getFreeNodeInfo( head );
+        if( freeNodeInfo.count >= total && freeNodeInfo.count < bestFreeNodeInfo.count ) {
+          best = head;
+          bestFreeNodeInfo = freeNodeInfo;
+        }
+        head = freeNodeInfo.next;
+        --nbToCheck;
+      }
+      if( best ) {
+        //use that bloc, re-classify remaining bits
+        this._removeFreeNode( best, bestFreeNodeInfo );
+        //Unmark free bits, adjust free bits count
+        for( Size i = 0; i < allocateCount; ++i )//todo: optimize clearing many contiguous bits
+          this.freeData.clear(best+i);
+
+        for( Size i = allocateCount; i < total; ++i )
+          this.data[best+i] = InvalidIndex;//Reserved: untracked free data
+
+        if( UInt32ArrayAllocator_enableChecks && total > this.freeDataCount )
+          throw("UInt32ArrayAllocator: freeDataCount overflow: double free?");
+
+        this.freeDataCount -= allocateCount;//reserveCount still considered "free"
+        this._freeNoMark( best + total, bestFreeNodeInfo.count - total, false );
+        /*if(UInt32ArrayAllocator_enableStats) {
+          if(bestFreeNodeInfo.count - total > 1)
+            ++this.allocReuseSplitNodeCount;
+          ++this.allocReuseNodeCount;
+          if(Log2RoundUp(bestFreeNodeInfo.count - total) == Log2RoundUp(bestFreeNodeInfo.count))
+          ++this.allocReuseSameLog2NodeCount;
+        }*/
+        return best;
+      }
+      ++log2;
+    }
+  }
+
+  Size prevSize = this.data.size();
+  this.data.resize( prevSize + total );
+  this.freeData.resize( prevSize + total );
+
+  for( Size i = allocateCount; i < total; ++i ) {
+    this.data[prevSize+i] = InvalidIndex;//Reserved: untracked free data
+    this.freeData.set(prevSize+i);
+  }
+  this.freeDataCount += reserveCount;
+//  if(UInt32ArrayAllocator_enableStats)++this.allocResizeNodeCount;
+  return prevSize;
+}
+
+/// reallocate the managed array, based on a previous head and count, as well as a new count and a minimum reserved count
+function UInt32 UInt32ArrayAllocator.reallocate!( UInt32 head, UInt32 prevCount, UInt32 newCount, UInt32 reserveCountIfShrinkOrMove ) {
+
+  if( UInt32ArrayAllocator_enableChecks ) {
+    for( Size i = 0; i < prevCount; ++i ) {
+      if( this.freeData.get(head+i) )
+        throw( "UInt32ArrayAllocator.reallocate: error: not allocated" );
+    }
+  }
+
+  if( prevCount > newCount ) {
+    UInt32 delta = prevCount - newCount;
+    UInt32 end = head+newCount;
+
+    UInt32 reserved = reserveCountIfShrinkOrMove;
+    if(reserved) {
+      if( reserved > delta )
+        reserved = delta;
+      for(UInt32 i = 0; i < reserved; ++i) {
+        this.data[end+i] = InvalidIndex;//Untracked free data
+        this.freeData.set(end+i);
+      }
+      this.freeDataCount += reserved;
+      delta -= reserved;
+    }
+    UInt32 actualEnd = end+reserved;
+    this.free(actualEnd, delta);
+    if(head == actualEnd)
+      return 0;
+
+    /*if(UInt32ArrayAllocator_enableStats) {
+      ++this.reallocDownCount;
+      if(delta>1)
+        ++this.reallocDownFreeCount;
+    }*/
+  } else if( prevCount < newCount ) {
+    //if(UInt32ArrayAllocator_enableStats)++this.reallocUpCount;
+    UInt32 size = this.data.size();
+    UInt32 next = head+prevCount;
+    UInt32 end = head+newCount;
+    UInt32 trunkEnd = end > size ? size : end;
+
+    //Check if contiguous data is available
+    Boolean available = true;
+    for( Size i = next; i < trunkEnd; ++i ) {
+      if( !this.freeData.get(i) )
+        available = false;
+    }
+    if( available ) {
+      //if(UInt32ArrayAllocator_enableStats)++this.reallocUpReuseCount;
+      //Use subsequent data
+      while( next < trunkEnd ) {
+        _UInt32ArrayAllocator_FreeNodeInfo freeNodeInfo;
+        freeNodeInfo = this._getFreeNodeInfo( next );
+        this._removeFreeNode( next, freeNodeInfo );
+        //if(UInt32ArrayAllocator_enableStats && freeNodeInfo.count>1)
+        //  ++this.reallocUpReuseFreeCount;
+
+        UInt32 nodeEnd = next + freeNodeInfo.count;
+        UInt32 nextTail = nodeEnd;
+        if( nextTail > trunkEnd )
+          nextTail = trunkEnd;
+        this.freeDataCount -= nextTail - next;
+        for( UInt32 i = next; i < nextTail; ++i )
+          this.freeData.clear(i);
+
+        if( nextTail < nodeEnd )//set as free node (bytes are already counted as free)
+          this._addFreeNode( nextTail, nodeEnd - nextTail );
+        next = nextTail;
+      }
+      if( trunkEnd < end ) {
+        this.data.resize(end);
+        this.freeData.resize(end);
+      }
+    } else {
+      UInt32 newHead = this.allocate( newCount, reserveCountIfShrinkOrMove );
+      for( UInt32 i = 0; i < prevCount; ++i )
+        this.data[newHead+i] = this.data[head+i];
+      this.free(head, prevCount);
+      return newHead;
+    }
+  }
+  return head;
+}
+
+/// \internal
+function UInt32ArrayAllocator._freeNoMark!( UInt32 head, UInt32 count, Boolean needClear ) {
+  if( count == 0 )
+    return;
+
+  Size next = head+count;
+  Size prev = head;
+
+  if(needClear) {
+    for( Size i = head; i < next; ++i )
+      this.data[i] = 0;
+  }
+
+  Boolean mergeBlocs = true;
+  if( mergeBlocs ) {
+    //Check if the block can be merge with contiguous ones
+
+    Size dataSize = this.data.size();
+    while( next < dataSize && this.freeData.get(next) ) {
+      //Contiguous free bloc: merge
+      _UInt32ArrayAllocator_FreeNodeInfo freeNodeInfo;
+      freeNodeInfo = this._getFreeNodeInfo( next );
+      this._removeFreeNode( next, freeNodeInfo );
+      next += freeNodeInfo.count;
+      //if(UInt32ArrayAllocator_enableStats)++this.removeMergeNodeCount;
+    }
+
+    //Merge preceding blocs, but not leading reserved entries
+    while( prev != 0 && this.freeData.get(prev-1) && this.data[prev-1] != InvalidIndex ) {
+      --prev;
+      if( this.data[prev] == PrevIsHeadSkip ) {
+        Size toSkip = this.data[--prev];
+        prev -= toSkip;
+      }
+    }
+    if( prev != head ) {
+      Size iter = prev;
+      while( iter < head ) {
+        //Contiguous free bloc: merge
+        _UInt32ArrayAllocator_FreeNodeInfo freeNodeInfo;
+        freeNodeInfo = this._getFreeNodeInfo( iter );
+        this._removeFreeNode( iter, freeNodeInfo );
+        iter += freeNodeInfo.count;
+        //if(UInt32ArrayAllocator_enableStats)++this.removeMergeNodeCount;
+      }
+      if( UInt32ArrayAllocator_enableChecks && iter != head )
+        throw("UInt32ArrayAllocator._freeNoMark: corrupt data");
+    }
+  }
+  //Add to free list
+  this._addFreeNode( prev, next - prev );
+}
+
+/// free the managed array given a head and a count
+function UInt32ArrayAllocator.free!( UInt32 head, UInt32 count ) {
+
+  if( UInt32ArrayAllocator_enableChecks ) {
+    if( head + count > this.data.size() )
+      throw( "UInt32ArrayAllocator.free: out of range" );
+    for( Size i = 0; i < count; ++i ) {
+      if( this.freeData.get(head+i) )
+        throw( "UInt32ArrayAllocator.free: error: double free" );
+    }
+  }
+  for( Size i = 0; i < count; ++i )//todo: optimize setting many contiguous bits
+    this.freeData.set(head+i);
+  this.freeDataCount += count;
+
+  this._freeNoMark(head, count, true);
+}
+
+/// returns the size of the array
+inline UInt32 UInt32ArrayAllocator.size() {
+  return this.data.size()-1;//Don't count 'dummy' 0
+}
+
+/// returns the size of the array which is currently not in use
+inline UInt32 UInt32ArrayAllocator.unusedSize() {
+  return this.freeDataCount;
+}
+
+/// recompact: will remove all unused data entries by compacting all data arrays, while maintaining their relative order.
+/// The caller needs to remap its data based on the returned index mapping (oldIndexToNewIndex).
+/// \note Only call if there is a significant portion to be recompacted (compare return unusedSize() to size() )
+function UInt32ArrayAllocator.recompact!( io UInt32 oldIndexToNewIndex[] ) {
+  if( this.freeDataCount ) {
+    Size dataSize = this.data.size();
+    oldIndexToNewIndex.resize(dataSize);
+
+    Size target;
+    for( Size i = 0; i < dataSize; ++i ) {
+      if( this.freeData.get(i) )
+        oldIndexToNewIndex[i] = 0;
+      else {
+        oldIndexToNewIndex[i] = target;
+        this.data[target] = this.data[i];
+        ++target;
+      }
+    }
+    this.data.resize(target);
+    this.freeDataCount = 0;
+    this.freeData.clearAll();
+    this.freeData.resize(target);
+    this.freeBlocsListUpperPow2.resize(0);
+  }
+}
+
+/// appends one UInt32ArrayAllocator to this one while using a data offset
+function UInt32ArrayAllocator.append!( UInt32ArrayAllocator other, io Size dataOffset ) {
+  dataOffset = this.data.size();
+
+  this.data += other.data;
+  
+  this.freeDataCount += other.freeDataCount;
+  this.freeData += other.freeData;
+
+  if( other.freeBlocsListUpperPow2.size() > this.freeBlocsListUpperPow2.size() )
+    this.freeBlocsListUpperPow2.resize( other.freeBlocsListUpperPow2.size() );
+
+  for( Size i = 0; i < other.freeBlocsListUpperPow2.size(); ++i ) {
+    UInt32 otherHead = other.freeBlocsListUpperPow2[i];
+    while( otherHead ) {
+      _UInt32ArrayAllocator_FreeNodeInfo freeNodeInfo = this._getFreeNodeInfo( otherHead + dataOffset );
+      this._addFreeNode( otherHead + dataOffset, freeNodeInfo.count, i );
+      otherHead = freeNodeInfo.next;
+    }
+  }
+  //Entry 0 of 'other' becomes a free entry (simpler like this, and could be recompacted eventually)
+  this.freeData.set(dataOffset);
+  this.data[dataOffset] = InvalidIndex;
+  ++this.freeDataCount;
+}

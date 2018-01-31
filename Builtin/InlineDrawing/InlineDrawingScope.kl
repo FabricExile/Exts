@@ -1,0 +1,44 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Singletons;
+
+
+/**
+\versionadded 1.12.0
+
+The InlineDrawingScope is used to perform drawing on an InlineDrawing singleton. This uses the Singletons extension to query a singleton called InlineDrawing.
+    
+\dfgPresetOmit
+*/
+object InlineDrawingScope {};
+
+/// this is called automatically by the DCC integrations and should
+/// not be called manually.
+/// \internal
+function Boolean InlineDrawingScope.draw!(io DrawContext context) {
+
+  InlineDrawing draw = Singleton_get('InlineDrawing');
+  if(draw != null) 
+  {
+    if( context.viewport )
+      context.viewport.invokeCallback( ViewportDrawPhase_PreDraw, context );
+
+ 	  Boolean res = draw.draw(context);
+
+    if( context.viewport )
+      context.viewport.invokeCallback( ViewportDrawPhase_PostDraw, context );
+
+  	return res;
+  }
+  // Note: this is not an error condition. If no drawing object has been setup
+  // it is just because no operators have evaluated that setup drawing yet. 
+  return false;
+}
+
+/// returns the drawing stored in the singleton or null if not present.
+function InlineDrawing InlineDrawingScope.getDrawing() {
+  return Singleton_get('InlineDrawing');
+}
+

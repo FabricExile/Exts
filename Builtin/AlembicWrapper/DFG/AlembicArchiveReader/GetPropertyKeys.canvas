@@ -1,0 +1,47 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "returns all paths to properties within a path to an object\n\nSupported types:\n  this: AlembicArchiveReader\n  path: String\n  result: String[]\n"
+    },
+  "title" : "GetPropertyKeys",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicArchiveReader"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "path",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "String"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "String[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "178B3D6649A73D42CC9144B228853CA4",
+  "code" : "require AlembicWrapper;
+
+dfgEntry {
+  result = this.getPropertyKeys(path);
+}
+"
+  }

@@ -1,0 +1,89 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 1.15.0
+  
+  :kl-ref:`Camera` interface is implemented in case we require different kinds of camera objects to support the same interface. 
+  Any manipulable camera should implements this interface.
+
+  \seealso :kl-ref:`InlineCamera`, :kl-ref:`SGCameraToRTR`
+  
+  \dfgPresetOmit
+*/
+interface Camera {
+  /// Get the world matrix of this camera
+  Mat44 getMat44();
+
+  /// Set the current transform of the camera using a position and target values.
+  /// \param position The camera position
+  /// \param target The target position (where to look)
+  setFromPositionAndTarget!(Vec3 position, Vec3 target);
+
+  /// Set the current transform of the camera using a mat44.
+  /// \param mat44 The camera transform
+  setFromMat44!(Mat44 mat44);
+
+  /// Get the projection matrix of this camera
+  Mat44 getProjection();
+
+  // Get the axis of this camera
+  getAxis(io Vec3 xAxis, io Vec3 yAxis, io Vec3 zAxis);
+
+  /// Get the vertical field of view in radians
+  Scalar getFovY();
+
+  /// Set the vertical field of view in radians
+  /// \param fov The field of view
+  setFovY!(Scalar fov);
+
+  /// Get the near field distance
+  Scalar getNearDistance();
+
+  /// Set the near field distance
+  /// \param nearDistance The frustrum near distance
+  setNearDistance!(Scalar nearDistance);
+
+  /// Get the far field distance
+  Scalar getFarDistance();
+
+  /// Set the far field distance
+  /// \param farDistance The frustrum far distance
+  setFarDistance!(Scalar farDistance);
+
+  /// Get the focal distance
+  Scalar getFocalDistance();
+
+  /// Set the focal distance
+  /// \param focalDistance The focal distance
+  setFocalDistance!(Scalar focalDistance);
+
+  /// Check if this camera uses orthographic projection
+  Boolean isOrthographic();
+
+  /// Set the camera as orthographic
+  /// \param ortho The boolean to set the camera type
+  setOrthographic!(Boolean ortho);
+
+  /// Get the orthographic frustrum height
+  Scalar getOrthographicFrustumHeight();
+
+  /// Set the orthographic frustrum height
+  /// \param height The frustrum height
+  setOrthographicFrustumHeight!(Scalar height);
+
+  /// Get the linear velocity (camera's translation)
+  Vec3 getGoalLinearVelocity();
+
+  /// Set the linear velocity
+  /// \param velocity The velocity
+  setGoalLinearVelocity!(Vec3 velocity);
+
+  /// Get the angular velocity (camera's rotation)
+  Vec3 getGoalAngularVelocity();
+
+  /// Set the angular velocity
+  /// \param velocity The velocity
+  setGoalAngularVelocity!(Vec3 velocity);
+};

@@ -1,0 +1,607 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+/**
+The :kl-ref:`Mat_c` represents a dense matrix.
+
+\rst
+  .. kl-example:: Mat_c
+
+    // create a 4 row, 3 column matrix
+    Mat_c mat(4, 3);
+
+\endrst
+
+\dfgTypeColor Color(249, 157, 28)
+\dfgPresetColor Color(99, 129, 92)
+*/
+struct Mat_c {
+  private Integer rows, cols;
+  private Complex vals[];
+};
+
+inline Mat_c.init!(Integer rows, Integer cols) {
+  this.rows = rows;
+  this.cols = cols;
+  this.vals.resize(rows * cols);
+}
+
+/// Construct a matrix with ``dim`` and ``dim`` dimensions
+inline Mat_c(Integer dim) {
+  this.init(dim, dim);
+}
+
+/// Construct a matrix with ``rows`` and ``cols`` dimensions
+inline Mat_c(Integer rows, Integer cols) {
+  this.init(rows, cols);
+}
+
+/// Construct a matrix from the matrix ``that``
+inline Mat_c(Mat_c that) {
+  this.rows = that.rows;
+  this.cols = that.cols;
+  this.vals = that.vals.clone();
+}
+
+inline Integer Mat_c.rows() {
+  return this.rows;
+}
+
+inline Integer Mat_c.cols() {
+  return this.cols;
+}
+
+/// Resize the matrix to ``rows`` and ``cols`` dimensions
+inline Mat_c.resize!(Integer rows, Integer cols) {
+  this.init(rows, cols);
+  this.setNull();
+}
+
+/// Return the element value at ``row`` and ``col``
+inline Complex Mat_c.get(Integer row, Integer col) {
+  return this.get(this.cols * row + col);
+}
+
+/// Set the element value at ``row`` and ``col``
+inline Mat_c.set!(Integer row, Integer col, Complex val ) {
+  this.set(this.cols * row + col, val);
+}
+
+/// Return the element value at ``row`` and ``col``
+inline Complex Mat_c.get(Integer index) {
+  return this.vals[index];
+}
+
+/// Set the element value at ``row`` and ``col``
+inline Mat_c.set!(Integer index, Complex val ) {
+  this.vals[index] = val;
+}
+
+/// Set all the matrix element values to ``val``
+inline Mat_c.setAll!(Complex val) {
+  for (Integer i = 0; i < this.vals.size(); ++i)
+    this.vals[i] = val;
+}
+
+/// Set the values of all matrix elements to zero
+inline Mat_c.setNull!() {
+  this.setAll(Complex());
+}
+
+/// Return a String description of this matrix and its dimensions
+inline String Mat_c.sizeDesc() {
+  return "Mat_c(" + this.rows + "," + this.cols + ")";
+}
+
+/// Append a String description of this matrix and its element
+/// values to the io String ``string``
+function Mat_c.appendDesc(io String string) {
+  string += this.sizeDesc();
+  string += ":[";
+  for (Integer row = 0; row < this.rows; ++row) {
+    if (row > 0)
+      string += " ";
+    string += "[";
+    for (Integer col = 0; col < this.cols; ++col) {
+      if (col > 0)
+        string += " ";
+      string += this.get(row, col);
+    }
+    string += "]";
+  }
+  string += "]";
+}
+
+/// Tranpose a matrix.
+inline Mat_c Mat_c.transpose() {
+  Mat_c res(this.cols, this.rows);
+  for (Integer row = 0; row < this.rows; ++row)
+    for (Integer col = 0; col < this.cols; ++col)
+      res.set(col, row, this.get(row, col));
+  return res;
+}
+
+/// setting the diagonal components of 
+/// this matrix to a scalar
+inline Mat_c.setDiagonal!(Integer size, Complex val) {
+  this.rows = size;
+  this.cols = size;
+  this.vals.resize(size * size);
+  for (Integer row = 0; row < size; ++row)
+    for (Integer col = 0; col < size; ++col)
+      this.vals[row * size + col] = (row == col? val: Complex());
+}
+
+/// Set the matrix to an identity matrix of ``size`` rows and cols
+inline Mat_c.setIdentity!(Integer size) {
+  this.setDiagonal(size, 1);
+}
+
+/// Set to a diagonal matrix given the diagonal elements
+inline Mat_c.setDiagonal!(Vec_c vec) {
+  Integer size = this.vals.size();
+  this.rows = size;
+  this.cols = size;
+  this.vals.resize(size * size);
+  for (Integer row = 0; row < size; ++row)
+    for (Integer col = 0; col < size; ++col)
+      this.vals[row * size + col] = (row == col? vec.get(row): Complex());
+}
+
+/// Returns true if this matrix is the same as another one
+inline Boolean Mat_c.equal(Mat_c that) {
+  for (Integer i = 0; i < this.vals.size(); ++i)
+    if (this.vals[i] != that.vals[i])
+      return false;
+  return true;
+}
+
+/// Returns true if this matrix is almost the same as another one
+inline Boolean Mat_c.almostEqual(Mat_c that, Float32 precision) {
+  for (Integer i = 0; i < this.vals.size(); ++i)
+    if (!this.vals[i].almostEqual(that.vals[i], precision))
+      return false;
+  return true;
+}
+
+/// Returns true if this matrix is almost the same as another one
+/// (using a default precision)
+inline Boolean Mat_c.almostEqual(Mat_c that) {
+  return this.almostEqual(that, PRECISION);
+}
+
+/// Equals operator
+inline Boolean == (Mat_c lhs, Mat_c rhs) {
+  return lhs.equal(rhs);
+}
+
+/// Not equals operator
+inline Boolean != (Mat_c lhs, Mat_c rhs) {
+  return !lhs.equal(rhs);
+}
+
+/// Hash for this matrix
+inline UInt32 Mat_c.hash() {
+  UInt32 result;
+  for (Integer row = 0; row < this.rows; ++row)
+    for (Integer col = 0; col < this.cols; ++col)
+      result ^= this.get(row, col).hash();
+  return result;
+}
+
+/// Returns the addition of two matrices
+inline Mat_c +(Mat_c lhs, Mat_c rhs) {
+  Integer lhsRows = lhs.rows();
+  Integer lhsCols = lhs.cols();
+  Integer rhsRows = rhs.rows();
+  Integer rhsCols = rhs.cols();
+  if (Fabric_Guarded
+    && (lhsRows != rhsRows || lhsCols != rhsCols))
+    throw FUNC + ": incompatible dimensions (" + lhs.sizeDesc() + " vs. " + rhs.sizeDesc() + ")";
+  Mat_c result(lhsRows, lhsCols);
+  for (Integer row = 0; row < lhsRows; ++row)
+    for (Integer col = 0; col < lhsCols; ++col)
+      result.set(row, col, lhs.get(row, col) + rhs.get(row, col));
+  return result;
+}
+
+/// Add another matrix in place
+inline Mat_c.+=(Mat_c that) {
+  Integer thisRows = this.rows();
+  Integer thisCols = this.cols();
+  Integer thatRows = that.rows();
+  Integer thatCols = that.cols();
+  if (Fabric_Guarded
+    && (thisRows != thatRows || thisCols != thatCols))
+    throw FUNC + ": incompatible dimensions (" + this.sizeDesc() + " vs. " + that.sizeDesc() + ")";
+  Mat_c result(thisRows, thisCols);
+  for (Integer row = 0; row < thisRows; ++row)
+    for (Integer col = 0; col < thisCols; ++col)
+      this.set(row, col, this.get(row, col) + that.get(row, col));
+}
+
+/// Returns the addition of two matrices
+inline Mat_c -(Mat_c lhs, Mat_c rhs) {
+  Integer lhsRows = lhs.rows();
+  Integer lhsCols = lhs.cols();
+  Integer rhsRows = rhs.rows();
+  Integer rhsCols = rhs.cols();
+  if (Fabric_Guarded
+    && (lhsRows != rhsRows || lhsCols != rhsCols))
+    throw FUNC + ": incompatible dimensions (" + lhs.sizeDesc() + " vs. " + rhs.sizeDesc() + ")";
+  Mat_c result(lhsRows, lhsCols);
+  for (Integer row = 0; row < lhsRows; ++row)
+    for (Integer col = 0; col < lhsCols; ++col)
+      result.set(row, col, lhs.get(row, col) - rhs.get(row, col));
+  return result;
+}
+
+/// Add another matrix in place
+inline Mat_c.-=(Mat_c that) {
+  Integer thisRows = this.rows();
+  Integer thisCols = this.cols();
+  Integer thatRows = that.rows();
+  Integer thatCols = that.cols();
+  if (Fabric_Guarded
+    && (thisRows != thatRows || thisCols != thatCols))
+    throw FUNC + ": incompatible dimensions (" + this.sizeDesc() + " vs. " + that.sizeDesc() + ")";
+  Mat_c result(thisRows, thisCols);
+  for (Integer row = 0; row < thisRows; ++row)
+    for (Integer col = 0; col < thisCols; ++col)
+      this.set(row, col, this.get(row, col) - that.get(row, col));
+}
+
+/// unary -
+inline Mat_c -Mat_c() {
+  Integer thisRows = this.rows();
+  Integer thisCols = this.cols();
+  Mat_c result(thisRows, thisCols);
+  for (Integer row = 0; row < thisRows; ++row)
+    for (Integer col = 0; col < thisCols; ++col)
+      result.set(row, col, -this.get(row, col));
+  return result;
+}
+
+inline Mat_c *(Mat_c lhs, Complex rhs) {
+  Integer lhsRows = lhs.rows();
+  Integer lhsCols = lhs.cols();
+  Mat_c res(lhsRows, lhsCols);
+  for (Integer row = 0; row < lhsRows; ++row)
+    for (Integer col = 0; col < lhsCols; ++col)
+      res.set(row, col, lhs.get(row, col) * rhs);
+  return res;
+}
+
+inline Mat_c *(Complex lhs, Mat_c rhs) {
+  Integer rhsRows = rhs.rows();
+  Integer rhsCols = rhs.cols();
+  Mat_c res(rhsRows, rhsCols);
+  for (Integer row = 0; row < rhsRows; ++row)
+    for (Integer col = 0; col < rhsCols; ++col)
+      res.set(row, col, lhs * rhs.get(row, col));
+  return res;
+}
+
+inline Mat_c.*=(Complex val) {
+  for (Integer row = 0; row < this.rows; ++row)
+    for (Integer col = 0; col < this.cols; ++col)
+      this.set(row, col, this.get(row, col) * val);
+}
+
+inline Mat_c /(Mat_c lhs, Complex rhs) {
+  Integer lhsRows = lhs.rows();
+  Integer lhsCols = lhs.cols();
+  Mat_c res(lhsRows, lhsCols);
+  for (Integer row = 0; row < lhsRows; ++row)
+    for (Integer col = 0; col < lhsCols; ++col)
+      res.set(row, col, lhs.get(row, col) / rhs);
+  return res;
+}
+
+inline Mat_c /(Complex lhs, Mat_c rhs) {
+  Integer rhsRows = rhs.rows();
+  Integer rhsCols = rhs.cols();
+  Mat_c res(rhsRows, rhsCols);
+  for (Integer row = 0; row < rhsRows; ++row)
+    for (Integer col = 0; col < rhsCols; ++col)
+      res.set(row, col, lhs / rhs.get(row, col));
+  return res;
+}
+
+inline Mat_c./=(Complex val) {
+  for (Integer row = 0; row < this.rows; ++row)
+    for (Integer col = 0; col < this.cols; ++col)
+      this.set(row, col, this.get(row, col) / val);
+}
+
+inline Vec_c *(Mat_c lhs, Vec_c rhs) {
+  Integer lhsRows = lhs.rows();
+  Integer lhsCols = lhs.cols();
+  Integer rhsSize = rhs.size();
+  if (Fabric_Guarded && lhsCols != rhsSize)
+    throw FUNC + ": incompatible dimensions (" + lhs.sizeDesc() + " vs. " + rhs.sizeDesc() + ")";
+  Vec_c res(lhsRows);
+  for (Integer row = 0; row < lhsRows; ++row) {
+    Complex val;
+    for (Integer col = 0; col < lhsCols; ++col)
+      val += lhs.get(row, col) * rhs.get(col);
+    res.set(row, val);
+  }
+  return res;
+}
+
+inline Vec_c *(Vec_c lhs, Mat_c rhs) {
+  Integer lhsSize = lhs.size();
+  Integer rhsRows = rhs.rows();
+  Integer rhsCols = rhs.cols();
+  if (Fabric_Guarded && rhsRows != lhsSize)
+    throw FUNC + ": incompatible dimensions (" + lhs.sizeDesc() + " vs. " + rhs.sizeDesc() + ")";
+  Vec_c res(rhsCols);
+  for (Integer col = 0; col < rhsCols; ++col) {
+    Complex val;
+    for (Integer row = 0; row < rhsRows; ++row)
+      val += lhs.get(row) * rhs.get(row, col);
+    res.set(col, val);
+  }
+  return res;
+}
+
+inline Vec_c /(Mat_c lhs, Vec_c rhs) {
+  Integer lhsRows = lhs.rows();
+  Integer lhsCols = lhs.cols();
+  Integer rhsSize = rhs.size();
+  if (lhsCols != rhsSize)
+    throw FUNC + ": incompatible dimensions (" + lhs.sizeDesc() + " vs. " + rhs.sizeDesc() + ")";
+  Vec_c res(lhsRows);
+  for (Integer row = 0; row < lhsRows; ++row) {
+    Complex val;
+    for (Integer col = 0; col < lhsCols; ++col)
+      val += lhs.get(row, col) / rhs.get(col);
+    res.set(row, val);
+  }
+  return res;
+}
+
+inline Vec_c /(Vec_c lhs, Mat_c rhs) {
+  Integer lhsSize = lhs.size();
+  Integer rhsRows = rhs.rows();
+  Integer rhsCols = rhs.cols();
+  if (rhsRows != lhsSize)
+    throw FUNC + ": incompatible dimensions (" + lhs.sizeDesc() + " vs. " + rhs.sizeDesc() + ")";
+  Vec_c res(rhsCols);
+  for (Integer col = 0; col < rhsCols; ++col) {
+    Complex val;
+    for (Integer row = 0; row < rhsRows; ++row)
+      val += lhs.get(row) / rhs.get(row, col);
+    res.set(col, val);
+  }
+  return res;
+}
+
+inline Mat_c *(Mat_c lhs, Mat_c rhs) {
+  Integer lhsRows = lhs.rows();
+  Integer lhsCols = lhs.cols();
+  Integer rhsRows = rhs.rows();
+  Integer rhsCols = rhs.cols();
+  if (Fabric_Guarded && lhsCols != rhsRows)
+    throw FUNC + ": incompatible dimensions (" + lhs.sizeDesc() + " vs. " + rhs.sizeDesc() + ")";
+  Mat_c res(lhsRows, rhsCols);
+  for (Integer row = 0; row < lhsRows; ++row) {
+    for (Integer col = 0; col < rhsCols; ++col) {
+      Complex val;
+      for (Integer ind = 0; ind < lhsCols; ++ind)
+        val += lhs.get(row, ind) * rhs.get(ind, col);
+      res.set(row, col, val);
+    }
+  }
+  return res;
+}
+
+inline Mat_c /(Mat_c lhs, Mat_c rhs) {
+  Integer lhsRows = lhs.rows();
+  Integer lhsCols = lhs.cols();
+  Integer rhsRows = rhs.rows();
+  Integer rhsCols = rhs.cols();
+  if (Fabric_Guarded && lhsCols != rhsRows)
+    throw FUNC + ": incompatible dimensions (" + lhs.sizeDesc() + " vs. " + rhs.sizeDesc() + ")";
+  Mat_c res(lhsRows, rhsCols);
+  for (Integer row = 0; row < lhsRows; ++row) {
+    for (Integer col = 0; col < rhsCols; ++col) {
+      Complex val;
+      for (Integer ind = 0; ind < lhsCols; ++ind)
+        val += lhs.get(row, ind) / rhs.get(ind, col);
+      res.set(row, col, val);
+    }
+  }
+  return res;
+}
+
+inline Mat_c Mat_c.multiply(Mat_c m) {
+  return(this * m);
+}
+
+/// Linearly interpolates this matrix with another one
+/// based on a scalar blend value (0.0 to 1.0)
+inline Mat_c Mat_c.linearInterpolate(Mat_c that, Complex t) {
+  return this * (1 - t) + that * t;
+}
+
+/// Compute the trace of the matrix.  The matrix must be square.
+inline Complex Mat_c.trace() {
+  Integer size = this.rows();
+  if (Fabric_Guarded && this.cols() != size)
+    throw FUNC + ": must be square";
+  Complex res;
+  for (Integer i = 0; i < size; ++i)
+    res += this.get(i, i);
+  return res;
+}
+
+// Return a submatrix of elements in the range {[rs, re), [cs, ce)}
+inline Mat_c Mat_c.sub(
+  Integer rs, Integer re,
+  Integer cs, Integer ce
+  )
+{
+  if (Fabric_Guarded) {
+    if (rs > re)
+      throw FUNC + ": must have rs <= re";
+    if (re > this.rows())
+      throw FUNC + ": must have re <= this.rows()";
+    if (cs > ce)
+      throw FUNC + ": must have cs <= ce";
+    if (ce > this.cols())
+      throw FUNC + ": must have ce <= this.cols()";
+  }
+  Integer rows = re - rs;
+  Integer cols = ce - cs;
+  Mat_c res(rows, cols);
+  for (Integer i = 0; i < rows; ++i)
+    for (Integer j = 0; j < cols; ++j )
+      res.set(i, j, this.get(rs + i, cs + j));
+  return res;
+}
+
+// Sets a submatrix of elements in the range {[rs, re), [cs, ce)}
+inline Mat_c.setSub!(
+  Integer rs, Integer re,
+  Integer cs, Integer ce,
+  Mat_c sub 
+  )
+{
+  if (Fabric_Guarded) {
+    if (rs > re)
+      throw FUNC + ": must have rs <= re";
+    if (re > this.rows())
+      throw FUNC + ": must have re <= this.rows()";
+    if (cs > ce)
+      throw FUNC + ": must have cs <= ce";
+    if (ce > this.cols())
+      throw FUNC + ": must have ce <= this.cols()";
+  }
+  Integer rows = re - rs;
+  Integer cols = ce - cs;
+
+  for (Integer i = 0; i < rows; ++i)
+    for (Integer j = 0; j < cols; ++j )
+      this.set(rs + i, cs + j, sub.get(i, j));
+}
+
+// Return top left part of matrix
+inline Mat_c Mat_c.topLeft(Integer rows, Integer cols) {
+  return this.sub(0, rows, 0, cols);
+}
+
+inline Vec_c Mat_c.getRowsMin() {
+  Vec_c mins(this.rows);
+  Vec_c vec(this.cols);
+
+  for(UInt32 i=0; i < this.rows; i++)
+  {
+    this.getRow(i, vec);
+    mins.set(i, vec.minimum());
+  }
+  return mins;
+}
+ 
+inline Vec_c Mat_c.getRowsMax() {
+  Vec_c maxs(this.rows);
+  Vec_c vec(this.cols);
+
+  for(UInt32 i=0; i < this.rows; i++)
+  {
+    this.getRow(i, vec);
+    maxs.set(i, vec.maximum());
+  }
+  return maxs;
+}
+
+inline Vec_c Mat_c.getColsMin() {
+  Vec_c mins(this.cols);
+  Vec_c vec(this.rows);
+
+  for(UInt32 i=0; i < this.cols; i++)
+  {
+    this.getCol(i, vec);
+    mins.set(i, vec.minimum());
+  }
+  return mins;
+}
+
+inline Vec_c Mat_c.getColsMax() {
+  Vec_c maxs(this.cols);
+  Vec_c vec(this.rows());
+
+  for(UInt32 i=0; i < this.cols; i++)
+  {
+    this.getCol(i, vec);
+    maxs.set(i, vec.maximum());
+  }
+  return maxs;
+}
+ 
+inline Mat_c.getRow(UInt32 row, io Vec_c vec) {
+  for(UInt32 i; i < this.cols; i++)
+    vec.set(i, this.get(row, i));
+}
+
+inline Mat_c.setRow!(UInt32 row, Vec_c vec) {
+  for(UInt32 i; i < this.cols; i++)
+    this.set(row, i, vec.get(i));
+}
+
+inline Mat_c.setRow!(UInt32 row, Complex value) {
+  for(UInt32 i; i < this.cols; i++)
+    this.set(row, i, value);
+}
+
+inline Mat_c.getCol(UInt32 col, io Vec_c vec) {
+  for(UInt32 i; i < this.rows; i++)
+    vec.set(i, this.get(i, col));
+}
+
+inline Mat_c.setCol!(UInt32 col, Vec_c vec) {
+  for(UInt32 i; i < this.rows; i++)
+    this.set(i, col, vec.get(i));
+}
+
+inline Mat_c.setCol!(UInt32 col, Complex value) {
+  for(UInt32 i; i < this.rows; i++)
+    this.set(i, col, value);
+}
+
+inline Mat_c.swapRows!(UInt32 row1, UInt32 row2) {
+  for(UInt32 i; i < this.cols; i++)
+    this.vals.swap(row1 * this.cols + i, row2 * this.cols + i);
+}
+
+inline Mat_c.swapCols!(UInt32 col1, UInt32 col2) {
+  for(UInt32 i; i < this.rows; i++)
+    this.vals.swap(this.cols * i + col1, this.cols * i + col2);
+}
+
+operator SetMat_cFromVec_cArray_task<<<row>>>(
+  UInt32 cols, 
+  Vec_c vecs[], 
+  io Mat_c mat)
+{
+  for(UInt32 col=0; col<cols; ++col)
+    mat.set(row * cols + col, vecs[row].get(col));
+}
+
+/// Constructs a matrix from an array pf vector.
+inline Mat_c(Vec_c vecs[]) {
+  this.set(vecs);
+}
+
+/// Sets a matrix from an array pf vector.
+/// The matrix size is automatically updated.
+inline Mat_c.set!(Vec_c vecs[]) {
+  Size rows = vecs.size();
+  Size cols = rows > 0 ? vecs[0].size() : 0;
+
+  this.resize(rows, cols);
+  SetMat_cFromVec_cArray_task<<<rows>>>(
+    cols, vecs, this);
+}
+ 

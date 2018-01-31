@@ -1,0 +1,27 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 1.13.0
+  The CurrPersistenceContext object is a simple helper object that stores the current persistence context so it can be used when loading externals files. 
+  Simply add the CurrPersistenceContext object as a Splice port, and then when the scene is loaded, you can use the cached persistence context to resolve external files. 
+  \dfgPresetOmit
+*/
+object CurrPersistenceContext : Persistable {
+  PersistenceContext context;
+};
+
+/// a callback invoked by Splice when an object is persisted
+function String CurrPersistenceContext.saveDataToString(PersistenceContext context) {
+	// Force caching of the context on scene save as well.
+	Ref<CurrPersistenceContext> _this = this;
+	_this.context = context;
+  return "<dummydata>";
+}
+
+/// a callback invoked by Splice when an object loaded back within Splice
+function CurrPersistenceContext.loadDataFromString!(PersistenceContext context, String data) {
+  // Simply cache the current peristence context.
+  this.context = context;
+}

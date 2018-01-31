@@ -1,0 +1,77 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+\versionadded 1.12.0
+
+The InlineProceduralTexture represents a texture which is procedurally built in KL. This is useful for noise patterns or images encoding custom data from the runtime.
+
+\example
+  InlineDrawing draw = OGLInlineDrawing();
+  
+  // register the texture in the drawing
+  InlineProceduralTexture texture = draw.registerTexture(InlineProceduralTexture('customTexture'));
+
+  // update the texture later with new procedural content
+  Size width = 256;
+  Size height = 256;
+  Color pixels[];
+  pixels.resize(width * height);
+  for(Size i=0;i<pixels.size();i++)
+    pixels[i] = Color(1.0, 0.0, 0.0).linearInterpolate(Color(0.0, 1.0, 0.0), mathRandomScalar(17, i));
+  texture.update(width, height, pixels);
+\endexample
+\dfgPresetOmit
+*/
+object InlineProceduralTexture : InlineTexture {
+  /// \internal
+  Size width;
+  /// \internal
+  Size height;
+  /// \internal
+  Color colorPixels[];
+  /// \internal
+  Float32 float32Pixels[];
+};
+
+/// standard constructor
+function InlineProceduralTexture() {
+  this.version = 1;
+}
+
+/// standard constructor with a name only
+function InlineProceduralTexture(String name) {
+  this.name = name;
+  this.version = 1;
+}
+
+/// standard constructor with a name and pixel data
+function InlineProceduralTexture(String name, Size width, Size height, Color pixels[]) {
+  this.name = name;
+  this.version = 1;
+  this.update(width, height, pixels);
+}
+
+/// standard constructor with a name and pixel data
+function InlineProceduralTexture(String name, Size width, Size height, Float32 pixels[]) {
+  this.name = name;
+  this.version = 1;
+  this.update(width, height, pixels);
+}
+
+/// updates the texture with the data provided
+function InlineProceduralTexture.update!(Size width, Size height, Color pixels[]) {
+  this.width = width;
+  this.height = height;
+  this.colorPixels = pixels;
+  this.version++;
+}
+
+/// updates the texture with the data provided
+function InlineProceduralTexture.update!(Size width, Size height, Float32 pixels[]) {
+  this.width = width;
+  this.height = height;
+  this.float32Pixels = pixels;
+  this.version++;
+}

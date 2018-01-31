@@ -1,0 +1,154 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Util;
+
+/**
+  \versionadded 2.6.0
+  
+  OptionsTargetRegistry registers OptionsTarget so they are editable from a UI widget.  
+*/
+object OptionsTargetRegistry : BaseOptionsTargetRegistry {
+};
+
+OptionsTargetRegistry() {
+
+  GetCommandRegistry().registerCommand(
+    'openAllOptionsTargetEditor',
+    OpenAllOptionsTargetEditorCommand);
+
+  GetCommandRegistry().registerCommand(
+    'closeAllOptionsTargetEditor',
+    CloseAllOptionsTargetEditorCommand);
+
+  GetCommandRegistry().registerCommand(
+    'openAllGlobalOptionsTargetEditor',
+    OpenAllGlobalOptionsTargetEditorCommand);
+
+   GetCommandRegistry().registerCommand(
+    'closeAllGlobalOptionsTargetEditor',
+    CloseAllGlobalOptionsTargetEditorCommand);
+}
+
+/// Implementation of OptionsTargetRegistry_virtuals.
+OptionsTargetRegistry.unregisterTarget!(Ref<OptionsTarget> target) {
+  String id = this.getID(target);
+  if(id != "")
+    this.closeAppOptionsEditor(id, true);
+
+  this.parent.unregisterTarget(target);
+}
+
+/// Opens the options editor widget (dock) of the app.
+/// Throws an exception if the id isn't valid.
+/// \param editorTitle Name of the app widget.
+/// \param id ID of the OptionsTarget in the registry.
+OptionsTargetRegistry.openAppOptionsEditor(String editorTitle, String id) {
+
+  if(!this.getTarget(id))
+    throw("OptionsTargetRegistry.openAppOptionsEditor error: " + 
+      id + ", is not valid");
+
+  // Don't open the widget if the targets has no options.
+  //RTVal dict[String] = this.getTarget(id).getOptions();
+  if(!this.getTarget(id).getOptions().type())
+    return;
+
+  RTVal commandArgs[String];
+  commandArgs["editorTitle"] = editorTitle;
+  commandArgs["editorID"] = id;
+
+  String error;
+
+  GetCommandManager().scheduleCommand(
+    "openKLOptionsTargetEditor", 
+    commandArgs, 
+    error);
+
+  if(error.length() > 0)
+    report(error);
+}
+
+OptionsTargetRegistry.openAppOptionsEditor(Ref<OptionsTarget> target) {
+  this.openAppOptionsEditor(this.getID(target));
+}
+
+OptionsTargetRegistry.openAppOptionsEditor(String id) {
+  this.openAppOptionsEditor(id, id);
+}
+
+OptionsTargetRegistry.openAppOptionsEditor(String editorTitle, Ref<OptionsTarget> target) {
+  this.openAppOptionsEditor(editorTitle, this.getID(target));
+}
+
+/// Closes the options editor widget (dock) of the app.
+/// Throws an exception if the id isn't valid.
+/// \param id ID of the OptionsTarget in the registry.
+/// \param failSilently .
+OptionsTargetRegistry.closeAppOptionsEditor(String id, Boolean failSilently) {
+  
+  if(!this.getTarget(id))
+    throw("OptionsTargetRegistry.closeAppOptionsEditor error: " + 
+      id + ", is not valid");
+  
+  RTVal commandArgs[String];
+  commandArgs["editorID"] = id;
+  commandArgs["failSilently"] = failSilently;
+
+  String error;
+
+  GetCommandManager().scheduleCommand(
+    "closeKLOptionsTargetEditor", 
+    commandArgs, 
+    error);
+
+  if(error.length() > 0)
+    report(error);
+}
+
+OptionsTargetRegistry.closeAppOptionsEditor(Ref<OptionsTarget> target, Boolean failSilently) {
+  this.closeAppOptionsEditor(this.getID(target), failSilently);
+}
+
+/// Gets a target's options.
+/// Throws an exception if the id isn't valid.
+/// \param id ID of the OptionsTarget in the registry.
+RTVal OptionsTargetRegistry.getTargetOptions(String id) {
+
+  if( !this.getTarget( id ) )
+    return RTVal();//Possible that the options are no longer there; silently return an invalid RTVal
+
+   return this.getTarget(id).getOptions();
+}
+
+/// Sets a target's options.
+/// Throws an exception if the id isn't valid.
+/// \param id ID of the OptionsTarget in the registry.
+/// \param options The options dictionary.
+OptionsTargetRegistry.setTargetOptions!(String id, RTVal options) {
+  
+  if(!this.getTarget(id))
+    throw("OptionsTargetRegistry.setTargetOptions error: " + 
+      id + ", is not valid");
+
+  this.getTarget(id).setOptions(options);
+}
+
+/// Gets the options editor registry (singleton).
+Ref<OptionsTargetRegistry> GetOptionsTargetRegistry() {
+  return GetOrCreateSingleton( 
+    "OptionsTargetRegistry", 
+    OptionsTargetRegistry);
+}
+
+/// \internal
+/// C++ helper
+object AppOptionsTargetRegistry {
+};
+
+/// \internal
+/// C++ helper
+Ref<OptionsTargetRegistry> AppOptionsTargetRegistry.getOptionsTargetRegistry() {
+  return GetOptionsTargetRegistry();
+}

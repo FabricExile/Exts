@@ -1,0 +1,168 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  const String RotateAroundAxisTool_XfoChanged = "rotAxis_changed";
+
+  /// This tool allows to rotate a :kl-ref:`Tool::TransformTarget` in an arbitrary axis,
+  /// which is by default represented as a 3D circle. The tool creates
+  /// a :kl-ref:`RotateAroundAxisDragInteraction` to map mouse moves
+  /// to transform changes.
+  ///
+  /// While this tool is used as a sub-tool of the :kl-ref:`RotateTool`,
+  /// it can also be created independently.
+  object RotateAroundAxisTool : XfoTargetAlignedGizmo {
+    Vec3 axisDirection;
+    Boolean localRotate;
+    Float32 gizmoSize;
+    RotateAroundAxisDragInteraction rotateInteraction;
+
+    Boolean showHint;
+    DrawElements hintDraw;
+  };
+
+  RotateAroundAxisTool( TransformTarget target, Vec3 axisDirection, Color gizmoColor, Float32 gizmoSize, Color highlightColor, Boolean addLargerClickArea, Boolean showHint ) {
+    this.construct( target, axisDirection, gizmoColor, gizmoSize, highlightColor, addLargerClickArea, showHint );
+  }
+
+  RotateAroundAxisTool( TransformTarget target, Vec3 axisDirection, Color highlightColor, Ref<BaseTool> gizmoShape, Boolean showHint ) {
+    this.gizmoSize = 1;
+    this.construct( target, axisDirection, highlightColor, gizmoShape, showHint );
+  }
+
+  RotateAroundAxisTool.construct!( TransformTarget target, Vec3 axisDirection, Color gizmoColor, Float32 gizmoSize, Color highlightColor, Boolean addLargerClickArea, Boolean showHint ) {
+
+    DrawElements elts();
+    this.gizmoSize = gizmoSize;
+    elts.setPen( gizmoColor, 1 );
+    elts.drawCircle( Xfo(), gizmoSize, 50 );
+
+    GeometricShape gizmoShape();
+    gizmoShape.setGeometry( elts );
+
+    Xfo localTransform;
+    localTransform.ori.setFrom2Vectors( Vec3( 0, 1, 0 ), axisDirection.unit_safe() );
+    localTransform.ori.setUnit();
+
+    gizmoShape.setLocalTransform( localTransform );
+
+    this.construct( target, axisDirection, highlightColor, gizmoShape, showHint );
+
+    if( addLargerClickArea ) {
+      // create a larger click area
+      GeometricShape raycastShape();
+      DrawElements raycastElts();
+      raycastElts.drawTrianglesTorus( Xfo(), gizmoSize * 0.05, gizmoSize, 40, 8 );
+      raycastShape.setGeometry( raycastElts );
+      raycastShape.setRaycastVisibleOnly( true );
+      raycastShape.setLocalTransform( localTransform );
+      this.addChild( "clickArea", raycastShape );
+
+      Ref<MouseClickDragRaycastInteraction> interaction = this.rotateInteraction.getInteraction();
+      interaction.addRaycastShape( raycastShape, true );
+      this.fixHighlightArea();
+    }
+  }
+
+  RotateAroundAxisTool.construct!( TransformTarget target, Vec3 axisDirection, Color highlightColor, Ref<BaseTool> gizmoShape, Boolean showHint ) {
+    this.showHint = showHint;
+    this.axisDirection = axisDirection;
+
+    // Add a drag interaction to the shape
+    MouseClickDragRaycastInteraction clickAndDragInteraction();
+    this.rotateInteraction = RotateAroundAxisDragInteraction( clickAndDragInteraction, target, axisDirection, this.localRotate );
+    this.attachComponent( this.rotateInteraction );
+    this.rotateInteraction.addListener( this, false, ToolEvent_DragMove, RotateAroundAxisTool_XfoChanged );
+
+    this.parent.construct( target, highlightColor, gizmoShape, this.rotateInteraction );
+    this.enableLocalRotation( true );
+  }
+
+  RotateAroundAxisTool.setAxis!( Vec3 axis ) {
+    this.axisDirection = axis.unit_safe();
+    this.rotateInteraction.setAxis( axis );
+  }
+
+  RotateAroundAxisTool.enableLocalRotation!( Boolean localRotate ) {
+    this.localRotate = localRotate;
+    this.alignModifier.setAlignType( true, localRotate, false, true );
+    this.rotateInteraction.setLocal( localRotate );
+  }
+
+  /// \internal
+  RotateAroundAxisTool.fixHighlightArea!( ) {
+    // Check for shape's HighlightUnderMouse and add clickArea to target shape
+    Component highlightComps[] = this.getShape().getComponentsByType( HighlightUnderMouse );
+    if( highlightComps.size() == 1 ) {
+      Ref<RaycastTargetShape> clickArea = this.getChild( "clickArea" );
+      if( clickArea ) {
+        Ref<HighlightUnderMouse> highlight = highlightComps[0];
+        highlight.addHighlightAreaShape( clickArea );
+      }
+    }
+  }
+
+  RotateAroundAxisTool.onEnterState!( String newState, Boolean mainState ) {
+
+    if( newState == XfoTargetAlignedGizmo_dragging ) {
+      if( this.showHint ) {
+        if( !this.hintDraw )
+          this.hintDraw = DrawElements();
+
+        GeometricShape gizmoShape();
+        gizmoShape.setGeometry( this.hintDraw );
+        gizmoShape.setRenderPass( OnTopNoDepthTestRenderPass );// Draw on top, no depth tests to avoid conflicts with other widgets
+        AddChildAction addChild( "angleHint", gizmoShape, true );
+        this.attachAndDoStateSpecificAction( newState, addChild );
+      }
+    }
+    this.parent.onEnterState( newState, mainState );
+    this.fixHighlightArea();// A new highlight might have been created
+  }
+
+  /// \internal
+  RotateAroundAxisTool.onEvent!( ToolEvent event, ToolEventUserID userID ) {
+    if( event.name == RotateAroundAxisTool_XfoChanged ) {
+      if( this.showHint ) {
+        // draw hint
+        Mat44 invTransform = this.getAlignedTransform().inverse();//Express in local space, so it is perspective-compensated as other gizmos
+        Vec3 center = invTransform * this.rotateInteraction.lastWorldCenter;
+        Vec3 axis = (invTransform.upperLeft() * this.rotateInteraction.lastWorldAxis).unit_safe();
+        Vec3 start = invTransform * this.rotateInteraction.lastStartPos;
+        Vec3 end = invTransform * this.rotateInteraction.lastEndPos;
+
+        Vec3 startVec = ( start - center ).unit_safe() * this.gizmoSize;
+        start = center + startVec;
+        Vec3 endVec = ( end - center ).unit_safe() * this.gizmoSize;
+        end = center + endVec;
+
+        this.hintDraw.clear();
+        this.hintDraw.setPen( Color(0.7), 5);
+
+        this.hintDraw.drawPoint( center );
+        this.hintDraw.drawPoint( start );
+        this.hintDraw.drawPoint( end );
+        this.hintDraw.drawLine( center, start );
+        this.hintDraw.drawLine( center, end );
+
+        // draw a triangle fan
+        this.hintDraw.setPen( Color( 0.7, 0.7, 0.7, 0.5 ), 5 );
+        Size steps = Size( abs( this.rotateInteraction.lastAngle ) / 0.1 + 2 );
+        for( Size i = 0; i < steps; ++i ) {
+          Quat rot1, rot2;
+          rot1.setFromAxisAndAngle( axis, ( this.rotateInteraction.lastAngle * i ) / steps );
+          rot2.setFromAxisAndAngle( axis, ( this.rotateInteraction.lastAngle * (i+1) ) / steps );
+
+          Vec3 pt1 = center + rot1.rotateVector( startVec );
+          Vec3 pt2 = center + rot2.rotateVector( startVec );
+          this.hintDraw.drawTriangle( center, pt1, pt2 );
+        }
+      }
+    }
+    this.parent.onEvent( event, userID );
+  }
+
+
+}// namespace Tool

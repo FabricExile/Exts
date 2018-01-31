@@ -1,0 +1,108 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+/**
+\versionadded 1.12.0
+
+The BinaryReader is used to read binary data from files. It supports reading of any shallow data structure represented as a
+Data pointer and a DataSize.
+
+\seealso BinaryWriter, BinaryBlockReader
+
+\example
+  FilePath path = FilePath('${TEMP}/binaryWriter.bin').expandEnvVars();
+  {
+    BinaryWriter writer = BinaryWriter(path.string());
+    Size count = 50;
+    Scalar values[];
+    values.resize(count);
+    for(Size i=0;i<values.size();i++)
+      values[i] = Scalar(i) * 0.7;
+    report(values[3]);
+    report(values[17]);
+    report(values[33]);
+  
+    writer.write(count.data(), count.dataSize());
+    writer.write(values.data(), values.dataSize());
+    report('Binary file written.');
+  }
+  
+  if(path.exists())
+  {
+
+    BinaryReader reader = BinaryReader(path.string());
+    Size count = 0;
+    reader.read(count.data(), count.dataSize());
+    Scalar values[];
+    values.resize(count);
+    reader.read(values.data(), values.dataSize());
+  
+    report(values[3]);
+    report(values[17]);
+    report(values[33]);
+  
+    report('Binary file read.');
+  }
+\endexample
+*/
+object BinaryReader : FileReader {
+  /// \internal
+  Data handle;
+};
+
+/// standard constructor
+function BinaryReader() = "BinaryReader_construct";
+
+/// standard destructor
+function ~BinaryReader() = "BinaryReader_free";
+
+/// constructs a new reader object with a given filePath
+inline BinaryReader(String filePath) {
+  this = BinaryReader();
+  this.open(filePath);
+} 
+
+/// opens a new readable file, returns true if successful
+function Boolean BinaryReader.open!(String filePath) = "BinaryReader_open";
+
+/// closes a currently opened file, returns true if successful
+function Boolean BinaryReader.close!() = "BinaryReader_close";
+
+/// returns true if the file is currently open
+function Boolean BinaryReader.isOpen() = "BinaryReader_isOpen";
+
+/// returns the size of the opened file
+function UInt64 BinaryReader.size() = "BinaryReader_size";
+
+/// sets the position of the stream
+function BinaryReader.seek!(UInt64 pos) = "BinaryReader_seek";
+
+/// tells the position of the stream
+function UInt64 BinaryReader.pos() = "BinaryReader_pos";
+
+/// returns true if the file has reached its end
+function Boolean BinaryReader.eof() = "BinaryReader_eof";
+
+/// reads a line out of the currently opened file
+function BinaryReader.read!(Data data, UInt64 dataSize) = "BinaryReader_read";
+
+/// reads a single string from the stream
+function BinaryReader.readString!(out String string){
+  UInt32 strLength;
+  this.read(strLength.data(), strLength.dataSize());
+  // A String.resize() would be nice
+  string = '';
+  for(UInt64 i=0;i<strLength;i++)
+    string += ' ';
+  this.read(string.data(), string.dataSize());
+}
+
+/// reads an array of strings from the stream
+function BinaryReader.readStringArray!(out String strings[]){
+  UInt32 numStrings;
+  this.read(numStrings.data(), numStrings.dataSize());
+  strings.resize(numStrings);
+  for(UInt32 i=0; i<numStrings; i++){
+    this.readString(strings[i]);
+  }
+}

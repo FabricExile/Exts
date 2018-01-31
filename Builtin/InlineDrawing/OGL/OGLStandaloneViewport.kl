@@ -1,0 +1,326 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+require Singletons;
+require FabricSynchronization;
+require FabricOGL;
+require FileIO;
+
+const UInt8 filmGateDisplayStyle_none = 0;
+const UInt8 filmGateDisplayStyle_lines = 1;
+const UInt8 filmGateDisplayStyle_fill = 2;
+
+/**
+\versionadded 1.14.0
+
+The OGLStandaloneViewport inherits InlineViewport object to represent a viewport in OpenGL.
+\dfgPresetOmit
+*/
+object OGLStandaloneViewport : InlineViewport {
+  /// the ID of the window holding the OpenGL context.
+  /// this is used by the C++ standalone for example for using
+  /// the Oculus Rift SDK rendering.
+  Integer windowId;
+  /// by default we expect the host application to swap buffers.
+  /// custom callbacks might be changing this.
+  Boolean responsibleForSwappingBuffers;
+  /// the background color used for glClearColor
+  Color bgColor;
+  /// Film gate display style: filmGateDisplayStyle_none, filmGateDisplayStyle_lines, filmGateDisplayStyle_fill
+  UInt8 filmGateDisplayStyle;
+  /// Film gate display color
+  Color filmGateDisplayColor;
+  /// the scene grid
+  InlineInstance gridInstance;
+  /// the stage plane (blue route)
+  InlineInstance planeInstance;
+  /// the stage floow (dark)
+  InlineInstance floorInstance;
+  /// determins if we should draw a licensing overlay
+  Boolean drawLicensingOverlay;
+  /// the path to the licensing overlay texture
+  String licensingOverlayTexture;
+  /// if the viewport should be cleared
+  Boolean clear;
+  /// \internal
+  private Boolean overridingCameraMatrix;
+  /// \internal
+  private Mat44 cameraMatrixBeforeOverriding;
+};
+
+// default constructor
+function OGLStandaloneViewport() {
+  this.name = 'StandaloneViewport';
+  this.responsibleForSwappingBuffers = false;
+  this.bgColor = Color(25, 37, 42);
+  this.filmGateDisplayColor = Color( 0, 0, 0 );
+  this.filmGateDisplayStyle = filmGateDisplayStyle_fill;
+  this.camera = InlineCamera(50.0 * DEG_TO_RAD, 0.01, 1000.0, false);
+  this.camera.setFromPositionAndTarget(Vec3(30, 20, 40) * 1.0, Vec3(0, 0, 0));
+  this.drawLicensingOverlay = false;
+  this.clear = true;
+  this.overridingCameraMatrix = false;
+  this.cameraMatrixBeforeOverriding = this.getCamera().getMat44();
+}
+
+/// This method is called by the standalone tools to set up a viewport.
+function Boolean OGLStandaloneViewport.setup!(io DrawContext context) {
+  if(this.parent.setup(context))
+    return true;
+
+  glEnable(GL_COLOR_MATERIAL);
+  // glHint(GL_POLYGON_SMOOTH_HINT, GL_NICEST);
+  // glHint(GL_LINE_SMOOTH_HINT,GL_NICEST);
+
+  glShadeModel(GL_SMOOTH);
+  glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
+  glShadeModel(GL_FLAT);
+
+  Integer gl_err = glGetError();
+  glFinish();
+  if (gl_err != GL_NO_ERROR)
+  {
+   report("GL error: " + gl_err);
+   return false;
+  }
+
+  OGLInlineDrawing drawing = OGLInlineDrawing_GetInstance();
+  drawing.getRoot().removeAllChildren();
+  drawing.root = InlineTransformBase("InlineDrawing", Xfo());
+
+  for(UInt32 i=0;i<drawing.getShaderCount();i++) {
+    InlineShader shader = drawing.getShader(i);
+    shader.clear();
+  }
+  
+  this.gridInstance = drawing.setupSceneGrid('StandaloneGrid', 40, 40, 41, 41, Color(50, 50, 50));
+
+  this.responsibleForSwappingBuffers = false;
+
+  // Settings default values to the Option dictionary
+  RTVal params[String] = context.getViewportParams( this.name );
+  params['bgColor'] = this.bgColor;
+  params['gridColor'] = this.gridInstance.getMaterial(0).getUniform("u_color").getColor();
+  params['depthTest'] = true;
+  params['cullFace'] = true;
+  params['nearDistance'] = this.getCamera().getNearDistance();
+  params['farDistance'] = this.getCamera().getFarDistance();
+  params['fovY'] = this.getCamera().getFovY() * RAD_TO_DEG;
+  params['overrideCameraMatrix'] = false;
+  params['cameraMatrix'] = this.getCamera().getMat44();
+
+  Ref<InlineCamera> inlineCamera = this.getCamera();
+
+  if( inlineCamera )
+  {
+    RTVal filmGateParams[String];
+    Float32 aspectRatio = inlineCamera.getFilmGateAspectRatio();
+    Boolean enabled = ( aspectRatio > 0 );
+    filmGateParams[ 'enabled' ] = enabled;
+    filmGateParams[ 'aspectRatio' ] = enabled ? aspectRatio : 2;
+    filmGateParams[ 'color' ] = this.filmGateDisplayColor;
+    filmGateParams[ 'style' ] = this.filmGateDisplayStyle;
+    params[ 'filmGate' ] = filmGateParams;
+  }
+
+  RTVal captureParams[String];
+  /// capture viewport: the path for the image files
+  captureParams['path']         = ""; // when empty then the Fabric user directory is used.
+  /// capture viewport: the filename for the image files
+  captureParams['filename']     = "capture";
+  /// capture viewport: the frame padding for the image files
+  captureParams['framePadding'] = UInt32(4);
+  params[ 'capture' ] = captureParams;
+
+  context.setViewportParams( this.name, params );
+
+  return false;
+}
+
+/// This method is called by the standalone tools to resize to the viewport.
+function Boolean OGLStandaloneViewport.resize!(io DrawContext context, Size width, Size height) {
+  if(this.parent.resize(context, width, height))
+    return true;
+  glViewport(0, 0, this.dimensions.x, this.dimensions.y);
+
+  glMatrixMode(GL_PROJECTION);
+  glLoadIdentity();
+  glMatrixMode(GL_MODELVIEW);
+  glLoadIdentity();
+
+  return false;
+}
+
+/// This method is called by the standalone tools to draw to the viewport.
+function Boolean OGLStandaloneViewport.draw!(io DrawContext context) {
+
+  glMatrixMode(GL_PROJECTION);
+  glLoadIdentity();
+  glMatrixMode(GL_MODELVIEW);
+  glLoadIdentity();
+
+  Ref<InlineCamera> inlineCamera = this.getCamera();
+
+  // get the viewport parameters
+  RTVal params[String] = context.getCurrentViewportParams();
+
+  this.getCamera().setNearDistance(Float32(params['nearDistance']));
+  this.getCamera().setFarDistance(Float32(params['farDistance']));
+  this.getCamera().setFovY(Float32(params['fovY']) * DEG_TO_RAD);
+
+  // FE-7968: When starting (or stopping) to override the camera matrix,
+  // save it in (or load it from) a Mat44 member
+  Boolean overrideCameraMatrix = Boolean(params['overrideCameraMatrix']);
+  {
+    if( overrideCameraMatrix )
+    {
+      if( !this.overridingCameraMatrix )
+      {
+        this.cameraMatrixBeforeOverriding = this.getCamera().getMat44();
+        this.overridingCameraMatrix = true;
+      }
+      this.getCamera().setFromMat44(Mat44(params['cameraMatrix']));
+    }
+    else if( this.overridingCameraMatrix )
+    {
+      this.getCamera().setFromMat44( this.cameraMatrixBeforeOverriding );
+      this.overridingCameraMatrix = false;
+    }
+  }
+
+  if( inlineCamera )
+  {
+    RTVal filmGateParams[String] = params[ 'filmGate' ];
+    Float32 aspectRatio = Float32( Float64(filmGateParams[ 'aspectRatio' ]) );
+    if( aspectRatio <= 0 )
+      report( "OGLStandaloneViewport.draw!(..); Error: aspectRatio (= "
+        + aspectRatio + " ) must be > 0" );
+    if( Boolean( filmGateParams[ 'enabled' ] ) )
+      inlineCamera.setFilmGateAspectRatio( aspectRatio );
+    else
+      inlineCamera.setFilmGateAspectRatio( -1 );
+    this.filmGateDisplayColor = Color( filmGateParams[ 'color' ] );
+    this.filmGateDisplayStyle = UInt8( UInt32( filmGateParams['style'] ));
+  }
+
+  this.bgColor = Color(params['bgColor']);
+  glClearColor(this.bgColor.r, this.bgColor.g, this.bgColor.b, 1);
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+  this.gridInstance.getMaterial(0).setUniform( "u_color", Color(params['gridColor']) );
+
+  if(Boolean(params['depthTest']))
+    glEnable(GL_DEPTH_TEST);
+  if(Boolean(params['cullFace']))
+    glEnable(GL_CULL_FACE);
+
+  // Enable the camera to update its possition.
+  // based on Camera manipulation.
+  this.camera.update();
+
+  return false;
+}
+
+DrawGLOverlayRectangle( Vec2 upperLeft, Vec2 bottomRight ) {
+  glBegin( GL_TRIANGLES );
+
+  glVertex3f( upperLeft.x, upperLeft.y, -1 );
+  glVertex3f( bottomRight.x, bottomRight.y, -1 );
+  glVertex3f( bottomRight.x, upperLeft.y, -1 );
+
+  glVertex3f( upperLeft.x, upperLeft.y, -1 );
+  glVertex3f( upperLeft.x, bottomRight.y, -1 );
+  glVertex3f( bottomRight.x, bottomRight.y, -1 );
+
+  glEnd();
+}
+
+/// \internal
+Boolean OGLStandaloneViewport.postDraw!(io DrawContext context) {
+
+  if( this.filmGateDisplayStyle != filmGateDisplayStyle_none ) {
+    Ref<InlineCamera> inlineCamera = this.getCamera();
+    if( Boolean( inlineCamera ) && inlineCamera.hasFilmGateAspectRatio() ) {
+      Scalar horizontalBandsNormalizedWidth, verticalBandsNormalizedWidth;
+      this.getFilmGateBandsWidth( horizontalBandsNormalizedWidth, verticalBandsNormalizedWidth );
+
+      glColor4f( this.filmGateDisplayColor.r, this.filmGateDisplayColor.g, this.filmGateDisplayColor.b, this.filmGateDisplayColor.a );
+
+      glEnable( GL_BLEND );
+      glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+
+      if( this.filmGateDisplayStyle == filmGateDisplayStyle_fill ) {
+
+        DrawGLOverlayRectangle( Vec2( -1, 1 ), Vec2( 1, 1 - horizontalBandsNormalizedWidth ) );
+        DrawGLOverlayRectangle( Vec2( -1, -1 + horizontalBandsNormalizedWidth ), Vec2( 1, -1 ) );
+
+        DrawGLOverlayRectangle( Vec2( -1, 1 ), Vec2( -1 + verticalBandsNormalizedWidth, -1 ) );
+        DrawGLOverlayRectangle( Vec2( 1 - verticalBandsNormalizedWidth, 1 ), Vec2( 1, -1 ) );
+
+      } else {
+        glBegin( GL_LINES );
+        if( horizontalBandsNormalizedWidth ) {
+          glVertex3f( -1, 1 - horizontalBandsNormalizedWidth, -1 );
+          glVertex3f( 1, 1 - horizontalBandsNormalizedWidth, -1 );
+
+          glVertex3f( 1, -1 + horizontalBandsNormalizedWidth, -1 );
+          glVertex3f( -1, -1 + horizontalBandsNormalizedWidth, -1 );
+        }
+        if( verticalBandsNormalizedWidth ) {
+          glVertex3f( 1 - verticalBandsNormalizedWidth, 1, -1 );
+          glVertex3f( 1 - verticalBandsNormalizedWidth, -1, -1 );
+
+          glVertex3f( -1 + verticalBandsNormalizedWidth, -1, -1 );
+          glVertex3f( -1 + verticalBandsNormalizedWidth, 1, -1 );
+        }
+        glEnd();
+      }
+
+      glDisable( GL_BLEND );
+    }
+  }
+
+  if(this.drawLicensingOverlay)
+  {
+    OGLInlineDrawing drawing = OGLInlineDrawing_GetInstance();
+    drawing.drawOverlay(context, -157 - 5, 3, 157, 70, this.licensingOverlayTexture, true);
+  }
+  return false;
+}
+
+/// finds all OGLWireFrameShader object and sets their wireFrame setting
+function OGLStandaloneViewport.setWireFrame!(Boolean wireFrame) {
+  InlineDrawing drawing = OGLInlineDrawing_GetInstance();
+  for(Size i=0;i<drawing.getShaderCount();i++) {
+    InlineShader shader = drawing.getShader(i);
+    if(shader.getName().startsWith('Selection_'))
+      continue;
+    if(shader.type() == OGLWireFrameShader) {
+      OGLWireFrameShader wireFrameShader(shader);
+      wireFrameShader.setWireFrame(wireFrame);
+    }
+  }
+}
+
+/// toggle the visibility of any stage / grid
+function OGLStandaloneViewport.setGridVisible!(Boolean state) {
+  if(this.gridInstance) {
+    this.gridInstance.setActive(state);
+  }
+}
+
+/// setup a watermark overlay
+function OGLStandaloneViewport.setupLicensingOverlay!() {
+  FilePath path("${FABRIC_DIR}/Resources/PoweredByFabric_black.png");
+  path = path.expandEnvVars();
+  if(!path.exists()) {
+    report('Error: Overlay texture "'+path.string()+'" not found!');
+    return;
+  }
+  this.drawLicensingOverlay = true;
+  this.licensingOverlayTexture = path.string();
+}

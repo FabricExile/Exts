@@ -1,0 +1,70 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+require InlineDrawing;
+
+SetupTestToolViewport( io DrawContext context, UInt32 width, UInt32 height, Float32 distanceToOrigin ) {
+  SetupTestInlineViewport( context, width, height, distanceToOrigin );
+  Tool::InlineDrawingRender::RenderSetup();
+  Ref<EventDispatcher> disp = EventDispatcher_GetInstance();
+  disp.activateManipulation();
+}
+
+DrawTestToolViewport( io DrawContext context ) {
+  DrawTestInlineViewport( context );
+}
+
+SendEventAndRedraw( io DrawContext context, Event ev ) {
+  BaseEvent baseEv = ev;
+  baseEv.host = Host();
+  baseEv.host.hostName = 'Canvas';
+
+  // Save GL params during potential raycast; unit tests use a specific framebuffer
+  OGLHostState glStates();
+  glStates.saveStates();
+
+  Ref<EventDispatcher> disp = EventDispatcher_GetInstance();
+  Event mutableEv = ev;
+  disp.onEvent( mutableEv );
+
+  glStates.restoreStates();
+
+  if( baseEv.isAccepted() || baseEv.host.redrawRequested )
+    DrawTestToolViewport( context );
+}
+
+SendTestMouseMoveAndDraw( io DrawContext context, Vec2 pos, ModiferKey modifKey ) {
+  MouseEvent ev( Event_MouseMove, ModiferKey(), modifKey, MouseButton_NoButton, pos, context.viewport );
+  SendEventAndRedraw( context, ev );
+}
+
+SendTestMouseMoveAndDraw( io DrawContext context, Vec2 pos ) {
+  SendTestMouseMoveAndDraw( context, pos, ModiferKey() );
+}
+
+SendTestMouseClickAndDraw( io DrawContext context, Vec2 pos, ModiferKey modifKey ) {
+  MouseEvent ev( Event_MouseButtonPress, modifKey, MouseButton_LeftButton, MouseButton_LeftButton, pos, context.viewport );
+  SendEventAndRedraw( context, ev );
+}
+
+SendTestMouseClickAndDraw( io DrawContext context, Vec2 pos ) {
+  SendTestMouseClickAndDraw( context, pos, ModiferKey() );
+}
+
+SendTestMouseReleaseAndDraw( io DrawContext context, Vec2 pos, ModiferKey modifKey ) {
+  MouseEvent ev( Event_MouseButtonRelease, modifKey, MouseButton_LeftButton, MouseButton_LeftButton, pos, context.viewport );
+  SendEventAndRedraw( context, ev );
+}
+
+SendTestMouseReleaseAndDraw( io DrawContext context, Vec2 pos ) {
+    SendTestMouseReleaseAndDraw( context, pos, ModiferKey() );
+}
+
+SendTestMouseLeaveAndDraw( io DrawContext context, Vec2 pos, ModiferKey modifKey ) {
+  MouseEvent ev( Event_Leave, modifKey, MouseButton_NoButton, MouseButton_NoButton, pos, context.viewport );
+  SendEventAndRedraw( context, ev );
+}
+
+SendTestMouseLeaveAndDraw( io DrawContext context, Vec2 pos ) {
+  SendTestMouseLeaveAndDraw( context, pos, ModiferKey() );
+}

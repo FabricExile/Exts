@@ -1,0 +1,85 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Mat22.html"
+    },
+  "title" : "Mat22[] ->",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 249,\n  \"g\" : 157,\n  \"b\" : 28\n  }"
+        },
+      "name" : "value",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Mat22[]" : [
+          {
+            "row0" : {
+              "x" : 1,
+              "y" : 0
+              },
+            "row1" : {
+              "x" : 0,
+              "y" : 1
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Mat22[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "row0",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Vec2[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "row1",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Vec2[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "3AF8037D471768834D08BC0822083222",
+  "code" : "require Math;
+
+operator Math_Mat22_decompose_task<<<index>>>(in Mat22[] value, io Vec2[] row0, io Vec2[] row1) {
+  row0[index] = value[index].row0;
+  row1[index] = value[index].row1;
+}
+
+dfgEntry {
+  Size task_size = value.size();
+  row0.resize(task_size);
+  row1.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size i = 0; i < task_size; i++) {
+      Math_Mat22_decompose_task(i, value, row0, row1);
+    }
+  } else {
+    Math_Mat22_decompose_task<<<task_size>>>(value, row0, row1);
+  }
+}
+"
+  }

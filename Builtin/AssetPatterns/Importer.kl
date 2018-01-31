@@ -1,0 +1,83 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/**
+The Importer interface is used to define a generic importer type.
+Spezialized classes such as the BaseImporter or the FbxImporter use it
+to provide a generic mechanism for importing files.
+
+\seealso BaseImporter, AlembicImporter, FbxImporter
+
+\dfgPresetCreate
+*/
+interface Importer
+{
+  /**
+  Returns all objects this importer contains.
+  \dfgPresetCreate
+  \dfgPresetTitle getAllObjects
+  \dfgPresetFolder Importer
+  */
+  ImporterObject[] getAllObjects();
+  /**
+  Returns all objects this importer contains.
+  \dfgPresetCreate
+  \dfgPresetTitle getAllObjects
+  \dfgPresetFolder Importer
+  */
+  Ref<ImporterObject>[] getAllObjectRefs();
+  /**
+  Returns all paths within the importer
+  \dfgPresetOmit
+  */
+  String[] getAllPaths();
+  /**
+  Returns all objects of a given type this importer contains.
+  \dfgPresetOmit
+  */
+  Ref<ImporterObject>[] getObjectsByType(String type);
+  /**
+  Returns all objects this importer contains matching a type as 
+  well as a property value.
+  \dfgPresetOmit
+  */
+  Ref<ImporterObject>[] getObjectsByTypeAndProperty(String type, String key, ImporterProperty prop);
+  /**
+  Returns an object based on the unique identifier - or null if it's not found.
+  \dfgPresetCreate
+  \dfgPresetTitle getObjectFromID
+  \dfgPresetFolder Importer
+  */
+  Ref<ImporterObject> getObjectFromID(String id);
+  /**
+  Returns an object based on its path - or null if it's not found.
+  \dfgPresetCreate
+  \dfgPresetTitle getObjectFromPath
+  \dfgPresetFolder Importer
+  */
+  Ref<ImporterObject> getObjectFromPath(String path);
+  /**
+  Gets or creates an objects inside of the importer.
+  \dfgPresetCreate
+  \dfgPresetTitle getOrCreateObject
+  \dfgPresetFolder Importer
+  \dfgPresetCombo type ("Transform", "Instance", "Camera", "Light", "Shape", "Material", "Texture", "AnimCurve", "Behavior")
+  \dfgPresetDefault type "Instance"
+  \dfgPresetDefault id "custom"
+  \dfgPresetDefault path "/custom"
+  */
+  Ref<ImporterObject> getOrCreateObject!(String type, String id, String path);
+  /**
+  Gets or creates an array of objects inside of the importer.
+  \dfgPresetCreate
+  \dfgPresetTitle getOrCreateObjectArray
+  \dfgPresetFolder Importer
+  \dfgPresetCombo type ("Transform", "Instance", "Camera", "Light", "Shape", "Material", "Texture", "AnimCurve", "Behavior")
+  \dfgPresetDefault type "Instance"
+  \dfgPresetDefault id "custom"
+  \dfgPresetDefault path "/custom"
+  */
+  Ref<ImporterObject>[] getOrCreateObjectArray!(Size count, String type, String id, String path);
+};
+

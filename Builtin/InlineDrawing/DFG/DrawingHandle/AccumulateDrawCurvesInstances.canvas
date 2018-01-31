@@ -1,0 +1,112 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "helper function to draw a curves object given a color + an array of transforms.\nThis method can be called several times by the same DrawingHandle\nwithout overwriting the previous content.\n\nSupported types:\n  this: DrawingHandle\n  color: Color\n  specular: Color\n  specFactor: Float32\n  transforms: Xfo[]\n  curves: Curves\n  instance: InlineInstance\n"
+    },
+  "title" : "AccumulateDrawCurvesInstances",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "DrawingHandle"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 0,\n  \"b\" : 0\n  }"
+        },
+      "name" : "color",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Color" : {
+          "r" : 0,
+          "g" : 1,
+          "b" : 0,
+          "a" : 1
+          }
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Color"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 0,\n  \"b\" : 0\n  }"
+        },
+      "name" : "specular",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Color" : {
+          "r" : 0.2000000029802322,
+          "g" : 0.2000000029802322,
+          "b" : 0.2000000029802322,
+          "a" : 1
+          }
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Color"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiRange" : "(2, 100)",
+        "uiHardRange" : "(2, 1000)"
+        },      
+      "name" : "specFactor",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float32" : 16
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 249,\n  \"g\" : 157,\n  \"b\" : 28\n  }"
+        },
+      "name" : "transforms",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Xfo[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "curves",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Curves"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "instance",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "InlineInstance"
+      }
+    ],
+  "extDeps" : {
+    "InlineDrawing" : "*"
+    },
+  "presetGUID" : "44CD87F32DD985CECDA3D782AF6307DD",
+  "code" : "require InlineDrawing;
+
+dfgEntry {
+  if( !Boolean(this) )
+    return;
+  this.accumulateDrawCurvesInstances(color, specular, specFactor, transforms, curves, instance);
+}
+"
+  }

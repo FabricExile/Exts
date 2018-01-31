@@ -1,0 +1,173 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// \internal
+  interface BaseRaycastGroup_virtuals {
+    onRaycastSucceeded!( io Ref<RaycastTarget> target, io RaycastContext context, RaycastResult result );
+    onRaycastFail!( io Ref<RaycastTarget> target, io RaycastContext context );
+  };
+
+  /// Regroups a list of potential raycast targets,
+  /// and interacts with these using RaycastTarget
+  object BaseRaycastGroup : EventListenerComponent, BaseRaycastGroup_virtuals{
+    ToolsManager manager;//hold a ref to ensure proper destruction order
+    FewObjectsStableList raycastTargets;
+  };
+
+  BaseRaycastGroup() {
+    this.raycastTargets = FewObjectsStableList();
+    this.manager = GetToolsManager();
+  }
+
+  // \note We don't own the raycastTarget; it has to be explicitly removed upon destruction!
+  BaseRaycastGroup.addRaycastTarget!( Ref<RaycastTarget> raycastTarget ) {
+    this.raycastTargets.pushBack( raycastTarget, false );//not owned
+  }
+
+  BaseRaycastGroup.removeRaycastTarget!( Ref<RaycastTarget> raycastTarget ) {
+    this.raycastTargets.remove_nothrow( raycastTarget );
+  }
+
+  RaycastResult[] BaseRaycastGroup.getRaycastResults!( Ref<Viewport> viewport, Ref<Event> event, Vec2 pos, io RaycastContext contextToInitialize ) {
+    PrepareRaycastContext( this.manager, viewport, this.manager.getRenderEngine(), event, pos, contextToInitialize );
+
+    RaycastResult results[];
+
+    if( event.eventType() == Event_Leave )
+      return results;
+
+    Ref<RaycastTarget> ownerTargets[];
+    SelectionManagerDrawList drawList();
+
+    FewObjectsStableListIterator it( this.raycastTargets );
+    Ref<RaycastTarget> target = null;
+
+    while( target = it.next() ) {
+      SelectionManagerDrawList subList = target.getSelectionDrawList( contextToInitialize );
+      if( subList ) {
+        for( Size i = 0; i < subList.size(); ++i ) {
+          SelectionManagerDrawListKey userKey;
+          Ref<SelectionDrawableItem> drawable = subList.get( i, userKey );
+
+          Size index = drawList.addItem( drawable, userKey );
+          if( index >= ownerTargets.size() )
+            ownerTargets.resize( index + 1 );
+          ownerTargets[index] = target;
+        }
+      }
+    }
+
+    Ref<SelectionManager> selMgr = GetSelectionManager();
+    UInt32 primitiveIndices[][];
+    Float32 selectClosest_depth;
+    UInt32 selectedIndices[] = selMgr.select( drawList, viewport,
+                                              pos - Vec2( 2.5 ), pos + Vec2( 2.5 ),//TODO: make this pixel tolerance (2.5) an option
+                                              SelectionMode_Objects, SelectedGroupType_closest, true, false,// start from current VP depth
+                                              primitiveIndices, true, selectClosest_depth );
+
+    if( selectedIndices ) {
+      // Compute camera distance from inv proection
+      Mat44 projInv = viewport.getProjectionMat().inverse();
+      Float32 unbiasedDepth = selectClosest_depth * 2.0 - 1.0;
+      Vec3 viewPos = projInv * Vec3( 0, 0, unbiasedDepth );
+
+      results.resize( 1 );
+      results[0].cameraDistance = abs( viewPos.z );
+      results[0].owner = ownerTargets[selectedIndices[0]];
+      results[0].leafOwner = drawList.getKey( selectedIndices[0] ).userRef;
+    }
+
+    return results;
+  }
+
+  RaycastResult[] BaseRaycastGroup.getRaycastResults!( Ref<MouseEvent> mouseEvent, io RaycastContext contextToInitialize ) {
+    RaycastResult results[];
+    if( !mouseEvent )
+      return results;
+
+    return this.getRaycastResults( mouseEvent.getViewport(), mouseEvent, mouseEvent.pos, contextToInitialize );
+  }
+
+  BaseRaycastGroup.triggerRaycastResults!( io RaycastResult results[], io RaycastContext context ) {
+    FewObjectsStableListIterator it( this.raycastTargets );
+    Ref<RaycastTarget> target = null;
+
+    // TODO: optimize to have only "set comparisons"...
+    while( target = it.next() ) {
+      UInt32 resultIndex = InvalidIndex;
+      for( Size i = 0; i < results.size(); ++i ) {
+        Ref<RaycastTarget> resultOwner = results[i].owner;
+        if( resultOwner === target ) {
+          resultIndex = i;
+          break;
+        }
+      }
+      if( resultIndex != InvalidIndex ) {
+        // Setup the right contextual properties give the leafOwner
+        DrawContext backup = context.context;
+        Ref<BaseTool> tool = results[resultIndex].leafOwner;
+        if( tool )
+          context.context.contextualProperties = tool.getContextualProperties( context.context );
+        else
+          context.context.contextualProperties = results[resultIndex].leafOwner;
+        this.onRaycastSucceeded( target, context, results[resultIndex] );
+        context.context = backup;
+      } else
+        this.onRaycastFail( target, context );
+    }
+  }
+
+  /// \internal
+  BaseRaycastGroup.onRaycastSucceeded!( io Ref<RaycastTarget> target, io RaycastContext context, RaycastResult result ) {
+    target.onRaycastSucceeded( context, result );
+  }
+
+  /// \internal
+  BaseRaycastGroup.onRaycastFail!( io Ref<RaycastTarget> target, io RaycastContext context ) {
+    target.onRaycastFail( context );
+  }
+
+  /// \internal
+  /// Provides base functionality for viewport picking (selection) of multiple tool shapes.
+  object BaseRaycastEventHandler : RawEventHandler, BaseRaycastGroup, AppEventCallback{
+  };
+
+  /// To be overriden
+  BaseRaycastEventHandler.onRawEvent!( io Event event ) {}
+
+  BaseRaycastEventHandler() {
+    this.manager.addEventHandler( this, ToolsManagerEventPriority_raycastClick );
+    RegisterToAppEvent( AppEvent_newScene, this );
+    RegisterToAppEvent( AppEvent_postNewScene, this );
+  }
+
+  /// \internal
+  /// Non-virtual version that can be safely called from the destructor
+  /// This can be removed once KL is fixed to not call specialized methods in destructors
+  BaseRaycastEventHandler.invalidateInternal!( ) {
+    this.manager.removeEventHandler( this );
+  }
+
+  BaseRaycastEventHandler.onAppEvent!( String eventName ) {
+    if( eventName == AppEvent_newScene ) {
+      this.raycastTargets.clear();
+    } else if( eventName == AppEvent_postNewScene ) {
+      // Re-register ourselves to the tools manager
+      this.manager.removeEventHandler( this );// play safe, but we are likely already unregistered
+      this.manager.addEventHandler( this, ToolsManagerEventPriority_raycastClick );
+    }
+  }
+
+  BaseRaycastEventHandler.invalidate!( ) {
+    this.invalidateInternal();
+  }
+
+  ~BaseRaycastEventHandler() {
+    UnregisterFromAppEvent( AppEvent_newScene, this );
+    UnregisterFromAppEvent( AppEvent_postNewScene, this );
+    this.invalidateInternal();
+  }
+}// namespace Tool

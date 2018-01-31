@@ -1,0 +1,241 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/**
+The BaseImporter implements the Importer interface and is used as the base class
+for most specialized Importers, such as the AlembicImporter or the FbxImporter.
+
+\seealso AlembicImporter, FbxImporter
+*/
+object BaseImporter : Importer
+{
+  protected ImporterObject objects[];
+  protected SInt32 idToIndex[String];
+  protected SInt32 pathToIndex[String];
+};
+
+/// \dfgPresetOmit
+function BaseImporter.cloneMembersTo(io BaseImporter other) {
+  //other.objects = this.objects.clone();
+  //other.idToIndex = this.idToIndex.clone();
+  //other.pathToIndex = this.pathToIndex.clone();  
+  other.objects = this.objects;
+  other.idToIndex = this.idToIndex;
+  other.pathToIndex = this.pathToIndex;  
+}
+
+/**
+Returns all objects this importer currently holds.
+\dfgPresetOmit
+*/
+function ImporterObject[] BaseImporter.getAllObjects() {
+  return this.objects;
+}
+
+/**
+Returns all objects this importer currently holds.
+\dfgPresetOmit
+*/
+function Ref<ImporterObject>[] BaseImporter.getAllObjectRefs() {
+  Ref<ImporterObject> refs[](this.objects.size());
+  for(Size i=0;i<refs.size();i++)
+    refs[i] = this.objects[i];
+  return refs;
+}
+
+/**
+Returns all paths within the importer
+\dfgPresetOmit
+*/
+String[] BaseImporter.getAllPaths()
+{
+  String paths[];
+  for(key in this.pathToIndex)
+    paths.push(key);
+  return paths;
+}
+
+/**
+Returns all objects of a given type inside of this importer.
+\dfgPresetOmit
+*/
+Ref<ImporterObject>[] BaseImporter.getObjectsByType(String type)
+{
+  ImporterObject objects[] = this.getAllObjects();
+  Ref<ImporterObject> result[];
+  for(Size i=0;i<objects.size();i++) {
+    if(objects[i].getType() == type)
+      result.push(objects[i]);
+  }
+  return result;
+}
+
+/**
+Returns all of a given type - while also checking that these objects
+store a property of a given key name as well as match a given property value.
+This can be useful if you want to filter all shapes for example matching a 
+given geometryType.
+\dfgPresetOmit
+*/
+Ref<ImporterObject>[] BaseImporter.getObjectsByTypeAndProperty(String type, String key, ImporterProperty prop) {
+  ImporterObject objects[] = this.getAllObjects();
+  Ref<ImporterObject> result[];
+  for(Size i=0;i<objects.size();i++) {
+    if(objects[i].getType() != type)
+      continue;
+    if(!objects[i].hasProperty(key))
+      continue;
+    ImporterProperty existing = objects[i].getProperty(key);
+    if(existing.getValueType() != prop.getValueType())
+      continue;
+    if(!existing.equals(prop))
+      continue;
+    result.push(objects[i]);
+  }
+  return result;
+}
+
+/**
+Returns an object based on the unique identifier - or null if the object is not found.
+\dfgPresetOmit
+*/
+Ref<ImporterObject> BaseImporter.getObjectFromID(String id)
+{
+  SInt32 index = this.idToIndex.get(id, -1);
+  if(index == -1)
+    return null;
+  return this.objects[index];
+}
+
+/**
+Returns an object based on its path - or null if the object is not found.
+\dfgPresetOmit
+*/
+Ref<ImporterObject> BaseImporter.getObjectFromPath(String path)
+{
+  SInt32 index = this.pathToIndex.get(path, -1);
+  if(index == -1)
+    return null;
+  return this.objects[index];
+}
+
+/**
+Creates a new object inside of this importer. This method is mainly used by
+the specialized implementations.
+\dfgPresetOmit
+*/
+Ref<ImporterObject> BaseImporter.getOrCreateObject!(String type, String id, String path) {
+
+  SInt32 index = this.idToIndex.get(id, -1);
+  if(index != -1)
+    return this.objects[index];
+  index = this.pathToIndex.get(path, -1);
+  if(index != -1)
+    return this.objects[index];
+
+  ImporterObject obj = null;
+  switch(type) {
+    case "Transform":
+    {
+      obj = ImporterTransform(id, path);
+      break;
+    }
+    case "Instance":
+    {
+      obj = ImporterInstance(id, path);
+      break;
+    }
+    case "Camera":
+    {
+      obj = ImporterCamera(id, path);
+      break;
+    }
+    case "Light":
+    {
+      obj = ImporterLight(id, path);
+      break;
+    }
+    case "Shape":
+    {
+      obj = ImporterShape(id, path);
+      break;
+    }
+    case "Material":
+    {
+      obj = ImporterMaterial(id, path);
+      break;
+    }
+    case "Texture":
+    {
+      obj = ImporterTexture(id, path);
+      break;
+    }
+    case "AnimCurve":
+    {
+      obj = ImporterAnimCurve(id, path);
+      break;
+    }
+    case "Layer":
+    {
+      obj = ImporterLayer(id, path);
+      break;
+    }
+    case "Group":
+    {
+      obj = ImporterGroup(id, path);
+      break;
+    }
+    case "Behavior":
+    {
+      obj = ImporterBehavior(id, path);
+      break;
+    }
+    default:
+    {
+      return null;
+    }
+  }
+  obj.importer = this;
+  this.idToIndex[id] = this.objects.size();
+  this.pathToIndex[path] = this.objects.size();
+  this.objects.push(obj);
+
+  String parentPath = path.reversePartition('/')[0];
+  if(this.pathToIndex.has(parentPath)) {
+    Ref<ImporterObject> parentObj = this.objects[this.pathToIndex[parentPath]];
+    parentObj.nestedObjects.push(obj);
+  } else {
+    for(Size i=0;i<this.objects.size()-1;i++)
+    {
+      parentPath = this.objects[i].getPath().reversePartition('/')[0];
+      if(parentPath == path)
+      {
+        obj.nestedObjects.push(this.objects[i]);
+      }
+    }
+  }
+  return obj;
+}
+
+/// \dfgPresetOmit
+Ref<ImporterObject> BaseImporter.getOrCreateObject!(String type, String path) {
+  return this.getOrCreateObject(type, path, path);
+}
+
+/**
+Creates an array of new objects. This method is mainly used by the 
+specialized implementations such as the AlembicImporter, for example.
+\dfgPresetOmit
+*/
+Ref<ImporterObject>[] BaseImporter.getOrCreateObjectArray!(Size count, String type, String id, String path) {
+  Ref<ImporterObject> objs[];
+  for(Size i=0;i<count;i++)
+    objs.push(this.getOrCreateObject(type, id+'_'+i, path+'_'+i));
+  return objs;
+}
+
+/// \dfgPresetOmit
+Ref<ImporterObject>[] BaseImporter.getOrCreateObjectArray!(Size count, String type, String path) {
+  return this.getOrCreateObjectArray(count, type, path, path);
+}

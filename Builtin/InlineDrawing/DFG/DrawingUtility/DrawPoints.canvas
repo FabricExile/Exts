@@ -1,0 +1,128 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+    "uiNodeColor" : "{\n  \"r\" : 121,\n  \"g\" : 134,\n  \"b\" : 143\n  }",
+    "uiTooltip" : "Draws a collection of points at the given positions"
+    },
+  "title" : "DrawPoints",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Execute" : {}
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "rootTransform",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "InlineTransform" : null
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "InlineTransform"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "name",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String" : "Points"
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "positions",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Xfo" : {
+          "ori" : {
+            "v" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              },
+            "w" : 1
+            },
+          "tr" : {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            },
+          "sc" : {
+            "x" : 1,
+            "y" : 1,
+            "z" : 1
+            }
+          },
+        "Vec3" : {
+          "x" : 7.599999904632568,
+          "y" : 7.099999904632568,
+          "z" : 0
+          },
+        "Vec3[]" : []
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "color",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Color" : {
+          "r" : 0.8274509906768799,
+          "g" : 0.1921568661928177,
+          "b" : 0.5529412031173706,
+          "a" : 1
+          }
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Color"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "size",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float32" : 20
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "inlineShape",
+      "nodePortType" : "In",
+      "defaultValues" : {
+        "InlineTransform" : null,
+        "InlineShape" : null
+        },
+      "execPortType" : "Out",
+      "typeSpec" : "InlineShape"
+      }
+    ],
+  "extDeps" : {
+    "InlineDrawing" : "*"
+    },
+  "presetGUID" : "AECFD97EF8ABD17BD0533B48A2A93971",
+  "code" : "dfgEntry {
+  if(rootTransform)
+  {
+    inlineShape = drawPoints(
+      rootTransform,
+      name,
+      positions,
+      color,
+      size);
+  }
+}
+"
+  }

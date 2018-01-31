@@ -1,0 +1,111 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Quat.html",
+    "uiTooltip" : "Set the quaternion to the rotation required to rotate the source\nvector to the destination vector\nFunction taken from the 'Game Programming Gems' article 'The Shortest Arc Quat' by Stan Melax\nBoth vectors must be units.\n\n Supported by Quat"
+    },
+  "title" : "SetFrom2Vectors[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "sourceDirVec",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "destDirVec",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "arbitraryIfAmbiguous",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Boolean[]" : [
+          false
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Boolean[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 0,\n  \"g\" : 191,\n  \"b\" : 232\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Quat[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "F3295CD0E683478BE5A4BD38A2B2C053",
+  "code" : "require Math;
+
+operator Math_Quat_setFrom2Vectors_task<<<index>>>(
+  io Quat[] result
+, in Vec3[] sourceDirVec
+, in Vec3[] destDirVec
+, in Boolean[] arbitraryIfAmbiguous
+) {
+  result[index].setFrom2Vectors(sourceDirVec[index < sourceDirVec.size() ? index : sourceDirVec.size() - 1], destDirVec[index < destDirVec.size() ? index : destDirVec.size() - 1], arbitraryIfAmbiguous[index < arbitraryIfAmbiguous.size() ? index : arbitraryIfAmbiguous.size() - 1]);
+}
+
+dfgEntry {
+  if( sourceDirVec.size() == 0) return;
+  if( destDirVec.size() == 0) return;
+  if( arbitraryIfAmbiguous.size() == 0) return;
+  Size task_size = 0;
+  if(task_size < sourceDirVec.size()) task_size = sourceDirVec.size();
+  if(task_size < destDirVec.size()) task_size = destDirVec.size();
+  if(task_size < arbitraryIfAmbiguous.size()) task_size = arbitraryIfAmbiguous.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Quat_setFrom2Vectors_task(index, result, sourceDirVec, destDirVec, arbitraryIfAmbiguous);
+    }
+  } else {
+    Math_Quat_setFrom2Vectors_task<<<task_size>>>(result, sourceDirVec, destDirVec, arbitraryIfAmbiguous);
+  }
+}
+"
+  }

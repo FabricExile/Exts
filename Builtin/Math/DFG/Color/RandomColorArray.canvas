@@ -1,0 +1,95 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "Generates a random color based on a seed and offset with gamma adjustment.\n\n Supported by Color"
+    },
+  "title" : "RandomColor[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "seed",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "UInt32[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "UInt32[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "offset",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "UInt32[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "UInt32[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "gammaAdjustment",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 0,\n  \"b\" : 0\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Color[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "E3FA6731438A446E34DBB37BED6614A6",
+  "code" : "require Math;
+
+operator Math_randomColor_task<<<index>>>(
+  io Color[] result
+, in UInt32[] seed
+, in UInt32[] offset
+, in Scalar[] gammaAdjustment
+) {
+  result[index] = randomColor(seed[index < seed.size() ? index : seed.size() - 1], offset[index < offset.size() ? index : offset.size() - 1], gammaAdjustment[index < gammaAdjustment.size() ? index : gammaAdjustment.size() - 1]);
+}
+
+dfgEntry {
+  if( seed.size() == 0) return;
+  if( offset.size() == 0) return;
+  if( gammaAdjustment.size() == 0) return;
+  Size task_size = 0;
+  if(task_size < seed.size()) task_size = seed.size();
+  if(task_size < offset.size()) task_size = offset.size();
+  if(task_size < gammaAdjustment.size()) task_size = gammaAdjustment.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_randomColor_task(index, result, seed, offset, gammaAdjustment);
+    }
+  } else {
+    Math_randomColor_task<<<task_size>>>(result, seed, offset, gammaAdjustment);
+  }
+}
+"
+  }

@@ -1,0 +1,59 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/PolygonMesh.html",
+    "uiTooltip" : "Extract values of an attribute into a target attribute `outValues` and index table.\nThe outputted attribute values will have optimal sharing around vertices, so\n`outValues.size() <= meshAttribute.size()`.\nThe input and output attributes (`meshAttribute` and `outValues`) must be have the same type.\nOnly the input `meshAttribute` should be an existing mesh attributes. The output `outValues`\nis only an output data container.\nThe `polygonPackedIndices` index table contains polygon packed data. It will contain an index relative\nto the `outValues` attribute, for each polygon point, in polygons order:\n\nAvoid casts until the attribute interface is fixed\nLook for a same index, else compare values since sharing might not be optimal\nCompare values\nAllocate output attribute index\nCopy value\n\n Supported by PolygonMesh"
+    },
+  "title" : "GetPolygonPackedSharedAttributeValues",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "PolygonMesh"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "meshAttribute",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "GeometryAttribute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "outValues",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "GeometryAttribute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "polygonPackedIndices",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "UInt32[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "D128F4103B079828BC918F78C2D3ED07",
+  "code" : "require Geometry;
+
+dfgEntry {
+  Ref<GeometryAttribute> meshAttribute_ref = meshAttribute;
+  this.getPolygonPackedSharedAttributeValues(meshAttribute_ref, outValues, polygonPackedIndices);
+}
+"
+  }

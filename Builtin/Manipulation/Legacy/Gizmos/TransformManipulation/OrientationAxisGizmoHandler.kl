@@ -1,0 +1,107 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+require InlineDrawing;
+
+/**
+\versionadded 1.12.0
+
+The :kl-ref:`OrientationAxisGizmoHandler` converts mouse events into rotation around a given axis.
+
+\seealso GizmoHandler, BaseGizmoHandler, OrientationAxisGizmoManager
+\dfgPresetOmit
+*/
+object OrientationAxisGizmoHandler : BaseGizmoHandler {
+  /// the local axis in the space of the owner used to define the manipulation plane.
+  Vec3 manipulationVector;
+
+  /// The ray generated at mouse down.
+  /// \internal
+  Ray ray1;
+
+  /// the flag indicating that a drag is in progress.
+  /// \internal
+  Boolean dragging;
+
+  /// The center point for the rotation.
+  /// \internal
+  Vec3 point;
+
+  /// The global rotation axis. Computed using manipulationVector and the global Xfo of the Gizmo.
+  /// \internal
+  Vec3 rotateAxis;
+
+  /// The screen space pos where the mouse was pressed
+  /// \internal
+  Vec2 mouseDownPos;
+
+  /// The speed that the orbit is applied relative to screen space delta of the mouse drag.
+  /// \internal
+  Scalar orbitSpeed;
+};
+
+function OrientationAxisGizmoHandler(InlineInstance owner, Vec3 manipulationVector, GizmoManipulationCallback callback){
+  this.init(owner, callback);
+  this.manipulationVector = manipulationVector;
+  this.orbitSpeed = 0.02;
+}
+
+function OrientationAxisGizmoHandler(InlineInstance owner, Vec3 manipulationVector, GizmoManipulationCallback callback, EvalContext evalContext){
+  this.init(owner, callback, evalContext);
+  this.manipulationVector = manipulationVector;
+}
+
+
+function OrientationAxisGizmoHandler.onEvent!(io MouseEvent mouseEvent){
+  if(mouseEvent.eventType() == Event_MouseButtonPress){
+
+    // On MouseMove/Mousedown.
+    if(mouseEvent.button == MouseButton_LeftButton){
+      // We cast to InlineViewport to access the method calcRayFromScreenPos
+      Ref<InlineViewport> viewport = mouseEvent.getViewport();
+      this.ray1 = viewport.calcRayFromScreenPos(mouseEvent.pos);
+      Xfo xfo = this.owner.getTransform().getGlobalXfo(0);
+      this.rotateAxis = xfo.ori.rotateVector(this.manipulationVector);
+      this.mouseDownPos = mouseEvent.pos;
+      this.point = this.owner.getTransform().getGlobalXfo(0).tr;
+      this.dragging = true;
+      this.callback.onDragBegin(mouseEvent);
+    }
+    mouseEvent.accept();
+  }
+  else if(mouseEvent.eventType() == Event_MouseMove){
+    // On drag
+    if(this.dragging){
+      Scalar angle = (mouseEvent.pos - this.mouseDownPos).length() * this.orbitSpeed;
+
+      Vec3 axis;
+      // We cast to InlineViewport to access the method calcRayFromScreenPos
+      Ref<InlineViewport> viewport = mouseEvent.getViewport();
+      Ray ray2 = viewport.calcRayFromScreenPos(mouseEvent.pos);
+      if(!mouseEvent.getViewport().getCamera().isOrthographic())
+        if(ray2.direction.cross(this.ray1.direction).dot(this.rotateAxis) < 0.0)
+          angle = -angle;
+      else
+        if(ray2.direction.cross(ray2.start - this.ray1.start).dot(this.rotateAxis) < 0.0)
+          angle = -angle;
+
+      Xfo space();
+      space.tr = this.point;
+      Xfo delta();
+      delta.ori.setFromAxisAndAngle(this.rotateAxis, angle);
+      
+      this.callback.onDrag(mouseEvent, space, delta, ManipulationMode_Orientation);
+      mouseEvent.accept();
+    }
+  }
+  else if(mouseEvent.eventType() == Event_MouseButtonRelease){
+    // On release
+    if(this.dragging){
+      this.dragging = false;
+      this.callback.onDragEnd(mouseEvent);
+      mouseEvent.accept();
+    }
+  }
+}
+
+

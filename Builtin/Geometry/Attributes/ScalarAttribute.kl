@@ -1,0 +1,115 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  Specialized GeometryAttribute containing one Scalar per element.
+  Values can be accessed with the ScalarAttribute.values array member, but its usage might be restricted by the owner Geometry.
+*/
+object ScalarAttribute : BaseAttribute {
+  /// Values array container
+  Scalar values[];
+};
+
+function StatisticRecord[] ScalarAttribute.getStatistics() {
+  StatisticRecord stats[] = this.parent.getStatistics();
+  stats.push( StatisticRecord( Statistic_MemoryUsage, this.values.size()*4 ) );
+  return stats;
+}
+
+/// \dfgPresetOmit
+ScalarAttribute.cloneMembersTo( io ScalarAttribute that ) {
+  //The difference with default clone() is that new.parent.autoStat will point to 'new' (from constructor)
+  this.parent.cloneMembersTo(that);//Copies all but the values
+  that.copyFrom(this);
+}
+
+inline ScalarAttribute.resize!(Size count) {
+  this.parent.resize(count);
+  this.values.resize(count);
+}
+
+inline Boolean ScalarAttribute.checkConsistency() {
+  if( this.size() != this.values.size() )
+    return false;
+  return this.parent.checkConsistency();
+}
+
+inline Data ScalarAttribute.data() {
+  return this.values.data();
+}
+
+inline UInt32 ScalarAttribute.getElementsMemType( ) {
+  return this.values.getElementsMemType();
+}
+
+inline ScalarAttribute.convertToGPU!( ) {
+  this.values.convertToGPU();
+  this.incrementVersion();
+}
+
+inline ScalarAttribute.convertToCPU!( ) {
+  this.values.convertToCPU();
+  this.incrementVersion();
+}
+
+inline ScalarAttribute.copyValue!( Size sourceIndex, Size targetIndex ) {
+  this.values[targetIndex] = this.values[sourceIndex];
+}
+
+inline ScalarAttribute.copyValue!( Ref<Object> sourceAttr, Size sourceIndex, Size targetIndex ) {
+  Ref<ScalarAttribute> source = sourceAttr;
+  this.values[targetIndex] = source.values[sourceIndex];
+}
+
+inline ScalarAttribute.copyFrom!( Ref<Object> otherAttr ) {
+  this.parent.copyFrom( otherAttr );
+  Ref<ScalarAttribute> other = otherAttr;
+  other.values.copyTo(this.values);
+}
+
+/** Returns a linear combination of source values.
+    \param sourceIndices The array of source indices
+    \param sourceWeights The array of source weights, which need to correspond to each sourceIndices. Normally the sum of the weights should be 1.0
+*/
+inline Scalar ScalarAttribute.getLinearCombination( LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights ) {
+  Scalar result;
+  for( Size i = 0; i < sourceIndices.size(); ++i )
+    result += this.values[sourceIndices.get(i)]*sourceWeights.get(i);
+  return result;
+}
+
+inline ScalarAttribute.linearCombine!( Ref<Object> sourceAttr, LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights, Size targetIndex ) {
+  Ref<ScalarAttribute> source = sourceAttr;
+  this.values[targetIndex] = source.getLinearCombination(sourceIndices, sourceWeights);
+}
+
+inline ScalarAttribute.setFromScalar!( Size index, LocalL16ScalarArray value ) {
+  this.values[index] = value.get(0);
+}
+
+inline Size ScalarAttribute.getScalarValueSize() {
+  return 1;
+}
+
+inline Boolean ScalarAttribute.equalValues( Size index1, Size index2 ) {
+  return this.values[index1] == this.values[index2];
+}
+
+function String ScalarAttribute.valueDesc( Size index ) {
+  return String(this.values[index]);
+}
+
+require Util;
+function String ScalarAttribute.unitTestPrint( Size index ) {
+  return unitTestPrint(this.values[index]);
+}
+
+function String ScalarAttribute.truncateDecimalsPrint( Size index, UInt32 n ) {
+  return truncateDecimalsPrint(this.values[index], n);
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+function Ref<ScalarAttribute> GeometryAttributes.getOrCreateScalarAttribute!( String name ) {
+  return this.getOrCreateAttribute( name, ScalarAttribute );
+}

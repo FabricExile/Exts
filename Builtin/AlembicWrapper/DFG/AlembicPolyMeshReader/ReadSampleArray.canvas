@@ -1,0 +1,90 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "reads a sample at a given time. this will properly interpolate between samples.\nthe result is stored in the provided PolygonMesh.\nfreezeAttributeIndices: maintain Mesh's attribute sharing layout of the 1st read sample through playback.\nFor example, if new normal or UV splits are introduced during playback, one of the values will be used (arbitrary).\nThe advantage is to gain more speed and to ensure attribute matching (for effects such as motion blur).\nThis options will be ignored if the topology changes.\n\nSupported types:\n  this: AlembicPolyMeshReader\n  time: Float64\n  freezeAttributeIndices: Boolean\n  mesh: PolygonMesh\n"
+    },
+  "title" : "ReadSample[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicPolyMeshReader[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "time",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float64[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float64[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "freezeAttributeIndices",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Boolean[]" : [
+          false
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Boolean[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "mesh",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "PolygonMesh[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "5076F3387A55340F35F636BFCECF01D4",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicPolyMeshReader_readSample_task<<<index>>>(
+  io AlembicPolyMeshReader[] this
+, in Float64[] time
+, in Boolean[] freezeAttributeIndices
+, io PolygonMesh[] mesh
+) {
+  this[index < this.size() ? index : this.size() - 1].readSample(time[index < time.size() ? index : time.size() - 1], freezeAttributeIndices[index < freezeAttributeIndices.size() ? index : freezeAttributeIndices.size() - 1], mesh[index < mesh.size() ? index : mesh.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( time.size() == 0) return;
+  if( freezeAttributeIndices.size() == 0) return;
+  if( mesh.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < time.size()) task_size = time.size();
+  if(task_size < freezeAttributeIndices.size()) task_size = freezeAttributeIndices.size();
+  mesh.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      AlembicWrapper_AlembicPolyMeshReader_readSample_task(index, this, time, freezeAttributeIndices, mesh);
+    }
+  } else {
+    AlembicWrapper_AlembicPolyMeshReader_readSample_task<<<task_size>>>(this, time, freezeAttributeIndices, mesh);
+  }
+}
+"
+  }

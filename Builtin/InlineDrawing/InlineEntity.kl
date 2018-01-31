@@ -1,0 +1,86 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+
+/**
+\versionadded 1.13.0
+
+The InlineEntity interface is used to describe the required methods for an InlineEntityBase.
+\note This might go away as soon as the virtual keyword is introduced in KL.
+\dfgPresetOmit
+*/
+interface InlineEntity {
+  /// returns this entities name
+  String getName();
+  /// sets this entity's name
+  /// \internal
+  setName!(String name);
+  /// stores an arbitrary meta data object on the Shape
+  setMetaData!(String key, Object metaData);
+  /// retrieves meta data from the Shape
+  Object getMetaData(String key);
+};
+
+/**
+\versionadded 1.12.0
+
+The InlineEntityBase is used to store arbitrary metadata as a dictionary.
+\dfgPresetOmit
+*/
+object InlineEntityBase : InlineEntity {
+  /// \internal
+  String name;
+  /// \internal
+  Object metaData[String];
+};
+
+/// returns this entities name
+function String InlineEntityBase.getName() {
+  return this.name;
+}
+
+/// sets this entity's name
+/// \internal
+function InlineEntityBase.setName!(String name) {
+  this.name = name;
+}
+
+/// stores an arbitrary meta data object on the Shape
+function InlineEntityBase.setMetaData!(String key, Object metaData) {
+  this.metaData[key] = metaData;
+}
+
+/// retrieves meta data from the Shape
+function Object InlineEntityBase.getMetaData(String key) {
+  Object nullObj = null;
+  return this.metaData.get(key, nullObj);
+}
+
+/// \internal
+struct InlineEntityMetaDataSetter {
+  Ref<InlineEntity> inlineEntity;
+  String key;
+  Object oldMetaData;
+};
+
+/// \internal
+inline InlineEntityMetaDataSetter(
+  Ref<InlineEntity> inlineEntity,
+  String key,
+  Object metaData
+  )
+{
+  this.inlineEntity = inlineEntity;
+  this.key = key;
+
+  this.oldMetaData = this.inlineEntity.getMetaData(this.key);
+  this.inlineEntity.setMetaData(this.key, metaData);
+}
+
+/// \internal
+inline ~InlineEntityMetaDataSetter()
+{
+  this.inlineEntity.setMetaData(this.key, this.oldMetaData);
+}

@@ -1,0 +1,61 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/Curves.html",
+    "uiTooltip" : "Supported types:\n  this: Curves\n  samplingData: Ref<Curves_samplingData>\n  attribute: Ref<GeometryAttribute>\n  result: GeometryAttribute\n"
+    },
+  "title" : "UpdateAttributeSampling",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Curves"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "samplingData",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Curves_samplingData"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "attribute",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "GeometryAttribute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "GeometryAttribute"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "94BDDCB3D9F11746E18F7F7676B6506C",
+  "code" : "require Geometry;
+
+dfgEntry {
+  Ref<Curves_samplingData> samplingData_ref = samplingData;
+  Ref<GeometryAttribute> attribute_ref = attribute;
+  Ref<GeometryAttribute> result_ref = this.updateAttributeSampling(samplingData_ref, attribute_ref);
+  result = result_ref;
+}
+"
+  }

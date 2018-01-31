@@ -1,0 +1,303 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+    "uiNodeColor" : "{\n  \"r\" : 132,\n  \"g\" : 106,\n  \"b\" : 97\n  }"
+    },
+  "title" : "FilterByPath",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Execute" : {}
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "objects",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Ref<ImporterObject>[]" : []
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Ref<ImporterObject>[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "accepted",
+      "nodePortType" : "In",
+      "defaultValues" : {
+        "Ref<ImporterObject>[]" : []
+        },
+      "execPortType" : "Out",
+      "typeSpec" : "Ref<ImporterObject>[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "rejected",
+      "nodePortType" : "In",
+      "defaultValues" : {
+        "Ref<ImporterObject>[]" : []
+        },
+      "execPortType" : "Out",
+      "typeSpec" : "Ref<ImporterObject>[]"
+      }
+    ],
+  "priorPortNameMap" : {
+    "result" : 2
+    },
+  "blocks" : [
+    {
+      "objectType" : "ExecBlock",
+      "metadata" : {
+        "uiGraphPos" : "{\"x\":0.0,\"y\":0.0}"
+        },
+      "name" : "filter",
+      "ports" : [
+        {
+          "objectType" : "ExecBlockPort",
+          "name" : "inedx",
+          "nodePortType" : "In",
+          "outsidePortType" : "In",
+          "typeSpec" : "Index"
+          },
+        {
+          "objectType" : "ExecBlockPort",
+          "name" : "inObject",
+          "nodePortType" : "In",
+          "outsidePortType" : "In",
+          "typeSpec" : "Ref<ImporterObject>"
+          },
+        {
+          "objectType" : "ExecBlockPort",
+          "name" : "filter",
+          "nodePortType" : "Out",
+          "outsidePortType" : "Out",
+          "typeSpec" : "Boolean"
+          }
+        ],
+      "defaultExec" : {
+        "objectType" : "Graph",
+        "title" : "",
+        "ports" : [
+          {
+            "objectType" : "ExecPort",
+            "metadata" : {},
+            "name" : "expression",
+            "nodePortType" : "Out",
+            "defaultValues" : {
+              "String" : ""
+              },
+            "execPortType" : "In",
+            "typeSpec" : "String"
+            }
+          ],
+        "fixedPorts" : [
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "inedx",
+            "nodePortType" : "Out",
+            "outsidePortType" : "In"
+            },
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "inObject",
+            "nodePortType" : "Out",
+            "outsidePortType" : "In"
+            },
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "filter",
+            "nodePortType" : "In",
+            "outsidePortType" : "Out"
+            }
+          ],
+        "extDeps" : {},
+        "nodes" : [
+          {
+            "objectType" : "Inst",
+            "metadata" : {
+              "uiGraphPos" : "{\"x\":186.39998169,\"y\":240.80000305164}"
+              },
+            "name" : "path_2",
+            "ports" : [
+              {
+                "objectType" : "InstPort",
+                "name" : "exec",
+                "nodePortType" : "IO"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "this",
+                "nodePortType" : "In"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "result",
+                "nodePortType" : "Out"
+                }
+              ],
+            "executable" : "Fabric.Compounds.IO.Importer.Object.path",
+            "presetGUID" : "052BB2BDFB905F6B7970BAEF89D2C7B9"
+            },
+          {
+            "objectType" : "Inst",
+            "metadata" : {
+              "uiGraphPos" : "{\"x\":853.400012204,\"y\":296.80000305184}"
+              },
+            "name" : "Neq_2",
+            "ports" : [
+              {
+                "objectType" : "InstPort",
+                "name" : "exec",
+                "nodePortType" : "IO"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "lhs",
+                "nodePortType" : "In"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "rhs",
+                "nodePortType" : "In"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "result",
+                "nodePortType" : "Out"
+                }
+              ],
+            "executable" : "Fabric.Core.Comparison.Not Equal To",
+            "presetGUID" : "6ED44CE562AA433EE8B354939B94482E"
+            },
+          {
+            "objectType" : "Inst",
+            "metadata" : {
+              "uiGraphPos" : "{\"x\":220.39998169,\"y\":369.79998779284}"
+              },
+            "name" : "Regex_1",
+            "ports" : [
+              {
+                "objectType" : "InstPort",
+                "name" : "exec",
+                "nodePortType" : "IO"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "format",
+                "nodePortType" : "In"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "result",
+                "nodePortType" : "Out"
+                }
+              ],
+            "executable" : "Fabric.Exts.Util.Regex.Regex",
+            "presetGUID" : "77A7870B6AB988DA0CE343D5DD7BF9AA"
+            },
+          {
+            "objectType" : "Inst",
+            "metadata" : {
+              "uiGraphPos" : "{\"x\":673.4000122079999,\"y\":313.80000305184}"
+              },
+            "name" : "Size_1",
+            "ports" : [
+              {
+                "objectType" : "InstPort",
+                "name" : "exec",
+                "nodePortType" : "IO"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "array",
+                "nodePortType" : "In"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "count",
+                "nodePortType" : "Out"
+                }
+              ],
+            "executable" : "Fabric.Core.Array.Size",
+            "presetGUID" : "5B186A97C79ACF32526EC844AD805421"
+            },
+          {
+            "objectType" : "Inst",
+            "metadata" : {
+              "uiGraphPos" : "{\"x\":481.4000122079999,\"y\":308.80000305184}"
+              },
+            "name" : "Search_1",
+            "ports" : [
+              {
+                "objectType" : "InstPort",
+                "name" : "exec",
+                "nodePortType" : "IO"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "this",
+                "nodePortType" : "In"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "s",
+                "nodePortType" : "In"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "result",
+                "nodePortType" : "Out"
+                }
+              ],
+            "executable" : "Fabric.Exts.Util.Regex.Search",
+            "presetGUID" : "D28A145A67D99C5B4C7E2F10394F5136"
+            }
+          ],
+        "connections" : {
+          "inObject" : [
+            "path_2.this"
+            ],
+          "expression" : [
+            "Regex_1.format"
+            ],
+          "path_2.result" : [
+            "Search_1.s"
+            ],
+          "Neq_2.result" : [
+            "filter"
+            ],
+          "Regex_1.result" : [
+            "Search_1.this"
+            ],
+          "Size_1.count" : [
+            "Neq_2.lhs"
+            ],
+          "Search_1.result" : [
+            "Size_1.array"
+            ]
+          }
+        }
+      }
+    ],
+  "extDeps" : {
+    "AssetPatterns" : "*"
+    },
+  "presetGUID" : "BBA4DDD211D5E143E73F4E9BE42756C1",
+  "code" : "dfgEntry {
+  for(Size i=0;i<objects.size();i++)
+  {
+    Boolean filter = dfgPullBlockPort(\"filter.filter\", i, objects[i]);
+    if(filter)
+      accepted.push(objects[i]);
+    else
+      rejected.push(objects[i]);
+  }
+}
+"
+  }

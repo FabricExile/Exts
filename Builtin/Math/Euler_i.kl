@@ -1,0 +1,215 @@
+
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/**
+The :kl-ref:`Euler_i` type represents a 3D rotation as Euler_i X, Y, and Z angles and a :kl-ref:`RotationOrder`. 
+The X, Y, and Z angles are expressed in radians. The Euler_i type also provides conversion methods to :kl-ref:`Mat33_i`.
+
+\rst
+  .. kl-example:: Construct Euler_i
+
+    RotationOrder ro('xyz');
+    Euler_i euler(0.0, PI, 0.0, ro);
+    Mat33_i matrix = euler.toMat33_i();
+
+\endrst
+\seealso Quat
+\dfgTypeColor Color(0, 191, 232)
+\dfgPresetColor Color(99, 129, 92)
+*/
+struct Euler_i
+{
+  SInt32 x;
+  SInt32 y;
+  SInt32 z;
+  RotationOrder ro;
+};
+
+/// Default constructor
+inline Euler_i() {
+  this.x = 0.0;
+  this.y = 0.0;
+  this.z = 0.0;
+  this.ro.setXYZ();
+}
+
+/// Constructor using a Vec3_i as angles in radians, RotationOrder = XYZ
+inline Euler_i(in Vec3_i angles) {
+  this.x = angles.x;
+  this.y = angles.y;
+  this.z = angles.z;
+  this.ro.setXYZ();
+}
+
+/// Constructor using a Vec3_i as radians and a RotationOrder
+inline Euler_i(in Vec3_i angles, in RotationOrder order) {
+  this.set(angles, order);
+}
+
+/// Constructor using three SInt32s as angles in radians, RotationOrder = XYZ
+inline Euler_i(in SInt32 x, in SInt32 y, in SInt32 z) {
+  this.set(x, y, z);
+}
+
+/// Constructor using three SInt32s as angles in radians and a RotationOrder
+inline Euler_i(in SInt32 x, in SInt32 y, in SInt32 z, in RotationOrder order) {
+  this.set(x, y, z, order);
+}
+
+/// Setter using a Vec3_i as angles in radians, RotationOrder = XYZ
+inline Euler_i.set!(in Vec3_i angles) {
+  this.x = angles.x;
+  this.y = angles.y;
+  this.z = angles.z;
+  this.ro.setXYZ();
+}
+
+/// Setter using a Vec3_i as radians and a RotationOrder
+inline Euler_i.set!(in Vec3_i angles, in RotationOrder order) {
+  this.x = angles.x;
+  this.y = angles.y;
+  this.z = angles.z;
+  this.ro = order;
+}
+
+/// Setter using three SInt32s as angles in radians, RotationOrder = XYZ
+inline Euler_i.set!(in SInt32 x, in SInt32 y, in SInt32 z) {
+  this.x = x;
+  this.y = y;
+  this.z = z;
+  this.ro.setXYZ();
+}
+
+/// Setter using three SInt32s as angles in radians and a RotationOrder
+inline Euler_i.set!(in SInt32 x, in SInt32 y, in SInt32 z, in RotationOrder order) {
+  this.x = x;
+  this.y = y;
+  this.z = z;
+  this.ro = order;
+}
+
+/// Setter using a Vec3_i as angles in radians, RotationOrder = XYZ
+inline Euler_i.setAngles!(in Vec3_i angles) {
+  this.set(angles);
+}
+
+/// Returns the angles as a Vec3_i in radians
+inline Vec3_i Euler_i.getAngles() {
+  return Vec3_i(this.x, this.y, this.z);
+}
+
+/// Sets from Vec.
+inline Euler_i(Vec_i vec) {
+  this.set(vec);
+}
+
+/// Sets from Vec.
+inline Euler_i.set!(Vec_i vec) {
+  this.setAngles(Vec3_i(vec));
+}
+
+/// Converts to Vec.
+inline Vec_i Euler_i.toVec() {
+  return this.getAngles().toVec();
+}
+
+/// Sets all components of this Euler to 0.0
+inline Euler_i.setNull!() {
+  this.x = this.y = this.z = SInt32();
+  this.ro = RotationOrder();
+}
+
+/// Returns true if this Euler_i is the same as another one (precisely)
+inline Boolean Euler_i.equal(in Euler_i other) {
+  return this.x == other.x && this.y == other.y && this.z == other.z && this.ro.order == other.ro.order;
+}
+
+/// Returns true if this Euler_i is almost the same as another one (based on a precision)
+inline Boolean Euler_i.almostEqual(in Euler_i other, in SInt32 precision) {
+  return
+      (abs(this.x - other.x) < precision) &&
+      (abs(this.y - other.y) < precision) &&
+      (abs(this.z - other.z) < precision) &&
+      (this.ro.order == other.ro.order);
+}
+
+/// Equals operator
+inline Boolean == (Euler_i a, Euler_i b) {
+  return a.x == b.x && a.y == b.y && a.z == b.z && a.ro.order == b.ro.order;
+}
+
+/// Not equals operator
+inline Boolean != (Euler_i a, Euler_i b) {
+  return a.x != b.x || a.y != b.y || a.z != b.z || a.ro.order != b.ro.order;
+}
+
+/// Hash for this value
+inline UInt32 Euler_i.hash() {
+  return this.x.hash() ^ this.y.hash() ^ this.z.hash() ^ this.ro.order.hash();
+}
+
+/// Adds two Eulers
+inline Euler_i + (in Euler_i a, in Euler_i b) {
+  return Euler_i(a.x + b.x, a.y + b.y, a.z + b.z, a.ro);
+}
+
+/// Adds another Euler to this one
+inline Euler_i. += (in Euler_i b) {
+  this = this + b;
+}
+
+/// Subtracts two Eulers
+inline Euler_i - (in Euler_i a, in Euler_i b) {
+  return Euler_i(a.x - b.x, a.y - b.y, a.z - b.z, a.ro);
+}
+
+/// Subtracts another Euler from this one
+inline Euler_i. -= (in Euler_i b) {
+  this = this - b;
+}
+
+/// unary -
+inline Euler_i -Euler_i() {
+  return Euler_i(-this.x, -this.y, -this.z);
+}
+
+/// Converts the Euler_i to a Mat33_i representing 
+/// the same 3D rotation transformation
+function Mat33_i Euler_i.toMat33_i() {
+  SInt32 Cx = cos(this.x), Sx = sin(this.x);
+  SInt32 Cy = cos(this.y), Sy = sin(this.y);
+  SInt32 Cz = cos(this.z), Sz = sin(this.z);
+
+  Mat33_i Rx( 1.0, 0.0, 0.0,
+            0.0,  Cx, -Sx,
+            0.0,  Sx,  Cx);
+
+  Mat33_i Ry(  Cy,  0.0,  Sy,
+            0.0,  1.0, 0.0,
+            -Sy,  0.0,  Cy);
+
+  Mat33_i Rz(  Cz,  -Sz,  0.0,
+             Sz,   Cz,  0.0,
+            0.0,  0.0,  1.0);
+
+  Mat33_i result;
+
+  if (this.ro.isZYX())
+    result = Rx * Ry * Rz;
+  else if (this.ro.isXZY())
+    result = Ry * Rz * Rx;
+  else if (this.ro.isYXZ())
+    result = Rz * Rx * Ry;
+  else if (this.ro.isYZX())
+    result = Rx * Rz * Ry;
+  else if (this.ro.isXYZ())
+    result = Rz * Ry * Rx;
+  else if (this.ro.isZXY())
+    result = Ry * Rx * Rz;
+
+  return result;
+}
+
+

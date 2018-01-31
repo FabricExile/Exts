@@ -1,0 +1,104 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// \internal
+  interface ScreenDistanceBasedBehavior_virtuals {
+    onDistanceRatio!( io Ref<BaseTool> tool, Float32 ratio, DrawContext context );
+  };
+
+  /**
+    \versionadded 2.6.0
+
+    The ScreenDistanceBasedBehavior is a base object, to be specialized, that
+    computes a ratio based on the pixel distance to a [-1..1] rectangle in BaseTool's transform space.
+    (no actual geometrical distance is computed).
+
+    The onDistanceRatio virtual method is called when the ratio changes.
+
+    See :ref:`TPG.tooldrawmodifier` for more information about draw modifiers.
+  */
+  object ScreenDistanceBasedBehavior : BaseDrawModifier, RawEventHandler, ScreenDistanceBasedBehavior_virtuals{
+
+    ToolsManager manager;
+    Float32 maxPixelDistance;
+
+    Float32 perViewportUIDRatio[UInt32];
+  };
+
+  ScreenDistanceBasedBehavior() {
+    this.maxPixelDistance = 50;
+    this.init();
+  }
+
+  ScreenDistanceBasedBehavior( Float32 maxPixelDistance ) {
+    this.maxPixelDistance = maxPixelDistance;
+    this.init();
+  }
+
+  /// \internal
+  ScreenDistanceBasedBehavior.init!( ) {
+    this.manager = GetToolsManager();
+    this.manager.addEventHandler( this );
+  }
+
+  /// \internal
+  ScreenDistanceBasedBehavior.onRawEvent!( io Event event ) {
+
+    Ref<MouseEvent> mouseEvent = event;
+    if( mouseEvent ) {
+      // Compute based on pos
+      Ref<BaseTool> w = this.ownerTool;
+      if( w ) {
+        DrawContext context = this.manager.getCurrentEventContext();
+        Vec2 upperLeft, lowerRight;
+        w.getScreenSpaceRectangle( context, upperLeft, lowerRight );
+
+        Box3 bbox;
+        bbox.min.x = upperLeft.x;
+        bbox.min.y = upperLeft.y;
+        bbox.min.z = 0;
+        bbox.max.x = lowerRight.x;
+        bbox.max.y = lowerRight.y;
+        bbox.max.z = 0;
+
+        Float32 dist = getDistanceToBBox( bbox, Vec3( mouseEvent.pos.x, mouseEvent.pos.y, 0 ) );
+
+        Float32 ratio = dist >= this.maxPixelDistance ? 0.0 : ( this.maxPixelDistance - dist ) / this.maxPixelDistance;
+        if( mouseEvent.eventType() == Event_Leave )
+          ratio = 0;
+
+        if( ratio != this.perViewportUIDRatio.get( context.viewport.uid(), 0 ) ) {
+          this.perViewportUIDRatio[context.viewport.uid()] = ratio;
+          if( mouseEvent.host )
+            mouseEvent.host.redrawRequested = true;
+        }
+      }
+    }
+  }
+
+  ScreenDistanceBasedBehavior.updateDrawData!( io DrawContext context, Ref<Object> target ) {
+    this.parent.updateDrawData( context, target );
+    this.onDistanceRatio( this.ownerTool, this.perViewportUIDRatio.get( context.viewport.uid(), 0 ), context );
+  }
+
+  /// To be overriden
+  ScreenDistanceBasedBehavior.onDistanceRatio!( io Ref<BaseTool> tool, Float32 ratio, DrawContext context ) {}
+
+  /// \internal
+  /// Non-virtual version that can be safely called from the destructor
+  /// This can be removed once KL is fixed to not call specialized methods in destructors
+  ScreenDistanceBasedBehavior.invalidateInternal!( ) {
+    this.manager.removeEventHandler( this );
+  }
+
+  ScreenDistanceBasedBehavior.invalidate!( ) {
+    this.invalidateInternal();
+  }
+
+  ~ScreenDistanceBasedBehavior() {
+    this.invalidateInternal();
+  }
+}// namespace Tool

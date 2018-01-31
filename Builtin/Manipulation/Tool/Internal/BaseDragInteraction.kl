@@ -1,0 +1,301 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  interface BaseDragInteraction_virtuals {
+    onPrepare!( Ref<Viewport> viewport, Vec2 pixelPosition );
+    onPrepare!( RaycastContext context, RaycastResult result );
+    onMove!( Vec2 pixelPosition );
+    onEnd!();
+  };
+
+  /**
+    The BaseDragInteraction implements the DragInteraction interface and
+    will send the following events:
+
+    - ToolEvent_DragBegin : sent when the drag interaction begins (ToolEvent.customData = this)
+    - ToolEvent_DragMove : sent when the drag interaction is active and a new drag position is set (ToolEvent.customData = this)
+    - ToolEvent_DragEnd : sent when the drag interaction ends (ToolEvent.customData = this)
+    - ToolEvent_DragBeginEndNoMove : sent when the drag interaction begin and end events were received, but with no move event (cancelled / aborted drag)
+
+    Also, the BaseDragInteraction can be initiated from a ToolEvent_DragBegin event, in which case
+    the ToolEvent.sender will be cast to a RaycastTriggered source to get the initial
+    raycast position, otherwise the current mouse position will be requested through ToolsManager.getLastMousePosition().
+    Similarly, ToolEvent_DragMove and ToolEvent_DragEnd will be translated to onMove and onEnd.
+
+    See :ref:`TPG.interactive-tools` for more information and examples related to tool interactions.
+  */
+  object BaseDragInteraction : EventListenerComponent, DragInteraction, Activable, RawEventHandler{
+
+    Viewport contextualViewport;
+
+    Vec2 initialPixelPos;
+    RaycastResult initialRaycastResult;
+
+    Vec2 prevPixelPos;
+    Vec2 pixelPos;
+
+    Boolean prepared;//Registered to ToolsManager
+    Boolean dragging;
+    Boolean exclusiveInteraction;
+
+    ToolsManager manager;
+    Boolean alwaysRegisteredToEvents;
+
+    Boolean active;
+
+    Boolean invalidateAfterDrag;
+  };
+
+  BaseDragInteraction() {
+    this.manager = GetToolsManager();
+    this.exclusiveInteraction = true;
+    this.active = true;
+  }
+
+  /// Exceptionally, the specialized class might require to get events even when not dragging
+  BaseDragInteraction.setAlwaysRegisteredToEvents!( ) {
+    if( this.prepared || this.dragging )
+      throw( "BaseDragInteraction.setAlwaysRegisteredToEvents: not supported while active" );
+
+    this.alwaysRegisteredToEvents = true;
+    this.manager.addEventHandler( this );
+  }
+
+  /// Implementation of Activable
+  Boolean BaseDragInteraction.isActive() {
+    return this.active;
+  }
+
+  /// Implementation of Activable
+  BaseDragInteraction.activate!() {
+    if( this.prepared || this.dragging )
+      throw( "BaseDragInteraction.activate: not supported while active" );
+
+    if( !this.active ) {
+      this.active = true;
+      if( this.alwaysRegisteredToEvents )
+        this.manager.addEventHandler( this );
+    }
+  }
+
+  /// The drag interaction will be invalidated after the drag finishes,
+  /// and will be deleted if only referenced by its owner.
+  BaseDragInteraction.deleteAfterDrag!() {
+    this.invalidateAfterDrag = true;
+  }
+
+  /// Implementation of Activable.
+  /// Deactivates the interaction; events will no longer be listened to even if setAlwaysRegisteredToEvents().
+  BaseDragInteraction.deactivate!() {
+    this.onEnd();//End interaction if any
+
+    if( this.active ) {
+      this.active = false;
+      if( this.alwaysRegisteredToEvents )
+        this.manager.removeEventHandler( this );
+    }
+  }
+
+  /// Implementation of DragInteraction
+  Boolean BaseDragInteraction.isDragging() {
+    return this.dragging;
+  }
+
+  /// Implementation of DragInteraction
+  Vec2 BaseDragInteraction.getInitialPixelPosition() {
+    return this.initialPixelPos;
+  }
+
+  /// Implementation of DragInteraction
+  Vec2 BaseDragInteraction.getInitialNormalizedScreenSpacePosition() {
+    return PixelToNormalizedScreenSpace( this.contextualViewport, this.initialPixelPos );
+  }
+
+  /// Implementation of DragInteraction
+  RaycastResult BaseDragInteraction.getInitialRaycastResult() {
+    return this.initialRaycastResult;
+  }
+
+  /// Implementation of DragInteraction
+  Viewport BaseDragInteraction.getContextualViewport() {
+    return this.contextualViewport;
+  }
+
+  /// Implementation of DragInteraction
+  Vec2 BaseDragInteraction.getCurrentPixelPosition() {
+    return this.pixelPos;
+  }
+
+  /// Implementation of DragInteraction
+  Vec2 BaseDragInteraction.getCurrentNormalizedScreenSpacePosition() {
+    return PixelToNormalizedScreenSpace( this.contextualViewport, this.pixelPos );
+  }
+
+  Vec2 BaseDragInteraction.getLastPixelDelta() {
+    return this.pixelPos - this.prevPixelPos;
+  }
+
+  Vec2 BaseDragInteraction.getLastNormalizedScreenSpaceDelta() {
+    Vec2 prevNormalizedPixelPos = PixelToNormalizedScreenSpace( this.contextualViewport, this.prevPixelPos );
+    return this.getCurrentNormalizedScreenSpacePosition() - prevNormalizedPixelPos;
+  }
+
+  /// Implementation of DragInteraction
+  Boolean BaseDragInteraction.hasWorldSpacePosition() {
+    return this.initialRaycastResult.isValid();
+  }
+
+  /// Implementation of DragInteraction
+  Vec3 BaseDragInteraction.getInitialWorldSpacePosition() {
+    // Compute normalized depth
+    Ray ray = this.contextualViewport.calcRayFromScreenPos( this.initialPixelPos );
+    return ray.start + ray.direction * this.initialRaycastResult.cameraDistance;
+  }
+
+  /// \internal
+  BaseDragInteraction.prepareInternal!( ) {
+    if( !this.prepared ) {
+      this.prepared = true;
+      this.pixelPos = this.prevPixelPos = this.initialPixelPos;
+
+      if( !this.alwaysRegisteredToEvents ) {
+        // Register to the tools manager to get the mouse move events
+        this.manager.addEventHandler( this );
+      }
+    }
+  }
+
+  /// \internal
+  BaseDragInteraction.endInternal!( ) {
+    if( this.prepared ) {
+      BaseDragInteraction keepAlive( this );//Avoid issues on cyclic destruction orders
+
+      if( this.dragging ) {
+        // Unregister from the tools manager
+        if( this.exclusiveInteraction )
+          this.manager.endExclusiveInteraction( this );
+
+        this.sendEventToListeners( ToolEvent_DragEnd, EventPropagationType_none, String(), this );
+        ToolChanged();
+        this.dragging = false;
+      } else
+        this.sendEventToListeners( ToolEvent_DragBeginEndNoMove, EventPropagationType_none, String(), this );
+
+      this.prepared = false;
+      if( !this.alwaysRegisteredToEvents )
+        this.manager.removeEventHandler( this );
+
+      this.initialRaycastResult = RaycastResult();
+      this.contextualViewport = null;
+
+      if( this.invalidateAfterDrag ) {
+        this.invalidateAfterDrag = false;
+        this.invalidate();//won't recurse since this.prepared == false
+      }
+    }
+  }
+
+  BaseDragInteraction.onPrepare!( Ref<Viewport> viewport, Vec2 pixelPosition ) {
+    this.contextualViewport = viewport;
+    this.initialPixelPos = pixelPosition;
+    this.prepareInternal();
+  }
+
+  BaseDragInteraction.onPrepare!( RaycastContext context, RaycastResult result ) {
+    this.initialRaycastResult = result;
+    this.contextualViewport = context.context.viewport;
+    this.initialPixelPos = context.viewportCoords;
+    this.prepareInternal();
+  }
+
+  BaseDragInteraction.onMove!( Vec2 pixelPosition ) {
+    if( this.prepared ) {
+
+      if( !this.dragging ) {
+        // Begin the drag just before the 1st move; else it might just be a simple "click" and not a drag
+        this.dragging = true;
+        if( this.exclusiveInteraction )
+          this.manager.beginExclusiveInteraction( this );
+        this.sendEventToListeners( ToolEvent_DragBegin, EventPropagationType_none, String(), this );
+      }
+      this.prevPixelPos = this.pixelPos;
+      this.pixelPos = pixelPosition;
+      this.sendEventToListeners( ToolEvent_DragMove, EventPropagationType_none, String(), this );
+      ToolChanged();
+    }
+  }
+
+  BaseDragInteraction.onEnd!( ) {
+    this.endInternal();
+  }
+
+  /// \internal
+  BaseDragInteraction.onRawEvent!( io Event event ) {
+    if( this.prepared ) {
+      Ref<MouseEvent> mouseEvent = event;
+      if( Boolean( mouseEvent ) && mouseEvent.eventType() == Event_MouseMove ) {
+        event.accept();
+        this.onMove( mouseEvent.pos );
+      }
+    }
+  }
+
+  BaseDragInteraction.onStart!( ) {
+    if( !this.active )
+      return;// ignore if not active
+
+    // Get mouse pos from manager's last event
+    Ref<Viewport> viewport = this.manager.getCurrentEvent().getViewport();
+    Vec2 pos = this.manager.getLastMousePosition();
+    if( Boolean( viewport ) && pos != Vec2( -1 ) )
+      this.onPrepare( viewport, pos );
+  }
+
+  /// \internal
+  BaseDragInteraction.onEvent!( ToolEvent event, ToolEventUserID userID ) {
+    // Translate these to "onBegin/End/Move" calls
+    if( this.active && event.name == ToolEvent_DragBegin ) {
+      Ref<RaycastTriggered> raycastTriggered = event.sender;
+      if( !raycastTriggered )
+        raycastTriggered = event.customData;
+
+      if( Boolean( raycastTriggered ) && raycastTriggered.hasCurrentRaycast() )
+        this.onPrepare( raycastTriggered.getCurrentRaycastContext(), raycastTriggered.getCurrentRaycastResult() );
+      else if( this.manager.getCurrentEvent() )
+        this.onStart();
+    } else if( this.active && event.name == ToolEvent_DragMove ) {
+      Vec2 pos = this.manager.getLastMousePosition();
+      if( pos != Vec2( -1 ) )
+        this.onMove( pos );
+    } else if( this.active && event.name == ToolEvent_DragEnd ) {
+      this.onEnd();
+    } else
+      this.parent.onEvent( event, userID );
+  }
+
+  /// \internal
+  /// Non-virtual version that can be safely called from the destructor
+  /// This can be removed once KL is fixed to not call specialized methods in destructors
+  BaseDragInteraction.invalidateInternal!( ) {
+    this.endInternal();
+
+    this.manager.removeEventHandler( this );
+    this.alwaysRegisteredToEvents = false;
+
+    this.parent.invalidate();
+  }
+
+  /// \internal
+  BaseDragInteraction.invalidate!( ) {
+    this.invalidateInternal();
+  }
+
+  /// \internal
+  ~BaseDragInteraction() {
+    this.invalidateInternal();
+  }
+
+}// namespace Tool

@@ -1,0 +1,144 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/**
+The BaseExporter implements the Exporter interface and is used as the base class
+for most specialized Exporters, such as the AlembicExporter.
+
+\seealso AlembicExporter
+*/
+object BaseExporter : Exporter
+{
+  protected ImporterObject objects[];
+  protected SInt32 keyToIndex[String];
+};
+
+/// \dfgPresetOmit
+function BaseExporter.cloneMembersTo(io BaseExporter other) {
+  other.objects = this.objects;
+  other.keyToIndex = this.keyToIndex;  
+}
+
+/**
+Adds objects to the export
+\dfgPresetCreate
+\dfgPresetTitle updateObjects
+\dfgPresetFolder Exporter
+*/
+Boolean BaseExporter.updateObjects!(ExporterContext ctxt, Ref<ImporterObject> objects[]) {
+  for(Size i=0;i<objects.size();i++) {
+    if(!this.traverseObject(ctxt, objects[i], objects[i].getParent(), true, true))
+      return false;
+  }
+  return true;
+}
+
+/// overload for the version with Ref<ImporterObject>[]
+/// \dfgPresetOmit
+Boolean BaseExporter.updateObjects!(ExporterContext ctxt, ImporterObject objects[]) {
+  Ref<ImporterObject> refs[](objects.size());
+  for(Size i=0;i<objects.size();i++)
+    refs[i] = objects[i];
+  return this.updateObjects(ctxt, refs);
+}
+
+/**
+Saves the file to disk
+\dfgPresetCreate
+\dfgPresetTitle exportToDisk
+\dfgPresetFolder Exporter
+*/
+Boolean BaseExporter.exportToDisk!(ExporterContext ctxt) {
+  return false;
+}
+
+/**
+Returns they lookup key for a single object. This can be used to define
+if an object is unique based on its ID or path, for example.
+\dfgPresetOmit
+*/
+protected String BaseExporter.getLookupKey(Ref<ImporterObject> obj) {
+  return obj.getInstancePath();
+}
+
+/**
+Returns true if an object is supposed to be traversed
+\dfgPresetOmit
+*/
+protected String BaseExporter.shouldTraverse(Ref<ImporterObject> obj) {
+  switch(obj.getType()) {
+    case 'Layer':
+    case 'Group':
+    case 'Instance':
+    case 'Shape':
+    case 'Material': {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+Gets called for every object to export. This needs to be overloaded by each implementation.
+\dfgPresetOmit
+*/
+Boolean BaseExporter.visitObjectToExport!(ExporterContext ctxt, Ref<ImporterObject> obj, Ref<ImporterObject> parentObj) {
+  return true;
+}
+
+protected Boolean BaseExporter.traverseObject!(ExporterContext ctxt, Ref<ImporterObject> obj, Ref<ImporterObject> parentObj, Boolean visitParents, Boolean visitNested) {
+
+  String key = this.getLookupKey(obj);
+  if(ctxt.willCallUpdateForEachTimeSample)
+  {
+    if(!this.keyToIndex.has(key))
+    {
+      this.keyToIndex[key] = this.objects.size();
+      this.objects.push(obj);
+    }
+  }
+  else
+  {
+    if(this.keyToIndex.has(key))
+      return true;
+    this.keyToIndex[key] = this.objects.size();
+    this.objects.push(obj);
+  }
+
+  if(visitParents) {
+    if(parentObj) {
+      if(!this.traverseObject(ctxt, parentObj, parentObj.getParent(), true, false))
+        return false;
+    }
+  }
+
+  // if this is an instance - visit the master object firsts
+  Ref<ImporterInstance> instance(obj);
+  if(instance)
+  {
+    Ref<ImporterObject> master = instance.getMaster(ctxt);
+    if(master)
+    {
+      if(!this.visitObjectToExport(ctxt, master, obj))
+        return false;
+    }
+  } 
+
+  if(!this.visitObjectToExport(ctxt, obj, parentObj))
+    return false;
+
+  if(visitNested) {
+    if(this.shouldTraverse(obj)) {
+      Ref<ImporterObject> nested[] = obj.getNestedObjects(ctxt);
+      for(Size i=0;i<nested.size();i++) {
+        ImporterObject nestedClone = nested[i].getOrCreateCloneForPath(obj.getInstancePath());
+        nestedClone.parentObject = obj;
+        if(!this.traverseObject(ctxt, nestedClone, obj, false, true))
+          return false;
+      }
+    }
+  }
+
+  return true;
+}

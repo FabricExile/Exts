@@ -1,0 +1,134 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Geometry;
+
+/**
+  \versionadded 2.0
+
+  :kl-ref:`LegacyBaseScalarAttributePaintTool` is a based class for ScalarAttributePaintTool.
+
+  \note This is a work in progress, needs to be generalized to abstract the type of attribute being painted.
+  
+  \seealso LegacyBasePaintTool
+ 
+  \dfgPresetOmit
+*/
+interface LegacyScalarAttributePaintTool {
+  /// Updates the scalar of the tool.
+  /// \params scalar The new scalar
+  scalarChanged!(Scalar scalar);
+};
+
+object LegacyBaseScalarAttributePaintTool : LegacyBasePaintTool, LegacyScalarAttributePaintTool{
+  /// Painting scalar.
+  protected Scalar scalar;
+};
+
+/// Initializes a LegacyBaseScalarAttributePaintTool.
+/// \param target Tool target.
+/// \param enableKey Key to enable to tool.
+/// \param resetKey Key to reset the painting.
+/// \param attributeName The name of the color geometry attribute (color).
+/// \param initialRadius Initial tool radius.
+/// \param scalar Initial tool scalar (weight).
+protected LegacyBaseScalarAttributePaintTool.init!(
+  LegacyBasePaintTarget target,
+  Key enableKey, 
+  Key resetKey,
+  String attributeName,
+  Float32 initialRadius, 
+  Scalar scalar) 
+{
+  this.parent.init(
+    target, 
+    enableKey, 
+    resetKey,
+    attributeName,
+    initialRadius);
+  this.scalar = scalar;
+}
+
+/// Implementation of :kl-ref:`LegacyPaintTool`.
+/// To override.
+LegacyBaseScalarAttributePaintTool.scalarChanged!(Scalar scalar) {
+  this.scalar = scalar;
+  if(this.enabled) this.show();
+  else this.hide(); 
+}
+
+/// Gets the current paint scalar.
+Scalar LegacyBaseScalarAttributePaintTool.getScalar() {
+  return this.scalar;
+}
+
+/// Implementation of :kl-ref:`LegacyPaintTool`.
+LegacyBaseScalarAttributePaintTool.ensureAttributeExists!(io Ref<Geometry> geometry, Boolean resetValues) {
+  Ref<ScalarAttribute> attribute = geometry.getAttributes().getAttribute(this.attributeName);
+  if(!Boolean(attribute) || (Boolean(attribute) && resetValues)) 
+  {
+    attribute = geometry.getAttributes().getOrCreateScalarAttribute(this.attributeName);
+    for(Index k=0; k<attribute.values.size(); ++k)
+      attribute.values[k] = 0.0;
+    attribute.incrementVersion();
+    
+    this.attributeStack = LegacyPaintToolAttributeStrokeData(geometry, this.attributeName);
+  }
+  this.parent.ensureAttributeExists(geometry, resetValues);
+}
+
+/// Implementation of :kl-ref:`LegacyPaintTool`.
+protected LegacyBaseScalarAttributePaintTool.setPointAttribute!(
+  Index i, 
+  Float32 weight, 
+  Vec3 displacementDir, 
+  io Ref<PolygonMesh> mesh) 
+{
+  Scalar paintScalar = this.mode == PaintMode_Paint ? this.scalar : 0;
+  Float32 alpha = weight;
+  Index index = this.tempPointSet.get(i);
+
+  Ref<ScalarAttribute> attribute = mesh.getAttributes().getAttribute(this.attributeName);
+  Scalar prevScalar = attribute.values[index];
+
+  mesh.setPointAttribute(index, attribute, prevScalar*(1-alpha) + paintScalar*alpha);
+}
+
+/// Implementation of :kl-ref:`LegacyPaintTool`.
+protected LegacyBaseScalarAttributePaintTool.smoothPointAttribute!(
+  Index i, 
+  Float32 weight, 
+  Vec3 displacementDir, 
+  io Ref<PolygonMesh> mesh) 
+{
+  Ref<ScalarAttribute> attribute = mesh.getAttributes().getAttribute(this.attributeName);
+  Ref<ScalarAttribute> tempAttribute = this.tempAttribute;
+  Index index = this.tempPointSet.get(i);
+  
+  LocalL16UInt32Array neigbors;
+  mesh.getPointSurroundingPoints(index, false, neigbors);
+  
+  if(neigbors.size()) 
+  {
+    Scalar scalarRes = 0;
+    for(Index k=0; k<neigbors.size(); ++k) 
+      scalarRes += attribute.values[neigbors.get(k)];
+    scalarRes /= neigbors.size();
+    tempAttribute.values[i] = attribute.values[index].linearInterpolate( (attribute.values[index] + scalarRes) * 0.5, weight);
+  }
+  else tempAttribute.values[i] = attribute.values[index];
+}
+
+/// Implementation of :kl-ref:`Tool`.
+protected LegacyBaseScalarAttributePaintTool.release!(io MouseEvent mouseEvent) {
+  if(this.performing)
+  {    
+    Ref<Geometry> geometry = this.paint(mouseEvent);
+    if(geometry) {
+      this.target.bakeValue();
+      this.attributeStack = LegacyPaintToolAttributeStrokeData(geometry, this.attributeName);
+    }
+  }
+  this.parent.release(mouseEvent);
+}

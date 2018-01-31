@@ -1,0 +1,130 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+require Util;
+
+object DFGBindingManager {
+  private String filePaths[String];
+  private DFGBindingWrapper wrappedBindings[String];
+  private String current;
+};
+
+function DFGBindingManager() {
+}
+
+function Boolean DFGBindingManager.clear!() {
+  if(this == null)
+    return false;
+  if(this.wrappedBindings.size() == 0 && this.filePaths.size() == 0)
+    return false;
+  this.wrappedBindings.clear();
+  this.filePaths.clear();
+  this.current = "";
+  return true;
+}
+
+function DFGBindingManager.registerFile!(String key, String filePath) {
+  if(this == null)
+    return;
+
+  if(key == "" || filePath == "")
+    return;
+
+  if(this.filePaths.has(key))
+    return;
+
+  this.filePaths[key] = filePath;
+  this.current = key;
+}
+
+function DFGBindingManager.registerAllFilesInFolder!(String folder, String prefix) {
+  if(this == null)
+    return;
+
+  FilePath folderPath(folder);
+  folderPath = folderPath.expandEnvVars();
+
+  if(!folderPath.isDirectory())
+    return;
+
+  FilePath files[] = folderPath.getSubPaths();
+  for(Size i=0;i<files.size();i++) {
+    if(!files[i].isRegularFile())
+      continue;
+    String extension = files[i].extension();
+    if(extension.lower() != '.canvas')
+      continue;
+
+    String stem = files[i].stem();
+    if(prefix != "" && !stem.startsWith(prefix))
+      continue;
+    if(prefix != "")
+      stem = stem.leftStrip(prefix.length());
+
+    this.registerFile(stem, files[i].string());
+  }
+}
+
+/// \dfgPresetCacheRule Always
+function DFGBindingWrapper DFGBindingManager.getBinding!(String key) {
+  if(this == null)
+    return DFGBindingWrapper();
+
+  if(this.wrappedBindings.has(key))
+    return this.wrappedBindings[key];
+
+  if(!this.filePaths.has(key))
+    return DFGBindingWrapper();
+
+  String filePath = this.filePaths[key];
+  DFGBindingWrapper binding(filePath);
+  if(binding.isValid()) {
+    this.wrappedBindings[key] = binding;
+  }
+
+  this.current = key;
+  return binding;
+}
+
+function Boolean DFGBindingManager.reloadBinding!(String key) {
+  if(this == null)
+    return false;
+  if(!this.wrappedBindings.has(key))
+    return false;
+
+  this.wrappedBindings.delete(key);
+  this.current = key;
+  return true;
+}
+
+function Boolean DFGBindingManager.reloadAllBindings!() {
+  if(this == null)
+    return false;
+  if(this.wrappedBindings.size() == 0)
+    return false;
+  this.wrappedBindings.clear();
+  return true;
+}
+
+function Boolean DFGBindingManager.setCurrentBinding!(String key) {
+  if(this == null)
+    return false;
+  if(!this.filePaths.has(key))
+    return false;
+  this.current = key;
+  return true;
+}
+
+/// \dfgPresetCacheRule Always
+function DFGBindingWrapper DFGBindingManager.getCurrentBinding!() {
+  return this.getBinding(this.current);
+}
+
+function String[] DFGBindingManager.getKeys() {
+  String result[];
+  if(this == null)
+    return result;
+  for(key in this.filePaths)
+    result.push(key);
+  return result;
+}

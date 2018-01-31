@@ -1,0 +1,99 @@
+/*
+*  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+*/
+
+/**
+  \versionadded 2.2.1
+
+  :kl-ref:`LegacyBaseSelectionTool` is a base class for any for any :kl-ref:`SelectionTool`.
+
+  \seealso :kl-ref:`SelectionTool`.
+  
+  \dfgPresetOmit
+*/
+object LegacyBaseSelectionTool : LegacyBaseHandler, LegacySelectionTool{
+  /// References the LegacyToolDispatcher to update when the selection changes.
+  protected Ref<LegacyToolDispatcher> toolDispatchers[];
+  /// True if it is a dragging event. 
+  /// TODO: have a "drag" event type.
+  protected Boolean dragging;
+};
+
+/// Initializes a LegacyBaseSelectionTool.
+protected LegacyBaseSelectionTool.init!() {
+  this.parent.init(
+    0,
+    LegacyHandlerDisableNone,
+    true, 
+    false, 
+    false);
+}
+
+/// Implementation of :kl-ref:`LegacySelectionTool`.
+LegacyBaseSelectionTool.setDragging!(Boolean dragging) {
+  this.dragging = dragging;
+}
+
+/// Implementation of :kl-ref:`LegacySelectionTool`.
+Boolean LegacyBaseSelectionTool.isDragging() {
+  return this.dragging;
+}
+
+/// Implementation of :kl-ref:`LegacySelectionTool`.
+LegacyBaseSelectionTool.registerToolDispatcher!(Ref<LegacyToolDispatcher> toolDispatcher) {
+  this.toolDispatchers.push(toolDispatcher);
+}
+
+/// Implementation of :kl-ref:`LegacySelectionTool`.
+LegacyBaseSelectionTool.unregisterToolDispatcher!(Ref<LegacyToolDispatcher> toolDispatcher) {
+  Size target = 0;
+  for(Size i = 0; i < this.toolDispatchers.size(); ++i) {
+    if(this.toolDispatchers[i] !== toolDispatcher)
+      this.toolDispatchers[target++] = this.toolDispatchers[i];
+  }
+  if(target == this.toolDispatchers.size())
+    setError("LegacyBaseSelectionTool.unregisterOverride: override not found");
+  this.toolDispatchers.resize(target);
+}
+
+/// Implementation of :kl-ref:`LegacySelectionTool`.
+/// To override.
+LegacyBaseSelectionTool.clearHighlightSet!() {
+}
+
+/// Implementation of :kl-ref:`LegacySelectionTool`.
+/// To override.
+LegacyBaseSelectionTool.updateHighlightSet!(io MouseEvent event) {
+}
+ 
+/// Implementation of :kl-ref:`LegacySelectionTool`.
+/// To override.
+LegacyBaseSelectionTool.updateSelectionSet!(io MouseEvent event, Boolean add, Boolean keepAdding) {
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyBaseSelectionTool.onEvent!(io Event event) {
+  
+  if(event.isAccepted()) return;
+  
+  // Selection
+  if(event.eventType() == Event_MouseButtonPress)        
+  {
+    MouseEvent mouseEvent = event;
+    if(mouseEvent.button == MouseButton_LeftButton || this.dragging)
+      this.updateSelectionSet(mouseEvent, 
+        Boolean(mouseEvent.modifiers & ModiferKey_Ctrl), 
+        Boolean(mouseEvent.modifiers & ModiferKey_Shift));
+  }
+
+  // Highlights
+  else
+  {      
+    if(event.eventType() == Event_MouseMove)
+    {
+      MouseEvent mouseEvent = event;
+      if(!mouseEvent.buttons)
+        this.updateHighlightSet(mouseEvent);
+    }
+  }   
+}

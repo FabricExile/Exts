@@ -1,0 +1,57 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require FabricSynchronization;
+
+/**
+\versionadded 1.12.0
+
+The ConstantScreenSizeTransform inherits the InlineTransform object to represent a nestable transform without animation. The ConstantScreenSizeTransform supports, as dictated by the interface, nesting of transforms to represent scene hierarchies, and uses caching to ensure avoiding recomputation of hierarchies.
+
+The ConstantScreenSizeTransform is used to drive the transforms of gizmos and HUD objects whose size needs to remain constant irrespective of the distance to the camera. 
+When uploading the transform the to the GPU, the transform value provided is scaled according to the distance to the camera. 
+
+The :kl-ref:`OGLConstantScreenSizeTransformAdaptor` is used to manage the uploading of the ConstantScreenSizeTransform, and in it's 'draw' method, the distance to the camera is computed.
+
+\example
+
+  InlineDrawing drawing = OGLInlineDrawing_GetInstance();
+
+  PolygonMesh mesh();
+  Size detail = 24;
+  Scalar innerRadius = 0.02;
+  Scalar outerRadius = 0.8;
+  mesh.addTorus(Xfo(), innerRadius, outerRadius, detail, true, false);
+
+  InlineMeshShape shape('HUD_Shape', mesh);
+
+  ConstantScreenSizeTransform hudTransform('HUD_Transform', Xfo(Vec3(5, 0, 0)));
+  drawing.getRoot().addChild(hudTransform);
+
+  InlineShader surfaceShader = drawing.registerShader(OGLSurfaceShader);
+  InlineMaterial hudMaterial = surfaceShader.getOrCreateMaterial('HUD_Material');
+
+  InlineInstance instance('HUD', hudTransform, shape);
+
+\endexample
+\dfgPresetOmit
+*/
+object ConstantScreenSizeTransform : InlineTransformBase {};
+
+/// default constructor just taking a name
+function ConstantScreenSizeTransform(String name) {
+  this.init(name, Xfo());
+}
+
+/// default constructor given name and the first xfo value
+function ConstantScreenSizeTransform(String name, Xfo xfo) {
+  this.init(name, xfo);
+}
+
+/// default constructor taking a name, parent transform, and the first xfo value
+function ConstantScreenSizeTransform(String name, io InlineTransform parent, Xfo xfo) {
+  this.init(name, xfo);
+  this.setParent(parent);
+}
+

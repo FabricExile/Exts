@@ -1,0 +1,434 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+struct ScriptableCommandArgSpec {
+  Type type;//Could be an array? If no match, will try with 'isA'. If 'None', validation has to be done by the command itthis.
+  RTVal defaultValue;
+  UInt32 flags;
+};
+
+/// \internal
+struct ScriptableCommandArgData {
+  PathValue pathValue;//actual value and path
+  RTVal prevNull;//restore to null if CommandArgFlag_CREATE_IF_NULL (using an RTVal since these have a type even if null)
+  RTVal clonedForUndo;//value to restore if CommandArgFlag_CLONE_FOR_UNDO
+};
+
+/**
+\versionadded 2.6.0
+  
+\rst
+
+BaseScriptableCommand implements ScriptableCommand, and 
+scriptable commands should specialize it.
+
+The BaseScriptableCommand holds both the description (definition) of arguments,
+and the actual argument values/paths. It also contains the methods required
+to do, undo and redo the command execution. See :ref:`TPG.scriptable_command`
+ for more context and examples.
+
+Specialized BaseScriptableCommand should first register themselves by
+calling GetCommandRegistry().registerCommand(...), so the app scripting
+is aware of their existance. The common practice is to register commands
+at extension initialization time, with the special ExtDidLoad() KL callback:
+
+See Command for more information about how to merge commands of a same interaction loop so only the last one is logged.
+
+.. code-block:: kl
+
+  // Extension initialization callback
+  namespace ToolExamples {
+    operator ExtDidLoad() {
+      Ref<CommandRegistry> commandRegistry = GetCommandRegistry();
+      commandRegistry.registerCommand( "AddMoveCurvePointDeltas", AddMoveCurvePointDeltasCommand );
+      ...
+    }
+  }
+
+In general, the BaseScriptableCommand should be created and scheduled by calling
+GetCommandManager().scheduleCommand( "commandName", args, ... ), for example:
+
+.. code-block:: kl
+
+  RTVal args[String];
+  args["curveEditData"] = PathValue( this.curveEditDataPortPath );
+  args["movedPointIndices"] = movedPointIndices;
+  ...
+
+  Ref<CommandManager> commandManager = GetCommandManager();
+  AddMoveCurvePointDeltasCommand moveCommand = commandManager.scheduleCommand(
+    "AddMoveCurvePointDeltas",
+    args,
+    this.canMergeID );
+
+As seen in the example above, the command arguments can either be a value or a PathValue.
+The PathValue allows a command to read, write or modify an external value that is associated
+with a path. This allows scheduled KL commands to be executed from scripting.
+The path is interpreted by application's CommandManager, and can correspond,
+for example, to a Canvas port path, a Canvas variable path, or a Maya attribute path,
+depending on the context. The value correponding to the path
+is converted from/to an RTVal before/after the the command executes:
+
+- If the command arg is a path and is declared as CommandArgFlag_IN, the \
+CommandManager will get the arg RTVal value from the corresponding external\
+data before executing the command
+
+- If the command arg is a path and is declared as CommandArgFlag_OUT, the \
+CommandManager will set the corresponding external data from the arg RTVal \
+value after executing the command
+
+- If the command arg is a path and is declared as CommandArgFlag_IO, the \
+CommandManager will get the arg RTVal value from the corresponding external\
+data before executing the command, and set the corresponding external data from\
+the arg RTVal value after executing the command
+
+When implementing a specialization of BaseScriptableCommand,
+the specialized doIt(), redoIt() and merge() must first call parent's implementation.
+Also, the specialized undoIt() must call parent's undoIt() at the end of its implementation.
+
+\endrst
+
+*/
+object BaseScriptableCommand: BaseCommand, ScriptableCommand {
+  /// Dictionary of arguments.
+  protected ScriptableCommandArgData args[String];
+  protected ScriptableCommandArgSpec argSpecs[String];
+};
+
+/**
+Declares an argument, at construction time.
+
+\rst
+
+Flags can be a combination of these:
+
+- CommandArgFlag_IN, CommandArgFlag_OUT or CommandArgFlag_IO: one of these should be set to
+  specify if an argument is an input, and output, or an input+output, respectively.
+
+- CommandArgFlag_OPTIONAL: if set, then that argument doesn't have to be defined, in which
+  case getArgValue() will return a null RTVal (value.isNull() == true)
+
+- CommandArgFlag_DONT_LOG: if set, then the command will not be logged nor part
+  of the undo/redo stack. This can be useful when only the last operation should be logged
+  (in which all but the last command have this flag)
+
+- CommandArgFlag_CREATE_IF_NULL: if set, BaseScriptableCommand.doIt() and BaseScriptableCommand.redoIt() will
+  create the value of the arg type if it is a null Object by calling Type.createNew(). Also, default undoIt()
+  will restore the value to null.
+
+- CommandArgFlag_CLONE_FOR_UNDO: if set, BaseScriptableCommand.doIt() will clone the current values,
+and BaseScriptableCommand.redoIt() will restore the value from that copy.
+BaseScriptableCommand.merge() will also keep first command's value for the merged undo.
+
+\endrst
+*/
+BaseScriptableCommand.declareArg!( String key, Type expectedTypeElseNone, UInt32 flags, RTVal defaultValue ) {
+  
+  if( !key )
+    throw( "key not specified" );
+
+  if( Boolean( expectedTypeElseNone ) && Boolean( defaultValue.specializedType() ) && ( !defaultValue.specializedType().isA( expectedTypeElseNone ) ) ) {
+    // Maybe it's a null, which is fine for any object type
+    Boolean nullObject = expectedTypeElseNone.isA( Object ) && defaultValue.type().isA( Object ) && !Object( defaultValue );
+    if( !nullObject )
+      throw( "The default value type " + defaultValue.specializedType() + " doesn't match the argument type " + expectedTypeElseNone );
+  }
+
+  String error;
+
+  ScriptableCommandArgSpec spec;
+  spec.flags = flags;
+  spec.type = expectedTypeElseNone;
+  spec.defaultValue = defaultValue;
+  this.argSpecs[key] = spec;
+  this.args[key] = ScriptableCommandArgData();
+
+  if( defaultValue.type() ) // not null
+    this.setArgValue( key, defaultValue.clone(), error );
+}
+
+/**
+  Declares an argument, at construction time.
+
+\rst
+
+Flags can be a combination of these:
+
+- CommandArgFlag_IN, CommandArgFlag_OUT or CommandArgFlag_IO: one of these should be set to
+  specify if an argument is an input, and output, or an input+output, respectively.
+  
+- CommandArgFlag_OPTIONAL: if set, then that argument doesn't have to be defined, in which
+  case getArgValue() will return a null RTVal (value.isNull() == true)
+
+- CommandArgFlag_DONT_LOG: if set, then the command will not be logged nor part
+  of the undo/redo stack. This can be useful when only the last operation should be logged
+  (in which all but the last command have this flag)
+
+- CommandArgFlag_CREATE_IF_NULL: if set, BaseScriptableCommand.doIt() and BaseScriptableCommand.redoIt() will 
+  create the value of the arg type if it is a null Object by calling Type.createNew(). Also, default undoIt() 
+  will restore the value to null.
+
+- CommandArgFlag_CLONE_FOR_UNDO: if set, BaseScriptableCommand.doIt() will clone the current values, 
+  and BaseScriptableCommand.redoIt() will restore the value from that copy.
+  BaseScriptableCommand.merge() will also keep first command's value for the merged undo.
+
+\endrst
+*/
+inline BaseScriptableCommand.declareArg!( String key, Type expectedTypeElseNone, UInt32 flags ) {
+  this.declareArg( key, expectedTypeElseNone, flags, RTVal() );
+}
+
+/// Declares an argument, at construction time.
+inline BaseScriptableCommand.declareArg!( String key, Type expectedTypeElseNone ) {
+  this.declareArg( key, expectedTypeElseNone, CommandArgFlag_NO_FLAG, RTVal() );
+}
+
+/// Advanced functionality, in case a specialization of a command wants to redeclare args differently
+BaseScriptableCommand.removeDeclaredArg!( String key ) {
+  if( this.argSpecs.has( key ) ) {
+    this.argSpecs.delete( key );
+    this.args.delete( key );
+  }
+}
+
+/// Implementation of ScriptableCommand.
+/// Checks if the command has the argument.
+Boolean BaseScriptableCommand.hasArg( String key ) {
+  return this.argSpecs.has(key);
+}
+
+/// Implementation of ScriptableCommand.
+/// Checks if an arg has the input flag(s).
+/// Flags can a combination of these: CommandArgFlag_OPTIONAL, CommandArgFlag_DONT_LOG, CommandArgFlag_IN, CommandArgFlag_OUT, CommandArgFlag_IO
+Boolean BaseScriptableCommand.hasArgFlag( String key, UInt32 flag ) {
+  return (this.argSpecs[key].flags & flag);
+}
+ 
+/// Implementation of ScriptableCommand
+/// Gets the value of an argument.
+String BaseScriptableCommand.getArgPath( String key ) {
+  return this.getArg(key).path; 
+}
+ 
+/// Implementation of ScriptableCommand
+/// Gets the value of an argument.
+RTVal BaseScriptableCommand.getArgValue( String key ) {
+  RTVal value = this.getArg(key).value; 
+  // Not sure why we're validating so late the arg value type...
+  Type expectedType = this.getArgType( key );
+  if( Boolean( expectedType ) && !value.specializedType().isA( expectedType ) ) {
+    // Maybe it's a null, which is fine for any object type
+    Boolean nullObject = expectedType.isA( Object ) && value.type().isA( Object ) && Object( value ) == null;
+    if( !nullObject ) {
+      return RTVal();
+    }
+  }
+  return value;
+}
+
+/// Implementation of ScriptableCommand
+/// Gets the path+value pair of an argument.
+PathValue BaseScriptableCommand.getArg( String key ) {
+  if( this.args.has( key ) )
+    return this.args[key].pathValue;
+  return PathValue();
+}
+ 
+/// Implementation of ScriptableCommand
+/// Gets the type of an argument.
+Type BaseScriptableCommand.getArgType( String key ) {
+  return this.argSpecs[key].type;
+}
+
+/// Implementation of ScriptableCommand
+/// Gets declared arguments.
+String[] BaseScriptableCommand.getArgKeys() {
+  String res[];
+  for( key, arg in this.args ) 
+    res.push(key);
+  return res;
+}
+
+/// Implementation of ScriptableCommand.
+/// Sets the value of an argument.
+/// Error if the key is empty or has not been declared.
+BaseScriptableCommand.setArgValue!( String key, RTVal value, io String error ) {
+  
+  if( !key ) {
+    error = "key not specified";
+    return;
+  }
+
+  if( this.argSpecs.has( key ) ) {
+    if( Boolean( this.argSpecs[key].type ) && this.argSpecs[key].type != RTVal ) {
+      if( !value.specializedType().isA( this.argSpecs[key].type ) ) {
+        // Maybe it's a null, which is fine for any object type
+        Boolean nullObject = this.argSpecs[key].type.isA( Object ) && value.type().isA( Object ) && !Object( value );
+        if( !nullObject ) {
+          error = "Arg '" + key + "': type '" + value.specializedType() + "' doesn't match expected type '" + this.argSpecs[key].type + "'";
+          return;
+        }
+      }
+    }
+  } else {
+    // TODO: make this an optional behavior
+    error = "Arg '" + key + "': not supported by this command";
+    return;
+  }
+
+  PathValue pathValue = this.getArg( key );
+  pathValue.value = value;
+  this.setArg(key, pathValue, error);
+}
+
+/// Sets the value of an argument.
+BaseScriptableCommand.setArgValue!( String key, RTVal value ) {
+  String error;
+  this.setArgValue( key, value, error );
+  if( error )
+    setError( "Error: BaseScriptableCommand.setArgValue " + key + ": " + error );
+}
+
+/// Sets an arg path, and maintains the current value if any.
+/// Error if the key is empty or has not been declared.
+BaseScriptableCommand.setArgPath!( String key, String path, io String error ) {
+  this.setArg( key, PathValue( path, this.getArgValue( key ) ), error );
+}
+
+/// Sets an arg path, and maintains the current value if any.
+BaseScriptableCommand.setArgPath!( String key, String path ) {
+  String error;
+  this.setArgPath( key, path, error );
+  if( error )
+    setError( "Error: BaseScriptableCommand.setArgPath " + key + ": " + error );
+}
+
+/// Implementation of ScriptableCommand
+/// Validates that all the argments have correctly been set.
+BaseScriptableCommand.validateSetArgs!( io String error ) {
+  for( key, spec in this.argSpecs ) {
+    if( !this.hasArgFlag(key, CommandArgFlag_OPTIONAL ) ) {
+         
+      if( this.args[key].pathValue.isEmpty() )
+        error += ( error ? '\n' : '' ) + "Missing value for required arg '" + key + "'";
+    }
+  }
+}
+
+/// Implementation of ScriptableCommand
+String BaseScriptableCommand.getArgsDescription() {
+
+  String res;
+  UInt32 count = 0;
+
+  for( key, spec in this.argSpecs ) 
+  {
+    if(this.args.has(key))
+    {
+      res += "    ["  + key + "]";
+
+      String specs = "[PathValue(" + this.getArgType(key) + ")"; 
+      if(this.hasArgFlag(key, CommandArgFlag_OPTIONAL)) specs += ", optional";
+      if(this.hasArgFlag(key, CommandArgFlag_DONT_LOG)) specs += ", no-loggable";
+      if(this.hasArgFlag(key, CommandArgFlag_IN)) specs += ", IN";
+      if(this.hasArgFlag(key, CommandArgFlag_OUT)) specs += ", OUT";
+      if(this.hasArgFlag(key, CommandArgFlag_IO)) specs += ", IO";
+      specs += "]"; 
+
+      res += ", opt: " + specs;
+      res += ", path: <" + this.getArgPath(key) + ">";
+ 
+      if(this.getArgValue( key ).type())
+        res += ", val:" + String(this.getArgValue( key ));
+
+      if(spec.defaultValue.type())
+        res += ", defVal:" + String(spec.defaultValue);
+    }
+
+    res += (count < this.argSpecs.size() - 1) ? "\n" : "";
+    count++;
+  }
+
+  return res;
+}
+
+
+/// \internal
+/// This method should not be called from KL, as it is not validating the value.
+/// Implementation of ScriptableCommand
+BaseScriptableCommand.setArg!( String key, PathValue value, io String error ) {
+  if( !key ) {
+    error = "key not specified";
+    return;
+  }
+  this.args[key].pathValue = value;
+}
+
+/// \internal
+BaseScriptableCommand.createNullArgsIfRequired!( ) {
+  for( key, arg in this.args ) {
+    // if CommandArgFlag_CREATE_IF_NULL and it is an Object type, create if the value was NULL or unset
+    if( this.hasArgFlag( key, CommandArgFlag_CREATE_IF_NULL ) && this.argSpecs[key].type.isA( Object ) ) {
+      if( !arg.pathValue.value.isNull() // The RTVal was set to something (not "empty")
+          && !Object( arg.pathValue.value ) ) {// It contains an Object, but that Object is null
+        arg.prevNull = arg.pathValue.value.clone();// Be safe and clone; RTVal can have a null with a specific Object type
+        arg.pathValue.value = this.argSpecs[key].type.createNew();
+        this.args[key] = arg;
+      }
+    }
+  }
+}
+
+/// Default implementation of Command (returns error).
+/// This must be called first by the specialized doIt().
+Boolean BaseScriptableCommand.doIt!( io String error ) {
+  for( key, arg in this.args ) {
+    if( this.hasArgFlag( key, CommandArgFlag_CLONE_FOR_UNDO ) ) {
+      arg.clonedForUndo = arg.pathValue.value.clone();
+      this.args[key] = arg;
+    }
+  }
+  this.createNullArgsIfRequired();
+  return true;
+}
+
+/// Default implementation of Command (returns error).
+/// This must be called at the end of the specialized undoIt().
+Boolean BaseScriptableCommand.undoIt!( ) {
+  for( key, arg in this.args ) {
+    if( !arg.clonedForUndo.isNull() ) {
+      // NOTE: we can't copy into the same container; return a new one
+      arg.pathValue.value = arg.clonedForUndo.clone();
+      this.args[key] = arg;
+    }
+    if( !arg.prevNull.isNull() ) {
+      arg.pathValue.value = arg.prevNull.clone();
+      this.args[key] = arg;
+    }
+  }
+  return true;
+}
+
+/// Default implementation of Command (returns error).
+/// This must be called first by the specialized classes.
+Boolean BaseScriptableCommand.redoIt!( ) {
+  this.createNullArgsIfRequired();
+  return true;
+}
+
+/// Implementation of Command.
+BaseScriptableCommand.merge!( Command prevCmd ) {
+  Ref<BaseScriptableCommand> cmd = prevCmd;
+  if( cmd ) {
+    // Merge undo data: prevNull + clonedForUndo
+    for( key, arg in cmd.args ) {
+      if( this.args.has( key ) ) {
+        this.args[key].prevNull = arg.prevNull;
+        this.args[key].clonedForUndo = arg.clonedForUndo;
+      } else
+        this.args[key] = arg;
+    }
+  }
+}

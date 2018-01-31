@@ -1,0 +1,572 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+require AssetPatterns;
+require USD;
+
+// \dfgPresetOmit
+object UsdExporter : BaseExporter {
+  private String filePath;
+  private UsdStage stage;
+  private UsdPrim prims[String];
+  private UsdPrim defaultPrim;
+  private Vec2 timeRange;
+  private String rootPrimPath;
+};
+
+// \dfgPresetOmit
+function UsdExporter() {
+  this.stage = UsdStage_CxxCreateInMemory();
+  this.timeRange = Vec2(-SCALAR_INFINITE, SCALAR_INFINITE);
+}
+
+// \dfgPresetOmit
+function UsdExporter(String filePath) {
+  this.filePath = filePath;
+  this.stage = UsdStage_CreateNew(filePath);
+  this.timeRange = Vec2(-SCALAR_INFINITE, SCALAR_INFINITE);
+  this.rootPrimPath = '';
+}
+
+// \dfgPresetOmit
+function UsdExporter(String filePath, String rootPrimName) {
+  this.filePath = filePath;
+  this.stage = UsdStage_CreateNew(filePath);
+  this.timeRange = Vec2(-SCALAR_INFINITE, SCALAR_INFINITE);
+  this.rootPrimPath = TfMakeValidIdentifier(rootPrimName);
+  if(this.rootPrimPath)
+    this.rootPrimPath = '/'+this.rootPrimPath;
+
+  this.defaultPrim = this.stage.DefinePrim(this.rootPrimPath, 'Xform');
+  this.stage.SetDefaultPrim(this.defaultPrim);
+}
+
+function UsdStage UsdExporter.getStage() {
+  return this.stage;
+}
+
+protected String UsdExporter.getLookupKey(Ref<ImporterObject> obj) {
+  return obj.getID();
+}
+
+/// \dfgPresetOmit
+protected String UsdExporter.shouldTraverse(Ref<ImporterObject> obj) {
+
+  switch(obj.getType()) {
+    case 'Layer':
+    case 'Group':
+    case 'Shape':
+    case 'Material': {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// \dfgPresetOmit
+Boolean UsdExporter.exportToDisk!(ExporterContext ctxt) {
+  if(!ctxt.isAtEnd())
+    return false;
+  if(!this.filePath)
+    return false;
+  if(this.timeRange.x != -SCALAR_INFINITE) {
+    this.stage.SetStartTimeCode(this.timeRange.x);
+    this.stage.SetEndTimeCode(this.timeRange.y);
+    this.stage.SetTimeCodesPerSecond(1.0);
+  }
+  this.stage.GetRootLayer().Save();
+  return true;
+}
+
+/// \dfgPresetOmit
+Boolean UsdExporter.visitObjectToExport!(
+  ExporterContext ctxt,
+  Ref<ImporterObject> obj,
+  Ref<ImporterObject> parentObj
+) {
+
+  ExporterContext localCtxt = ctxt.clone();
+
+  String key = this.getLookupKey(obj);
+  if(this.prims.has(key) && !ctxt.willCallUpdateForEachTimeSample)
+    return true;
+
+  String path = '/' + obj.getName();
+  Boolean defaultPrimSet = true;
+
+  // do something special for materials
+  if(obj.getType() == 'Material') {
+    path = '/Looks' + path;
+    if(this.defaultPrim.cxx_IsValid())
+      path = this.defaultPrim.GetPath().GetString() + path;
+  } else {
+    UsdPrim parentPrim;
+    if(parentObj) {
+      String parentKey = this.getLookupKey(parentObj);
+      parentPrim = this.prims.get(parentKey, UsdPrim());
+      if(parentPrim.cxx_IsValid())
+        path = parentPrim.GetPath().GetString() + path;
+    } else {
+      defaultPrimSet = this.defaultPrim.cxx_IsValid();
+    }
+
+    path = this.rootPrimPath + path;
+  }
+
+  String usdPath;
+  String parts[] = path.split('/');
+  for(Size i=1;i<parts.size();i++)
+    usdPath += '/' + TfMakeValidIdentifier(parts[i]);
+
+  // report(usdPath);
+  Float32 times[];
+  if(obj.isConstant(ctxt)) {
+    if(ctxt.time > -SCALAR_INFINITE && ctxt.time < SCALAR_INFINITE)
+      times.push(ctxt.time); 
+    else
+      times.push(0.0);
+  } else {
+    if(ctxt.numTimeSamples() == 0)
+      times = obj.getTimeSamples(ctxt).clone();
+    else
+      times = ctxt.timeSamples.clone();
+  }
+
+  if(ctxt.isAtStart())
+  {
+    if(times[0] != -SCALAR_INFINITE && times[0] != SCALAR_INFINITE)
+    {
+      if(times[0] != -SCALAR_INFINITE && this.timeRange.x > times[0] || this.timeRange.x == -SCALAR_INFINITE)
+        this.timeRange.x = times[0];
+      if(times[times.size()-1] != SCALAR_INFINITE && this.timeRange.y < times[times.size()-1] || this.timeRange.y == SCALAR_INFINITE)
+        this.timeRange.y = times[times.size()-1];
+    }
+  }
+
+  if(ctxt.willCallUpdateForEachTimeSample)
+  {
+    times.resize(1);
+    times[0] = ctxt.time;
+  }
+
+  UsdPrim prim;
+  switch(obj.getType())
+  {
+    case 'Transform':
+    case 'Group':
+    case 'Layer':
+    {
+      prim = this.stage.DefinePrim(usdPath, 'Xform');
+      this.prims[key] = prim;
+
+      if(!defaultPrimSet && prim.cxx_IsValid()) {
+            this.defaultPrim = prim;
+            this.stage.SetDefaultPrim(prim);
+      }
+      break;
+    }    
+    case 'Camera':
+    {
+      ImporterCamera camera(obj);      
+      prim = this.stage.DefinePrim(usdPath, 'Camera');
+      this.prims[key] = prim;
+
+      if(!defaultPrimSet && prim.cxx_IsValid()) {
+            this.defaultPrim = prim;
+            this.stage.SetDefaultPrim(prim);
+      }
+
+      UsdGeomCamera cam(prim);
+      UsdAttribute focalLengthAttr = cam.GetFocalLengthAttr();
+      UsdAttribute clippingRangeAttr = cam.GetClippingRangeAttr();
+      UsdAttribute fStopAttr = cam.GetFStopAttr();
+      UsdAttribute focusDistanceAttr = cam.GetFocusDistanceAttr();
+
+      for(Size i=0;i<times.size();i++) {
+        localCtxt.time = times[i];
+        UsdTimeCode timeCode(times[i]);
+
+        focalLengthAttr.SetFloat32(camera.getFocalLength(ctxt), timeCode);
+        Vec2 clippingRange(camera.getNear(ctxt), camera.getFar(ctxt));
+        clippingRangeAttr.SetVec2(clippingRange, timeCode);
+        fStopAttr.SetFloat32(camera.getFStop(ctxt), timeCode);
+        focusDistanceAttr.SetFloat32(camera.getFocusDistance(ctxt), timeCode);
+      }
+
+      break;
+    }
+    case 'Instance':
+    {
+      prim = this.stage.DefinePrim(usdPath, 'Xform');
+      this.prims[key] = prim;
+
+      if(!defaultPrimSet && prim.cxx_IsValid()) {
+            this.defaultPrim = prim;
+            this.stage.SetDefaultPrim(prim);
+      }
+
+      if(ctxt.isAtStart())
+      {
+        ImporterInstance instance(obj);
+        ImporterObject master = instance.getMaster(ctxt);
+        if(master) {
+
+          // clamp the master object to root
+          master = master.getOrCreateCloneForPath('');
+          master.path = '/' + TfMakeValidIdentifier(obj.getPath());
+          master.parentObject = null;
+
+          if(!this.traverseObject(ctxt, master, null, false /*parent*/, true /*nested*/))
+            return false;
+
+          String masterKey = this.getLookupKey(master);
+          UsdPrim masterPrim = this.prims.get(masterKey, UsdPrim());
+          if(masterPrim.cxx_IsValid()) {
+            prim.SetInstanceable(true);
+            UsdReferences references = prim.GetReferences();
+            references.AppendInternalReference(masterPrim.GetPath());
+          }
+        }
+      }
+      break;
+    }    
+    case 'Shape':
+    {
+      ImporterShape shape(obj);
+      SInt32 geometryType = shape.getGeometryType(ctxt);
+      switch(geometryType)
+      {
+        case ImporterShape_Mesh:
+        {
+          prim = this.stage.DefinePrim(usdPath, 'Mesh');
+          this.prims[key] = prim;
+
+          if(!defaultPrimSet && prim.cxx_IsValid()) {
+            this.defaultPrim = prim;
+            this.stage.SetDefaultPrim(prim);
+          }
+
+          for(Size i=0;i<times.size();i++)
+          {
+            localCtxt.time = times[i];
+            this.convertExtends(localCtxt, obj, prim, shape.getBounds(localCtxt));
+            this.convertGeometry(localCtxt, obj, prim, shape.getGeometry(localCtxt), i==0);
+          }
+          break;
+        }
+        default:
+        {
+          report('UsdExporter: geometryType '+geometryType+' not yet supported.');
+          break;
+        }
+      }
+
+      if(prim.cxx_IsValid()) {
+        Ref<ImporterObject> materials[] = shape.getMaterials(ctxt);
+        for(Size i=0;i<materials.size();i++) {
+          if(!this.traverseObject(ctxt, materials[i], null, false /*parent*/, true /*nested*/))
+            continue;
+
+          if(ctxt.isAtStart())
+          {
+            String materialKey = this.getLookupKey(materials[i]);
+            if(!this.prims.has(materialKey))
+              continue;
+
+            UsdShadeLook look(this.prims[materialKey]);
+            look.Bind(prim);
+          }
+        }
+      }
+      break;
+    }    
+    case 'Material':
+    {
+      if(ctxt.isAtStart())
+      {
+        ImporterMaterial material(obj);
+        
+        String looksPath = '/Looks';
+        if(this.defaultPrim.cxx_IsValid())
+          looksPath = this.defaultPrim.GetPath().GetString() + looksPath;
+        this.stage.DefinePrim(looksPath, 'Scope');
+
+        prim = this.stage.DefinePrim(usdPath, 'Look');
+        this.prims[key] = prim;
+
+        if(!defaultPrimSet && prim.cxx_IsValid()) {
+          this.defaultPrim = prim;
+          this.stage.SetDefaultPrim(prim);
+        }
+
+        String shaderPath = usdPath + '/lambert';
+        UsdPrim shaderPrim = this.stage.DefinePrim(shaderPath, 'RisBxdf');
+
+        // todo: we should probably do this for all material properties
+        UsdShadeShader shader(shaderPrim);
+        UsdShadeParameter shaderColorParam = shader.CreateParameter('color', SdfValueTypeName_FromString('color3f'));
+        UsdAttribute shaderColorAttr = shaderColorParam.GetAttr();
+        Color color = material.getColor(ctxt);
+        shaderColorAttr.SetVec3(Vec3(color.r, color.g, color.b));
+        
+        String materialPropertyToRisProperty[String];
+        materialPropertyToRisProperty['color'] = 'color';
+        materialPropertyToRisProperty['diffuse'] = 'color';
+        materialPropertyToRisProperty['colorTexture'] = 'color';
+        materialPropertyToRisProperty['diffuseTexture'] = 'color';
+        materialPropertyToRisProperty['normals'] = 'normalCamera';
+        materialPropertyToRisProperty['normalMap'] = 'normalCamera';
+        materialPropertyToRisProperty['normalTexture'] = 'normalCamera';
+        materialPropertyToRisProperty['normalsTexture'] = 'normalCamera';
+
+        for(key in materialPropertyToRisProperty) {
+          if(!material.hasProperty(key))
+            continue;
+
+          if(material.getPropertyType(key) == 'Color' && materialPropertyToRisProperty[key] == 'color') {
+            material.updateProperty(key, ctxt);
+            color = material.getColorProperty(key);
+            shaderColorAttr.SetVec3(Vec3(color.r, color.g, color.b));
+          }
+
+          ImporterTexture texture = material.getTexture(ctxt, key);
+          if(texture == null)
+            continue;
+
+          String texturePath = usdPath+'/file';
+          UsdPrim texturePrim = this.stage.DefinePrim(texturePath, 'RisPattern');
+          UsdShadeShader textureShader(texturePrim);
+          UsdShadeParameter textureParam = textureShader.CreateParameter('fileTextureName', SdfValueTypeName_FromString('string'));
+          UsdAttribute textureAttr = textureParam.GetAttr();
+          textureAttr.SetString(texture.getFilePath(ctxt));
+
+          UsdShadeParameter outputParam = textureShader.CreateParameter('outputs:outColor', SdfValueTypeName_FromString('color3f'));
+          String input = materialPropertyToRisProperty[key];
+
+          UsdShadeParameter inputParam;
+          if(input == 'normalCamera')
+            inputParam = shader.CreateParameter(input, SdfValueTypeName_FromString('float3'));
+          else
+            inputParam = shader.CreateParameter(input, SdfValueTypeName_FromString('color3f'));
+
+          inputParam.ConnectToSource(outputParam);
+        }
+      }
+      else
+      {
+        // todo: this currently does not allow animation of materials
+        prim = this.prims[key];
+      }
+      break;
+    }  
+    case 'Texture': {
+      // handled by the material case
+      return true;
+    }
+    default:
+    {
+      // report('UsdExporter: ImporterObject type '+obj.getType()+' not yet supported.');
+      return true;
+    }
+  }
+
+
+  ImporterTransform transform(obj);
+  if(transform != null && prim.cxx_IsValid())
+  {
+    for(Size i=0;i<times.size();i++) {
+      localCtxt.time = times[i];
+
+      if(!localCtxt.isAtStart() && transform.isPropertyConstant('localTransform'))
+        break;
+      
+      UsdTimeCode timeCode(times[i]);
+      Xfo xfo = transform.getLocalTransform(localCtxt);
+
+      UsdGeomXformCommonAPI xformApi(prim);
+      if(!xfo.tr.almostEqual(Vec3(0.0, 0.0, 0.0)) || times.size() > 1)
+        xformApi.SetTranslate(Vec3_d(xfo.tr.x, xfo.tr.y, xfo.tr.z), timeCode);
+
+      Vec3 euler = xfo.ori.toEulerAngles(RotationOrder('xyz'));
+      if(!euler.almostEqual(Vec3(0.0, 0.0, 0.0)) || times.size() > 1)
+        // todo.. this has to be refactored
+        xformApi.SetRotate(euler * RAD_TO_DEG, UsdGeomXformCommonAPI_RotationOrderXYZ, timeCode);
+      
+      if(!xfo.sc.almostEqual(Vec3(1.0, 1.0, 1.0)) || times.size() > 1)
+        xformApi.SetScale(xfo.sc, timeCode);
+    }
+  }
+
+  // convert metadata
+  if(prim.cxx_IsValid() && ctxt.isAtStart()) {
+    UsdObject primObj(prim);
+
+    String mdKeys[] = obj.getMetaDataKeys();
+    for(Size i=0;i<mdKeys.size();i++) {
+      String mdKey = mdKeys[i];
+      String mdValue = obj.getMetaData(mdKey);
+      primObj.SetCustomDataByKey(mdKey, mdValue);
+    }
+  }
+
+  return true;
+}
+
+private function UsdExporter.convertExtends!(ExporterContext ctxt, Ref<ImporterObject> obj, UsdPrim prim, Box3 bounds) {
+  if(!ctxt.isAtStart() && obj.isPropertyConstant('bounds'))
+    return;
+  Vec3 extent[](2);
+  extent[0] = bounds.min;
+  extent[1] = bounds.max;
+  UsdGeomBoundable boundable(prim);
+  UsdAttribute extentAttr = boundable.GetExtentAttr();
+  UsdTimeCode timeCode(ctxt.time);
+  extentAttr.SetVec3Array(extent, timeCode);
+}
+
+private function UsdExporter.convertGeometry!(ExporterContext ctxt, Ref<ImporterObject> obj, UsdPrim prim, Geometry geometry, Boolean convertTopo) {
+  if(!ctxt.isAtStart() && obj.isPropertyConstant('geometry'))
+    return;
+  UsdTimeCode timeCode(ctxt.time);
+  PolygonMesh meshGeo = geometry;
+  if(meshGeo) {
+
+    GeometryAttributes geoAttributes = meshGeo.getAttributes();
+    Vec3Attribute positionsGeoAttr = geoAttributes.getAttribute('positions');
+    Vec3Attribute normalsGeoAttr = geoAttributes.getAttribute('normals');
+
+    SInt32 faceCounts[], faceIndices[];
+    if(convertTopo)
+    {
+      if(meshGeo.polygonCount() > 0)
+      {
+        faceCounts.resize(meshGeo.polygonCount());
+        faceIndices.resize(meshGeo.polygonPointsCount());
+        Size countOffset = 0;
+        Size indexOffset = 0;
+        LocalIndexArray vertices;
+        for(Size i=0;i<meshGeo.polygonCount();i++) {
+          meshGeo.getPolygonPoints(i, vertices);
+          faceCounts[countOffset++] = vertices.size();
+          for(UInt32 j=0;j<vertices.size();j++) {
+            faceIndices[indexOffset++] = vertices.get(j);
+          }
+        }
+      }
+    }
+
+    Vec3 points[] = positionsGeoAttr.values;
+    if(points.size() > meshGeo.pointCount()) {
+      points = points.clone();
+      points.resize(meshGeo.pointCount());
+    }
+
+    Vec3 normals[];
+    if(normalsGeoAttr)
+    {
+      normals = normalsGeoAttr.values;
+      if(normals.size() != points.size())
+      {
+        normals = normals.clone();
+        normals.resize(meshGeo.polygonPointsCount());
+        Size offset = 0;
+        LocalIndexArray vertices;
+        for(Size i=0;i<meshGeo.polygonCount();i++) {
+          meshGeo.getPolygonPoints(i, vertices);
+          for(UInt32 j=0;j<vertices.size();j++) {
+            Size index = meshGeo.getPolygonAttributeIndex(i, j);
+            normals[offset++] = normalsGeoAttr.values[index];
+          }
+        }
+      }
+    }
+
+    UsdGeomMesh mesh(prim);
+    UsdGeomImageable imageable(prim);
+    UsdAttribute pointsAttr = mesh.GetPointsAttr();
+    UsdAttribute normalsAttr = mesh.GetNormalsAttr();
+    UsdAttribute faceVertexCountsAttr = mesh.GetFaceVertexCountsAttr();
+    UsdAttribute faceVertexIndicesAttr = mesh.GetFaceVertexIndicesAttr();
+
+    pointsAttr.SetVec3Array(points, timeCode);
+    if(normals.size() > 0)
+    {
+      normalsAttr.SetVec3Array(normals, timeCode);
+      if(normals.size() == meshGeo.pointCount())
+        mesh.SetNormalsInterpolation("vertex");
+      else
+        mesh.SetNormalsInterpolation("faceVarying");
+    }
+
+    if(convertTopo)
+    {
+      faceVertexCountsAttr.SetSInt32Array(faceCounts);
+      faceVertexIndicesAttr.SetSInt32Array(faceIndices);
+
+      VtIntArray attrIndices;
+      attrIndices.reserve(meshGeo.polygonPointsCount());
+      for(Size i=0;i<meshGeo.polygonCount();i++) {
+        Size count = meshGeo.getPolygonSize(i);
+        for(Size j=0;j<count;j++) {
+          Size index = meshGeo.getPolygonAttributeIndex(i, j);
+          attrIndices.push_back(index);
+        }
+      }
+
+      // the primvars are only created once - let's not convert multiple times
+      {
+        Vec2Attribute uvs0Attr = geoAttributes.getAttribute('uvs0');
+        if(uvs0Attr) {
+          SdfValueTypeName primvarTypeName = SdfValueTypeName_FromString('float2[]');
+          UsdGeomPrimvar primvar = imageable.CreatePrimvar('st', primvarTypeName);
+          primvar.SetInterpolation("faceVarying");
+          primvar.SetIndices(attrIndices);
+          UsdAttribute primvarAttr = primvar.GetAttr();
+          primvarAttr.SetVec2Array(uvs0Attr.values);
+        }
+      }
+
+      // the primvars are only created once - let's not convert multiple times
+      {
+        SdfValueTypeName primvarTypeName = SdfValueTypeName_FromString('color3f[]');
+        UsdGeomPrimvar primvar = imageable.CreatePrimvar('displayColor', primvarTypeName);
+        UsdAttribute primvarAttr = primvar.GetAttr();
+
+        ColorAttribute vertexColorsAttr = geoAttributes.getAttribute('vertexColors');
+        if(vertexColorsAttr) {
+          primvar.SetInterpolation("faceVarying");
+          primvar.SetIndices(attrIndices);
+          Vec3 values[](vertexColorsAttr.values.size());
+          for(Size i=0;i<values.size();i++) {
+            Color c = vertexColorsAttr.values[i];
+            values[i] = Vec3(c.r, c.g, c.b);
+          }
+          primvarAttr.SetVec3Array(values);
+        } else {
+          Color c = obj.getColor(ctxt);
+          ImporterShape shape(obj);
+          Ref<ImporterObject> materials[] = shape.getMaterials(ctxt);
+          if(materials.size() > 0) {
+            ImporterMaterial material = materials[0];
+            for(Size i=0;i<2;i++) {
+              String materialPropName = 'color';
+              if(i == 1)
+                materialPropName = 'diffuse';
+              if(!material.hasProperty(materialPropName))
+                continue;
+              if(material.getPropertyType(materialPropName) != 'Color')
+                continue;
+              material.updateProperty(materialPropName, ctxt);
+              c = material.getColorProperty(materialPropName);
+            }
+          }
+          Vec3 values[](1);
+          values[0] = Vec3(c.r, c.g, c.b);
+          primvar.SetInterpolation("constant");
+          primvarAttr.SetVec3Array(values);
+        }
+      }
+    }
+  }
+}

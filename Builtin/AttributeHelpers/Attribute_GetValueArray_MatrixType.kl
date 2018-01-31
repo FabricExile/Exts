@@ -1,0 +1,217 @@
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+function Quat[] BaseGeometry.getQuatAttributeValueArray(
+  GeometryAttribute attr,
+  SInt32 mode,
+  UInt32 indices[],
+  io String type
+) {
+  type = "";
+
+  Size vertexCount;
+  Size faceCount;
+  Size faceCornerTotalCount;
+  Size resultSize;
+  UInt32 idxs[] = indices;
+
+  Quat values[];
+
+  if(!this.getAttributeValueArray_CheckIndex(
+    mode,
+    vertexCount,
+    faceCount,
+    faceCornerTotalCount,
+    resultSize,
+    idxs
+    ))
+    return values;
+
+  QuatAttribute cast = attr;
+  if(cast == null)
+    return values;
+
+  type = "Quat";
+  values.resize(resultSize);
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  Index idx;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      for(Size i=0;i<resultSize;i++)
+      {
+        idx = idxs.size() > 0 ? idxs[i] : i;
+        if(idx >= vertexCount)
+          continue;
+
+        values[i] = cast.values[idx];
+      }
+      break;
+    }
+    case 2: // per face corner
+    {
+      for(Size i=0;i<resultSize;i++)
+      {
+        values[i] = cast.values[idxs[i]];
+      }
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValueArray mode for QuatAttribute.");
+      return values;
+    }
+  }
+
+  return values;
+}
+
+/// \internal
+function Mat33[] BaseGeometry.getMat33AttributeValueArray(
+  GeometryAttribute attr,
+  SInt32 mode,
+  UInt32 indices[],
+  io String type
+) {
+  type = "";
+
+  Size vertexCount;
+  Size faceCount;
+  Size faceCornerTotalCount;
+  Size resultSize;
+  UInt32 idxs[] = indices;
+
+  Mat33 values[];
+
+  if(!this.getAttributeValueArray_CheckIndex(
+    mode,
+    vertexCount,
+    faceCount,
+    faceCornerTotalCount,
+    resultSize,
+    idxs
+    ))
+    return values;
+
+  Mat33Attribute cast = attr;
+  if(cast == null)
+    return values;
+
+  type = "Mat33";
+  values.resize(resultSize);
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  Index idx;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      for(Size i=0;i<resultSize;i++)
+      {
+        idx = idxs.size() > 0 ? idxs[i] : i;
+        if(idx >= vertexCount)
+          continue;
+
+        values[i] = cast.values[idx];
+      }
+      break;
+    }
+    case 2: // per face corner
+    {
+      for(Size i=0;i<resultSize;i++)
+      {
+        values[i] = cast.values[idxs[i]];
+      }
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValueArray mode for Mat33Attribute.");
+      return values;
+    }
+  }
+
+  return values;
+}
+
+/// \internal
+function Mat44[] BaseGeometry.getMat44AttributeValueArray(
+  GeometryAttribute attr,
+  SInt32 mode,
+  UInt32 indices[],
+  io String type
+) {
+  type = "";
+
+  Size vertexCount;
+  Size faceCount;
+  Size faceCornerTotalCount;
+  Size resultSize;
+  UInt32 idxs[] = indices;
+
+  Mat44 values[];
+
+  if(!this.getAttributeValueArray_CheckIndex(
+    mode,
+    vertexCount,
+    faceCount,
+    faceCornerTotalCount,
+    resultSize,
+    idxs
+    ))
+    return values;
+
+  Mat44Attribute cast = attr;
+  if(cast == null)
+    return values;
+
+  type = "Mat44";
+  values.resize(resultSize);
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  Index idx;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      for(Size i=0;i<resultSize;i++)
+      {
+        idx = idxs.size() > 0 ? idxs[i] : i;
+        if(idx >= vertexCount)
+          continue;
+
+        values[i] = cast.values[idx];
+      }
+      break;
+    }
+    case 2: // per face corner
+    {
+      for(Size i=0;i<resultSize;i++)
+      {
+        values[i] = cast.values[idxs[i]];
+      }
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValueArray mode for Mat44Attribute.");
+      return values;
+    }
+  }
+
+  return values;
+}

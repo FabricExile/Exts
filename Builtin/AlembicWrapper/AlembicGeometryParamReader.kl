@@ -1,0 +1,138 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Alembic;
+require Geometry;
+
+interface AlembicObjectReader; // forward decl
+
+/**
+  \internal
+
+  A reader object for reading a single geometry attribute
+*/
+object AlembicGeometryParamReader permits AlembicObjectReader
+{
+  /// \internal
+  private String _name;
+  /// \internal
+  private String _paramType;
+  /// \internal
+  private AlembicGeometryScope _scope;
+  /// \internal
+  private AlembicTimeSampling _timeSampling;
+  /// \internal
+  private AlembicSampleInfo _info;
+  /// \internal
+  private SInt32 _numSamples;
+  /// \internal
+  private AlembicIFloat32GeomParam _Float32Param;
+  /// \internal
+  private AlembicIUInt32GeomParam _UInt32Param;
+  /// \internal
+  private AlembicISInt32GeomParam _SInt32Param;
+  /// \internal
+  private AlembicIVec2VfGeomParam _Vec2VfParam;
+  /// \internal
+  private AlembicIVec3VfGeomParam _Vec3VfParam;
+  /// \internal
+  private AlembicIVec3NfGeomParam _Vec3NfParam;
+  /// \internal
+  private AlembicIQuatfGeomParam _QuatfParam;
+  /// \internal
+  private AlembicIColorfGeomParam _ColorfParam;
+  /// \internal
+  private AlembicIMat44fGeomParam _Mat44fParam;
+  /// \internal
+  protected Ref<AlembicArchiveReader> archive;
+};
+
+/// Return the parameter's name
+String AlembicGeometryParamReader.getName() {
+  return this._name;
+}
+
+/// Return the parameter's type
+String AlembicGeometryParamReader.getParamType() {
+  return this._paramType;
+}
+
+/// Return the parameter's scope
+AlembicGeometryScope AlembicGeometryParamReader.getScope() {
+  return this._scope;
+}
+
+/// Sample a GeometryAttributes at a certain time
+Boolean AlembicGeometryParamReader.readSample!( Float64 time, io GeometryAttributes attributes ) {
+
+  switch(this._paramType)
+  {
+    case 'Float32': return this.readSampleFloat32( time, attributes );
+    case 'UInt32': return this.readSampleUInt32( time, attributes );
+    case 'SInt32': return this.readSampleSInt32( time, attributes );
+    case 'Vec2Vf': return this.readSampleVec2Vf( time, attributes );
+    case 'Vec3Vf': return this.readSampleVec3Vf( time, attributes );
+    case 'Vec3Nf': return this.readSampleVec3Nf( time, attributes );
+    case 'Quatf': return this.readSampleQuatf( time, attributes );
+    case 'Colorf': return this.readSampleColorf( time, attributes );
+    case 'Mat44f': return this.readSampleMat44f( time, attributes );
+    default:
+    {
+      setError('AlembicGeometryParamReader: Unsupported paramType "'+this._paramType+'".');
+      break;
+    }
+  }
+
+  return false;
+}
+
+
+/// Sample a GeometryAttributes at a certain time
+/// \param curveCount Curve count, used as a hint to find if a parameter is per curve
+/// \param pointToCurve Curve index per GeometryAttributes point
+/// \param optionalPointToIndex Alembic geometry param index per GeometryAttributes point (none if empty)
+Boolean AlembicGeometryParamReader.readCurveSample!( Float64 time, UInt32 curveCount, UInt32 pointToCurve<>, UInt32 optionalPointToIndex<>, io GeometryAttributes attributes ) {
+
+  switch( this._paramType ) {
+    case 'Float32': return this.readCurveSampleFloat32( time, curveCount, pointToCurve, optionalPointToIndex, attributes );
+    case 'UInt32': return this.readCurveSampleUInt32( time, curveCount, pointToCurve, optionalPointToIndex, attributes );
+    case 'SInt32': return this.readCurveSampleSInt32( time, curveCount, pointToCurve, optionalPointToIndex, attributes );
+    case 'Vec2Vf': return this.readCurveSampleVec2Vf( time, curveCount, pointToCurve, optionalPointToIndex, attributes );
+    case 'Vec3Vf': return this.readCurveSampleVec3Vf( time, curveCount, pointToCurve, optionalPointToIndex, attributes );
+    case 'Vec3Nf': return this.readCurveSampleVec3Nf( time, curveCount, pointToCurve, optionalPointToIndex, attributes );
+    case 'Quatf': return this.readCurveSampleQuatf( time, curveCount, pointToCurve, optionalPointToIndex, attributes );
+    case 'Colorf': return this.readCurveSampleColorf( time, curveCount, pointToCurve, optionalPointToIndex, attributes );
+    case 'Mat44f': return this.readCurveSampleMat44f( time, curveCount, pointToCurve, optionalPointToIndex, attributes );
+    default:
+    {
+      setError( 'AlembicGeometryParamReader: Unsupported paramType "' + this._paramType + '".' );
+      break;
+    }
+  }
+
+  return false;
+}
+
+Boolean AlembicGeometryParamReader.readSample!(Float64 time, io PolygonMesh mesh, Boolean keepSameAttributeIndices) {
+  
+  switch(this._paramType)
+  {
+    case 'Float32': return this.readSampleFloat32( time, mesh, keepSameAttributeIndices );
+    case 'UInt32': return this.readSampleUInt32( time, mesh, keepSameAttributeIndices );
+    case 'SInt32': return this.readSampleSInt32( time, mesh, keepSameAttributeIndices );
+    case 'Vec2Vf': return this.readSampleVec2Vf( time, mesh, keepSameAttributeIndices );
+    case 'Vec3Vf': return this.readSampleVec3Vf( time, mesh, keepSameAttributeIndices );
+    case 'Vec3Nf': return this.readSampleVec3Nf( time, mesh, keepSameAttributeIndices );
+    case 'Quatf': return this.readSampleQuatf( time, mesh, keepSameAttributeIndices );
+    case 'Colorf': return this.readSampleColorf( time, mesh, keepSameAttributeIndices );
+    case 'Mat44f': return this.readSampleMat44f( time, mesh, keepSameAttributeIndices );
+    default:
+    {
+      setError('AlembicGeometryParamReader: Unsupported paramType "'+this._paramType+'".');
+      break;
+    }
+  }
+
+  return false;
+}

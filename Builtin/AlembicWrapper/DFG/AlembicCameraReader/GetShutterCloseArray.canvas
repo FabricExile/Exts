@@ -1,0 +1,56 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "returns the current sample's (interpolated) shutterClose value\n\nSupported types:\n  this: AlembicCameraReader\n  result: Float64\n"
+    },
+  "title" : "GetShutterClose[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "AlembicCameraReader[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Float64[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "0DBED41E7F00DE04D395E2FB45E99DE1",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicCameraReader_getShutterClose_task<<<index>>>(
+  io Float64[] result
+, in AlembicCameraReader[] this
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].getShutterClose();
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  Size task_size = this.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      AlembicWrapper_AlembicCameraReader_getShutterClose_task(index, result, this);
+    }
+  } else {
+    AlembicWrapper_AlembicCameraReader_getShutterClose_task<<<task_size>>>(result, this);
+  }
+}
+"
+  }

@@ -1,0 +1,196 @@
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+function Boolean BaseGeometry.setQuatAttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  Quat value
+) {
+  if(!this.setAttributeValue_CheckIndex(mode, index))
+    return false;
+
+  QuatAttribute cast = attr;
+  if(cast == null)
+    return false;
+
+  Ref<QuatAttribute> castRef = cast;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      PolygonMesh mesh = this;
+      if(mesh)
+      {
+        mesh.setPointAttribute(index, castRef, value);
+      }
+      else
+      {
+        cast.values[index] = value;
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++)
+        mesh.setPolygonAttribute( index, i, castRef, value );
+      break;
+    }
+    case 2: // per face corner
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      mesh.setPolygonAttribute(index, faceCorner % size, castRef, value);
+      break;
+    }
+    case 3: // all
+    {
+      for(Size i=0;i<cast.values.size();i++)
+        cast.values[i] = value;
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport SetValue mode for QuatAttribute.");
+      return false;
+    }
+  }  
+
+  cast.incrementVersion();
+  return true;
+}
+
+/// \internal
+function Boolean BaseGeometry.setMat33AttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  Mat33 value
+) {
+  if(!this.setAttributeValue_CheckIndex(mode, index))
+    return false;
+
+  Mat33Attribute cast = attr;
+  if(cast == null)
+    return false;
+
+  Ref<Mat33Attribute> castRef = cast;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      PolygonMesh mesh = this;
+      if(mesh)
+      {
+        mesh.setPointAttribute(index, castRef, value);
+      }
+      else
+      {
+        cast.values[index] = value;
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++)
+        mesh.setPolygonAttribute( index, i, castRef, value );
+      break;
+    }
+    case 2: // per face corner
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      mesh.setPolygonAttribute(index, faceCorner % size, castRef, value);
+      break;
+    }
+    case 3: // all
+    {
+      for(Size i=0;i<cast.values.size();i++)
+        cast.values[i] = value;
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport SetValue mode for Mat33Attribute.");
+      return false;
+    }
+  }  
+
+  cast.incrementVersion();
+  return true;
+}
+
+/// \internal
+function Boolean BaseGeometry.setMat44AttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  Mat44 value
+) {
+  if(!this.setAttributeValue_CheckIndex(mode, index))
+    return false;
+
+  Mat44Attribute cast = attr;
+  if(cast == null)
+    return false;
+
+  Ref<Mat44Attribute> castRef = cast;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      PolygonMesh mesh = this;
+      if(mesh)
+      {
+        mesh.setPointAttribute(index, castRef, value);
+      }
+      else
+      {
+        cast.values[index] = value;
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++)
+        mesh.setPolygonAttribute( index, i, castRef, value );
+      break;
+    }
+    case 2: // per face corner
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      mesh.setPolygonAttribute(index, faceCorner % size, castRef, value);
+      break;
+    }
+    case 3: // all
+    {
+      for(Size i=0;i<cast.values.size();i++)
+        cast.values[i] = value;
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport SetValue mode for Mat44Attribute.");
+      return false;
+    }
+  }  
+
+  cast.incrementVersion();
+  return true;
+}

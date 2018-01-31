@@ -1,0 +1,36 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+
+/**
+  \versionadded 2.0.1
+
+  :kl-ref:`LegacyToolTarget` declares the methods to implement any tool target.
+  The targets can be objects of the scene, or anything else, such as canvas nodes.
+  The tool owns a target that references the objects to edit so that the same tool can manipulate any objects.
+
+  The target manages commands so the manipulated objects parameters can be store into a undo-redo stack.
+
+  \seealso :kl-ref:`Tool`, :kl-ref:`LegacyToolDispatcher`
+
+  \dfgPresetOmit
+*/
+
+interface LegacyToolTarget {
+  /// Gets a reference to the target's tool.
+  Ref<LegacyTool> getTool();
+
+  /// Returns true if the target is valid (set).
+  Boolean isValid();
+
+  /// Registers the target's values before the manipulation is performed.
+  /// Used to store the manipulated objects parameters in the command 
+  /// before they are manipulated.
+  registerValue!();
+
+  /// Creates a command for applying the "final" values.
+  /// Used to store the manipulated objects parameters in the command 
+  /// after they were manipulated.
+  bakeValue!();
+};

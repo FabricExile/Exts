@@ -1,0 +1,39 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// This service class installs a :kl-ref:`PerspectiveCompensationModifier`
+  /// draw modifier at construction time.
+  ///
+  /// See :ref:`TPG.tooldrawmodifier` for more information about draw modifiers.
+  object PerspectiveCompensatedShape : BaseTool{
+    PerspectiveCompensationModifier compensatePerspectiveModifier;
+  };
+
+  PerspectiveCompensatedShape( Ref<BaseTool> shape ) {
+    this.construct( shape );
+  }
+
+  PerspectiveCompensatedShape.setFixedPixelSize!( Size pixels ) {
+    this.compensatePerspectiveModifier.setPixelsPerUnit( pixels );
+  }
+
+  /// By default, the this.alignModifier only aligns rotation
+  PerspectiveCompensatedShape.construct!( Ref<BaseTool> shape ) {
+
+    // Compensate perspective
+    this.compensatePerspectiveModifier = PerspectiveCompensationModifier();
+    this.compensatePerspectiveModifier.setFixedCameraDistance( 5.0, 2.0 );
+    this.setFixedPixelSize( 100 );
+    this.addDrawModifier( this.compensatePerspectiveModifier, false );
+
+    this.addChild( "shape", shape );
+  }
+
+  Ref<BaseTool> PerspectiveCompensatedShape.getShape() {
+    return this.getChild( "shape" );
+  }
+
+}// namespace Tool

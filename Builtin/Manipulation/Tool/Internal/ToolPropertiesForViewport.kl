@@ -1,0 +1,119 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// \internal
+  /// This class allows to create the right inheritance order for viewport specific properties.
+  ///
+  /// The property inheritance for vewport specific properties is the following:
+  /// - tool[viewport] properties
+  /// - tool local properties
+  /// - parentTool[viewport] properties
+  /// - parentTool local properties
+  /// ...
+  /// - shared default properties
+  ///
+  /// However, the tool properties (not specific to viewports) has the following inheritance pettern:
+  /// - tool properties
+  /// - parentTool properties
+  /// ...
+  /// - shared default properties
+  ///
+  /// Because of this, the tool[viewport] properties cannot simply inherit from tool properties
+  /// else it would have precedence over parentTool[viewport] properties. 
+  object ToolPropertiesForViewport : BaseComponent, PropertyContainer{
+    PropertyContainer parentViewportProperties;
+    PropertyContainer localToolProperties;
+  };
+
+  Boolean ToolPropertiesForViewport.hasProperty( String name ) {
+    if( this.localToolProperties.hasLocalProperty( name ) )
+      return true;
+    return Boolean( this.parentViewportProperties ) && this.parentViewportProperties.hasProperty( name );
+  }
+
+  RTVal ToolPropertiesForViewport.getProperty( String name ) {
+    if( this.localToolProperties.hasLocalProperty( name ) )
+      return this.localToolProperties.getProperty( name );
+    else if( this.parentViewportProperties )
+      return this.parentViewportProperties.getProperty( name );
+    else
+      return RTVal();
+  }
+
+  Boolean ToolPropertiesForViewport.hasPropagatedProperty( String name ) {
+    if( this.localToolProperties.hasLocalProperty( name ) && this.localToolProperties.hasPropagatedProperty( name ) )
+      return true;
+    else if( this.parentViewportProperties )
+      return this.parentViewportProperties.hasPropagatedProperty( name );
+    else
+      return false;
+  }
+
+  RTVal ToolPropertiesForViewport.getPropagatedProperty( String name ) {
+    if( this.localToolProperties.hasLocalProperty( name ) && this.localToolProperties.hasPropagatedProperty( name ) )
+      return this.localToolProperties.getProperty( name );
+    else if( this.parentViewportProperties )
+      return this.parentViewportProperties.getPropagatedProperty( name );
+    else
+      return RTVal();
+  }
+
+  Boolean ToolPropertiesForViewport.hasInheritedProperty( String name ) {
+    if( this.localToolProperties.hasLocalProperty( name ) )
+      return false;
+    if( this.parentViewportProperties )
+      return this.parentViewportProperties.hasPropagatedProperty( name );
+    else
+      return false;
+  }
+
+  RTVal ToolPropertiesForViewport.getInheritedProperty( String name ) {
+    if( this.localToolProperties.hasLocalProperty( name ) )
+      return RTVal();
+    if( this.parentViewportProperties )
+      return this.parentViewportProperties.getPropagatedProperty( name );
+    else
+      return RTVal();
+  }
+
+  Boolean ToolPropertiesForViewport.hasLocalProperty( String name ) {
+    return this.localToolProperties.hasLocalProperty( name );
+  }
+
+  ToolPropertiesForViewport.setPropertyAsLocalOnly!( String name, Boolean localOnly ) {
+    setError( "ToolPropertiesForViewport.setPropertyAsLocalOnly: modifications not allowed" );
+  }
+
+  Boolean ToolPropertiesForViewport.isPropertyLocalOnly( String name ) {
+    return this.localToolProperties.isPropertyLocalOnly( name );
+  }
+
+
+  ToolPropertiesForViewport.setProperty!( String name, RTVal value ) {
+    setError( "ToolPropertiesForViewport.setProperty: modifications not allowed" );
+  }
+
+  ToolPropertiesForViewport.removeProperty!( String name ) {
+    setError( "ToolPropertiesForViewport.removeProperty: modifications not allowed" );
+  }
+
+  Size ToolPropertiesForViewport.localPropertyCount() {
+    return this.localToolProperties.localPropertyCount();
+  }
+
+  String ToolPropertiesForViewport.getLocalPropertyName( Size index ) {
+    return this.localToolProperties.getLocalPropertyName( index );
+  }
+
+  /// \internal
+  struct ViewportPropertyContainerData {
+    String viewportName;//For debugging (we can't hold the viewport; unsafe)
+    BaseOverridablePropertyContainer propertyContainer;
+    ToolPropertiesForViewport toolPropertiesForViewport;// Not having this tool as a parent
+    UInt32 lastRenderUpdateIteration;// Right now, propertyContainer is reset at each iteration
+    Boolean wasForcedHiddenInLastDraw;
+  };
+}// namespace Tool

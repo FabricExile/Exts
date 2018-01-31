@@ -1,0 +1,111 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 2.6.0
+  
+  BaseCommand implements Command with minimal functionality
+  and default method implementation.
+  Any command can specialize it.
+
+  See Command for more information about how to merge commands of a same interaction loop so only the last one is logged.
+
+*/
+object BaseCommand: Command {
+  /// Command name
+  protected String name;
+
+  protected SInt32 canMergeID;
+
+  protected Boolean blockLogEnabled;
+};
+
+BaseCommand() {
+  this.canMergeID = NoCanMergeID;
+}
+
+/// Default implementation of Command (returns false).
+Boolean BaseCommand.canUndo() { 
+  return false; 
+}
+
+/// Explicitly block logging of the command, to be used for interaction loops
+inline BaseCommand.blockLog!() {
+  this.blockLogEnabled = true;
+}
+
+/// Returns true if the logging was explicitly blocked (for interaction loops)
+inline Boolean BaseCommand.isLogBlocked!() {
+  return this.blockLogEnabled;
+}
+
+/// Default implementation of Command, same as `canUndo`.
+Boolean BaseCommand.canLog() {
+  return this.canUndo() && !this.blockLogEnabled;
+}
+
+/// Default implementation of Command (returns error).
+Boolean BaseCommand.undoIt!() {
+  return true; 
+}
+
+/// Default implementation of Command (returns error).
+Boolean BaseCommand.redoIt!() {
+  return true; 
+}
+
+/// Default implementation of Command (returns error).
+Boolean BaseCommand.doIt!( io String error ) {
+  return true; 
+}
+
+/// Implementation of Command.
+String BaseCommand.getName() { 
+  return this.name; 
+}
+
+/// Implementation of Command.
+BaseCommand.setName!(String name) { 
+  this.name = name;
+}
+
+/// Implementation of Command.
+String BaseCommand.getHelp() {
+  return String(); 
+}
+
+/// Default implementation of Command.
+/// Returns the name of the command.
+String BaseCommand.getHistoryDesc() {
+  return this.getName(); 
+}
+
+BaseCommand.setCanMergeID!(SInt32 canMergeID) {
+  this.canMergeID = canMergeID;
+}
+
+SInt32 BaseCommand.getCanMergeID() {
+  return this.canMergeID;
+}
+
+/// Default implementation of Command.
+/// By default, BaseCommand will allow to merge two commands if
+/// these have the same type, and if these have a `this.canMergeID` which 
+/// is the same but not NoCanMergeID.
+/// See :kl-ref:`Command.canMerge` for details about the parameters.
+Boolean BaseCommand.canMerge(Command prevCmd, io Boolean undoPrevAndMergeFirst ) {
+  Ref<BaseCommand> preBaseCmd = prevCmd;
+
+  if( Boolean(preBaseCmd) &&  this.type() == preBaseCmd.type() )
+  {
+    if( this.getCanMergeID() > NoCanMergeID && this.getCanMergeID() == preBaseCmd.getCanMergeID() )
+      return true;
+  }
+  return false;
+}
+
+/// Implementation of Command.
+BaseCommand.merge!(Command prevCmd) {
+}
+

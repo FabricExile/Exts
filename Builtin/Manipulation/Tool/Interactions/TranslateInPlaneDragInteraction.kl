@@ -1,0 +1,108 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /**
+    The TranslateAlongAxisDragInteraction will change a TransformTarget's translation
+    component based on a DragInteraction movements relative to a 3D plane, in world space.
+    The plane point is, by default, at the origin of the TransformTarget, but an arbitrary
+    one can be specified with :kl-ref:`Tool::TranslateInPlaneDragInteraction.setPlane`
+
+    The :kl-ref:`Tool::TranslateInPlaneDragInteraction.setLocal` method allows to interpret the
+    axis can be in TransformTarget's local space or in global space (local space is default).
+
+    See :ref:`TPG.interactive-tools` for more information and examples related to tool interactions.
+  */
+  object TranslateInPlaneDragInteraction : BaseXfoDragInteraction{
+    Boolean local;//Else: global
+    Boolean onTarget;
+    Vec3 planePointIfNotOnTarget;
+    Vec3 planeNormal;
+    Mat44 initialTransform;
+  };
+
+  TranslateInPlaneDragInteraction() {
+    this.local = true;
+    this.planeNormal = Vec3( 0, 1, 0 );
+    this.onTarget = true;
+  }
+
+  TranslateInPlaneDragInteraction( DragInteraction dragInteraction, TransformTarget transformTarget, Vec3 planeNormal, Boolean localSpace ) {
+    this.setInteraction( dragInteraction );
+    this.setTransformTarget( transformTarget );
+    this.setLocal( localSpace );
+    this.planeNormal = planeNormal.unit_safe();
+    this.onTarget = true;
+  }
+
+  TranslateInPlaneDragInteraction.setLocal!( Boolean localSpace ) {
+    this.local = localSpace;
+  }
+
+  /// Sets an arbitrary plane point and normal; it is no longer based on the transform target position
+  TranslateInPlaneDragInteraction.setPlane!( Vec3 planeNormal, Vec3 planePoint ) {
+    this.onTarget = false;
+    this.planeNormal = planeNormal.unit_safe();
+    this.planePointIfNotOnTarget = planePoint;
+  }
+
+  /// Sets the plane normal
+  TranslateInPlaneDragInteraction.setPlane!( Vec3 planeNormal ) {
+    this.planeNormal = planeNormal.unit_safe();
+  }
+
+  TranslateInPlaneDragInteraction.onBegin!( Ref<DragInteraction> interaction ) {
+    this.initialTransform = this.getTransform();
+    this.parent.onBegin( interaction );
+  }
+
+  TranslateInPlaneDragInteraction.onDrag!( Ref<DragInteraction> interaction ) {
+    // Get the current transfos
+    Mat44 transfo = this.initialTransform;
+
+    if( this.getTransformSpace() != WorldSpace ) {
+      setError( "TranslateInPlaneDragInteraction.onDrag: " + GetComponentName( this ) + ": only WorldSpace is supported" );
+      return;
+    }
+
+    Vec3 planeNormal = this.planeNormal;
+    if( this.local )
+      planeNormal = ( transfo.upperLeft() * planeNormal ).unit_safe();
+
+    Vec3 planePoint = transfo.translation();
+    if( !this.onTarget ) {
+      if( this.local )
+        planePoint = transfo * this.planePointIfNotOnTarget;
+      else
+        planePoint = this.planePointIfNotOnTarget;
+    }
+
+    // Have screen delta in normalized viewport space
+    Ref<Viewport> viewport = interaction.getContextualViewport();
+
+    // If too toward camera, block to avoid big movements
+    Ray startRay = viewport.calcRayFromScreenPos( interaction.getInitialPixelPosition() );
+    if( abs( startRay.direction.dot( planeNormal ) ) < 0.01 )
+      return;
+    Ray currRay = viewport.calcRayFromScreenPos( interaction.getCurrentPixelPosition() );
+
+    Scalar planeStartDist = startRay.intersectPlane( planePoint, planeNormal );
+    Scalar planeEndDist = currRay.intersectPlane( planePoint, planeNormal );
+    if( planeStartDist == -SCALAR_INFINITE || planeEndDist == -SCALAR_INFINITE )
+      return;// no intersection
+
+    Vec3 startIntersect = startRay.pointFromFactor( planeStartDist );
+    Vec3 endIntersect = currRay.pointFromFactor( planeEndDist );
+
+    // If intersection is out of the view near/far, return
+    Scalar projDepth = ( ( viewport.getProjectionMat() * viewport.getViewMat() ) * endIntersect ).z;
+    if( projDepth < -1 || projDepth > 1 )
+      return;
+
+    Vec3 delta = endIntersect - startIntersect;
+    transfo.setTranslation( transfo.translation() + delta );
+    this.setTransform( transfo );
+  }
+}// namespace Tool

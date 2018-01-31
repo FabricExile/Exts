@@ -1,0 +1,55 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+    "uiNodeColor" : "{\n  \"r\" : 132,\n  \"g\" : 106,\n  \"b\" : 97\n  }",
+    "uiTooltip" : "Returns a single texture on an ImporterObject. This only works on ImporterObjects of type ImporterMaterial."
+    },
+  "title" : "textureProperty",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Ref<ImporterObject>"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "key",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String" : "diffuse"
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "texture",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Ref<ImporterObject>"
+      }
+    ],
+  "extDeps" : {
+    "AssetPatterns" : "*"
+    },
+  "presetGUID" : "907875651F10DEC6DF4FB1123064921B",
+  "code" : "require AssetPatterns;
+
+dfgEntry {
+  ImporterMaterial material = this;
+  if(material == null)
+    return;
+  texture = material.getTexture(material.defaultContext, key);
+}
+"
+  }

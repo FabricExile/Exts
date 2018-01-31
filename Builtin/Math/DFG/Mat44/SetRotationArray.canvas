@@ -1,0 +1,77 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Mat44.html",
+    "uiTooltip" : "set the upper left 3 x 3 components from a Quat.\n\n Supported by Mat44"
+    },
+  "title" : "SetRotation[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 249,\n  \"g\" : 157,\n  \"b\" : 28\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Mat44[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 0,\n  \"g\" : 191,\n  \"b\" : 232\n  }"
+        },
+      "name" : "q",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Quat[]" : [
+          {
+            "v" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              },
+            "w" : 1
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Quat[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "13D28D4C8B4142C15CA499A24F7715E4",
+  "code" : "require Math;
+
+operator Math_Mat44_setRotation_task<<<index>>>(
+  io Mat44[] this
+, in Quat[] q
+) {
+  this[index < this.size() ? index : this.size() - 1].setRotation(q[index < q.size() ? index : q.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( q.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < q.size()) task_size = q.size();
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Mat44_setRotation_task(index, this, q);
+    }
+  } else {
+    Math_Mat44_setRotation_task<<<task_size>>>(this, q);
+  }
+}
+"
+  }

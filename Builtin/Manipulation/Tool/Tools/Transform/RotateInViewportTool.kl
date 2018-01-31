@@ -1,0 +1,61 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// This tool allows to rotate a :kl-ref:`Tool::TransformTarget` around
+  /// a viewport-aligned axis (camera direction ) by clicking 
+  /// on a 3D circle.
+  ///
+  /// While this tool is used as a sub-tool of the :kl-ref:`RotateTool`,
+  /// it can also be created independently.
+  object RotateInViewportTool : RotateAroundAxisTool {
+    CameraFacingModifier cameraFacingModifier;
+  };
+
+  RotateInViewportTool( TransformTarget target, Color gizmoColor, Float32 gizmoSize, Color highlightColor, Boolean showHint ) {
+    this.parent.construct( target, Vec3( 0, 1, 0 ), gizmoColor, gizmoSize, highlightColor, true, showHint );
+    this.initViewportModifier( Vec3( 0, 1, 0 ), Vec3( 1, 0, 0 ) );
+  }
+
+  RotateInViewportTool( TransformTarget target, Color highlightColor, Ref<BaseTool> gizmoShape, Boolean showHint ) {
+    this.parent.construct( target, Vec3( 0, 1, 0 ), highlightColor, gizmoShape, showHint );
+    this.initViewportModifier( Vec3( 0, 1, 0 ), Vec3( 1, 0, 0 ) );
+  }
+
+  RotateInViewportTool.initViewportModifier!( Vec3 localAxisToRotateTowardCamera, Vec3 localUpVector ) {
+    this.enableLocalRotation( false );
+    if( !this.cameraFacingModifier ) {
+      this.cameraFacingModifier = CameraFacingModifier();
+
+      Ref<BaseTool> shape = this.getShape();
+      shape.addDrawModifier( this.cameraFacingModifier, false );
+      shape = this.getChild( "clickArea" );
+      if( shape )
+        shape.addDrawModifier( this.cameraFacingModifier, false );
+    }
+    this.cameraFacingModifier.setLocalAxis( localAxisToRotateTowardCamera, localUpVector );
+  }
+
+  Vec3 RotateInViewportTool.computeAxis() {
+    DrawContext context = GetCurrentEventContext();
+    if( context.viewport ) {
+      Vec3 camDir = context.viewport.getViewMat().upperLeft().inverse() * Vec3( 0, 0, 1 );
+      return camDir;
+    } else
+      return Vec3( 0, 0, 1 );
+  }
+
+  /// \internal
+  RotateInViewportTool.onEnterState!( String newState, Boolean mainState ) {
+
+    if( newState == XfoTargetAlignedGizmo_dragging ) {
+      // Get contextual viewport, set axis based on camera direction
+      DrawContext context = GetCurrentEventContext();
+      if( context.viewport )
+        this.setAxis( this.computeAxis() );
+    }
+    this.parent.onEnterState( newState, mainState );
+  }
+}// namespace Tool

@@ -1,0 +1,167 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+require Math, FabricStatistics, OpenImageIO;
+
+/**
+  The Image2DRGB is an Image2D storing full float Color pixel values.
+  \seealso Image2D
+*/
+object Image2DColor : Image2D {
+  Color pixels[];
+};
+
+/// Default constructor. Sets up the statistics register.
+function Image2DColor() {
+  if(FabricStatisticsEnabled())
+    this.autoStats = StatisticsAutoRegisterMember(this);
+}
+
+/// Resize the image allocating space for pixel storage.
+/// \param width The new width of the image
+/// \param height The new height of the image
+function Image2DColor.resize!(
+  in UInt32 width,
+  in UInt32 height,
+){
+  this.pixels.resize(width * height);
+  this.width = width;
+  this.height = height;
+  this.incrementVersion();
+}
+
+/// Samples the image pixels, returning a bi-linearly interpolated pixel value. 
+/// \param u The u param to sample the image. Should range between 0.0 and 1.0 
+/// \param v The v param to sample the image. Should range between 0.0 and 1.0 
+function Color Image2DColor.sample(
+  in Scalar u,
+  in Scalar v
+){
+  Scalar u1, u2, v1, v2;
+  UInt32 tl, bl, tr, br;
+  Scalar uinterp, vinterp;
+  this.getSampleParams( 
+    u, v,
+    u1, u2, v1, v2,
+    tl, bl, tr, br,
+    uinterp, vinterp
+    );
+  
+  Color tlClr = this.pixels[tl];
+  Color blClr = this.pixels[bl];
+  Color trClr = this.pixels[tr];
+  Color brClr = this.pixels[br];
+  Color uClr = tlClr.linearInterpolate(blClr, uinterp);
+  Color vClr = trClr.linearInterpolate(brClr, uinterp);
+  return uClr.linearInterpolate(vClr, vinterp);
+}
+
+/// Gets the value of the pixel at the given coordinates
+/// \param uindex the index of the pixel in u
+/// \param vindex the index of the pixel in v
+inline Color Image2DColor.getPixel?(
+  in Integer uindex,
+  in Integer vindex
+){
+  return this.pixels[(vindex * this.width) + uindex];
+}
+
+/// Sets a new pixel value
+/// \param uindex the index of the pixel in u
+/// \param vindex the index of the pixel in v
+/// \param pixelValue the new value for the pixel
+inline Image2DColor.setPixel!(
+  in Integer uindex,
+  in Integer vindex,
+  in Color pixelValue
+){
+  this.pixels[(vindex * this.width) + uindex] = pixelValue;
+}
+
+//Implementation of StatisticSource interface's 'getStatistics()'.
+function StatisticRecord[] Image2DColor.getStatistics() {
+  StatisticRecord stats[] = this.parent.getStatistics();
+  stats.push( StatisticRecord( "Size", this.pixels.size() ) );
+  stats.push( StatisticRecord( Statistic_MemoryUsage, 12*4+this.pixels.size()*4*4 ) );
+  return stats;
+}
+
+Boolean Image2DColor.readFromFile!( String name ) {
+  this.incrementVersion();
+  this.width = 0;
+  this.height = 0;
+  this.name = name;
+  Boolean failed;
+
+  OpenImageInput image( name );
+  if( image.valid() ) {
+
+    OpenImageTypeDesc desc = OpenImageTypeDesc( OpenImage_BASETYPE_FLOAT, OpenImage_AGGREGATE_SCALAR, OpenImage_VECSEMANTICS_NOXFORM );
+
+    OpenImageSpec spec = image.spec();
+    this.width = spec.get_full_width();
+    this.height = spec.get_full_height();
+    String oiioError;
+    if( spec.get_nchannels() == 4 ) {
+      this.pixels.resize( this.width * this.height );
+      Data data = this.pixels.data();
+      if( !image.read_image( desc, data, 0, 0, 0 ) ) {
+        report( 'image.read_image failed for 4 channels' );
+        oiioError = image.geterror();
+        failed = true;
+      }
+    } else if( spec.get_nchannels() == 3 ) {
+      Float32 floats[];
+      floats.resize( this.width * this.height * spec.get_nchannels() );
+      Data data = floats.data();
+      if( image.read_image( desc, data, 0, 0, 0 ) ) {
+        this.pixels.resize( this.width * this.height );
+        Size offset = 0;
+        for( Size i = 0; i<this.pixels.size(); i++ ) {
+          this.pixels[i].r = floats[offset++];
+          this.pixels[i].g = floats[offset++];
+          this.pixels[i].b = floats[offset++];
+          this.pixels[i].a = 1.0;
+        }
+      } else {
+        report( 'image.read_image failed for 3 channels' );
+        oiioError = image.geterror();
+        failed = true;
+      }
+    } else if( spec.get_nchannels() == 1 ) {
+      Float32 floats[];
+      floats.resize( this.width * this.height );
+      Data data = floats.data();
+      if( image.read_image( desc, data, 0, 0, 0 ) ) {
+        this.pixels.resize( this.width * this.height );
+        Size offset = 0;
+        for( Size i = 0; i<this.pixels.size(); i++ ) {
+          this.pixels[i].r = floats[offset];
+          this.pixels[i].g = floats[offset];
+          this.pixels[i].b = floats[offset++];
+          this.pixels[i].a = 1.0;
+        }
+      } else {
+        report( 'image.read_image failed for 1 channels' );
+        oiioError = image.geterror();
+        failed = true;
+      }
+    }
+
+    if( failed ) {
+      if( oiioError.length() > 0 )
+        report( "Texture file '" + name + "' cannot be opened. OpenImageIO reported '" + oiioError + "'." );
+
+      this.pixels.resize( 0 );
+      this.width = 0;
+      this.height = 0;
+
+      return false;
+    }
+  } else {
+    setError( 'Texture file "' + name + '" not found.' );
+    return false;
+  }
+  return true;
+}

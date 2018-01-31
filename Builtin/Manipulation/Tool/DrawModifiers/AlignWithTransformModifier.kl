@@ -1,0 +1,88 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /**
+    The AlignWithTransformModifier, when attached to a BaseTool (:kl-ref:`Tool::BaseTool.addDrawModifier` ),
+    will constraint BaseTool's transform to the Transformed source. Options allow to constraint
+    only the translation, rotation or scale component of the transform.
+    See :ref:`TPG.tooldrawmodifier` for more information about draw modifiers.
+  */
+  object AlignWithTransformModifier : BaseDrawModifier{
+    protected Transformed transform;
+
+    Boolean alignTranslation;
+    Vec3 translationOffset;
+    Boolean alignRotation;
+    Boolean alignScale;
+    Boolean alignShearing;
+
+    Boolean hasFrozenTransform;
+    Mat44 frozenTransform;
+  };
+
+  AlignWithTransformModifier( Transformed transform, Boolean alignTranslation, Boolean alignRotation, Boolean alignScale, Boolean alignShearing ) {
+    this.setAlignType( alignTranslation, alignRotation, alignScale, alignShearing );
+    this.setTransform( transform );
+  }
+
+  AlignWithTransformModifier.setTransform!( Transformed transform ) {
+    this.transform = transform;
+  }
+
+  AlignWithTransformModifier.freezeTransform!( Boolean enable ) {
+    if( enable )
+      this.frozenTransform = this.transform.getParentTransform() * this.transform.getLocalTransform().toMat44();
+    this.hasFrozenTransform = enable;
+  }
+
+
+  AlignWithTransformModifier.setTranslationOffset!( Vec3 translationOffset ) {
+    this.translationOffset = translationOffset;
+  }
+
+  AlignWithTransformModifier.setAlignType!( Boolean alignTranslation, Boolean alignRotation, Boolean alignScale, Boolean alignShearing ) {
+    this.alignTranslation = alignTranslation;
+    this.alignRotation = alignRotation;
+    this.alignScale = alignScale;
+    this.alignShearing = alignShearing;
+  }
+
+  Mat44 AlignWithTransformModifier.getTransform( Mat44 previousTransform ) {
+    Mat44 transform;
+    if( this.transform ) {
+      if( this.hasFrozenTransform )
+        transform = this.frozenTransform;
+      else
+        transform = this.transform.getParentTransform() * this.transform.getLocalTransform().toMat44();
+
+      if( !this.alignTranslation || !this.alignRotation || !this.alignScale ) {
+        Xfo xfo( transform );
+        Xfo currentTransform( previousTransform );// Let's hope there's no shearing...
+
+        if( !this.alignTranslation )
+          xfo.tr = currentTransform.tr;
+        if( !this.alignScale )
+          xfo.sc = currentTransform.sc;
+        if( !this.alignRotation )
+          xfo.ori = currentTransform.ori;
+        xfo.tr += this.translationOffset;
+        transform = xfo.toMat44();
+      }
+    }
+    return transform;
+  }
+
+  AlignWithTransformModifier.updateDrawData!( io DrawContext context, Ref<Object> target ) {
+    this.parent.updateDrawData( context, target );
+    if( this.transform ) {
+      Mat44 transform = this.getTransform( GetTransform( context.contextualProperties ) );
+      SetTransform( context.contextualProperties, transform );
+      SetTransformSpace( context.contextualProperties, this.transform.getTransformSpace() );
+    }
+    // Update the renderTransform (viewport space) accordingly
+    UpdateRenderTransform( context );
+  }
+}// namespace Tool

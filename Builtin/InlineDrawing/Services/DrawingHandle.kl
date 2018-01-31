@@ -1,0 +1,2476 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+require FabricInterfaces;
+
+/**
+\versionadded 1.13.0
+
+The DrawingHandle is used to manage the lifetime of drawn objects. 
+
+The InlineDrawing system uses a singleton to store the data submitted to rendering. This makes adding data to the renderer easy, but removing data can be difficult. 
+Often we want data to be removed when its owner is destroyed. The owner might be a node in Maya for example. By adding the DrawingHandle as a member of a splice node, any drawn elements associated with the handle will be automatically cleaned up when the Splice node is destroyed. 
+
+When the DrawingHandle is used within Canvas, the visual programming system, the DrawingHandle is stored in a singleton, outside of the graph.
+You will need to call DrawingHandle.clear to remove its content from the drawing. So you should use the DrawingHandle.clear node prior to any draw nodes when using it in Canvas.
+
+In InlineDrawing, any InlineEntity (InlineTranform, InlineShape, InlineInstance) are registered with an unique-id as a String (unique-name).
+It allows to re-use the same entity over consecutive draws without destroying it even if it content has changed.
+However, this approach has two drawbacks:
+  -- If several entities share the same unique-id, the last entity overwrites the others when the drawing happens.
+  -- The DrawingHandle methods need a specific parameter (String) to set the unique-id of the entities it needs to construct.
+
+In the 2.4 version, a new framework, called accumulateDraw, has been introduced in DrawingHandle to prevent the need of specifying a unique-id.
+Each DrawingHandle.drawXXX methods has its "accumulate" counterpart under the name DrawingHandle.accumulateDrawXXX where the unique-ids are automatically constructed.
+However, each entity needs to be destroyed when the drawing is done, that make the render slower.
+
+\example
+    // Create a handle to manage the lifetime of the drawn elements 
+    DrawingHandle handle();
+
+    if(handle.isEmpty()) {  
+  
+      InlineDrawing drawing = handle.getDrawing();
+
+      // create a couple of transforms parented into a hierarchy attached to the handle.
+      InlineTransform rootTransform = handle.getRootTransform();
+      InlineTransform transfo1 = StaticInlineTransform('parent', rootTransform, Xfo());
+      InlineTransform transfo2 = StaticInlineTransform('childA', transfo1, Xfo(Vec3(-5, 0, 0)));
+      InlineTransform transfo3 = StaticInlineTransform('childB', transfo1, Xfo(Vec3(5, 0, 0)));
+
+      // Attach some points to transfo2
+      InlineShader flatShader = drawing.registerShader(OGLFlatShader);
+      InlineShader surfaceShader = drawing.registerShader(OGLSurfaceShader);
+
+      InlineMaterial pointsMaterial = flatShader.getOrCreateMaterial("points");
+      pointsMaterial.setUniform('u_color', Color(1.0, 0.0, 0.0));
+
+      Points points();
+      InlinePointsShape pointsShape("points", points);
+      InlineInstance pointsdInstance = InlineInstance("points", transfo2, pointsShape, pointsMaterial);
+
+      // Attach a mesh to transfo3
+      InlineMaterial surfaceMaterial = surfaceShader.getOrCreateMaterial("surface");
+      surfaceMaterial.setUniform('u_diffuseColor', Color(1.0, 1.0, 0.0));
+
+      PolygonMesh mesh();
+      InlineMeshShape meshShape("mesh", mesh);
+      InlineInstance meshInstance = InlineInstance("mesh", transfo3, meshShape, surfaceMaterial);
+    }
+
+    // hide the drawing 
+    handle.setVisibility(false);
+
+    // make it visible again
+    handle.setVisibility(true);
+    
+    // Later.... Destroy the handle. The hierarch containing the points and mesh will be removed from the InlineDrawing system
+    handle = null;
+\endexample
+
+*/
+object DrawingHandle : InlineEntityBase, Detachable {
+  /// \internal
+  InlineDrawing drawing;
+  /// \internal
+  InlineTransform rootTransform;
+  /// \internal
+  Boolean visibility;
+  /// \internal
+  UInt32 nextUniqueID;
+};
+
+/// default constructor
+/// \dfgPresetOmit
+function DrawingHandle(){
+  this.init("DrawingHandle" + this.uid(), true);
+}
+
+/// constructor taking a name for the root transform of this drawing handle
+/// \dfgPresetOmit
+function DrawingHandle(String name){
+  this.init(name, true);
+}
+
+/// \internal
+private DrawingHandle.init!(String name, Boolean visibility){
+  this.visibility = visibility;
+  this.name = name;
+  if(this.name == "")
+    this.name = "DrawingHandle" + this.uid();
+  this.drawing = OGLInlineDrawing_GetInstance();
+  this.rootTransform = InlineTransformBase(this.name, this.drawing.getRoot(), Xfo());
+}
+
+/// \internal
+/// removes the material from the instance if the intance owns it.
+/// used when clearing the handle.
+function RemoveMaterialsFromShaders(io Ref<InlineTransform> transform) {
+  for(Integer i=transform.getChildCount()-1; i>=0; i--) 
+  {
+    Ref<InlineTransform> childTransform = transform.getChild(i);
+    if(childTransform) 
+      RemoveMaterialsFromShaders(childTransform);
+
+    Ref<InlineInstance> instance = transform.getChild(i);
+    if( instance )
+      instance.removeAndCleanupOwnedMaterials();
+  }
+}
+
+/// \internal 
+/// removes all the shapes/materials created in this handle when it's destructed.
+private DrawingHandle.unregisterShapesAndMaterials!(io Ref<InlineTransform> transform) {
+  for(Integer i=transform.getChildCount()-1; i>=0; i--) 
+  {
+    Ref<InlineTransform> childTransform = transform.getChild(i);
+    if(childTransform)
+      this.unregisterShapesAndMaterials(childTransform);
+
+    Ref<InlineInstance> instance = transform.getChild(i);
+    if(Boolean(instance) && Boolean(instance.shape)) 
+    {
+      this.getDrawing().unregisterShape(instance.shape.getName());
+      instance.removeAndCleanupOwnedMaterials();
+    }
+  }
+}
+
+/// \internal
+function ~DrawingHandle(){
+  // Unregistered the shapes and materials uses by the inlineInstances
+  // so they are destroyed. Otherwise, they are kept forever by InlineDrawing
+  Ref<InlineTransform> transformRef = this.rootTransform;
+  this.unregisterShapesAndMaterials(transformRef);
+
+  // Prune the hierarchy from its parent. This will cause the hierarchy
+  // to be destroyed if no other objects maintain a reference to the nodes
+  // in the hierarchy.
+  InlineTransform nullTranform = null;
+  if(this.rootTransform != null)
+    this.rootTransform.setParent(nullTranform);
+}
+
+/// removes all contents from the DrawingHandle
+function DrawingHandle.clear!() {
+  this.nextUniqueID = 0;
+  
+  Ref<InlineTransform> transformRef = this.rootTransform;  
+  RemoveMaterialsFromShaders(transformRef);
+
+  InlineTransform nullTranform = null;
+  if(this.rootTransform != null)
+    this.rootTransform.setParent(nullTranform);
+  this.rootTransform = InlineTransformBase(this.name, this.drawing.getRoot(), Xfo());
+}
+
+/// \internal
+private DrawingHandle.setVisibility!(InlineTransform transform, Boolean visibility) {
+  if(transform == null)
+    return;
+
+  for(Size i=0;i<transform.getChildCount();i++) 
+  {  
+    InlineTransform childTransform = transform.getChild(i);
+    if(childTransform) 
+      this.setVisibility(childTransform, visibility);
+    
+    InlineInstance childInstance = transform.getChild(i);
+    if(childInstance) 
+      childInstance.setActive(visibility);
+  }
+}
+
+/// enables or disables the rendering of this handle
+/// \note Can be removed, it has been implemented in setVisibility (FE-7305)
+function DrawingHandle.setActive!(Boolean active) {
+  this.setVisibility(active);
+}
+
+/// sets the visibility state of this handle
+function DrawingHandle.setVisibility!(Boolean visibility) {
+  if(visibility != this.visibility)
+  {
+    this.visibility = visibility;
+    this.setVisibility(this.rootTransform, visibility);
+  }
+}
+
+/// gets the visibility state of this handle
+function Boolean DrawingHandle.getVisibility() {
+  return this.visibility;
+}
+
+/// called by the DCCs when a splice container is deleted
+/// \internal
+function DrawingHandle.detach!(){
+  this.setVisibility(false);
+}
+
+/// called by the DCCs when a splice container's deletion is undone
+/// \internal
+function DrawingHandle.attach!(){
+  this.setVisibility(true);
+}
+
+/// returns true if this handle has no content
+function Boolean DrawingHandle.isEmpty(){
+  return this.rootTransform.getChildCount() == 0;
+}
+
+/// returns the handle's InlineDrawing
+function InlineDrawing DrawingHandle.getDrawing(){
+  return this.drawing;
+}
+
+/// returns the root transform of this drawing. 
+/// use this to add content.
+function InlineTransform DrawingHandle.getRootTransform(){
+  return this.rootTransform;
+}
+
+/// helper function to draw a mesh given a color + an array of transforms
+/// \internal
+private InlineMaterial DrawingHandle.drawShapeInstances!(String name, io InlineShader shader, Xfo transforms[], InlineShape shape, out InlineInstance instance)
+{
+  String uidName = name;
+
+  InlineDrawing draw = this.getDrawing();
+  InlineMaterial mat = shader.getOrCreateMaterial(uidName);
+ 
+  StaticInlineTransform xform = this.rootTransform.getChild(uidName);
+  if(xform == null)
+  {
+    xform = StaticInlineTransform(uidName);
+    this.rootTransform.addChild(xform);
+    // if the shape associated to an instance is not registred in InlineDrawing (draw.hasShape(name) == false)
+    // the instance owns both its material and shape. When such an instance is deleted, 
+    // its material and shape are unregisted from InlineDrawing and destroyed when the DrawingHandle is cleared.
+    instance = SimpleInlineInstance(uidName, xform, shape, this.visibility, mat);
+  }
+
+  if(xform)
+  {
+    xform.setLocalCount(transforms.size());
+    for(Size i=0;i<transforms.size();i++)
+      xform.setLocalXfo(i, transforms[i]);
+  }
+
+  return mat;
+}
+
+/// \internal
+private InlineShape DrawingHandle.createInlinePointShape!(Boolean accumulate, Points points, io String uidName) {
+  InlinePointsShape shape = null;
+  if(accumulate)
+  {
+    uidName += "_" + String(this.nextUniqueID++);
+    shape = InlinePointsShape(uidName, points);
+  }
+  else
+  {
+    InlineDrawing draw = this.getDrawing();
+    shape = draw.getShape(uidName);
+    if(!shape) 
+      shape = draw.registerShape(InlinePointsShape(uidName, points));
+    else
+      shape.setPoints(points);
+  }
+  return shape;
+}
+
+/// \internal
+private DrawingHandle.drawPointsInstances!(Boolean accumulate, String name, Xfo transforms[], Points points, out InlineInstance instance)
+{
+  String uidName = this.uid() + '_' + name;
+
+  // ensure to contain the vertex color attribute
+  GeometryAttributes attributes = points.getAttributes();
+  attributes.getOrCreateColorAttribute("vertexColors");
+
+  // ensure to have a scalar sizes attribute
+  ScalarAttribute sizesAttr = attributes.getAttribute(PointsDefaultSizesAttributeName);
+  if(!sizesAttr) {
+    sizesAttr = attributes.getOrCreateScalarAttribute(PointsDefaultSizesAttributeName);  
+    for(Size i=0;i<sizesAttr.values.size();i++)
+      sizesAttr.values[i] = 1.0;
+  }
+
+  InlineDrawing draw = this.getDrawing();
+  InlineShader shader = draw.registerShader(OGLDebugPointShader);
+  InlinePointsShape shape = this.createInlinePointShape(accumulate, points, uidName);
+
+  InlineMaterial mat = this.drawShapeInstances(uidName, shader, transforms, shape, instance);
+}
+
+/// helper function to draw a points object given a color + an array of transforms
+/// \dfgPresetCreate
+function DrawingHandle.drawPointsInstances!(String name, Xfo transforms[], Points points, out Vec3 dummyResult, out InlineInstance instance)
+{
+  this.drawPointsInstances(
+    false,
+    name, 
+    transforms, 
+    points, 
+    instance);
+}
+
+/// helper function to draw a points object given a color + an array of transforms.
+/// This method can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \dfgPresetCreate
+function DrawingHandle.accumulateDrawPointsInstances!(Xfo transforms[], Points points, out InlineInstance instance)
+{
+  this.drawPointsInstances(
+    true,
+    "accumulateDrawPointsInstances", 
+    transforms, 
+    points, 
+    instance);
+}
+
+/// helper function to draw a points object given a color + a single transform
+/// \dfgPresetCreate
+function DrawingHandle.drawPoints!(String name, Xfo transform, Points points, out Vec3 dummyResult, out InlineInstance instance)
+{
+  Xfo transforms[];
+  transforms.push(transform);
+  this.drawPointsInstances(name, transforms, points, dummyResult, instance);
+}
+
+/// helper function to draw a points object given a color + a single transform.
+/// This method can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \dfgPresetCreate
+function DrawingHandle.accumulateDrawPoints!(Xfo transform, Points points, out InlineInstance instance)
+{
+  Xfo transforms[];
+  transforms.push(transform);
+  this.accumulateDrawPointsInstances(transforms, points, instance);
+}
+
+/// \internal
+private InlineShape DrawingHandle.createInlineLinesShape!(Boolean accumulate, Lines lines, io String uidName) {
+  InlineLinesShape shape = null;
+  if(accumulate)
+  {
+    uidName += "_" + String(this.nextUniqueID++);
+    shape = InlineLinesShape(uidName, lines);
+  }
+  else
+  {
+    InlineDrawing draw = this.getDrawing();
+    shape = draw.getShape(uidName);
+    if(!shape) 
+      shape = draw.registerShape(InlineLinesShape(uidName, lines));
+    else
+      shape.setLines(lines);
+  }
+  return shape;
+}
+
+/// \internal
+private DrawingHandle.drawLinesInstances!(Boolean accumulate, String name, Color color, Xfo transforms[], Lines lines, out InlineInstance instance)
+{
+  String uidName = this.uid() + '_' + name;
+
+  InlineDrawing draw = this.getDrawing();
+  InlineShader shader = draw.registerShader(OGLFlatShader);
+  InlineLinesShape shape = this.createInlineLinesShape(accumulate, lines, uidName);
+
+  InlineMaterial mat = this.drawShapeInstances(uidName, shader, transforms, shape, instance);
+  mat.setUniform('u_color', color);
+}
+
+/// helper function to draw a lines object given a color + an array of transforms
+/// \dfgPresetCreate
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+function DrawingHandle.drawLinesInstances!(String name, Color color, Xfo transforms[], Lines lines, out Vec3 dummyResult, out InlineInstance instance)
+{
+  this.drawLinesInstances(
+    false,
+    name,
+    color,
+    transforms,
+    lines,
+    instance);
+}
+
+/// helper function to draw a lines object given a color + an array of transforms.
+/// This method can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \dfgPresetCreate
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+function DrawingHandle.accumulateDrawLinesInstances!(Color color, Xfo transforms[], Lines lines, out InlineInstance instance)
+{
+  this.drawLinesInstances(
+    true,
+    "accumulateDrawLinesInstances",
+    color,
+    transforms,
+    lines,
+    instance);
+}
+
+/// helper function to draw a lines object given a color + a single transform
+/// \dfgPresetCreate
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+function DrawingHandle.drawLines!(String name, Color color, Color specular, Float32 specFactor, Xfo transform, Lines lines, out Vec3 dummyResult, out InlineInstance instance)
+{
+  Xfo transforms[];
+  transforms.push(transform);
+  this.drawLinesInstances(name, color, transforms, lines, dummyResult, instance);
+}
+
+/// helper function to draw a lines object given a color + a single transform.
+/// This method can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \dfgPresetCreate
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+function DrawingHandle.accumulateDrawLines!(Color color, Color specular, Float32 specFactor, Xfo transform, Lines lines, out InlineInstance instance)
+{
+  Xfo transforms[];
+  transforms.push(transform);
+  this.accumulateDrawLinesInstances(color, transforms, lines, instance);
+}
+
+/// helper function to draw a lines object given an array of transforms
+/// \dfgPresetCreate
+private DrawingHandle.drawColoredLinesInstances!(Boolean accumulate, String name, Xfo transforms[], Lines lines, out InlineInstance instance)
+{
+  // check that the geometry contains the vertex color attribute
+  GeometryAttributes attributes = lines.getAttributes();
+  ColorAttribute vertexColors = attributes.getAttribute("vertexColors");
+  if(!vertexColors)
+  {
+    setError("DrawingHandle.drawColoredLinesInstances: The geometry has no vertexColors attributes");
+    return;
+  }
+
+  String uidName = this.uid() + '_' + name;
+
+  InlineDrawing draw = this.getDrawing();
+  InlineShader shader = draw.registerShader(OGLFlatVertexColorShader);
+  InlineLinesShape shape = this.createInlineLinesShape(accumulate, lines, uidName);
+
+  InlineMaterial mat = this.drawShapeInstances(uidName, shader, transforms, shape, instance);
+}
+
+/// helper function to draw a lines object given an array of transforms
+/// \dfgPresetCreate
+function DrawingHandle.drawColoredLinesInstances!(String name, Xfo transforms[], Lines lines, out Vec3 dummyResult, out InlineInstance instance)
+{
+  this.drawColoredLinesInstances(
+    false,
+    name,
+    transforms,
+    lines,
+    instance);
+}
+
+/// helper function to draw a lines object given an array of transforms.
+/// This method can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \dfgPresetCreate
+function DrawingHandle.accumulateDrawColoredLinesInstances!(Xfo transforms[], Lines lines, out InlineInstance instance)
+{
+  this.drawColoredLinesInstances(
+    true,
+    "accumulateDrawColoredLinesInstances",
+    transforms,
+    lines,
+    instance);
+}
+
+/// helper function to draw a lines object given a single transform
+/// \dfgPresetCreate
+function DrawingHandle.drawColoredLines!(String name, Xfo transform, Lines lines, out Vec3 dummyResult, out InlineInstance instance)
+{
+  Xfo transforms[];
+  transforms.push(transform);
+  this.drawColoredLinesInstances(name, transforms, lines, dummyResult, instance);
+}
+
+/// helper function to draw a lines object given a single transform.
+/// This method can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \dfgPresetCreate
+function DrawingHandle.accumulateDrawColoredLines!(Xfo transform, Lines lines, out InlineInstance instance)
+{
+  Xfo transforms[];
+  transforms.push(transform);
+  this.accumulateDrawColoredLinesInstances(transforms, lines, instance);
+}
+
+/// \internal
+private InlineShape DrawingHandle.createInlineCurvesShape!(Boolean accumulate, Curves curves, io String uidName) {
+  InlineCurvesShape shape = null;
+  if(accumulate)
+  {
+    uidName += "_" + String(this.nextUniqueID++);
+    shape = InlineCurvesShape(uidName, curves);
+  }
+  else
+  {
+    InlineDrawing draw = this.getDrawing();
+    shape = draw.getShape(uidName);
+    if(!shape) 
+      shape = draw.registerShape(InlineCurvesShape(uidName, curves));
+    else
+      shape.setCurves(curves);
+  }
+  return shape;
+}
+
+/// \internal
+private DrawingHandle.drawCurvesInstances!(Boolean accumulate, String name, Color color, Color specular, Float32 specFactor, Xfo transforms[], Curves curves, out InlineInstance instance ) {
+  String uidName = this.uid() + '_' + name;
+
+  InlineDrawing draw = this.getDrawing();
+  InlineShader shader = null;
+  if( specFactor > 0 )
+    shader = draw.registerShader( OGLCurveShader );
+  else
+    shader = draw.registerShader( OGLFlatShader );
+
+  InlineCurvesShape shape = this.createInlineCurvesShape(accumulate, curves, uidName);
+
+  InlineMaterial mat = this.drawShapeInstances( uidName, shader, transforms, shape, instance );
+  if( specFactor > 0 ) {
+    mat.setUniform( 'u_diffuseColor', color );
+    mat.setUniform( 'u_specularColor', specular );
+    mat.setUniform( 'u_specularFactor', specFactor );
+  } else
+    mat.setUniform( 'u_color', color );
+}
+
+/// helper function to draw a curves object given a color + an array of transforms
+/// \param specFactor If 0, a flat shader will be used. Otherwise, curve tangents will be used to derive a normal for the curve.
+/// \dfgPresetCreate
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.drawCurvesInstances!( String name, Color color, Color specular, Float32 specFactor, Xfo transforms[], Curves curves, out InlineInstance instance ) {
+  this.drawCurvesInstances(
+    false, 
+    name,
+    color,
+    specular,
+    specFactor,
+    transforms,
+    curves,
+    instance);
+}
+
+/// helper function to draw a curves object given a color + an array of transforms.
+/// This method can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \param specFactor If 0, a flat shader will be used. Otherwise, curve tangents will be used to derive a normal for the curve.
+/// \dfgPresetCreate
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.accumulateDrawCurvesInstances!(Color color, Color specular, Float32 specFactor, Xfo transforms[], Curves curves, out InlineInstance instance ) {
+  this.drawCurvesInstances(
+    true, 
+    "accumulateDrawCurvesInstances",
+    color,
+    specular,
+    specFactor,
+    transforms,
+    curves,
+    instance);
+}
+
+/// helper function to draw a curves object given a color + a single transform
+/// \param specFactor If 0, a flat shader will be used. Otherwise, curve tangents will be used to derive a normal for the curve.
+/// \dfgPresetCreate
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.drawCurves!( String name, Color color, Color specular, Float32 specFactor, Xfo transform, Curves curves, out InlineInstance instance ) {
+  Xfo transforms[];
+  transforms.push( transform );
+  this.drawCurvesInstances( name, color, specular, specFactor, transforms, curves, instance );
+}
+
+/// helper function to draw a curves object given a color + a single transform.
+/// This method can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \param specFactor If 0, a flat shader will be used. Otherwise, curve tangents will be used to derive a normal for the curve.
+/// \dfgPresetCreate
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.accumulateDrawCurves!( Color color, Color specular, Float32 specFactor, Xfo transform, Curves curves, out InlineInstance instance ) {
+  Xfo transforms[];
+  transforms.push( transform );
+  this.accumulateDrawCurvesInstances( color, specular, specFactor, transforms, curves, instance );
+}
+
+/// \internal
+private DrawingHandle.drawColoredCurvesInstances!(Boolean accumulate, String name, Xfo transforms[], Curves curves, Color specular, Float32 specFactor, out InlineInstance instance ) {
+  // check that the geometry contains the vertex color attribute
+  GeometryAttributes attributes = curves.getAttributes();
+  ColorAttribute vertexColors = attributes.getAttribute("vertexColors");
+  if(!vertexColors)
+  {
+    setError("DrawingHandle.drawColoredCurvesInstances: The geometry has no vertexColors attributes");
+    return;
+  }
+
+  String uidName = this.uid() + '_' + name;
+
+  InlineDrawing draw = this.getDrawing();
+
+  InlineShader shader = null;
+  if( specFactor > 0 )
+    shader = draw.registerShader( OGLCurveVertexColorShader );
+  else
+    shader = draw.registerShader( OGLFlatVertexColorShader );
+
+  InlineCurvesShape shape = this.createInlineCurvesShape(accumulate, curves, uidName);
+
+  InlineMaterial mat = this.drawShapeInstances( uidName, shader, transforms, shape, instance );
+  if( specFactor > 0 ) {
+    mat.setUniform( 'u_specularColor', specular );
+    mat.setUniform( 'u_specularFactor', specFactor );
+  }
+}
+
+/// helper function to draw a curves object given an array of transforms.
+/// \param specFactor If 0, a flat shader will be used. Otherwise, curve tangents will be used to derive a normal for the curve.
+/// \dfgPresetCreate
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.drawColoredCurvesInstances!( String name, Xfo transforms[], Curves curves, Color specular, Float32 specFactor, out InlineInstance instance ) {
+  this.drawColoredCurvesInstances(
+    false,
+    name,
+    transforms,
+    curves,
+    specular,
+    specFactor,
+    instance);
+}
+
+/// helper function to draw a curves object given an array of transforms.
+/// This method can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \param specFactor If 0, a flat shader will be used. Otherwise, curve tangents will be used to derive a normal for the curve.
+/// \dfgPresetCreate
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.accumulateDrawColoredCurvesInstances!( Xfo transforms[], Curves curves, Color specular, Float32 specFactor, out InlineInstance instance ) {
+  this.drawColoredCurvesInstances(
+    true,
+    "accumulateDrawColoredCurvesInstances",
+    transforms,
+    curves,
+    specular,
+    specFactor,
+    instance);
+}
+
+/// helper function to draw a curves object given a single transform
+/// \param specFactor If 0, a flat shader will be used. Otherwise, curve tangents will be used to derive a normal for the curve.
+/// \dfgPresetCreate
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.drawColoredCurves!( String name, Xfo transform, Curves curves, Color specular, Float32 specFactor, out InlineInstance instance ) {
+  Xfo transforms[];
+  transforms.push( transform );
+  this.drawColoredCurvesInstances( name, transforms, curves, specular, specFactor, instance );
+}
+
+/// helper function to draw a curves object given a single transform.
+/// This method can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \param specFactor If 0, a flat shader will be used. Otherwise, curve tangents will be used to derive a normal for the curve.
+/// \dfgPresetCreate
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.accumulateDrawColoredCurves!( Xfo transform, Curves curves, Color specular, Float32 specFactor, out InlineInstance instance ) {
+  Xfo transforms[];
+  transforms.push( transform );
+  this.accumulateDrawColoredCurvesInstances( transforms, curves, specular, specFactor, instance );
+}
+
+/// \internal
+private InlineShape DrawingHandle.createInlinePolygonMeshShape!(Boolean accumulate, PolygonMesh mesh, io String uidName) {
+  InlineMeshShape shape = null;
+  if(accumulate)
+  {
+    uidName += "_" + String(this.nextUniqueID++);
+    shape = InlineMeshShape(uidName, mesh);
+  }
+  else
+  {
+    InlineDrawing draw = this.getDrawing();
+    shape = draw.getShape(uidName);
+    if(!shape) 
+      shape = draw.registerShape(InlineMeshShape(uidName, mesh));
+    else
+      shape.setMesh(mesh);
+  }
+  return shape;
+}
+
+/// \internal
+private DrawingHandle.drawPolygonMeshInstances!(Boolean accumulate, String name, Color color, Color specular, Float32 specFactor, Xfo transforms[], PolygonMesh mesh, Boolean wireFrame, Boolean doubleSided, out InlineInstance instance)
+{
+  String uidName = this.uid() + '_' + name;
+
+  Boolean needsInstancing = transforms.size() > 1;
+  InlineDrawing draw = this.getDrawing();
+  InlineShader shader = draw.registerShader(OGLWireFrameShader('DrawingHandleSurfaceShader', OGLSurfaceShader(needsInstancing)));
+  InlineMeshShape shape = this.createInlinePolygonMeshShape(accumulate, mesh, uidName);
+
+  InlineMaterial mat = this.drawShapeInstances(uidName, shader, transforms, shape, instance);
+  mat.setUniform('u_diffuseColor', color);
+  mat.setUniform('u_specularColor', specular);
+  mat.setUniform('u_specularFactor', specFactor);
+
+  Ref<OGLWireFrameShader> wireFrameShader = shader;
+  wireFrameShader.setWireFrame(wireFrame);
+  mat.setUniform('u_doubleSided', Integer(doubleSided ? 1 : 0));
+}
+
+/// helper function to draw a mesh given a color + an array of transforms
+/// \dfgPresetCreate
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.drawPolygonMeshInstances!(String name, Color color, Color specular, Float32 specFactor, Xfo transforms[], PolygonMesh mesh, Boolean wireFrame, Boolean doubleSided, out Vec3 dummyResult, out InlineInstance instance)
+{
+  this.drawPolygonMeshInstances(
+    false,
+    name,
+    color,
+    specular,
+    specFactor,
+    transforms,
+    mesh,
+    wireFrame,
+    doubleSided,
+    instance);
+}
+
+/// helper function to draw a mesh given a color + an array of transforms.
+/// This method can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \dfgPresetCreate
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.accumulateDrawPolygonMeshInstances!(Color color, Color specular, Float32 specFactor, Xfo transforms[], PolygonMesh mesh, Boolean wireFrame, Boolean doubleSided, out InlineInstance instance)
+{
+  this.drawPolygonMeshInstances(
+    true,
+    "accumulateDrawPolygonMeshInstances",
+    color,
+    specular,
+    specFactor,
+    transforms,
+    mesh,
+    wireFrame,
+    doubleSided,
+    instance);
+}
+
+/// helper function to draw a mesh given a color + a single transform
+/// \dfgPresetCreate
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.drawPolygonMesh!(String name, Color color, Color specular, Float32 specFactor, Xfo transform, PolygonMesh mesh, Boolean wireFrame, Boolean doubleSided, out Vec3 dummyResult, out InlineInstance instance)
+{
+  Xfo transforms[];
+  transforms.push(transform);
+  this.drawPolygonMeshInstances(name, color, specular, specFactor, transforms, mesh, wireFrame, doubleSided, dummyResult, instance);
+}
+
+/// helper function to draw a mesh given a color + a single transform.
+/// This method can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \dfgPresetCreate
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.accumulateDrawPolygonMesh!(Color color, Color specular, Float32 specFactor, Xfo transform, PolygonMesh mesh, Boolean wireFrame, Boolean doubleSided, out InlineInstance instance)
+{
+  Xfo transforms[];
+  transforms.push(transform);
+  this.accumulateDrawPolygonMeshInstances(color, specular, specFactor, transforms, mesh, wireFrame, doubleSided, instance);
+}
+
+/// \internal
+private DrawingHandle.drawColoredPolygonMeshInstances!(Boolean accumulate, String name, Color color, Color specular, Float32 specFactor, Xfo transforms[], PolygonMesh mesh, Boolean wireFrame, Boolean doubleSided, out InlineInstance instance)
+{
+  // check that the geometry contains the vertex color attribute
+  GeometryAttributes attributes = mesh.getAttributes();
+  ColorAttribute vertexColors = attributes.getAttribute("vertexColors");
+  if(!vertexColors)
+  {
+    setError("DrawingHandle.drawColoredPolygonMeshInstances: The geometry has no vertexColors attributes");
+    return;
+  }
+
+  String uidName = this.uid() + '_' + name;
+
+  InlineDrawing draw = this.getDrawing();
+  InlineShader shader = draw.registerShader(OGLWireFrameShader('DrawingHandleSurfaceShader', OGLSurfaceVertexColorShader()));
+  InlineMeshShape shape = this.createInlinePolygonMeshShape(accumulate, mesh, uidName);
+
+  InlineMaterial mat = this.drawShapeInstances(uidName, shader, transforms, shape, instance);
+  mat.setUniform('u_diffuseColor', color);
+  mat.setUniform('u_specularColor', specular);
+  mat.setUniform('u_specularFactor', specFactor);
+  Ref<OGLWireFrameShader> wireFrameShader = shader;
+  wireFrameShader.setWireFrame(wireFrame);
+  mat.setUniform('u_doubleSided', Integer(doubleSided ? 1 : 0));
+}
+
+/// helper function to draw a mesh given a color + an array of transforms
+/// \dfgPresetCreate
+/// \dfgPresetDefault color {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.drawColoredPolygonMeshInstances!(String name, Color color, Color specular, Float32 specFactor, Xfo transforms[], PolygonMesh mesh, Boolean wireFrame, Boolean doubleSided, out Vec3 dummyResult, out InlineInstance instance)
+{
+  this.drawColoredPolygonMeshInstances(
+    false,
+    name,
+    color,
+    specular, 
+    specFactor, 
+    transforms,
+    mesh, 
+    wireFrame, 
+    doubleSided, 
+    instance);
+}
+
+/// helper function to draw a mesh given a color + an array of transforms.
+/// This method can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \dfgPresetCreate
+/// \dfgPresetDefault color {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.accumulateDrawColoredPolygonMeshInstances!(Color color, Color specular, Float32 specFactor, Xfo transforms[], PolygonMesh mesh, Boolean wireFrame, Boolean doubleSided, out InlineInstance instance)
+{
+  this.drawColoredPolygonMeshInstances(
+    true,
+    "accumulateDrawColoredPolygonMeshInstances",
+    color,
+    specular, 
+    specFactor, 
+    transforms,
+    mesh, 
+    wireFrame, 
+    doubleSided, 
+    instance);
+}
+
+/// helper function to draw a mesh given a color + a single transform
+/// \dfgPresetCreate
+/// \dfgPresetDefault color {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.drawColoredPolygonMesh!(String name, Color color, Color specular, Float32 specFactor, Xfo transform, PolygonMesh mesh, Boolean wireFrame, Boolean doubleSided, out Vec3 dummyResult, out InlineInstance instance)
+{
+  Xfo transforms[];
+  transforms.push(transform);
+  this.drawColoredPolygonMeshInstances(name, color, specular, specFactor, transforms, mesh, wireFrame, doubleSided, dummyResult, instance);
+}
+
+/// helper function to draw a mesh given a color + a single transform.
+/// This method can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \dfgPresetCreate
+/// \dfgPresetDefault color {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0}
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.accumulateDrawColoredPolygonMesh!(Color color, Color specular, Float32 specFactor, Xfo transform, PolygonMesh mesh, Boolean wireFrame, Boolean doubleSided, out InlineInstance instance)
+{
+  Xfo transforms[];
+  transforms.push(transform);
+  this.accumulateDrawColoredPolygonMeshInstances(color, specular, specFactor, transforms, mesh, wireFrame, doubleSided, instance);
+}
+
+/// \internal
+private DrawingHandle.drawTexturedPolygonMeshInstances!(Boolean accumulate, String name, String filePath, Color specular, Float32 specFactor, Color ambient, Xfo transforms[], PolygonMesh mesh, Boolean wireFrame, Boolean doubleSided, out InlineInstance instance)
+{
+  String uidName = this.uid() + '_' + name;
+
+  InlineDrawing draw = this.getDrawing();
+  InlineShader shader = draw.registerShader(OGLWireFrameShader('DrawingHandleSurfaceTextureShader', OGLSurfaceTextureShader()));
+  InlineMeshShape shape = this.createInlinePolygonMeshShape(accumulate, mesh, uidName);
+
+  InlineMaterial mat = this.drawShapeInstances(uidName, shader, transforms, shape, instance);
+
+  InlineFileBasedTexture texture = null;
+  InlineUniform textureUniform = mat.getUniform('u_diffuseTexture');
+  if(textureUniform.getName() != 'u_diffuseTexture')
+  {
+    texture = InlineFileBasedTexture(filePath);
+    mat.setUniform('u_diffuseTexture', texture);
+  }
+  else
+    texture = textureUniform.getInlineTexture();
+
+  if(texture.getName() != filePath)
+  {
+    texture = InlineFileBasedTexture(filePath);
+    mat.setUniform('u_diffuseTexture', texture);
+  }
+
+  mat.setUniform('u_specularColor', specular);
+  mat.setUniform('u_specularFactor', specFactor);
+  mat.setUniform('u_ambientColor', ambient);
+
+  Ref<OGLWireFrameShader> wireFrameShader = shader;
+  wireFrameShader.setWireFrame(wireFrame);
+  mat.setUniform('u_doubleSided', Integer(doubleSided ? 1 : 0));
+}
+
+/// helper function to draw a mesh given a color + an array of transforms
+/// \dfgPresetCreate
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.drawTexturedPolygonMeshInstances!(String name, String filePath, Color specular, Float32 specFactor, Color ambient, Xfo transforms[], PolygonMesh mesh, Boolean wireFrame, Boolean doubleSided, out Vec3 dummyResult, out InlineInstance instance)
+{
+  this.drawTexturedPolygonMeshInstances(
+    false,
+    name, 
+    filePath, 
+    specular, 
+    specFactor, 
+    ambient, 
+    transforms,
+    mesh, 
+    wireFrame, 
+    doubleSided, 
+    instance);
+}
+
+/// helper function to draw a mesh given a color + an array of transforms.
+/// This method can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \dfgPresetCreate
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.accumulateDrawTexturedPolygonMeshInstances!(String filePath, Color specular, Float32 specFactor, Color ambient, Xfo transforms[], PolygonMesh mesh, Boolean wireFrame, Boolean doubleSided, out InlineInstance instance)
+{
+  this.drawTexturedPolygonMeshInstances(
+    true,
+    "accumulateDrawTexturedPolygonMeshInstances", 
+    filePath, 
+    specular, 
+    specFactor, 
+    ambient, 
+    transforms,
+    mesh, 
+    wireFrame, 
+    doubleSided, 
+    instance);
+}
+
+/// helper function to draw a mesh given a color + a single transform
+/// \dfgPresetCreate
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.drawTexturedPolygonMesh!(String name, String filePath, Color specular, Float32 specFactor, Color ambient, Xfo transform, PolygonMesh mesh, Boolean wireFrame, Boolean doubleSided, out Vec3 dummyResult, out InlineInstance instance)
+{
+  Xfo transforms[];
+  transforms.push(transform);
+  this.drawTexturedPolygonMeshInstances(name, filePath, specular, specFactor, ambient, transforms, mesh, wireFrame, doubleSided, dummyResult, instance);
+}
+
+/// helper function to draw a mesh given a color + a single transform.
+/// This method can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \dfgPresetCreate
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.accumulateDrawTexturedPolygonMesh!(String filePath, Color specular, Float32 specFactor, Color ambient, Xfo transform, PolygonMesh mesh, Boolean wireFrame, Boolean doubleSided, out InlineInstance instance)
+{
+  Xfo transforms[];
+  transforms.push(transform);
+  this.accumulateDrawTexturedPolygonMeshInstances(filePath, specular, specFactor, ambient, transforms, mesh, wireFrame, doubleSided, instance);
+}
+
+/// helper function to draw axes at given transforms
+/// \dfgPresetCreate
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.drawAxesInstances!(String name, Xfo transforms[], out Vec3 dummyResult, out InlineInstance instance)
+{
+  String uidName = this.uid() + '_' + name;
+
+  InlineDrawing draw = this.getDrawing();
+  InlineShader shader = draw.registerShader(OGLFlatVertexColorShader);
+  InlineDebugShape shape = draw.getShape(uidName);
+  if(shape == null)
+  {
+    shape = draw.registerShape(InlineDebugShape(uidName));
+    shape.drawAxes(Xfo(), false);
+  }
+
+  this.drawShapeInstances(uidName, shader, transforms, shape, instance);
+}
+
+/// helper function to draw a single axes
+/// \dfgPresetCreate
+function DrawingHandle.drawAxes!(String name, Xfo transform, out Vec3 dummyResult, out InlineInstance instance)
+{
+  Xfo transforms[];
+  transforms.push(transform);
+  this.drawAxesInstances(name, transforms, dummyResult, instance);
+}
+
+/// \internal
+private InlineShape DrawingHandle.createDrawTexturedPlaneShape!(Boolean accumulate, io String uidName) {
+  InlineMeshShape shape = null;
+  if(accumulate)
+  {
+    uidName += "_" + String(this.nextUniqueID++);
+    PolygonMesh plane();
+    plane.addPlane(Xfo(), 1, 1, 1, 1, true, true);
+    shape = InlineMeshShape(uidName, plane);
+  }
+  else
+  {
+    InlineDrawing draw = this.getDrawing();
+    shape = draw.getShape(uidName);
+    if(!shape) 
+    {
+      PolygonMesh plane();
+      plane.addPlane(Xfo(), 1, 1, 1, 1, true, true);
+      shape = draw.registerShape(InlineMeshShape(uidName, plane));
+    }
+  }
+  return shape;
+}
+
+/// \internal
+private Ref<InlineProceduralTexture> DrawingHandle.createDrawTexturedPlane!(
+  Boolean accumulate,
+  String name,
+  Boolean mirrorU,
+  Boolean mirrorV,
+  Boolean discardAlpha,
+  Xfo transform,
+  out InlineInstance instance)
+{
+  Xfo transforms[];
+  transforms.push(transform);
+
+  String uidName = this.uid() + '_' + name;
+ 
+  InlineDrawing draw = this.getDrawing();
+  InlineShader shader = draw.registerShader(OGLFlatTextureShader);
+  InlineMeshShape shape = this.createDrawTexturedPlaneShape(accumulate, uidName);
+
+  InlineMaterial mat = this.drawShapeInstances(uidName, shader, transforms, shape, instance);
+  mat.setUniform('u_mirrorU', Integer(mirrorU ? 1 : 0));
+  mat.setUniform('u_mirrorV', Integer(mirrorV ? 1 : 0));
+  mat.setUniform('u_discardAlpha', Integer(discardAlpha ? 1 : 0));
+
+  InlineProceduralTexture texture = null;
+  InlineUniform textureUniform = mat.getUniform('u_texture');
+  if(textureUniform.getName() != 'u_texture')
+  {
+    texture = InlineProceduralTexture(uidName);
+    mat.setUniform('u_texture', texture);
+  }
+  else
+  {
+    texture = textureUniform.getInlineTexture();
+  }
+
+  return texture;
+}
+
+/// helper function to draw a plane given texture values + a single transform
+/// \dfgPresetCreate
+/// \dfgPresetDefault width 512
+/// \dfgPresetDefault height 512
+/// \dfgPresetDefault mirrorU false
+/// \dfgPresetDefault mirrorV true
+/// \dfgPresetDefault discardAlpha false
+function DrawingHandle.drawTexturedPlane!(
+  String name,
+  UInt32 width,
+  UInt32 height,
+  Color pixels[],
+  Boolean mirrorU,
+  Boolean mirrorV,
+  Boolean discardAlpha,
+  Xfo transform,
+  out Vec3 dummyResult,
+  out InlineInstance instance
+  )
+{
+  Ref<InlineProceduralTexture> texture = this.createDrawTexturedPlane(
+    false,
+    name + "_Color_texturedPlane",
+    mirrorU,
+    mirrorV,
+    discardAlpha,
+    transform,
+    instance);
+  texture.update(width, height, pixels);
+}
+
+/// helper function to draw a plane given texture values + a single transform.
+/// This method can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \dfgPresetCreate
+/// \dfgPresetDefault width 512
+/// \dfgPresetDefault height 512
+/// \dfgPresetDefault mirrorU false
+/// \dfgPresetDefault mirrorV true
+/// \dfgPresetDefault discardAlpha false
+function DrawingHandle.accumulateDrawTexturedPlane!(
+  UInt32 width,
+  UInt32 height,
+  Color pixels[],
+  Boolean mirrorU,
+  Boolean mirrorV,
+  Boolean discardAlpha,
+  Xfo transform,
+  out InlineInstance instance)
+{
+  Ref<InlineProceduralTexture> texture = this.createDrawTexturedPlane(
+    true,
+    "accumulateDrawTexturedPlane_Color",
+    mirrorU,
+    mirrorV,
+    discardAlpha,
+    transform,
+    instance);
+  texture.update(width, height, pixels);
+}
+
+/// helper function to draw a plane given texture values + a single transform.
+/// \dfgPresetCreate
+/// \dfgPresetDefault width 512
+/// \dfgPresetDefault height 512
+/// \dfgPresetDefault mirrorU false
+/// \dfgPresetDefault mirrorV true
+/// \dfgPresetDefault discardAlpha false
+function DrawingHandle.drawTexturedPlane!(
+  String name,
+  UInt32 width,
+  UInt32 height,
+  Float32 pixels[],
+  Boolean mirrorU,
+  Boolean mirrorV,
+  Boolean discardAlpha,
+  Xfo transform,
+  out Vec3 dummyResult,
+  out InlineInstance instance)
+{
+  Ref<InlineProceduralTexture> texture = this.createDrawTexturedPlane(
+    false,
+    name + "_Float_texturedPlane",
+    mirrorU,
+    mirrorV,
+    discardAlpha,
+    transform,
+    instance);
+  texture.update(width, height, pixels);
+}
+
+/// helper function to draw a plane given texture values + a single transform.
+/// This method can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \dfgPresetCreate
+/// \dfgPresetDefault width 512
+/// \dfgPresetDefault height 512
+/// \dfgPresetDefault mirrorU false
+/// \dfgPresetDefault mirrorV true
+/// \dfgPresetDefault discardAlpha false
+function DrawingHandle.accumulateDrawTexturedPlane!(
+  UInt32 width,
+  UInt32 height,
+  Float32 pixels[],
+  Boolean mirrorU,
+  Boolean mirrorV,
+  Boolean discardAlpha,
+  Xfo transform,
+  out InlineInstance instance)
+{
+  Ref<InlineProceduralTexture> texture = this.createDrawTexturedPlane(
+    true,
+    "accumulateDrawTexturedPlane_Float",
+    mirrorU,
+    mirrorV,
+    discardAlpha,
+    transform,
+    instance);
+  texture.update(width, height, pixels);
+}
+
+/// helper function to get a debug shape
+/// \dfgPresetOmit
+function InlineDebugShape DrawingHandle.getDebugShape!(String name, out Vec3 dummyResult) {
+  String uidName = this.uid() + '_' + name;
+
+  InlineDrawing draw = this.getDrawing();
+  InlineDebugShape shape = draw.registerShape(InlineDebugShape(uidName));
+  InlineTransform root = this.getRootTransform();
+  InlineTransform transform = root.getChild(uidName);
+  if(transform == null)
+  {
+    transform = StaticInlineTransform(uidName, root, Xfo());
+    shape.transform = transform;
+    OGLDebugPointShader shader = draw.registerShader(OGLDebugPointShader);
+    InlineMaterial mat = shader.getOrCreateMaterial(uidName);
+    InlineInstance instance = SimpleInlineInstance(uidName, transform, shape, this.visibility);
+    instance.addMaterial(mat);
+  }
+  return shape;
+}
+
+/// helper function to get a debug shape
+/// \dfgPresetCreate
+/// \dfgPresetDefault name "debug"
+function InlineDebugShape DrawingHandle.getDebugShape!(String name) {
+  Vec3 v;
+  return this.getDebugShape(name, v);
+}
+
+/// helper function to clear a debug drawing shape
+/// \dfgPresetOmit
+function InlineDebugShape DrawingHandle.getEmptyDebugShape!(String name, out Vec3 dummyResult) {
+  InlineDebugShape shape = this.getDebugShape(name, dummyResult);
+  if(shape != null)
+    shape.clear();
+  return shape;
+}
+
+/// helper function to clear a debug drawing shape
+/// \dfgPresetCreate
+/// \dfgPresetDefault name "debug"
+function InlineDebugShape DrawingHandle.getEmptyDebugShape!(String name) {
+  Vec3 v;
+  return this.getEmptyDebugShape(name, v);
+}
+
+/// helper function to remove a debug drawing shape
+/// \dfgPresetOmit
+function DrawingHandle.removeDebugShape!(String name, out Vec3 dummyResult) {
+  String uidName = this.uid() + '_' + name;
+
+  InlineTransform transform = this.getRootTransform().getChild(uidName);
+  if(transform != null)
+  {
+    InlineTransform nullTranform = null;
+    transform.setParent(nullTranform);
+  }
+}
+
+/// helper function to remove a debug drawing shape
+/// \dfgPresetCreate
+/// \dfgPresetDefault name "debug"
+function DrawingHandle.removeDebugShape!(String name) {
+  Vec3 v;
+  this.removeDebugShape(name, v);
+}
+
+/// helper function to draw a surface Vec3 attribute
+/// \dfgPresetDefault attribute "positions"
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault radius 2.0
+function DrawingHandle.drawAttributeAsPosition!(Geometry geometry, String attribute, Xfo xfo, Color color, Float32 radius, out InlineInstance instance) {
+  if(!geometry || !attribute)
+    return;
+
+  GeometryAttributes geoAttributes = geometry.getAttributes();
+  Vec3Attribute inputPositions = geoAttributes.getAttribute('positions');
+  Vec3Attribute vec3InputAttr = geoAttributes.getAttribute(attribute);
+  ColorAttribute colorInputAttr = geoAttributes.getAttribute(attribute);
+  if(!vec3InputAttr && !colorInputAttr) {
+    if (geoAttributes.has(attribute))
+      report('drawAttributeAsPosition: Attribute "'+attribute+'" has wrong type.');
+    else
+      report('drawAttributeAsPosition: Attribute "'+attribute+'" not found on input geometry.');
+    return;
+  }
+
+  String uidName = this.uid() + '_' + geometry.uid() + '_' + attribute;
+
+  InlineDrawing draw = this.getDrawing();
+  InlineShader shader = draw.registerShader(OGLDebugPointShader);
+  InlinePointsShape shape = draw.getShape(uidName);
+  Points points = null;
+  if(shape == null) {
+    points = Points();
+    shape = draw.registerShape(InlinePointsShape(uidName, points));
+  } else {
+    points = shape.getPoints();
+  }
+
+  points.resize(geoAttributes.size());
+
+  // ensure to contain the vertex color attribute
+  GeometryAttributes pointsAttributes = points.getAttributes();
+  ColorAttribute vertexColors = pointsAttributes.getOrCreateColorAttribute("vertexColors");
+  pointsAttributes.getOrCreateScalarAttribute("pointSizes");
+
+  Vec3Attribute positions = pointsAttributes.getAttribute('positions');
+  if(vec3InputAttr)
+    positions.values = vec3InputAttr.values.clone();
+  else
+    positions.values = inputPositions.values.clone();
+  positions.incrementVersion();
+
+  if(colorInputAttr) {
+    vertexColors.values = colorInputAttr.values.clone();
+    vertexColors.incrementVersion();
+  }
+
+  Xfo xfos[];
+  xfos.push(xfo);
+ 
+  InlineMaterial mat = this.drawShapeInstances(uidName, shader, xfos, shape, instance);
+  mat.setUniform('u_usePointSizes', 0);
+  mat.setUniform('u_defaultPointSize', radius);
+  mat.setUniform('u_useVertexColors', colorInputAttr == null ? 0 : 1);
+  mat.setUniform('u_defaultColor', color);
+}
+
+/// helper function to draw a surface Vec3 attribute
+/// \dfgPresetDefault attribute "pointSizes"
+/// \dfgPresetDefault minValue 0.0
+/// \dfgPresetDefault maxValue 1.0
+/// \dfgPresetDefault minRadius 1.0
+/// \dfgPresetDefault maxRadius 8.0
+/// \dfgPresetDefault minColor {"r": 0.0, "g": 0.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault maxColor {"r": 0.0, "g": 1.0, "b": 1.0, "a": 1.0}
+function DrawingHandle.drawAttributeAsFloat32!(
+  Geometry geometry,
+  String attribute,
+  Xfo xfo,
+  Float32 minValue,
+  Float32 maxValue,
+  Float32 minRadius,
+  Float32 maxRadius,
+  Color minColor,
+  Color maxColor,
+  out InlineInstance instance) 
+{
+  if(!geometry || !attribute)
+    return;
+
+  GeometryAttributes geoAttributes = geometry.getAttributes();
+  Vec3Attribute inputPositions = geoAttributes.getAttribute('positions');
+  ScalarAttribute scalarInputAttr = geoAttributes.getAttribute(attribute);
+  IntegerAttribute integerInputAttr = geoAttributes.getAttribute(attribute);
+  UInt32Attribute uint32InputAttr = geoAttributes.getAttribute(attribute);
+  Vec3Attribute vec3InputAttr = geoAttributes.getAttribute(attribute);
+  if(!scalarInputAttr && !integerInputAttr && !uint32InputAttr && !vec3InputAttr) {
+    if (geoAttributes.has(attribute))
+      report('drawAttributeAsFloat32: Attribute "'+attribute+'" has wrong type.');
+    else
+      report('drawAttributeAsFloat32: Attribute "'+attribute+'" not found on input geometry.');
+    return;
+  }
+
+  String uidName = this.uid() + '_' + geometry.uid() + '_' + attribute;
+
+  InlineDrawing draw = this.getDrawing();
+  InlineShader shader = draw.registerShader(OGLDebugPointShader);
+  InlinePointsShape shape = draw.getShape(uidName);
+  Points points = null;
+  if(shape == null) {
+    points = Points();
+    shape = draw.registerShape(InlinePointsShape(uidName, points));
+  } else {
+    points = shape.getPoints();
+  }
+
+  points.resize(geoAttributes.size());
+
+  // ensure to contain the vertex color attribute
+  GeometryAttributes pointsAttributes = points.getAttributes();
+
+  Vec3Attribute positions = pointsAttributes.getAttribute('positions');
+  positions.values = inputPositions.values.clone();
+  positions.version = inputPositions.version;
+
+  ScalarAttribute pointSizes = pointsAttributes.getOrCreateScalarAttribute("pointSizes");
+  ColorAttribute vertexColors = pointsAttributes.getOrCreateColorAttribute('vertexColors');
+
+  if(scalarInputAttr) {
+    for(Size i=0;i<pointsAttributes.size();i++) {
+      Scalar v = Math_clamp(scalarInputAttr.values[i], minValue, maxValue);
+      if(maxValue == minValue)
+        v = 1.0;
+      else
+        v = (v - minValue) / (maxValue - minValue);
+      pointSizes.values[i] = Math_linearInterpolate(minRadius, maxRadius, v);
+      vertexColors.values[i] = minColor.linearInterpolate(maxColor, v);
+    }
+  } else if(integerInputAttr) {
+    for(Size i=0;i<pointsAttributes.size();i++) {
+      Scalar v = Math_clamp(Float32(integerInputAttr.values[i]), minValue, maxValue);
+      if(maxValue == minValue)
+        v = 1.0;
+      else
+        v = (v - minValue) / (maxValue - minValue);
+      pointSizes.values[i] = Math_linearInterpolate(minRadius, maxRadius, v);
+      vertexColors.values[i] = minColor.linearInterpolate(maxColor, v);
+    }
+  } else if(uint32InputAttr) {
+    for(Size i=0;i<pointsAttributes.size();i++) {
+      Scalar v = Math_clamp(Float32(uint32InputAttr.values[i]), minValue, maxValue);
+      if(maxValue == minValue)
+        v = 1.0;
+      else
+        v = (v - minValue) / (maxValue - minValue);
+      pointSizes.values[i] = Math_linearInterpolate(minRadius, maxRadius, v);
+      vertexColors.values[i] = minColor.linearInterpolate(maxColor, v);
+    }
+  } else if(vec3InputAttr) {
+    for(Size i=0;i<pointsAttributes.size();i++) {
+      Scalar v = Math_clamp(Float32(vec3InputAttr.values[i].length()), minValue, maxValue);
+      if(maxValue == minValue)
+        v = 1.0;
+      else
+        v = (v - minValue) / (maxValue - minValue);
+      pointSizes.values[i] = Math_linearInterpolate(minRadius, maxRadius, v);
+      vertexColors.values[i] = minColor.linearInterpolate(maxColor, v);
+    }
+  }
+  pointSizes.incrementVersion();
+  vertexColors.incrementVersion();
+
+  Xfo xfos[];
+  xfos.push(xfo);
+ 
+  InlineMaterial mat = this.drawShapeInstances(uidName, shader, xfos, shape, instance);
+  mat.setUniform('u_usePointSizes', 1);
+  mat.setUniform('u_useVertexColors', 1);
+}
+
+/// helper function to draw a surface Vec3 attribute
+/// \dfgPresetDefault attribute "vertexColors"
+/// \dfgPresetDefault radius 16.0
+function DrawingHandle.drawAttributeAsColor!(Geometry geometry, String attribute, Xfo xfo, Float32 radius, out InlineInstance instance) {
+  if(!geometry || !attribute)
+    return;
+
+  GeometryAttributes geoAttributes = geometry.getAttributes();
+  Vec3Attribute inputPositions = geoAttributes.getAttribute('positions');
+  ColorAttribute colorInputAttr = geoAttributes.getAttribute(attribute);
+  RGBAttribute rgbInputAttr = geoAttributes.getAttribute(attribute);
+  RGBAAttribute rgbaInputAttr = geoAttributes.getAttribute(attribute);
+  if(!colorInputAttr && !rgbInputAttr && !rgbaInputAttr) {
+    if (geoAttributes.has(attribute))
+      report('drawAttributeAsColor: Attribute "'+attribute+'" has wrong type.');
+    else
+      report('drawAttributeAsColor: Attribute "'+attribute+'" not found on input geometry.');
+    return;
+  }
+
+  String uidName = this.uid() + '_' + geometry.uid() + '_' + attribute;
+
+  InlineDrawing draw = this.getDrawing();
+  InlineShader shader = draw.registerShader(OGLDebugPointShader);
+  InlinePointsShape shape = draw.getShape(uidName);
+  Points points = null;
+  if(shape == null) {
+    points = Points();
+    shape = draw.registerShape(InlinePointsShape(uidName, points));
+  } else {
+    points = shape.getPoints();
+  }
+
+  points.resize(geoAttributes.size());
+
+  // ensure to contain the vertex color attribute
+  GeometryAttributes pointsAttributes = points.getAttributes();
+  pointsAttributes.getOrCreateScalarAttribute("pointSizes");
+
+  Vec3Attribute positions = pointsAttributes.getAttribute('positions');
+  positions.values = inputPositions.values.clone();
+  positions.version = inputPositions.version;
+
+  ColorAttribute vertexColors = pointsAttributes.getOrCreateColorAttribute('vertexColors');
+  if(colorInputAttr) {
+    vertexColors.values = colorInputAttr.values.clone();
+  } else if(rgbInputAttr) {
+    for(Size i = 0; i < rgbInputAttr.values.size(); i++) {
+      RGB c = rgbInputAttr.values[i];
+      vertexColors.values[i] = Color(Integer(c.r), Integer(c.g), Integer(c.b), 255);
+    }
+  } else if(rgbaInputAttr) {
+    for(Size i = 0; i < rgbaInputAttr.values.size(); i++) {
+      RGBA c = rgbaInputAttr.values[i];
+      vertexColors.values[i] = Color(Integer(c.r), Integer(c.g), Integer(c.b), Integer(c.a));
+    }
+  }
+  vertexColors.incrementVersion();
+
+  Xfo xfos[];
+  xfos.push(xfo);
+ 
+  InlineMaterial mat = this.drawShapeInstances(uidName, shader, xfos, shape, instance);
+  mat.setUniform('u_usePointSizes', 0);
+  mat.setUniform('u_defaultPointSize', radius);
+  mat.setUniform('u_useVertexColors', 1);
+}
+
+/// helper function to draw a surface Vec3 attribute
+/// \dfgPresetDefault attribute "normals"
+/// \dfgPresetDefault color {"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault scale 1.0
+function DrawingHandle.drawAttributeAsVec3!(Geometry geometry, String attribute, Xfo xfo, Color color, Float32 scale, out InlineInstance instance) {
+  if(!geometry || !attribute)
+    return;
+
+  GeometryAttributes geoAttributes = geometry.getAttributes();
+  Vec3Attribute inputPositions = geoAttributes.getAttribute('positions');
+  Vec3Attribute inputAttr = geoAttributes.getAttribute(attribute);
+  if(!inputAttr) {
+    if (geoAttributes.has(attribute))
+      report('drawAttributeAsVec3: Attribute "'+attribute+'" has wrong type.');
+    else
+      report('drawAttributeAsVec3: Attribute "'+attribute+'" not found on input geometry.');
+    return;
+  }
+
+  String uidName = this.uid() + '_' + geometry.uid() + '_' + attribute;
+
+  InlineDrawing draw = this.getDrawing();
+  InlineShader shader = draw.registerShader(OGLDebugVectorShader);
+  InlinePointsShape shape = draw.getShape(uidName);
+  Points points = null;
+  if(shape == null) {
+    points = Points();
+    shape = draw.registerShape(InlinePointsShape(uidName, points));
+  } else {
+    points = shape.getPoints();
+  }
+
+  points.resize(geoAttributes.size());
+
+  // ensure to contain the vertex color attribute
+  GeometryAttributes pointsAttributes = points.getAttributes();
+
+  Vec3Attribute positions = pointsAttributes.getAttribute('positions');
+  positions.values = inputPositions.values.clone();
+  positions.version = inputPositions.version;
+
+  Vec3Attribute vectors = pointsAttributes.getOrCreateVec3Attribute("vectors");
+  vectors.values = inputAttr.values.clone();
+  vectors.incrementVersion();
+
+  Xfo xfos[];
+  xfos.push(xfo);
+ 
+  InlineMaterial mat = this.drawShapeInstances(uidName, shader, xfos, shape, instance);
+  mat.setUniform('u_color', color);
+  mat.setUniform('u_scale', scale);
+}
+
+/// helper function to draw a surface Vec3 attribute
+/// \dfgPresetDefault attribute "matrices"
+/// \dfgPresetDefault scale 1.0
+/// \dfgPresetDefault local false
+function DrawingHandle.drawAttributeAsAxes!(Geometry geometry, String attribute, Xfo xfo, Float32 scale, Boolean local, out InlineInstance instance) {
+  
+  if(!geometry || !attribute)
+    return;
+
+  GeometryAttributes geoAttributes = geometry.getAttributes();
+  GeometryAttribute inputAttr = geoAttributes.getAttribute(attribute);
+  if(!inputAttr) {
+    if (geoAttributes.has(attribute))
+      report('drawAttributeAsAxes: Attribute "'+attribute+'" has wrong type.');
+    else
+      report('drawAttributeAsAxes: Attribute "'+attribute+'" not found on input geometry.');
+    return;
+  }
+
+  String uidName = this.uid() + '_' + geometry.uid() + '_' + attribute;
+
+  InlineDrawing draw = this.getDrawing();
+  InlineShader shader = draw.registerShader(OGLDebugAxesShader);
+  InlinePointsShape shape = draw.getShape(uidName);
+  Points points = null;
+  if(shape == null) {
+    points = Points();
+    shape = draw.registerShape(InlinePointsShape(uidName, points));
+  } else {
+    points = shape.getPoints();
+  }
+
+  points.resize(geoAttributes.size());
+
+  // ensure to contain the vertex color attribute
+  GeometryAttributes pointsAttributes = points.getAttributes();
+  Vec3Attribute positions = pointsAttributes.getOrCreateVec3Attribute("positions");
+  Vec3Attribute xdir = pointsAttributes.getOrCreateVec3Attribute("xdir");
+  Vec3Attribute ydir = pointsAttributes.getOrCreateVec3Attribute("ydir");
+  Vec3Attribute zdir = pointsAttributes.getOrCreateVec3Attribute("zdir");
+
+  Vec3Attribute inputPositions = geoAttributes.getAttribute('positions');
+  Vec3Attribute inputAttrVec3(inputAttr);
+  QuatAttribute inputAttrQuat(inputAttr);
+  Mat44Attribute inputAttrMat44(inputAttr);
+  if(inputAttrVec3) {
+    for(Size i=0;i<inputAttrVec3.values.size();i++) {
+      if(local)
+        positions.values[i] = inputAttrVec3.values[i] + inputPositions.values[i];
+      else
+        positions.values[i] = inputAttrVec3.values[i];
+      xdir.values[i] = Vec3(1.0, 0.0, 0.0);
+      ydir.values[i] = Vec3(0.0, 1.0, 0.0);
+      zdir.values[i] = Vec3(0.0, 0.0, 1.0);
+    }    
+  }
+  else if(inputAttrQuat) {
+    for(Size i=0;i<inputAttrQuat.values.size();i++) {
+      positions.values[i] = inputPositions.values[i];
+      xdir.values[i] = inputAttrQuat.values[i].getXaxis();
+      ydir.values[i] = inputAttrQuat.values[i].getYaxis();
+      zdir.values[i] = inputAttrQuat.values[i].getZaxis();
+    }
+  }
+  else if(inputAttrMat44) {
+    for(Size i=0;i<inputAttrMat44.values.size();i++) {
+      Xfo transform = inputAttrMat44.values[i];
+      if(local)
+        positions.values[i] = transform.tr + inputPositions.values[i];
+      else
+        positions.values[i] = transform.tr;
+      xdir.values[i] = transform.ori.getXaxis() * transform.sc.x;
+      ydir.values[i] = transform.ori.getYaxis() * transform.sc.y;
+      zdir.values[i] = transform.ori.getZaxis() * transform.sc.z;
+    }    
+  }
+
+  positions.incrementVersion();
+  xdir.incrementVersion();
+  ydir.incrementVersion();
+  zdir.incrementVersion();
+
+  Xfo xfos[];
+  xfos.push(xfo);
+
+  InlineMaterial mat = this.drawShapeInstances(uidName, shader, xfos, shape, instance);
+  mat.setUniform('u_scale', scale);
+}
+
+/// \internal
+private DrawingHandle.drawPolygonMeshArray!(
+  Boolean accumulate,
+  String name,
+  Color color,
+  Color specular,
+  Float32 specFactor,
+  PolygonMesh masters[],
+  Xfo transforms[],
+  Index indices[],
+  Boolean wireFrame,
+  Boolean doubleSided,
+  out InlineInstance instance) 
+{
+  /// create a lookup to combine all 
+  /// draw instructions sharing the same
+  /// mesh (the same index)
+  Xfo transformsPerIndex[Index][];
+  if(indices.size() == 0) {
+    for(Size i=0;i<masters.size();i++) {
+      Xfo xfos[](1);
+      if(i < transforms.size())
+        xfos[0] = transforms[i];
+      transformsPerIndex[i] = xfos;
+    }
+   } else {
+    for(Size i=0;i<indices.size();i++) {
+      Index idx = indices[i];
+      if(i >= transforms.size())
+        break;
+      Xfo xfos[];
+      xfos = transformsPerIndex.get(idx, xfos);
+      xfos.push(transforms[i]);
+      transformsPerIndex[idx] = xfos;
+    }
+  }
+
+  String nameWithHandle = name + "_" + this.uid() + "_DrawPolygonMeshArray_";
+
+  /// draw each one of the groups
+  for(idx in transformsPerIndex) {
+
+    if(idx >= masters.size())
+      continue;
+
+    Xfo xfos[] = transformsPerIndex[idx];
+    PolygonMesh master = masters[idx];
+
+    // We will deprecate the relyance on master.getDebugName(),
+    // since by default meshes have all the same debug name,
+    // in which case this preset doesn't work.
+    // However, FE-6278 fixed that by relying on master.uid(),
+    // which is bad because if meshes are created at each frame,
+    // these will never be released.
+    // The in-between fix is to rely only on the index.
+    // This will still "leak" if the shape count is resized down,
+    // but then a more serious rewrite is required to manage everything
+    // in the best way.
+    String uniqueName = nameWithHandle + idx;
+    this.drawPolygonMeshInstances(accumulate, uniqueName, color, specular, specFactor, xfos, master, wireFrame, doubleSided, instance);
+  }
+}
+
+/// Helper function for the InlineDrawing DrawingHandle data type
+/// to draw a list of objects given an index table and a list of transforms.
+/// \dfgPresetCreate
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.drawPolygonMeshArray!(
+  String name,
+  Color color,
+  Color specular,
+  Float32 specFactor,
+  PolygonMesh masters[],
+  Xfo transforms[],
+  Index indices[],
+  Boolean wireFrame,
+  Boolean doubleSided,
+  out Vec3 dummyResult,
+  out InlineInstance instance) 
+{
+  this.drawPolygonMeshArray(
+    false,
+    name,
+    color,
+    specular,
+    specFactor,
+    masters,
+    transforms,
+    indices,
+    wireFrame,
+    doubleSided,
+    instance);
+}
+
+/// Helper function for the InlineDrawing DrawingHandle data type
+/// to draw a list of objects given an index table and a list of transforms.
+/// This method can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \dfgPresetCreate
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.accumulateDrawPolygonMeshArray!(
+  Color color,
+  Color specular,
+  Float32 specFactor,
+  PolygonMesh masters[],
+  Xfo transforms[],
+  Index indices[],
+  Boolean wireFrame,
+  Boolean doubleSided,
+  out InlineInstance instance) 
+{
+  this.drawPolygonMeshArray(
+    true,
+    "accumulateDrawPolygonMeshArray",
+    color,
+    specular,
+    specFactor,
+    masters,
+    transforms,
+    indices,
+    wireFrame,
+    doubleSided,
+    instance);
+}
+
+/// Helper function to draw geometry attributes as text.
+/// \dfgPresetCreate
+/// \dfgPresetDefault fontSize 20
+/// \dfgPresetDefault maxCharacterCount 20
+/// \dfgPresetDefault decimalCount 3
+/// \dfgPresetDefault attribute "positions"
+/// \dfgPresetDefault rangeMinIndex 0
+/// \dfgPresetDefault rangeMaxIndex -1
+/// \dfgPresetDefault resolution 100
+/// \dfgPresetDefault computeGlobalPosition false
+/// \dfgPresetDefault color {"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0}
+function DrawingHandle.drawAttributeAsText!(
+  FilePath fontPath,
+  UInt32 fontSize,
+  UInt32 maxCharacterCount,
+  UInt32 decimalCount,
+  Geometry geometry, 
+  String attribute, 
+  UInt32 rangeMinIndex,
+  SInt32 rangeMaxIndex,
+  Float32 resolution,
+  Boolean computeGlobalPosition, 
+  Xfo xfo, 
+  Color color, 
+  out InlineInstance instance) 
+{
+  if(!geometry || !attribute)
+    return;
+
+  InlineAtlasTexture texture = this.drawing.getOrCreateAtlasTexture(fontPath, fontSize);
+  if(!texture)
+  {
+    report('draw3DText: the texture is null');
+    return;
+  }
+  
+  Ref<AtlasGL> atlas = texture.getAtlas(); 
+  if(!atlas)
+  {
+    report('drawAttributeAsText: the AtlasGL is null');
+    return;
+  }
+
+  GeometryAttributes geoAttributes = geometry.getAttributes();
+  Vec3Attribute positionAttr = geoAttributes.getAttribute("positions");
+  GeometryAttribute inputAttr = geoAttributes.getAttribute(attribute);
+  if(!inputAttr) 
+  {
+    if(geoAttributes.has(attribute))
+      report('drawAttributeAsText: Attribute "'+attribute+'" has wrong type.');
+    else
+      report('drawAttributeAsText: Attribute "'+attribute+'" not found on input geometry.');
+    return;
+  }
+  String uidName = "drawAttributeAsText" + '_' + this.uid() + '_' + attribute;
+
+  InlineDrawing draw = this.getDrawing();
+  InlineShader shader = draw.registerShader(OGLGeometryAttributeTextShader);
+  InlineGeometryAttributeTextShape shape = draw.getShape(uidName);
+  if(!shape) shape = draw.registerShape(InlineGeometryAttributeTextShape(uidName, atlas));
+  
+  shape.setTextFromAttribute(
+    atlas,
+    maxCharacterCount, 
+    decimalCount,
+    positionAttr, 
+    inputAttr, 
+    rangeMinIndex,
+    rangeMaxIndex,
+    resolution, 
+    computeGlobalPosition, 
+    xfo, 
+    color);
+
+  Xfo xfos[]; xfos.push(xfo);
+
+  InlineMaterial mat = this.drawShapeInstances(uidName, shader, xfos, shape, instance);
+
+  mat.setUniform('u_texture', texture);
+
+  Mat44 modelMatrix();
+  modelMatrix = xfo.toMat44();
+  mat.setUniform("u_model", modelMatrix);
+}
+
+/// \internal
+private InlineShape DrawingHandle.createInlineTextShape!(Boolean accumulate, Ref<AtlasGL> atlas, io String uidName) {
+  InlineTextShape shape = null;
+  if(accumulate)
+  {
+    uidName += "_" + String(this.nextUniqueID++);
+    shape = InlineTextShape(uidName, atlas);
+  }
+  else
+  {
+    InlineDrawing draw = this.getDrawing();
+    shape = draw.getShape(uidName);
+    if(!shape) shape = draw.registerShape(InlineTextShape(uidName, atlas));
+  }
+  return shape;
+}
+
+/// \internal
+private DrawingHandle.draw3DText!(
+  Boolean accumulate,
+  FilePath fontPath,
+  UInt32 fontSize,
+  String text, 
+  Vec3 worldPosition, 
+  Color textColor, 
+  out InlineInstance instance) 
+{
+  if(text.length() == 0)
+    return;
+
+  InlineAtlasTexture texture = this.drawing.getOrCreateAtlasTexture(fontPath, fontSize);
+  if(!texture)
+  {
+    report('draw3DText: the texture is null');
+    return;
+  }
+  
+  Ref<AtlasGL> atlas = texture.getAtlas(); 
+  if(!atlas)
+  {
+    report('draw3DText: the AtlasGL is null');
+    return;
+  }
+
+  String uidName = "draw3DText" + '_' + this.uid();
+  InlineDrawing draw = this.getDrawing();
+  InlineShader shader = draw.registerShader(OGL3DTextShader);
+
+  InlineTextShape shape = this.createInlineTextShape(accumulate, atlas, uidName);
+  shape.set3DText(atlas, text, worldPosition, textColor);
+
+  Xfo xfo;
+  Xfo xfos[]; xfos.push(xfo);
+
+  InlineMaterial mat = this.drawShapeInstances(uidName, shader, xfos, shape, instance);
+  mat.setUniform('u_texture', texture);
+}
+
+/// Helper function to draw a string in 3D world space.
+/// If the same DrawingHandle invokes this method several times, 
+/// only the last string will be displayed (it overwrites all the others).
+/// \dfgPresetCreate
+/// \dfgPresetDefault fontSize 20
+/// \dfgPresetDefault worldPosition {"x": 0.0, "y": 0.0, "z": 0.0}
+/// \dfgPresetDefault textColor {"r": 0.0, "g":0.0, "b": 0.0, "a": 1.0}
+function DrawingHandle.draw3DText!(
+  FilePath fontPath,
+  UInt32 fontSize,
+  String text, 
+  Vec3 worldPosition, 
+  Color textColor, 
+  out InlineInstance instance) 
+{
+  this.draw3DText(
+    false,
+    fontPath,
+    fontSize,
+    text, 
+    worldPosition, 
+    textColor, 
+    instance);
+}
+
+/// Helper function to draw a string in 3D world space.
+/// This methods can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \dfgPresetCreate
+/// \dfgPresetDefault fontSize 20
+/// \dfgPresetDefault worldPosition {"x": 0.0, "y": 0.0, "z": 0.0}
+/// \dfgPresetDefault textColor {"r": 0.0, "g":0.0, "b": 0.0, "a": 1.0}
+function DrawingHandle.accumulateDraw3DText!(
+  FilePath fontPath,
+  UInt32 fontSize,
+  String text, 
+  Vec3 worldPosition, 
+  Color textColor, 
+  out InlineInstance instance) 
+{
+  this.draw3DText(
+    true,
+    fontPath,
+    fontSize,
+    text, 
+    worldPosition, 
+    textColor, 
+    instance);
+}
+
+/// \internal
+private DrawingHandle.draw2DText!(
+  Boolean accumulate,
+  FilePath fontPath,
+  UInt32 fontSize,
+  String text, 
+  Vec2 screenPosition, 
+  Color textColor, 
+  out InlineInstance instance) 
+{
+  if(text.length() == 0)
+    return;
+
+  InlineAtlasTexture texture = this.drawing.getOrCreateAtlasTexture(fontPath, fontSize);
+  if(!texture)
+  {
+    report('draw2DText: the texture is null');
+    return;
+  }
+
+  Ref<AtlasGL> atlas = texture.getAtlas(); 
+  if(!atlas)
+  {
+    report('draw2DText: the AtlasGL is null');
+    return;
+  }
+
+  String uidName = "draw2DText" + '_' + this.uid();
+  InlineDrawing draw = this.getDrawing();
+  InlineShader shader = draw.registerShader(OGL2DTextShader);
+  
+  InlineTextShape shape = this.createInlineTextShape(accumulate, atlas, uidName);
+  shape.set2DText(atlas, text, screenPosition, textColor);
+
+  Xfo xfo;
+  Xfo xfos[]; xfos.push(xfo);
+
+  InlineMaterial mat = this.drawShapeInstances(uidName, shader, xfos, shape, instance);
+  mat.setUniform('u_texture', texture);
+}
+ 
+/// Helper function to draw a string in 2D screen space.
+/// If the same DrawingHandle invokes this method several times, 
+/// only the last string will be displayed (it overwrites all the others).
+/// \dfgPresetDefault fontSize 20
+/// \dfgPresetDefault screenPosition {"x": 0.0, "y": 0.0}
+/// \dfgPresetDefault textColor {"r": 0.0, "g":0.0, "b": 0.0, "a": 1.0}
+function DrawingHandle.draw2DText!(
+  FilePath fontPath,
+  UInt32 fontSize,
+  String text, 
+  Vec2 screenPosition, 
+  Color textColor, 
+  out InlineInstance instance) 
+{
+  this.draw2DText(
+    false,
+    fontPath,
+    fontSize,
+    text, 
+    screenPosition, 
+    textColor, 
+    instance);
+}
+
+/// Helper function to draw a string in 2D screen space.
+/// This method can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \dfgPresetCreate
+/// \dfgPresetDefault fontSize 20
+/// \dfgPresetDefault screenPosition {"x": 0.0, "y": 0.0}
+/// \dfgPresetDefault textColor {"r": 0.0, "g":0.0, "b": 0.0, "a": 1.0}
+function DrawingHandle.accumulateDraw2DText!(
+  FilePath fontPath,
+  UInt32 fontSize,
+  String text, 
+  Vec2 screenPosition, 
+  Color textColor, 
+  out InlineInstance instance) 
+{
+  this.draw2DText(
+    true,
+    fontPath,
+    fontSize,
+    text, 
+    screenPosition, 
+    textColor, 
+    instance);
+}
+
+/// \internal
+function DrawingHandle.draw3DTextArray!(
+  Boolean accumulate,
+  FilePath fontPath,
+  UInt32 fontSize,
+  String text[], 
+  Vec3 worldPositions[], 
+  Color textColor[], 
+  out InlineInstance instance) 
+{
+  if(text.size() == 0)
+    return;
+
+  InlineAtlasTexture texture = this.drawing.getOrCreateAtlasTexture(fontPath, fontSize);
+  if(!texture)
+  {
+    report('draw3DTextArray: the texture is null');
+    return;
+  }
+  
+  Ref<AtlasGL> atlas = texture.getAtlas(); 
+  if(!atlas)
+  {
+    report('draw3DTextArray: the AtlasGL is null');
+    return;
+  }
+
+  if(text.size() != worldPositions.size() && worldPositions.size() != textColor.size() )
+  {
+    report("Error draw3DTextArray : Inputs array must have the same size");
+    return;
+  }
+
+  String uidName = "draw3DTextArray" + '_' + this.uid();
+  InlineDrawing draw = this.getDrawing();
+  InlineShader shader = draw.registerShader(OGL3DTextShader);
+  InlineTextShape shape = this.createInlineTextShape(accumulate, atlas, uidName);
+  shape.set3DTextArray(atlas, text, worldPositions, textColor);
+
+  Xfo xfo;
+  Xfo xfos[]; xfos.push(xfo);
+
+  InlineMaterial mat = this.drawShapeInstances(uidName, shader, xfos, shape, instance);
+  mat.setUniform('u_texture', texture);
+}
+
+/// Helper function to draw an array of strings in 3D world space.
+/// If the same DrawingHandle invokes this method several times, 
+/// only the last string will be displayed (it overwrites all the others).
+/// \dfgPresetCreate
+/// \dfgPresetDefault fontSize 20
+function DrawingHandle.draw3DTextArray!(
+  FilePath fontPath,
+  UInt32 fontSize,
+  String text[], 
+  Vec3 worldPositions[], 
+  Color textColor[], 
+  out InlineInstance instance) 
+{
+  this.draw3DTextArray(
+    false,
+    fontPath,
+    fontSize,
+    text, 
+    worldPositions, 
+    textColor, 
+    instance);
+}
+
+/// Helper function to draw an array of strings in 3D world space.
+/// This method can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \dfgPresetCreate
+/// \dfgPresetDefault fontSize 20
+function DrawingHandle.accumulateDraw3DTextArray!(
+  FilePath fontPath,
+  UInt32 fontSize,
+  String text[], 
+  Vec3 worldPositions[], 
+  Color textColor[], 
+  out InlineInstance instance) 
+{
+  this.draw3DTextArray(
+    true,
+    fontPath,
+    fontSize,
+    text, 
+    worldPositions, 
+    textColor, 
+    instance);
+}
+
+/// \internal
+function DrawingHandle.draw2DTextArray!(
+  Boolean accumulate,
+  FilePath fontPath,
+  UInt32 fontSize,
+  String text[], 
+  Vec2 screenPositions[], 
+  Color textColor[], 
+  out InlineInstance instance) 
+{
+  if(text.size() == 0)
+    return;
+
+  InlineAtlasTexture texture = this.drawing.getOrCreateAtlasTexture(fontPath, fontSize);
+  if(!texture)
+  {
+    report('draw2DTextArray: the texture is null');
+    return;
+  }
+  
+  Ref<AtlasGL> atlas = texture.getAtlas(); 
+  if(!atlas)
+  {
+    report('draw2DTextArray: the AtlasGL is null');
+    return;
+  }
+
+  if(text.size() != screenPositions.size() && screenPositions.size() != textColor.size() )
+  {
+    report("Error draw2DTextArray : Inputs array must have the same size");
+    return;
+  }
+
+  String uidName = "draw2DTextArray" + '_' + this.uid();
+  InlineDrawing draw = this.getDrawing();
+  InlineShader shader = draw.registerShader(OGL2DTextShader);
+  InlineTextShape shape = this.createInlineTextShape(accumulate, atlas, uidName);
+  shape.set2DTextArray(atlas, text, screenPositions, textColor);
+
+  Xfo xfo;
+  Xfo xfos[]; xfos.push(xfo);
+
+  InlineMaterial mat = this.drawShapeInstances(uidName, shader, xfos, shape, instance);
+  mat.setUniform('u_texture', texture);
+}
+
+/// Helper function to draw an array of strings in 2D screen space.
+/// If the same DrawingHandle invokes this method several times, 
+/// only the last string will be displayed (it overwrites all the others).
+/// \dfgPresetCreate
+/// \dfgPresetDefault fontSize 20
+function DrawingHandle.draw2DTextArray!(
+  FilePath fontPath,
+  UInt32 fontSize,
+  String text[], 
+  Vec2 screenPositions[], 
+  Color textColor[], 
+  out InlineInstance instance) 
+{
+  this.draw2DTextArray(
+    false,
+    fontPath,
+    fontSize,
+    text, 
+    screenPositions, 
+    textColor, 
+    instance);
+}
+
+/// Helper function to draw an array of strings in 2D screen space.
+/// This method can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \dfgPresetCreate
+/// \dfgPresetDefault fontSize 20
+function DrawingHandle.accumulateDraw2DTextArray!(
+  FilePath fontPath,
+  UInt32 fontSize,
+  String text[], 
+  Vec2 screenPositions[], 
+  Color textColor[], 
+  out InlineInstance instance) 
+{
+  this.draw2DTextArray(
+    true,
+    fontPath,
+    fontSize,
+    text, 
+    screenPositions, 
+    textColor, 
+    instance);
+}
+
+/// \internal
+private DrawingHandle.drawLinesArray!(
+  Boolean accumulate,
+  String name,
+  Color color,
+  Lines masters[],
+  Xfo transforms[],
+  Index indices[],
+  out InlineInstance instance) 
+{
+  /// create a lookup to combine all 
+  /// draw instructions sharing the same
+  /// line (the same index)
+  Xfo transformsPerIndex[Index][];
+  if(indices.size() == 0) {
+    for(Size i=0;i<masters.size();i++) {
+      Xfo xfos[](1);
+      if(i < transforms.size())
+        xfos[0] = transforms[i];
+      transformsPerIndex[i] = xfos;
+    }
+   } else {
+    for(Size i=0;i<indices.size();i++) {
+      Index idx = indices[i];
+      if(i >= transforms.size())
+        break;
+      Xfo xfos[];
+      xfos = transformsPerIndex.get(idx, xfos);
+      xfos.push(transforms[i]);
+      transformsPerIndex[idx] = xfos;
+    }
+  }
+
+  String nameWithHandle = name + "_" + this.uid() + "_DrawLinesArray_";
+
+  /// draw each one of the groups
+  for(idx in transformsPerIndex) {
+    if(idx >= masters.size())
+      continue;
+
+    Xfo xfos[] = transformsPerIndex[idx];
+    Lines master = masters[idx];
+
+    // We will deprecate the relyance on master.getDebugName(),
+    // since by default meshes have all the same debug name,
+    // in which case this preset doesn't work.
+    // However, FE-6278 fixed that by relying on master.uid(),
+    // which is bad because if meshes are created at each frame,
+    // these will never be released.
+    // The in-between fix is to rely only on the index.
+    // This will still "leak" if the shape count is resized down,
+    // but then a more serious rewrite is required to manage everything
+    // in the best way.
+    String uniqueName = nameWithHandle + idx;
+    this.drawLinesInstances( accumulate, uniqueName, color, xfos, master, instance );
+  }
+}
+
+/// Helper function for the InlineDrawing DrawingHandle data type
+/// to draw a list of objects given an index table and a list of transforms.
+/// \dfgPresetCreate
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.drawLinesArray!(
+  String name,
+  Color color,
+  Lines masters[],
+  Xfo transforms[],
+  Index indices[],
+  out Vec3 dummyResult,
+  out InlineInstance instance) 
+{
+  this.drawLinesArray(
+    false,
+    name,
+    color,
+    masters,
+    transforms,
+    indices,
+    instance);
+}
+
+/// Helper function for the InlineDrawing DrawingHandle data type
+/// to draw a list of objects given an index table and a list of transforms.
+/// This method can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \dfgPresetCreate
+/// \dfgPresetDefault color {"r": 0.0, "g": 1.0, "b": 0.0, "a": 1.0}
+/// \dfgPresetDefault specular {"r": 0.2, "g": 0.2, "b": 0.2, "a": 1.0}
+/// \dfgPresetDefault specFactor 16.0
+function DrawingHandle.accumulateDrawLinesArray!(
+  Color color,
+  Lines masters[],
+  Xfo transforms[],
+  Index indices[],
+  out InlineInstance instance) 
+{
+  this.drawLinesArray(
+    true,
+    "accumulateDrawLinesArray",
+    color,
+    masters,
+    transforms,
+    indices,
+    instance);
+}
+
+/// \internal
+private DrawingHandle.drawPointsArray!(
+  Boolean accumulate,
+  String name,
+  Points masters[],
+  Xfo transforms[],
+  Index indices[],
+  out InlineInstance instance) 
+{
+
+  /// create a lookup to combine all 
+  /// draw instructions sharing the same
+  /// line (the same index)
+  Xfo transformsPerIndex[Index][];
+  if(indices.size() == 0) {
+    for(Size i=0;i<masters.size();i++) {
+      Xfo xfos[](1);
+      if(i < transforms.size())
+        xfos[0] = transforms[i];
+      transformsPerIndex[i] = xfos;
+    }
+   } else {
+    for(Size i=0;i<indices.size();i++) {
+      Index idx = indices[i];
+      if(i >= transforms.size())
+        break;
+      Xfo xfos[];
+      xfos = transformsPerIndex.get(idx, xfos);
+      xfos.push(transforms[i]);
+      transformsPerIndex[idx] = xfos;
+    }
+  }
+
+  String nameWithHandle = name + "_" + this.uid() + "_DrawPointsArray_";
+
+  /// draw each one of the groups
+  for(idx in transformsPerIndex) {
+    if(idx >= masters.size())
+      continue;
+
+    Xfo xfos[] = transformsPerIndex[idx];
+    Points master = masters[idx];
+
+    // We will deprecate the relyance on master.getDebugName(),
+    // since by default meshes have all the same debug name,
+    // in which case this preset doesn't work.
+    // However, FE-6278 fixed that by relying on master.uid(),
+    // which is bad because if meshes are created at each frame,
+    // these will never be released.
+    // The in-between fix is to rely only on the index.
+    // This will still "leak" if the shape count is resized down,
+    // but then a more serious rewrite is required to manage everything
+    // in the best way.
+    String uniqueName = nameWithHandle + idx;
+    this.drawPointsInstances( accumulate, uniqueName, xfos, master, instance );
+  }
+}
+
+/// Helper function for the InlineDrawing DrawingHandle data type
+/// to draw a list of objects given an index table and a list of transforms.
+/// \dfgPresetCreate
+function DrawingHandle.drawPointsArray!(
+  String name,
+  Points masters[],
+  Xfo transforms[],
+  Index indices[],
+  out Vec3 dummyResult,
+  out InlineInstance instance) 
+{
+  this.drawPointsArray(
+    false,
+    name,
+    masters,
+    transforms,
+    indices,
+    instance);
+}
+
+/// Helper function for the InlineDrawing DrawingHandle data type
+/// to draw a list of objects given an index table and a list of transforms.
+/// This method can be called several times by the same DrawingHandle
+/// without overwriting the previous content.
+/// \dfgPresetCreate
+function DrawingHandle.accumulateDrawPointsArray!(
+  Points masters[],
+  Xfo transforms[],
+  Index indices[],
+  out InlineInstance instance) 
+{
+  this.drawPointsArray(
+    true,
+    "accumulateDrawPointsArray",
+    masters,
+    transforms,
+    indices,
+    instance);
+}

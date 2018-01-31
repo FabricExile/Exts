@@ -1,0 +1,354 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 2.0.1
+
+  :kl-ref:`LegacyBaseSRTTool` is a based class for any :kl-ref:`LegacySRTTool`.
+  It defines a manipulable tool (translation, rotation and scaling) that is used to manipulate scene's objects.
+  Any new SRT tools should derived from this class.
+  This class manages a complete manipulation, except its drawing that depends of the engine.
+  
+  \seealso :kl-ref:`LegacyBaseTool`, :kl-ref:`SRTTarget`.
+
+  \dfgPresetOmit
+*/
+interface LegacySRTTool {
+  /// Computes the tool's new value while manipulating it.
+  /// \params transform The new tranform
+  transformChanged!(Mat44 transform);
+
+  /// Casts a ray in the scene. 
+  /// The ray is then used to know which axis (x, y, z) has been selected.
+  /// \params mouseEvent The mousevent event when the user clicks in the viewport
+  Ray castRay(io MouseEvent mouseEvent);
+};
+
+object LegacyBaseSRTTool : LegacyBaseTool, LegacySRTTool{
+  /// Tool transform (SRT).
+  protected Mat44 transform;
+  /// Tool transform with no scaling (RT).
+  protected Mat44 transformNoScaling;
+  /// Accumulated scaling delta while performing (for manip drawing prupose only).
+  protected Vec3 scalingDelta;
+  /// Current manipulation axis (local).
+  protected Vec3 currentAxis;
+  /// Mode determining which gizmos are currently visible. 
+  protected ManipulationMode mode;
+  
+  /// \internal
+  /// Keystrokes.
+  private Key scaleKey;
+  /// \internal
+  private Key rotateKey;
+  /// \internal
+  private Key translateKey;
+
+  /// \internal
+  /// To compute the tool transform 
+  private Vec3 cameraDir;
+  /// \internal
+  private Camera activeCamera;
+  /// \internal
+  private Vec3 hitPoint;
+  /// \internal
+  private Ray ray;
+  /// \internal
+  private Vec2 mousePos;
+  /// \internal
+  private Vec3 mouseNormalizedPos;
+  /// \internal
+  private Float32 orbitSpeed;
+};
+
+/// Constructs a LegacyBaseSRTTool.
+/// \param target Tool target
+/// \param scaleKey Key to activate the scale mode.
+/// \param rotateKey Key to activate the orientation mode.
+/// \param translateKey Key to activate the posititon mode.
+/// \param enableKey Key to enable to tool
+/// \param exclusivity Handler exclusivity.
+/// \param isOwnedByDispatcher If true, the handler is owned by the dispatcher.
+protected LegacyBaseSRTTool.init!(
+  SRTTarget target,
+  Key scaleKey,
+  Key rotateKey,
+  Key translateKey,
+  Key enableKey,
+  LegacyHandlerExclusivity exclusivity,
+  Boolean isOwnedByDispatcher) 
+{
+  this.parent.init(target, enableKey, exclusivity, isOwnedByDispatcher);
+
+  this.scaleKey = scaleKey;
+  this.rotateKey = rotateKey;
+  this.translateKey = translateKey;
+
+  this.orbitSpeed = 0.02f;
+  this.scalingDelta = Vec3(1.0f);
+  this.mode = ManipulationMode_Orientation;
+ 
+  this.disable();
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyBaseSRTTool.enable!() {
+  this.parent.enable();
+  this.updateFromTarget();
+  this.showIfTarget();
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+Boolean LegacyBaseSRTTool.hasKey(Key key) {
+  Boolean hasKey = this.parent.hasKey(key) || this.scaleKey == key ||
+    this.rotateKey == key || this.translateKey == key;
+  return hasKey;
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyHandlerDescription LegacyBaseSRTTool.getDescription() {
+  LegacyBaseHandlerDescription descIn = this.parent.getDescription();
+  ToolDescription desc(descIn);
+  
+  desc.modes.resize(3);
+
+  desc.modes[0] = ToolModeDescription();
+  desc.modes[0].name = "Scale";
+  desc.modes[0].enableKey = this.scaleKey;
+  desc.modes[0].isEnabled = this.mode == ManipulationMode_Scale;
+  
+  desc.modes[1] = ToolModeDescription();
+  desc.modes[1].name = "Rotate";
+  desc.modes[1].enableKey = this.rotateKey;
+  desc.modes[1].isEnabled = this.mode == ManipulationMode_Orientation;
+
+  desc.modes[2] = ToolModeDescription();
+  desc.modes[2].name = "Translate";
+  desc.modes[2].enableKey = this.translateKey;
+  desc.modes[2].isEnabled = this.mode == ManipulationMode_Position;
+    
+  return desc;
+}
+
+/// Sets the key for this manipulation mode.
+/// \param mode Manipulation mode.
+/// \param key Key to activate the mode.
+LegacyBaseSRTTool.setManipulationModeKey!(ManipulationMode mode, Key key) {
+  if(mode == ManipulationMode_Scale) 
+    this.scaleKey = key;
+  else if(mode == ManipulationMode_Orientation) 
+    this.rotateKey = key;
+  else if(mode == ManipulationMode_Position) 
+    this.translateKey = key;
+}
+
+/// Gets the key for this manipulation mode.
+/// \param mode Manipulation mode.
+Key LegacyBaseSRTTool.getManipulationModeKey(ManipulationMode mode) {
+  if(mode == ManipulationMode_Scale) 
+    return this.scaleKey;
+  else if(mode == ManipulationMode_Orientation) 
+    return this.rotateKey;
+  else if(mode == ManipulationMode_Position) 
+    return this.translateKey;
+  else return 0;
+}
+
+/// Implementation of :kl-ref:`LegacySRTTool`
+/// Can be overridden.
+protected LegacyBaseSRTTool.transformChanged!(Mat44 transform) {
+  this.transform = transform;
+  //TODO: make this work with shearing
+  Xfo xfo(this.transform);
+  /// We set the scale to one in order to not scaled up/dowm the gizmo drawing
+  xfo.sc = Vec3(1.0f);
+  this.transformNoScaling = xfo.toMat44();
+}
+
+/// Implementation of :kl-ref:`LegacySRTTool`
+/// To override.
+protected Ray LegacyBaseSRTTool.castRay(io MouseEvent mouseEvent) {
+  return Ray();
+}
+
+/// Gets the scaling delta.
+Vec3 LegacyBaseSRTTool.getScalingDelta() {
+  return this.scalingDelta;
+}
+
+/// Implementation of :kl-ref:`Tool`.
+/// Can be overridden.
+protected LegacyBaseSRTTool.updateFromTarget!() {
+  if( this.showIfTarget() ) {
+    Ref<SRTTarget> target = this.getTarget();
+    this.transformChanged( target.getTransform() );
+  }
+}
+
+/// Implementation of :kl-ref:`Tool`.
+protected LegacyBaseSRTTool.press!(io MouseEvent mouseEvent) {
+
+  SInt32 upperLeftX, upperLeftY, bottomRightX, bottomRightY;
+  Viewport_Virtual viewport = mouseEvent.getViewport().getSubViewport( mouseEvent.pos.x, mouseEvent.pos.y, upperLeftX, upperLeftY, bottomRightX, bottomRightY );
+  Ref<Camera> camera = viewport.getCamera();
+  if(!this.performing && Boolean(camera))
+  {
+    this.activeCamera = camera;
+    this.mousePos = mouseEvent.pos;
+    this.mouseNormalizedPos = mouseEvent.getNormalizedCoords();
+    if(this.mode == ManipulationMode_Scale || this.mode == ManipulationMode_Position)
+    {
+      this.cameraDir = Xfo( camera.getMat44() ).ori.getZaxis();
+      this.hitPoint = this.castRay( mouseEvent ).intersectPlaneVec3( this.transform.translation(), this.cameraDir );
+    }
+
+    else if(this.mode == ManipulationMode_Orientation) 
+    {
+      if(this.currentAxis != Vec3(1.0f))
+      {
+        this.cameraDir = Xfo( camera.getMat44() ).ori.getZaxis();
+        this.hitPoint = this.castRay( mouseEvent ).intersectPlaneVec3( this.transform.translation(), this.cameraDir );
+      }
+      else this.ray = this.castRay(mouseEvent);
+    }
+
+    this.parent.press(mouseEvent);
+  }
+}
+
+/// Implementation of :kl-ref:`Tool`.
+protected LegacyBaseSRTTool.move!(io MouseEvent mouseEvent) {
+
+  if(this.performing)
+  {
+    if(this.mode == ManipulationMode_Scale || this.mode == ManipulationMode_Position)
+    {
+      Xfo delta();
+      Vec3 instancePos = this.transform.translation();
+      Vec3 hitPoint = this.castRay( mouseEvent ).intersectPlaneVec3( instancePos, this.cameraDir );
+      
+      if(this.mode == ManipulationMode_Position)
+        delta.tr = ((this.transform.upperLeft()).inverse()*(hitPoint - this.hitPoint))*this.currentAxis; 
+      
+      else 
+      {
+        // For the scaling, just do a virtual slider since we want to enable negative scaling too
+        Mat44 viewProjMatrix;
+        Ref<Camera> camera = this.activeCamera;
+        if(camera) viewProjMatrix = camera.getProjection() * camera.getMat44().inverse();
+
+        Vec3 prevHitNormalizedCoords = viewProjMatrix * this.hitPoint;
+        Vec3 normalizedCoords = mouseEvent.getNormalizedCoords();
+        Vec3 instancePosNormalizedCoords = viewProjMatrix * instancePos;
+
+        Vec3 projAxis;
+        if(this.currentAxis != Vec3(1.0f)) 
+        {
+          projAxis = this.mouseNormalizedPos - instancePosNormalizedCoords;
+          projAxis.z = 0;
+        } 
+        else projAxis = Vec3(0.1f, 0.0f, 0.0f);
+
+        Vec3 projDelta = normalizedCoords - prevHitNormalizedCoords;
+        projDelta.z = 0.0f;
+        Scalar deltaSc = projDelta.dot(projAxis) / projAxis.lengthSquared();
+
+        // Here, we should ideally set the local scaling directly...
+        // We want to substract a constant amount, but it has to be expressed as a factor
+        delta.sc = (this.scalingDelta + deltaSc * this.currentAxis) / this.scalingDelta;
+      }
+      this.scalingDelta *= delta.sc;
+      this.hitPoint = hitPoint;
+
+      Ref<SRTTarget> target = this.getTarget();
+      target.transformChanged(this.transform*delta.toMat44());
+    }
+
+    else if(this.mode == ManipulationMode_Orientation) 
+    {
+      Xfo delta();
+      if(this.currentAxis != Vec3(1.0f)) 
+      {
+        Vec3 instancePos = this.transform.translation();
+        Vec3 hitPoint = this.castRay( mouseEvent ).intersectPlaneVec3( instancePos, this.cameraDir );
+        Vec3 a = (this.hitPoint - instancePos).unit();
+        Vec3 b = (hitPoint - instancePos).unit();
+        Float32 sign = ( ( a.cross( b ) ).dot( ( ( this.transform.upperLeft() ) )*this.currentAxis ) < 0.0f ) ? -1.0f : 1.0f;
+        Float32 angle = atan2(a.cross(b).length(), a.dot(b)) * sign;
+        delta.ori.setFromAxisAndAngle(this.currentAxis, angle);
+        this.hitPoint = hitPoint;
+      }
+      else 
+      {
+        Ray ray = this.castRay(mouseEvent);  
+        Vec3 axis = ray.direction.cross(ray.start - this.ray.start).unit();
+        Float32 angle = (mouseEvent.pos - this.mousePos).length() * this.orbitSpeed;
+        delta.ori.setFromAxisAndAngle(axis, angle);
+      }
+      // We need to apply this in "TRS" order (after scaling, which can be non-uniform).
+      // For this we need to decompose to an Xfo first; maybe we should
+      // always work with an Xfo? But it doesn't support shearing... Or we need
+      // to make a distinction between "local" and "global"...?
+      Xfo xfo(this.transform);
+      xfo.ori *= delta.ori;
+   
+      Ref<SRTTarget> target = this.getTarget();
+      target.transformChanged(xfo.toMat44());
+    }
+    this.parent.move(mouseEvent);
+    // We need an explicit "updateFromTarget" if the target is not part of the scene state (eg: RTRSRTTarget).
+    this.updateFromTarget();
+  }
+}
+
+/// Implementation of :kl-ref:`Tool`.
+protected LegacyBaseSRTTool.release!(io MouseEvent mouseEvent) {
+  if(this.performing) 
+  {
+    this.scalingDelta = Vec3(1.0f);
+    this.parent.release(mouseEvent);
+  }
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyBaseSRTTool.onEvent!(io Event event) {
+
+  if(event.eventType() == Event_KeyPress)
+  {
+    KeyEvent keyEvent = event;
+    if(!keyEvent.isAutoRepeat) 
+    {
+      if(keyEvent.key == this.scaleKey) 
+      {
+        this.mode = ManipulationMode_Scale;
+        if(this.isEnabled()) 
+          this.showIfTarget();
+        event.setAccepted(true);
+      }
+      else if(keyEvent.key == this.rotateKey) 
+      {
+        this.mode = ManipulationMode_Orientation;
+        if(this.isEnabled()) 
+          this.showIfTarget();
+        event.setAccepted(true);
+      }
+      else if(keyEvent.key == this.translateKey) 
+      {
+        this.mode = ManipulationMode_Position;
+        if(this.isEnabled()) 
+          this.showIfTarget();
+        event.setAccepted(true);
+      }
+    }
+  } 
+
+  else 
+  {
+    MouseEvent mouseEvent = event;
+    if(Boolean(mouseEvent) && mouseEvent.button == MouseButton_RightButton)
+      return;
+  }
+
+  this.parent.onEvent(event);
+}

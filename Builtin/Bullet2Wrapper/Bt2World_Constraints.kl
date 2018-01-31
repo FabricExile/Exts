@@ -1,0 +1,350 @@
+//
+// Copyright 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+private Bt2Constraint Bt2World.addConstraint!(btTypedConstraint constraint)
+{
+  // todo: add a lock
+  Bt2Constraint result;
+  result.world = this;
+  result.index = this.softBodies.size();
+  result.constraint = constraint;
+  result.constraint.setUserConstraintId(result.index);
+  this.constraints.push(result);
+  if(this.dynamicsWorld.cxx_isValid() && !this.mbDynamicsWorld.cxx_isValid())
+  {
+    this.dynamicsWorld.addConstraint(result.constraint, true);
+  }
+  return result;
+}
+
+/// \dfgPresetFolder Constraints
+Bt2Constraint Bt2World.getConstraint(SInt32 index)
+{
+  if(index < 0 || index >= this.constraints.size())
+    return Bt2Constraint();
+  return this.constraints[index];
+}
+
+/// \dfgPresetFolder Constraints
+Bt2Constraint Bt2World.addFixedConstraint!(
+  Bt2RigidBody bodyA,
+  Bt2RigidBody bodyB,
+  Xfo frameA,
+  Xfo frameB
+) {
+  if(!bodyA.isValid() || !bodyB.isValid())
+    return Bt2Constraint();
+
+  btFixedConstraint cns(bodyA.body, bodyB.body, frameA, frameB);
+
+  Bt2Constraint result = this.addConstraint(cns);
+
+  return result;
+}
+
+/// \dfgPresetFolder Constraints
+/// \dfgPresetDefault swingSpan1 -1.0
+/// \dfgPresetDefault swingSpan2 -1.0
+/// \dfgPresetDefault twistSpan -1.0
+/// \dfgPresetRange softness (0, 1)
+/// \dfgPresetDefault softness 0.5
+/// \dfgPresetRange biasFactor (0, 1)
+/// \dfgPresetDefault biasFactor 0.3
+/// \dfgPresetRange relaxationFactor (0, 1)
+/// \dfgPresetDefault relaxationFactor 1.0
+/// \dfgPresetRange damping (0, 1)
+/// \dfgPresetDefault damping 0.01
+/// \dfgPresetDefault motorImpulse 0.0
+Bt2Constraint Bt2World.addConeTwistConstraint!(
+  Bt2RigidBody bodyA,
+  Bt2RigidBody bodyB,
+  Xfo frameA,
+  Xfo frameB,
+  Float32 swingSpan1,
+  Float32 swingSpan2,
+  Float32 twistSpan,
+  Float32 softness,
+  Float32 biasFactor,
+  Float32 relaxationFactor,
+  Float32 damping,
+  Float32 motorImpulse
+) {
+  if(!bodyA.isValid() || !bodyB.isValid())
+    return Bt2Constraint();
+
+  btConeTwistConstraint cns(bodyA.body, bodyB.body, frameA, frameB);
+
+  cns.setDamping(damping);
+
+  Float32 ss1 = swingSpan1;
+  if(ss1 < 0)
+    ss1 = SCALAR_INFINITE;
+  Float32 ss2 = swingSpan2;
+  if(ss2 < 0)
+    ss2 = SCALAR_INFINITE;
+  Float32 ts = twistSpan;
+  if(ts < 0)
+    ts = SCALAR_INFINITE;
+  cns.setLimit(ss1, ss2, ts, softness, biasFactor, relaxationFactor);
+  
+  if(motorImpulse > 0)
+  {
+    cns.enableMotor(true);
+  }
+
+  Bt2Constraint result = this.addConstraint(cns);
+  result.coneTwistConstraint = cns;
+
+  return result;
+}
+
+/// \dfgPresetFolder Constraints
+/// \dfgPresetDefault axisA {"x": 1.0, "y": 0.0, "z": 0.0}
+/// \dfgPresetDefault axisB {"x": 1.0, "y": 0.0, "z": 0.0}
+Bt2Constraint Bt2World.addGearConstraint!(
+  Bt2RigidBody bodyA,
+  Bt2RigidBody bodyB,
+  Vec3 axisA,
+  Vec3 axisB,
+  Float32 ratio
+) {
+  if(!bodyA.isValid() || !bodyB.isValid())
+    return Bt2Constraint();
+
+  btGearConstraint cns(bodyA.body, bodyB.body, axisA, axisB, ratio);
+  Bt2Constraint result = this.addConstraint(cns);
+
+  return result;
+}
+
+/// \dfgPresetFolder Constraints
+/// \dfgPresetDefault pivotA {"x": 1.0, "y": 0.0, "z": 0.0}
+/// \dfgPresetDefault pivotB {"x": -1.0, "y": 0.0, "z": 0.0}
+Bt2Constraint Bt2World.addPoint2PointConstraint!(
+  Bt2RigidBody bodyA,
+  Bt2RigidBody bodyB,
+  Vec3 pivotA,
+  Vec3 pivotB
+) {
+  if(!bodyA.isValid() || !bodyB.isValid())
+    return Bt2Constraint();
+
+  btPoint2PointConstraint cns(bodyA.body, bodyB.body, pivotA, pivotB);
+
+  Bt2Constraint result = this.addConstraint(cns);
+
+  return result;
+}
+
+/// \dfgPresetFolder Constraints
+/// \dfgPresetDefault anchor {"x": 0.0, "y": 0.0, "z": 0.0}
+/// \dfgPresetDefault axisA {"x": 1.0, "y": 0.0, "z": 0.0}
+/// \dfgPresetDefault axisB {"x": 0.0, "y": 0.0, "z": 1.0}
+
+Bt2Constraint Bt2World.addUniversalConstraint!(
+  Bt2RigidBody bodyA,
+  Bt2RigidBody bodyB,
+  Vec3 anchor,
+  Vec3 axisA,
+  Vec3 axisB,
+  Float32 axisAMin,
+  Float32 axisAMax,
+  Float32 axisBMin,
+  Float32 axisBMax
+) {
+  if(!bodyA.isValid() || !bodyB.isValid())
+    return Bt2Constraint();
+
+  btUniversalConstraint cns(bodyA.body, bodyB.body, bodyA.getXfo().transformVector(anchor), axisA, axisB);
+  Float32 aMin = axisAMin;
+  Float32 aMax = axisAMax;
+  if(aMin == 0.0 && aMax == 0.0)
+  {
+    aMin = -1000.0;
+    aMax = 1000.0;
+  }
+  Float32 bMin = axisBMin;
+  Float32 bMax = axisBMax;
+  if(bMin == 0.0 && bMax == 0.0)
+  {
+    bMin = -1000.0;
+    bMax = 1000.0;
+  }
+
+  cns.setUpperLimit(aMax, bMax);
+  cns.setLowerLimit(aMin, bMin);
+
+  Bt2Constraint result = this.addConstraint(cns);
+
+  return result;
+}
+
+/// \dfgPresetFolder Constraints
+/// \dfgPresetDefault pivotA {"x": 0.0, "y": 0.0, "z": 0.0}
+/// \dfgPresetDefault pivotB {"x": 0.0, "y": 0.0, "z": 0.0}
+/// \dfgPresetDefault axisA {"x": 1.0, "y": 0.0, "z": 0.0}
+/// \dfgPresetDefault axisB {"x": 1.0, "y": 0.0, "z": 0.0}
+/// \dfgPresetDefault lowerLimit 0
+/// \dfgPresetDefault upperLimit 0
+/// \dfgPresetRange softness (0, 1)
+/// \dfgPresetDefault softness 0.5
+/// \dfgPresetRange biasFactor (0, 1)
+/// \dfgPresetDefault biasFactor 0.3
+/// \dfgPresetRange relaxationFactor (0, 1)
+/// \dfgPresetDefault relaxationFactor 1.0
+/// \dfgPresetDefault useReferenceFrame false
+Bt2Constraint Bt2World.addHingeConstraint!(
+  Bt2RigidBody bodyA,
+  Bt2RigidBody bodyB,
+  Vec3 anchor,
+  Vec3 pivotA,
+  Vec3 pivotB,
+  Vec3 axisA,
+  Vec3 axisB,
+  Float32 lowerLimit,
+  Float32 upperLimit,
+  Float32 softness,
+  Float32 biasFactor,
+  Float32 relaxationFactor,
+  Boolean useReferenceFrame
+) {
+  if(!bodyA.isValid() || !bodyB.isValid())
+    return Bt2Constraint();
+
+  btHingeConstraint cns(bodyA.body, bodyB.body, pivotA, pivotB, axisA, axisB, useReferenceFrame);
+
+  if(lowerLimit != 0.0 || upperLimit != 0.0)
+  {
+    cns.setLimit(lowerLimit, upperLimit, softness, biasFactor, relaxationFactor);
+  }
+
+  Bt2Constraint result = this.addConstraint(cns);
+  this.constraints[result.index].hingeConstraint = cns;
+
+  return this.constraints[result.index];
+}
+
+/// \dfgPresetFolder Constraints
+/// \dfgPresetDefault useReferenceFrame false
+/// \dfgPresetRange softness (0, 1)
+/// \dfgPresetDefault softness 0.5
+/// \dfgPresetRange dampnig (0, 1)
+/// \dfgPresetDefault dampnig 0.01
+Bt2Constraint Bt2World.addSliderConstraint!(
+  Bt2RigidBody bodyA,
+  Bt2RigidBody bodyB,
+  Xfo frameA,
+  Xfo frameB,
+  Float32 lowerLinLimit,
+  Float32 upperLinLimit,
+  Float32 lowerAngLimit,
+  Float32 upperAngLimit,
+  Float32 softness,
+  Float32 damping,
+  Float32 linMotorForce,
+  Float32 linMotorVelocity,
+  Float32 angMotorVelocity,
+  Float32 angMotorForce,
+  Boolean useReferenceFrame
+) {
+  if(!bodyA.isValid() || !bodyB.isValid())
+    return Bt2Constraint();
+
+  btSliderConstraint cns(bodyA.body, bodyB.body, frameA, frameB, useReferenceFrame);
+
+  if(lowerLinLimit != 0.0 || upperLinLimit != 0.0)
+  {
+    cns.setLowerLinLimit(lowerLinLimit);
+    cns.setUpperLinLimit(upperLinLimit);
+    cns.setSoftnessDirLin(softness);
+  }
+  if(lowerAngLimit != 0.0 || upperAngLimit != 0.0)
+  {
+    cns.setLowerAngLimit(lowerAngLimit);
+    cns.setUpperAngLimit(upperAngLimit);
+    cns.setSoftnessDirAng(softness);
+  }
+
+  if(linMotorForce > 0)
+  {
+    cns.setPoweredLinMotor(true);
+    cns.setTargetLinMotorVelocity(linMotorVelocity);
+    cns.setMaxLinMotorForce(linMotorForce);
+  }
+  if(angMotorForce > 0)
+  {
+    cns.setPoweredAngMotor(true);
+    cns.setTargetAngMotorVelocity(angMotorVelocity);
+    cns.setMaxAngMotorForce(angMotorForce);
+  }
+
+  Bt2Constraint result = this.addConstraint(cns);
+  this.constraints[result.index].sliderConstraint = cns;
+
+  return this.constraints[result.index];
+}
+
+/// \dfgPresetFolder Constraints
+/// \dfgPresetDefault useReferenceFrame false
+/// \dfgPresetDefault linStiffness {"x": 0.5, "y": 0.5, "z": 0.5}
+/// \dfgPresetDefault angStiffness {"x": 0.5, "y": 0.5, "z": 0.5}
+/// \dfgPresetDefault linBounce {"x": 0.0, "y": 0.0, "z": 0.0}
+/// \dfgPresetDefault angBounce {"x": 0.0, "y": 0.0, "z": 0.0}
+/// \dfgPresetDefault linDamping {"x":0.01, "y":0.01, "z":0.01}
+/// \dfgPresetDefault angDamping {"x":0.01, "y":0.01, "z":0.01}
+Bt2Constraint Bt2World.add6DofSpringConstraint!(
+  Bt2RigidBody bodyA,
+  Bt2RigidBody bodyB,
+  Xfo frameA,
+  Xfo frameB,
+  Vec3 linStiffness,
+  Vec3 angStiffness,
+  Vec3 linBounce,
+  Vec3 angBounce,
+  Vec3 linDamping,
+  Vec3 angDamping,
+  Boolean enableLinSpring,
+  Boolean enableAngSpring,
+  Boolean setEquilibriumPoint
+) {
+  if(!bodyA.isValid() || !bodyB.isValid())
+    return Bt2Constraint();
+
+  btGeneric6DofSpring2Constraint cns(bodyA.body, bodyB.body, frameA, frameB, 0);
+
+  cns.setStiffness(0, linStiffness.x * 100);
+  cns.setStiffness(1, linStiffness.y * 100);
+  cns.setStiffness(2, linStiffness.z * 100);
+  cns.setStiffness(3, angStiffness.x * 100);
+  cns.setStiffness(4, angStiffness.y * 100);
+  cns.setStiffness(5, angStiffness.z * 100);
+
+  cns.setBounce(0, linBounce.x);
+  cns.setBounce(1, linBounce.y);
+  cns.setBounce(2, linBounce.z);
+  cns.setBounce(3, angBounce.x);
+  cns.setBounce(4, angBounce.y);
+  cns.setBounce(5, angBounce.z);
+
+  cns.setDamping(0, linDamping.x);
+  cns.setDamping(1, linDamping.y);
+  cns.setDamping(2, linDamping.z);
+  cns.setDamping(3, angDamping.x);
+  cns.setDamping(4, angDamping.y);
+  cns.setDamping(5, angDamping.z);
+
+  cns.enableSpring(0, enableLinSpring);
+  cns.enableSpring(1, enableLinSpring);
+  cns.enableSpring(2, enableLinSpring);
+  cns.enableSpring(3, enableAngSpring);
+  cns.enableSpring(4, enableAngSpring);
+  cns.enableSpring(5, enableAngSpring);
+
+  if(setEquilibriumPoint)
+    cns.setEquilibriumPoint();
+
+  Bt2Constraint result = this.addConstraint(cns);
+
+  return this.constraints[result.index];
+}

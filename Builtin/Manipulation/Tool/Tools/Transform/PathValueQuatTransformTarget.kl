@@ -1,0 +1,66 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+require FabricInterfaces;
+
+namespace Tool {
+
+  /// The PathValueQuatTransformTarget specializes BasicXfoTarget
+  /// in order to modify from the orientation component a Quat 
+  /// external value (Canvas port)
+  /// by creating setPathValue commands.
+  /// This is used by the PathValueQuatRotateTool.
+  object PathValueQuatTransformTarget : BasicXfoTarget {
+    Xfo initTransform;
+    SInt32 canMergeID;
+    SetPathValueCommandWrapper cmdWrapper;
+  };
+
+  /// Implementation of PathValueTarget.
+  PathValueQuatTransformTarget( String path ) {
+    this.setTargetPath( path );
+  }
+
+  /// Implementation of PathValueTarget.
+  PathValueQuatTransformTarget.setTargetPath!( String path ) {
+    this.cmdWrapper = SetPathValueCommandWrapper( path );
+    this.canMergeID = NoCanMergeID;
+  }
+
+  String PathValueQuatTransformTarget.getTargetPath() {
+    return this.cmdWrapper.getTargetPath();
+  }
+
+  /// Implementation of PathValueTarget.
+  PathValueQuatTransformTarget.valueChanged!( RTVal val ) {
+    Xfo xfo;
+    xfo.ori = val;
+    this.updateValue( xfo );
+  }
+
+  /// Update value from the source port
+  PathValueQuatTransformTarget.updateValue!( Xfo transform ) {
+    //Call directly parent's method: don't create a command in this case
+    //since the value doesn't come from a tool
+    this.parent.setLocalTransform( transform );
+  }
+
+  /// Implementation of TransformTarget.
+  PathValueQuatTransformTarget.setLocalTransform!( Xfo transform ) {
+    this.parent.setLocalTransform( transform );
+    if( this.canMergeID != NoCanMergeID )
+      this.cmdWrapper.setValue( RTVal( this.getLocalTransform().ori ), this.canMergeID, true );//block log during interaction
+  }
+
+  /// Implementation of TransformTarget.
+  PathValueQuatTransformTarget.beginChanges!( ) {
+    this.canMergeID = GetCommandManager().getNewCanMergeID();
+  }
+
+  /// Implementation of TransformTarget.
+  PathValueQuatTransformTarget.endChanges!( ) {
+    this.cmdWrapper.setValue( RTVal( this.getLocalTransform().ori ), this.canMergeID, false );
+    this.canMergeID = NoCanMergeID;
+  }
+}// namespace Tool

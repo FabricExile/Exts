@@ -1,0 +1,272 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+  const String TranslateTool_childDragging = "childDragging";
+  const String TranslateTool_beginMiddleClickDrag = "tr_beginMiddleDrag";
+  const String TranslateTool_endMiddleClickDrag = "tr_beginMiddleDrag";
+
+  /// This tool allows to translate a :kl-ref:`Tool::TransformTarget` 
+  /// in various ways by combining multiple sub-tool gizmos,
+  /// which allow translate along main axis, main planes or in camera plane.
+  /// Also, it supports active gizmo (axis) selection
+  /// and then remaps maps middle-clicks to the active sub-tool.
+  /// Finally, it can optionally draw hints showing the initial
+  /// position (to compare).
+  ///
+  /// While this tool is used as a sub-tool of the :kl-ref:`TransformTool`,
+  /// it can also be created independently.
+  object TranslateTool : BaseTool{
+    Boolean hideOtherAxisWhenMoving;
+    Boolean showHints;
+    TransformTarget transformTarget;
+    MouseClickDragInteraction middleClickDrag;
+    String activeChild;
+
+    Color highlightColor;
+    Color red, green, blue;
+    Color lightGray;
+  };
+
+  TranslateTool( Ref<TransformTarget> transformTarget, Color highlightColor, Boolean hideOtherAxisWhenMoving, Boolean showHints ) {
+    this.construct( transformTarget, highlightColor, hideOtherAxisWhenMoving, showHints );
+  }
+
+  TranslateTool.construct!( Ref<TransformTarget> transformTarget, Color highlightColor, Boolean hideOtherAxisWhenMoving, Boolean showHints ) {
+    this.hideOtherAxisWhenMoving = hideOtherAxisWhenMoving;
+    this.showHints = showHints;
+    this.transformTarget = transformTarget;
+    this.highlightColor = highlightColor;
+
+    this.red = Color( 1.0, 0.0, 0.0 );
+    this.green = Color( 0.0, 1.0, 0.0 );
+    this.blue = Color( 0.0, 0.0, 0.8 );
+    this.lightGray = Color( 0.7 );
+
+    // Create the axis tools, and offset them so we can see the viewport space translate tool
+    Ref<TranslateAlongAxisTool> axisTool = this.addChild( "XAxis", TranslateAlongAxisTool( transformTarget, Vec3( 1, 0, 0 ), this.red, highlightColor, false ) );
+    this.connectActiveAxisEvents( axisTool );// setup drag + click-no-drag -> active gizmo for middle-drag
+
+    // Offset in axis direction. Apply the offset at shape's level, so it's done after TranslateAlongAxisTool's perspective compensation scaling
+    Ref<BaseTool> arrow = axisTool.getShape();
+    Xfo xfo = arrow.getLocalTransform();
+    xfo.tr = Vec3( 0.15, 0, 0 );
+    arrow.setLocalTransform( xfo );
+
+    axisTool = this.addChild( "YAxis", TranslateAlongAxisTool( transformTarget, Vec3( 0, 1, 0 ), this.green, highlightColor, false ) );
+    this.connectActiveAxisEvents( axisTool );// setup drag + click-no-drag -> active gizmo for middle-drag
+
+    // Offset in axis direction. Apply the offset at shape's level, so it's done after TranslateAlongAxisTool's perspective compensation scaling
+    arrow = axisTool.getShape();
+    xfo = arrow.getLocalTransform();
+    xfo.tr = Vec3( 0, 0.15, 0 );
+    arrow.setLocalTransform( xfo );
+
+    axisTool = this.addChild( "ZAxis", TranslateAlongAxisTool( transformTarget, Vec3( 0, 0, 1 ), this.blue, highlightColor, false ) );
+    this.connectActiveAxisEvents( axisTool );// setup drag + click-no-drag -> active gizmo for middle-drag
+
+    // Offset in axis direction. Apply the offset at shape's level, so it's done after TranslateAlongAxisTool's perspective compensation scaling
+    arrow = axisTool.getShape();
+    xfo = arrow.getLocalTransform();
+    xfo.tr = Vec3( 0, 0, 0.15 );
+    arrow.setLocalTransform( xfo );
+
+    TranslateInPlaneTool planeTool = TranslateInPlaneTool( transformTarget, Vec3( 1, 0, 0 ), this.red, Vec2( -0.7, 0.7 ), highlightColor );
+    this.addChild( "YZPlane", planeTool );
+    this.connectActiveAxisEvents( planeTool );// setup drag + click-no-drag -> active gizmo for middle-drag
+
+    planeTool = TranslateInPlaneTool( transformTarget, Vec3( 0, 1, 0 ), this.green, Vec2( 0.7, 0.7 ), highlightColor );
+    this.addChild( "XZPlane", planeTool );
+    this.connectActiveAxisEvents( planeTool );// setup drag + click-no-drag -> active gizmo for middle-drag
+
+    planeTool = TranslateInPlaneTool( transformTarget, Vec3( 0, 0, 1 ), this.blue, Vec2( 0.7, -0.7 ), highlightColor );
+    this.addChild( "XYPlane", planeTool );
+    this.connectActiveAxisEvents( planeTool );// setup drag + click-no-drag -> active gizmo for middle-drag
+
+    // Viewport space tool
+    TranslateInViewport viewportTool = TranslateInViewport( transformTarget, Color( 0.1, 0.8, 0.8 ), highlightColor );
+    this.addChild( "Viewport", viewportTool );
+    this.connectActiveAxisEvents( viewportTool );// setup drag + click-no-drag -> active gizmo for middle-drag
+  }
+
+
+  /// Helper: connect events so that when begin drag, or click-no-drag on a child, make it the active gizmo
+  TranslateTool.connectActiveAxisEvents!( Ref<XfoTargetAlignedGizmo> child ) {
+    // connect begin drag and click-no-drag to setting it as the active gizmo
+    Ref<EventSource> sourceInteraction = child.xfoDragInteraction.getInteraction();
+    sourceInteraction.addListener( this, false, ToolEvent_DragBeginEndNoMove, child.getName() + "Clicked" );
+    sourceInteraction.addListener( this, false, ToolEvent_DragBegin, child.getName() + "Clicked" );
+  }
+
+  /// Simple helper method
+  DrawElements TranslateTool.createDrawAxis( Scalar startLen, Scalar endLen, Boolean drawPoints, Boolean drawX, Color xColor, Boolean drawY, Color yColor, Boolean drawZ, Color zColor ) {
+    DrawElements drawAxis();
+
+    if( drawX ) {
+      drawAxis.setPen( xColor, 5 );
+      drawAxis.drawLine( Vec3( startLen, 0, 0 ), Vec3( endLen, 0, 0 ) );
+      if( drawPoints ) {
+        drawAxis.drawPoint( Vec3( startLen, 0, 0 ) );
+        drawAxis.drawPoint( Vec3( endLen, 0, 0 ) );
+      }
+    }
+
+    if( drawY ) {
+      drawAxis.setPen( yColor, 5 );
+      drawAxis.drawLine( Vec3( 0, startLen, 0 ), Vec3( 0, endLen, 0 ) );
+      if( drawPoints ) {
+        drawAxis.drawPoint( Vec3( 0, startLen, 0 ) );
+        drawAxis.drawPoint( Vec3( 0, endLen, 0 ) );
+      }
+    }
+
+    if( drawZ ) {
+      drawAxis.setPen( zColor, 5 );
+      drawAxis.drawLine( Vec3( 0, 0, startLen ), Vec3( 0, 0, endLen ) );
+      if( drawPoints ) {
+        drawAxis.drawPoint( Vec3( 0, 0, startLen ) );
+        drawAxis.drawPoint( Vec3( 0, 0, endLen ) );
+      }
+    }
+    return drawAxis;
+  }
+
+  /// Simple helper method
+  DrawElements TranslateTool.createDrawAxis( Scalar startLen, Scalar endLen, Color xColor, Color yColor, Color zColor ) {
+    return this.createDrawAxis( startLen, endLen, false, true, xColor, true, yColor, true, zColor );
+  }
+
+  /// Simple helper method
+  DrawElements TranslateTool.createSingleDrawAxis( Vec3 endPos ) {
+    DrawElements drawAxis();
+    drawAxis.setPen( this.lightGray, 5 );
+    drawAxis.drawLine( Vec3(), endPos );
+    drawAxis.drawPoint( drawAxis.getPointPosition( 0 ) );
+    drawAxis.drawPoint( drawAxis.getPointPosition( 1 ) );
+    return drawAxis;
+  }
+
+  Boolean TranslateTool.onEnterChildState!( Ref<Object> child, String state ) {
+    Ref<BaseTool> childTool = child;
+    if( Boolean( childTool ) ) {
+      if( state == XfoTargetAlignedGizmo_dragging ) {
+        this.addState( TranslateTool_childDragging );// Adding this state enables to attach actions to it
+
+        if( this.hideOtherAxisWhenMoving ) {
+          // Hide others
+          for( Size i = 0; i < this.childCount(); ++i ) {
+            Ref<BaseTool> currTranslateChild = this.getChild( i );
+            if( currTranslateChild !== childTool ) {
+              // Hide the child until we are no longer in TranslateTool_childDragging state
+              SetPropertyAction hideAction( VisibleProperty, RTVal( false ), true );
+              this.attachAndDoStateSpecificChildAction( TranslateTool_childDragging, hideAction, currTranslateChild.getName() );
+            }
+          }
+        }
+
+        if( this.showHints ) {
+
+          Mat44 initialTransfo = this.transformTarget.getParentTransform() * this.transformTarget.getLocalTransform().toMat44();
+
+          // Add hints
+          DrawElements prevAxis = null;// Draw axis will follow the transform target
+          DrawElements drawAxis = null;// Prev axis will stay at initial target position
+
+          String childName = childTool.getName();
+          if( childName == "Viewport" ) {
+            drawAxis = this.createDrawAxis( 0.15, 1.15, this.red, this.green, this.blue );
+            prevAxis = this.createDrawAxis( 0, 1.15, true, true, this.lightGray, true, this.lightGray, true, this.lightGray );
+          } else if( childName == "YZPlane" ) {
+            drawAxis = this.createDrawAxis( 0, 1.15, this.red, this.highlightColor, this.highlightColor );
+            prevAxis = this.createDrawAxis( 0, 1.15, true, false, this.lightGray, true, this.lightGray, true, this.lightGray );
+          } else if( childName == "XZPlane" ) {
+            drawAxis = this.createDrawAxis( 0, 1.15, this.highlightColor, this.green, this.highlightColor );
+            prevAxis = this.createDrawAxis( 0, 1.15, true, true, this.lightGray, false, this.lightGray, true, this.lightGray );
+          } else if( childName == "XYPlane" ) {
+            drawAxis = this.createDrawAxis( 0, 1.15, this.highlightColor, this.highlightColor, this.blue );
+            prevAxis = this.createDrawAxis( 0, 1.15, true, true, this.lightGray, true, this.lightGray, false, this.lightGray );
+          } else if( childName == "XAxis" )
+            prevAxis = this.createSingleDrawAxis( Vec3( 1.15, 0, 0 ) );
+          else if( childName == "YAxis" )
+            prevAxis = this.createSingleDrawAxis( Vec3( 0, 1.15, 0 ) );
+          else if( childName == "ZAxis" )
+            prevAxis = this.createSingleDrawAxis( Vec3( 0, 0, 1.15 ) );
+
+          if( drawAxis ) {
+            // Draw axis will follow the transform target
+            AddChildAction addDrawAxis( "viewportAxisHint", XfoTargetAlignedShape( this.transformTarget, GeometricShape( drawAxis ) ), true );
+            this.attachAndDoStateSpecificAction( TranslateTool_childDragging, addDrawAxis );
+          }
+
+          if( prevAxis ) {
+            // Prev axis will stay at initial target position
+            PerspectiveCompensatedShape prevAxisShape( GeometricShape( prevAxis ) );
+            prevAxisShape.constraintTransformToParent( false );// Don't follow us
+            prevAxisShape.setLocalTransform( initialTransfo );// Set to target initial xfo
+
+            AddChildAction addPrevAxis( "viewportPrevAxisHint", prevAxisShape, true );
+            this.attachAndDoStateSpecificAction( TranslateTool_childDragging, addPrevAxis );
+          }
+        }
+      }
+    }
+    return this.parent.onEnterChildState( child, state );
+  }
+
+  Boolean TranslateTool.onLeaveChildState!( Ref<Object> child, String state ) {
+    if( Boolean( child ) && state == XfoTargetAlignedGizmo_dragging ) {
+      this.removeState( TranslateTool_childDragging );// Undo attach actions to this state
+      this.middleClickDrag = null;
+    }
+    return this.parent.onLeaveChildState( child, state );
+  }
+
+  TranslateTool.onEvent!( ToolEvent event, ToolEventUserID userID ) {
+
+    // Check if it is a "ChildnameClicked" event
+    Integer strPos = event.name.find( "Clicked" );
+    if( strPos > 0 ) {
+      String childName = event.name.left( strPos );
+      this.activeChild = childName;
+      Ref<XfoTargetAlignedGizmo> child = this.getChild( childName );
+      if( child ) {
+        // This child is the active one
+
+        // Remove previous active state data
+        this.removeState( "ActiveTool" );
+
+        // Attach state specific data for that child
+        this.addState( "ActiveTool" );
+
+        // Set its color to darker highlight
+        Color darkerHighlight = this.highlightColor * 0.8;
+        darkerHighlight.a = 1.0;
+        this.attachAndDoStateSpecificChildAction( "ActiveTool", SetColorAction( darkerHighlight, true ), childName + "/shape" );
+
+        // Create a mouse middle-click drag interaction targetting its interaction
+        this.middleClickDrag = MouseClickDragInteraction( MouseButton_MiddleButton );
+        this.middleClickDrag.addListener( this, false, ToolEvent_DragBegin, TranslateTool_beginMiddleClickDrag );
+        this.middleClickDrag.addListener( this, false, ToolEvent_DragEnd, TranslateTool_endMiddleClickDrag );
+        // Create a addComponent action so it is deleted once the state changes
+        this.attachAndDoStateSpecificAction( "ActiveTool", AddComponentAction( this.middleClickDrag, true ) );
+
+        // Connect signals to the target tool.
+        SetMainStateAction setChildStateAction = child.connectDragInteraction( this.middleClickDrag, false );//interaction is not an owner, since we want the state to be its only owner
+        // Add it as a child specific component so it is removed upon active tool change
+        this.attachStateSpecificChildComponent( "ActiveTool", setChildStateAction, childName );
+      }
+    }
+
+    if( event.name == TranslateTool_beginMiddleClickDrag || event.name == TranslateTool_endMiddleClickDrag ) {
+      Ref<TranslateAlongAxisTool> child = this.getChild( this.activeChild );
+      if( child ) {
+        Boolean enablePixelDelta = event.name == TranslateTool_beginMiddleClickDrag;
+        child.translateInteraction.usePixelDelta( enablePixelDelta );
+      }
+    }
+
+    this.parent.onEvent( event, userID );
+  }
+
+}// namespace Tool

@@ -1,0 +1,328 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+struct AttributeContainerRef {
+  Ref<GeometryAttributes> container;
+  Size containerIndex;
+};
+
+inline AttributeContainerRef() {
+  this.containerIndex = InvalidIndex;
+}
+
+/**
+  The BaseAttribute object provides base member and methods for simplifying the implementation of the specialized attribute types.
+*/
+object BaseAttribute : GeometryAttribute, Versioned, StatisticSourceWithAutoRegisterMember {
+  UInt32 version;
+  String name;
+  StatisticsAutoRegisterMember autoStats;
+  Size count;
+
+  AttributeContainerRef mainContainerRef;
+  AttributeContainerRef otherContainerRefs[]; // Only allocate if > 1 container
+};
+
+/// \internal
+inline BaseAttribute() {
+  if(FabricStatisticsEnabled())
+    this.autoStats = StatisticsAutoRegisterMember(this);
+}
+
+/// \internal Implementation of StatisticSource interface's 'getStatistics()'.
+function StatisticRecord[] BaseAttribute.getStatistics() {
+  StatisticRecord stats[];
+  stats.push( StatisticRecord( Statistic_Name, this.name ) );
+  stats.push( StatisticRecord( Statistic_Category, "Attribute" ) );
+  return stats;
+}
+
+inline String BaseAttribute.getName() {
+  return this.name;
+}
+
+/// \dfgPresetOmit
+inline Size BaseAttribute.getContainerIndex( Ref<GeometryAttributes> container ) {
+  if( container === this.mainContainerRef.container )
+    return this.mainContainerRef.containerIndex;
+
+  for( Size i = 0; i < this.otherContainerRefs.size(); ++i ) {
+    if( container === this.otherContainerRefs[i].container )
+      return this.otherContainerRefs[i].containerIndex;
+  }
+
+  setError("BaseAttribute.getContainerIndex: container not found");
+  return InvalidIndex;
+}
+
+/// \dfgPresetOmit
+BaseAttribute.addContainer!( Ref<GeometryAttributes> container, Size containerIndex, Boolean mainOwner ) {
+  if( mainOwner ) {
+    if( this.mainContainerRef.container ) {
+      if( this.mainContainerRef.container === container ) {// In theory this shouldn't happen...
+        this.mainContainerRef.containerIndex = containerIndex;
+        return;
+      }
+      setError( "BaseAttribute.addContainer: already has another main GeometryAttributes container" );
+    } else {
+      this.mainContainerRef.container = container;
+      this.mainContainerRef.containerIndex = containerIndex;
+      return;
+    }
+  }
+  for( Size i = 0; i < this.otherContainerRefs.size(); ++i ) {
+    // In theory this shouldn't happen...
+    if( container === this.otherContainerRefs[i].container ) {
+      this.otherContainerRefs[i].containerIndex = containerIndex;
+      return;
+    }
+  }
+  AttributeContainerRef cref;
+  cref.containerIndex = containerIndex;
+  cref.container = container;
+  this.otherContainerRefs.push( cref );
+}
+
+/// \dfgPresetOmit
+inline Boolean BaseAttribute.isMainOwnerContainer( Ref<GeometryAttributes> attributeContainer ) {
+  return this.mainContainerRef.container === attributeContainer;
+}
+
+/// \dfgPresetOmit
+Boolean BaseAttribute.sharedByMultipleContainers() {
+  return this.otherContainerRefs;
+}
+
+/// \dfgPresetOmit
+BaseAttribute.removeContainer!( Ref<GeometryAttributes> container ) {
+  if( this.mainContainerRef.container === container ) {
+    this.mainContainerRef = AttributeContainerRef();
+    return;
+  }
+
+  for( Size i = 0; i < this.otherContainerRefs.size(); ++i ) {
+
+    if( container === this.otherContainerRefs[i].container ) {
+      for( Size j = i + 1; j < this.otherContainerRefs.size(); ++j )
+        this.otherContainerRefs[j - 1] = this.otherContainerRefs[j];
+
+      this.otherContainerRefs.resize( this.otherContainerRefs.size() - 1 );
+      return;
+    }
+  }
+  setError( "BaseAttribute.removeContainer: container not found" );
+}
+
+/// Specialized class's 'clone()' should call this before copying its value container
+/// \internal
+inline BaseAttribute.cloneMembersTo( io BaseAttribute that ) {
+  //Don't copy this.autoStat on purpose (we don't want it share)
+  that.version = this.version;
+  that.name = this.name.clone();
+  //Don't clone container references
+}
+
+function Ref<StatisticSource> BaseAttribute.getStatisticsSource() {
+  return this.autoStats;
+}
+
+inline BaseAttribute.resize!(Size count) {
+  // (to be specialized for the specific attribute values)
+  if( this.count != count ) {
+    this.count = count;
+    ++this.version;
+  }
+}
+
+inline Size BaseAttribute.size() {
+  return this.count;
+}
+
+/// \internal
+inline Boolean BaseAttribute.checkConsistency( AttributeContainerRef cref ) {
+  return !cref.container || cref.container.size() == this.count;
+}
+
+Boolean BaseAttribute.checkConsistency() {
+  if( !this.checkConsistency( this.mainContainerRef ) )
+    return false;
+
+  for( Size i = 0; i < this.otherContainerRefs.size(); ++i ) {
+    if( !this.checkConsistency( this.otherContainerRefs[i] ) )
+      return false;
+  }
+
+  return true;
+}
+
+inline Data BaseAttribute.data() {
+  // (to be specialized for the specific attribute values)
+  return Data();
+}
+
+inline UInt32 BaseAttribute.getElementsMemType( ) {
+  // (to be specialized for the specific attribute values)
+  return 0;
+}
+
+inline BaseAttribute.convertToGPU!( ) {
+  // (to be specialized for the specific attribute values)
+  throw "BaseAttribute.convertToGPU: method needs to be specialized";
+}
+
+inline BaseAttribute.convertToCPU!( ) {
+  // (to be specialized for the specific attribute values)
+  throw "BaseAttribute.convertToCPU: method needs to be specialized";
+}
+
+inline BaseAttribute.copyValue!( Size sourceIndex, Size targetIndex ) {
+  // (to be specialized for the specific attribute values)
+  throw "BaseAttribute.copyValue: method needs to be specialized";
+}
+
+inline BaseAttribute.copyValue!( Ref<Object> sourceAttr, Size sourceIndex, Size targetIndex ) {
+  // (to be specialized for the specific attribute values)
+  throw "BaseAttribute.copyValue: method needs to be specialized";
+}
+
+/// \internal Resizes to otherAttr size and increments version; to be specialized for copying value content
+inline BaseAttribute.copyFrom!( Ref<Object> otherAttr ) {
+  Ref<BaseAttribute> otherBaseAttr = otherAttr;
+  this.version += otherBaseAttr.version;
+  this.incrementVersion();
+  Ref<GeometryAttribute> thisGeomAttr = this;//Access by interface so that specialized interfaces are called
+
+  Size size = otherBaseAttr.size();
+  if(thisGeomAttr.size() != size) {
+    thisGeomAttr.resize(size);
+  }
+  if(otherBaseAttr.getElementsMemType() != Fabric_MemType_CPU) {
+    if(thisGeomAttr.getElementsMemType() == Fabric_MemType_CPU)
+      thisGeomAttr.convertToGPU();
+  }
+}
+
+inline BaseAttribute.linearCombine!( Ref<Object> sourceAttr, LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights, Size targetIndex ) {
+  // (to be specialized for the specific attribute values)
+  throw "BaseAttribute.linearCombine: method needs to be specialized";
+}
+
+inline BaseAttribute.setFromScalar!( Size index, LocalL16ScalarArray value ) {
+  // (to be specialized for the specific attribute values)
+}
+
+inline Size BaseAttribute.getScalarValueSize() {
+  // (to be specialized for the specific attribute values)
+  return 0;
+}
+
+inline Boolean BaseAttribute.equalValues( Size index1, Size index2 ) {
+  // (to be specialized for the specific attribute values)
+  throw "BaseAttribute.equalValues: method needs to be specialized";
+}
+
+function String BaseAttribute.valueDesc( Size index ) {
+  // (to be specialized for the specific attribute values)
+  throw "BaseAttribute.valueDesc: method needs to be specialized";
+}
+
+function String BaseAttribute.unitTestPrint( Size index ) {
+  // (to be specialized for the specific attribute values)
+  throw "BaseAttribute.unitTestPrint: method needs to be specialized";
+}
+
+function String BaseAttribute.truncateDecimalsPrint( Size index, UInt32 n ) {
+  // (to be specialized for the specific attribute values)
+  throw "BaseAttribute.truncateDecimalsPrint: method needs to be specialized";
+}
+
+function String BaseAttribute.getDesc?( Boolean includeValues) {
+  String desc;
+  desc += "Attribute: " + this.getName() + " nb elements = "+ this.size()+'\n';
+  Ref<GeometryAttribute> thisGeomAttr = this;//Access by interface so that specialized interfaces are called
+  if(includeValues){
+    Size size = thisGeomAttr.size();
+    if(size > 0){
+      desc += "  values:[ \n";
+      for(Integer i=0; i<size; i++){
+        desc += '    ' + thisGeomAttr.unitTestPrint(i) + " \n";
+      }
+      desc += "  ]\n";
+    }
+    else{
+      desc += "  values:[]\n";
+    }
+  }
+  return desc;
+}
+
+function String BaseAttribute.getDesc?() {
+  return this.getDesc(false);
+}
+
+/// \internal Helper for adding this attribute to a GeometryAttributes container.
+function BaseAttribute._attachToContainer!( String name, io Ref<GeometryAttributes> container ) {
+  Ref<GeometryAttribute> thisGeomAttr = this;//Access by interface so that specialized interfaces are called
+  thisGeomAttr.resize(container.size());
+  this.name = name;
+  this.version += container.keysVersion;
+  container.attachNewAttribute(this);
+}
+
+/// \internal Versioned implementation.
+inline UInt32 BaseAttribute.getVersion() {
+  return this.version;
+}
+
+/// \internal Versioned implementation.
+inline BaseAttribute.initVersion!( UInt32 version ) {
+  this.version = version;
+}
+
+/// \internal
+inline BaseAttribute._incrementVersionInternal!() {
+  if( this.mainContainerRef.container )
+    this.mainContainerRef.container.incrementAttributesValueVersion();
+
+  for( Size i = 0; i < this.otherContainerRefs.size(); ++i )
+    this.otherContainerRefs[i].container.incrementAttributesValueVersion();
+
+  ++this.version;
+}
+
+/// \internal Versioned implementation.
+inline BaseAttribute.incrementVersion!() {
+  this._incrementVersionInternal();
+}
+
+/// \internal Versioned implementation.
+inline UInt32 BaseAttribute.getValueVersion() {
+  return this.version;
+}
+
+/// \internal Versioned implementation.
+inline BaseAttribute.initValueVersion!( UInt32 version ) {
+  this.version = version;
+}
+
+/// \internal Versioned implementation.
+inline BaseAttribute.incrementValueVersion!() {
+  this._incrementVersionInternal();
+}
+
+/// \internal Versioned implementation.
+inline UInt32 BaseAttribute.getStructureVersion() {
+  return this.version;
+}
+
+/// \internal Versioned implementation.
+inline BaseAttribute.initStructureVersion!( UInt32 version ) {
+  this.version = version;
+}
+
+/// \internal Versioned implementation.
+inline BaseAttribute.incrementStructureVersion!() {
+  this._incrementVersionInternal();
+}

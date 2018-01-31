@@ -1,0 +1,509 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+require Math, FabricOGL;
+
+interface OGLImageObject {
+  getSize( io Size width, io Size height, io Size depth, io Size samples );
+  getType(io UInt32 componentType, io UInt32 redBits, io UInt32 greenBits, io UInt32 blueBits, io UInt32 alphaBits, io UInt32 depthBits, io UInt32 stencilBits );
+  UInt32 getInternalFormat();
+  UInt32 getTextureType();//or GL_RENDERBUFFER
+  Boolean isShadow();
+
+  setSamples!( Size samples );
+  setSize!( Size width, Size height );
+  setSize!( Size width, Size height, Size depth );
+};
+
+/// \internal
+object OGLTexture : OGLBaseObject, OGLImageObject {
+  UInt32 glTextureType;
+  UInt32 glFormat;
+  UInt32 glInternalFormat;
+
+  UInt32 width;
+  UInt32 height;
+  UInt32 depth;
+  UInt32 samples;
+  Boolean hasMipMaps;
+
+  Boolean pendingTextureParameters;
+  Integer minFilter;
+  Integer magFilter;
+  Integer wrapS;
+  Integer wrapT;
+  Integer wrapR;
+
+  Boolean pendingShadowTextureParameters;
+  Boolean isShadow;
+};
+
+inline OGLTexture() {
+  this.depth = 1;
+  this.samples = 1;
+  this.glTextureType = GL_TEXTURE_2D;
+  // this.minFilter = GL_NEAREST_MIPMAP_LINEAR;
+  this.minFilter = GL_LINEAR_MIPMAP_LINEAR;// Patch for the VR branch since not accessible from the SG
+  this.magFilter = GL_LINEAR;
+  this.wrapS = GL_REPEAT;
+  this.wrapT = GL_REPEAT;
+  this.wrapR = GL_REPEAT;
+}
+
+inline ~OGLTexture() {
+  this.releaseGL();
+}
+
+inline OGLTexture.releaseGL_contextValidated!( UInt32 bufferID ) {
+  UInt32 buffers[1];
+  buffers[0] = bufferID;
+  glDeleteTextures(1, buffers);
+}
+
+inline Boolean OGLTexture.hasSameType( OGLTexture other ) {
+  return this.glTextureType == other.glTextureType
+      && this.glInternalFormat == other.glInternalFormat
+      && this.glFormat == other.glFormat
+      && this.hasMipMaps == other.hasMipMaps;
+}
+
+OGLTexture.setType!( UInt32 glTextureType, UInt32 glFormat, UInt32 glInternalFormat, Boolean hasMipMaps, UInt32 samples ) {
+  UInt32 _glTextureType = glTextureType;
+
+  //Do a bit of magic with multisample
+  if( samples > 1 ) {
+    if( _glTextureType == GL_TEXTURE_2D )
+      _glTextureType = GL_TEXTURE_2D_MULTISAMPLE;
+    if( _glTextureType == GL_PROXY_TEXTURE_2D )
+      _glTextureType = GL_PROXY_TEXTURE_2D_MULTISAMPLE;
+    else if( _glTextureType == GL_TEXTURE_2D_ARRAY )
+      _glTextureType = GL_TEXTURE_2D_MULTISAMPLE_ARRAY;
+    else if( _glTextureType == GL_PROXY_TEXTURE_2D_ARRAY )
+      _glTextureType = GL_PROXY_TEXTURE_2D_MULTISAMPLE_ARRAY;
+    else if( _glTextureType != GL_TEXTURE_2D_MULTISAMPLE
+          && _glTextureType != GL_PROXY_TEXTURE_2D_MULTISAMPLE
+          && _glTextureType != GL_TEXTURE_2D_MULTISAMPLE_ARRAY
+          && _glTextureType != GL_PROXY_TEXTURE_2D_MULTISAMPLE_ARRAY )
+      setError("OGLTexture.setType: glTextureType not compatible with multisample");
+  } else {
+    if( _glTextureType == GL_TEXTURE_2D_MULTISAMPLE )
+      _glTextureType = GL_TEXTURE_2D;
+    if( _glTextureType == GL_PROXY_TEXTURE_2D_MULTISAMPLE )
+      _glTextureType = GL_PROXY_TEXTURE_2D;
+    else if( _glTextureType == GL_TEXTURE_2D_MULTISAMPLE_ARRAY )
+      _glTextureType = GL_TEXTURE_2D_ARRAY;
+    else if( _glTextureType == GL_PROXY_TEXTURE_2D_MULTISAMPLE_ARRAY )
+      _glTextureType = GL_PROXY_TEXTURE_2D_ARRAY;
+  }
+
+  Boolean changed;
+  updateValue( _glTextureType, this.glTextureType, changed );
+  updateValue( glFormat, this.glFormat, changed );
+  updateValue( glInternalFormat, this.glInternalFormat, changed );
+  updateValue( hasMipMaps, this.hasMipMaps, changed );
+  updateValue( samples, this.samples, changed );
+  if( changed ) {
+    this.deactivate();
+    this.parent.incrementStructureVersion();
+    this.pendingTextureParameters = true;
+    this.pendingShadowTextureParameters = false;
+  }
+}
+
+OGLTexture.setGenerateMipMaps!( Boolean hasMipMaps ) {
+  this.setType( this.glTextureType, this.glFormat, this.glInternalFormat, hasMipMaps, this.samples );
+}
+
+inline OGLTexture.setType!( UInt32 glTextureType, UInt32 glFormat, UInt32 glInternalFormat, Boolean hasMipMaps ) {
+  this.setType( glTextureType, glFormat, glInternalFormat, hasMipMaps, 1 );
+}
+
+inline OGLTexture.setSize!( UInt32 width, UInt32 height, UInt32 depth ) {
+  Boolean changed;
+  updateValue( width, this.width, changed );
+  updateValue( height, this.height, changed );
+  updateValue( depth, this.depth, changed );
+  if( changed ) {
+    this.deactivate();
+    this.parent.incrementStructureVersion();
+  }
+}
+
+inline OGLTexture.getSize( io Size width, io Size height, io Size depth, io Size samples ) {
+  width = this.width;
+  height = this.height;
+  depth = this.depth;
+  samples = this.samples;
+}
+
+inline OGLTexture.getType(io UInt32 componentType, io UInt32 redBits, io UInt32 greenBits, io UInt32 blueBits, io UInt32 alphaBits, io UInt32 depthBits, io UInt32 stencilBits ) {
+  _getTextureTypeBits(this.glInternalFormat, componentType, redBits, greenBits, blueBits, alphaBits, depthBits, stencilBits );
+}
+
+inline UInt32 OGLTexture.getInternalFormat() {
+  return this.glInternalFormat;
+}
+
+inline UInt32 OGLTexture.getTextureType() {
+  return this.glTextureType;
+}
+
+inline Boolean OGLTexture.isShadow() {
+  return this.isShadow;
+}
+
+inline OGLTexture.setSamples!( Size samples ) {
+  this.setType( this.glTextureType, this.glFormat, this.glInternalFormat, this.hasMipMaps, samples );
+}
+
+inline OGLTexture.setSize!( Size width, Size height ) {
+  this.setSize( width, height, this.depth );
+}
+
+function OGLTexture.loadTexture2D!(
+  Size width,
+  Size height,
+  Integer pixelDataGLType,//GL_FLOAT, GL_UNSIGNED_BYTE...
+  Data pixelData,
+  io Ref<OGLContext> context
+  ) {
+  Data pixelDatas[1]; pixelDatas[0] = pixelData;
+  this.loadTexture( width, height, pixelDataGLType, pixelDatas, context );
+}
+
+function OGLTexture.loadTexture!(
+  Size width,
+  Size height,
+  Integer pixelDataGLType,//GL_FLOAT, GL_UNSIGNED_BYTE...
+  Data pixelDatas<>,
+  io Ref<OGLContext> context
+  ) {
+  if( !CheckOGLContextValidity( context ) ) {
+    setError( "OGLTexture.loadTexture2D: OpenGL context not bound" );
+    return;
+  }
+
+  Boolean typeChanged = this.activate();
+  if( this.bufferID == 0 ) {
+    UInt32 buffers[1];
+    UInt32 buffersExt<> = buffers;
+    glGenTextures( 1, buffersExt );
+    this.bufferID = buffers[0];
+    typeChanged = true;
+  }
+
+  if( this.glInternalFormat == 0 || this.glFormat == 0 )
+    return;//Fail silently, but ensure at least we have a textureID
+
+  Size nbPixels = width * height;
+
+  context.stateCache.bindTexture( this.glTextureType, this.bufferID );
+
+  if( this.tracingEnabled() )
+    report( "OGLBuffer.load " + this.getTraceName() + ": width=" + width + ": height=" + height );
+
+  //Load the pixel data
+  Data pixelData = pixelDatas[0];
+  if( pixelData )
+    glPixelStorei( GL_UNPACK_ALIGNMENT, 1 );
+
+  if( !typeChanged && ( this.width == width && this.height == height && this.depth == 1 ) ) {
+    if( pixelData ) {
+      if( this.samples > 1 )
+        setError( "OGLTexture.loadTexture2D: cannot load pixel data into a multisample texture" );
+      else
+        glTexSubImage2D( this.glTextureType, 0, 0, 0, width, height, this.glFormat, pixelDataGLType, pixelData );
+    }
+  } else if( typeChanged || Boolean( pixelData ) ) {
+    if( this.samples <= 1 ) {
+      if( this.glTextureType == GL_TEXTURE_CUBE_MAP ) {
+        //TODO: have an OGLTextureCube type that specializes this method!
+        this.depth = 1;
+        Boolean hasData = Boolean(pixelData);
+        Data nullData;
+        glTexImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_X, 0, this.glInternalFormat, width, height, 0, this.glFormat, pixelDataGLType, hasData ? pixelDatas[0] : nullData );
+        glTexImage2D( GL_TEXTURE_CUBE_MAP_NEGATIVE_X, 0, this.glInternalFormat, width, height, 0, this.glFormat, pixelDataGLType, hasData ? pixelDatas[1] : nullData );
+        glTexImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_Y, 0, this.glInternalFormat, width, height, 0, this.glFormat, pixelDataGLType, hasData ? pixelDatas[2] : nullData );
+        glTexImage2D( GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, 0, this.glInternalFormat, width, height, 0, this.glFormat, pixelDataGLType, hasData ? pixelDatas[3] : nullData );
+        glTexImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_Z, 0, this.glInternalFormat, width, height, 0, this.glFormat, pixelDataGLType, hasData ? pixelDatas[4] : nullData );
+        glTexImage2D( GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, 0, this.glInternalFormat, width, height, 0, this.glFormat, pixelDataGLType, hasData ? pixelDatas[5] : nullData );
+      } else if( this.glTextureType == GL_TEXTURE_3D || this.glTextureType == GL_PROXY_TEXTURE_3D || this.glTextureType == GL_TEXTURE_2D_ARRAY || this.glTextureType == GL_PROXY_TEXTURE_2D_ARRAY ) {
+        //TODO: have an OGLTexture3D type that specializes this method!
+        glTexImage3D( this.glTextureType, 0, this.glInternalFormat, width, height, this.depth, 0, this.glFormat, pixelDataGLType, pixelData );
+      } else {
+        this.depth = 1;
+        glTexImage2D( this.glTextureType, 0, this.glInternalFormat, width, height, 0, this.glFormat, pixelDataGLType, pixelData );
+      }
+
+    } else
+      glTexImage2DMultisample( this.glTextureType, this.samples, this.glInternalFormat, width, height, GL_TRUE );
+  }
+  this.width = width;
+  this.height = height;
+
+  if( this.hasMipMaps && Boolean( pixelData ) ) {
+    glTexParameteri( this.glTextureType, GL_TEXTURE_MAX_LEVEL, 1000 );//default OGL value (needs to be set sice we set 0 if !this.hasMipMaps)
+    glGenerateMipmap( this.glTextureType );
+  } else if( !this.hasMipMaps )
+    glTexParameteri(this.glTextureType, GL_TEXTURE_MAX_LEVEL, 0);
+
+  this.updatePendingTextureParameters();
+  this.parent.incrementValueVersion();
+}
+
+function OGLTexture.updatePendingTextureParameters!( ) {
+  if( this.pendingShadowTextureParameters )
+    this.setShadowTextureParameters();
+
+  if( this.pendingTextureParameters )
+    this.setTextureParameters( this.minFilter, this.magFilter, this.wrapS, this.wrapT, this.wrapR );
+}
+
+function Boolean OGLTexture.create!( io Ref<OGLContext> context ) {
+  if( this.bufferID )
+    return true;
+  if( this.glTextureType != 0 && this.glFormat != 0 && this.glInternalFormat != 0 && this.width != 0 && this.height != 0 && this.depth != 0 ) {
+    //This texture is probably a framebuffer target; create container
+    //TODO: check this.glTextureType & switch
+    Data nullData;
+    this.loadTexture2D( this.width, this.height, GL_BYTE, nullData, context );
+  }
+  return true;
+}
+
+function OGLTexture.loadTexture3D!(
+  Size width,
+  Size height,
+  Size depth,
+  Integer pixelDataGLType,//GL_FLOAT, GL_UNSIGNED_BYTE...
+  Data pixelData,
+  io Ref<OGLContext> context
+) {
+  this.setSize(width, height, depth);
+  this.loadTexture2D( width, height, pixelDataGLType, pixelData, context );
+}
+
+// RGB
+function OGLTexture.loadTexture2D!(
+  Size width,
+  Size height,
+  RGB pixelData<>,
+  Boolean generateMipmaps,
+  io Ref<OGLContext> context
+) {
+  if( width*height > pixelData.size() )
+    throw("OGLTexture.loadTexture2D: pixelData too small");
+  this.setType( GL_TEXTURE_2D, GL_RGB, GL_RGB8, generateMipmaps );
+  this.loadTexture2D( width, height, GL_UNSIGNED_BYTE, pixelData.data(), context );
+}
+
+function OGLTexture.loadTexture2DRGB!(
+  Size width,
+  Size height,
+  Data pixelData,
+  Boolean generateMipmaps,
+  io Ref<OGLContext> context
+) {
+  this.setType( GL_TEXTURE_2D, GL_RGB, GL_RGB8, generateMipmaps );
+  this.loadTexture2D( width, height, GL_UNSIGNED_BYTE, pixelData, context );
+}
+
+// RGBA
+function OGLTexture.loadTexture2D!(
+  Size width,
+  Size height,
+  RGBA pixelData<>,
+  Boolean generateMipmaps,
+  io Ref<OGLContext> context
+) {
+  if( width*height > pixelData.size() )
+    throw("OGLTexture.loadTexture2D: pixelData too small");
+  this.setType( GL_TEXTURE_2D, GL_RGBA, GL_RGBA8, generateMipmaps );
+  this.loadTexture2D( width, height, GL_UNSIGNED_BYTE, pixelData.data(), context );
+}
+
+function OGLTexture.loadTexture2DRGBA!(
+  Size width,
+  Size height,
+  Data pixelData,
+  Boolean generateMipmaps,
+  io Ref<OGLContext> context
+) {
+  this.setType( GL_TEXTURE_2D, GL_RGBA, GL_RGBA8, generateMipmaps );
+  this.loadTexture2D( width, height, GL_UNSIGNED_BYTE, pixelData, context );
+}
+
+// Color
+function OGLTexture.loadTexture2D!(
+  Size width,
+  Size height,
+  Color pixelData<>,
+  Boolean asFloat16,
+  Boolean withAlpha,
+  Boolean generateMipmaps,
+  io Ref<OGLContext> context
+) {
+  if( width*height > pixelData.size() )
+    throw("OGLTexture.loadTexture2D: pixelData too small");
+  this.setType( GL_TEXTURE_2D, withAlpha ? GL_RGBA : GL_RGB, withAlpha ? (asFloat16 ? GL_RGBA16F : GL_RGBA32F) : (asFloat16 ? GL_RGB16F : GL_RGB32F), generateMipmaps );
+  this.loadTexture2D( width, height, GL_FLOAT, pixelData.data(), context );
+}
+
+function OGLTexture.loadTexture2DColor!(
+  Size width,
+  Size height,
+  Data pixelData,
+  Boolean asFloat16,
+  Boolean withAlpha,
+  Boolean generateMipmaps,
+  io Ref<OGLContext> context
+) {
+  this.setType( GL_TEXTURE_2D, withAlpha ? GL_RGBA : GL_RGB, withAlpha ? (asFloat16 ? GL_RGBA16F : GL_RGBA32F) : (asFloat16 ? GL_RGB16F : GL_RGB32F), generateMipmaps );
+  this.loadTexture2D( width, height, GL_FLOAT, pixelData, context );
+}
+
+inline OGLTexture.loadTexture2D!(
+  Size width,
+  Size height,
+  Color pixelData<>,
+  Boolean generateMipmaps,
+  io Ref<OGLContext> context
+) {
+  this.loadTexture2D( width, height, pixelData, false, true, generateMipmaps, context );
+}
+
+inline OGLTexture.loadTexture2DColor!(
+  Size width,
+  Size height,
+  Data pixelData,
+  Boolean generateMipmaps,
+  io Ref<OGLContext> context
+) {
+  this.loadTexture2DColor( width, height, pixelData, false, true, generateMipmaps, context );
+}
+
+
+function OGLTexture.setTextureParameters!(
+  Integer minFilter,
+  Integer magFilter,
+  Integer wrapS,
+  Integer wrapT,
+  Integer wrapR
+  ) {
+  Boolean changed;
+  updateValue( minFilter, this.minFilter, changed );
+  updateValue( magFilter, this.magFilter, changed );
+  updateValue( wrapS, this.wrapS, changed );
+  updateValue( wrapT, this.wrapT, changed );
+  updateValue( wrapR, this.wrapR, changed );
+
+  if( !changed && !this.pendingTextureParameters )
+    return;
+
+  if( !cpglHaveContext() || this.bufferID == 0 ) {
+    this.pendingTextureParameters = true;
+    return;
+  }
+  this.parent.incrementValueVersion();
+  glBindTexture(this.glTextureType, this.bufferID);
+  glTexParameteri(this.glTextureType, GL_TEXTURE_MIN_FILTER, minFilter);
+  glTexParameteri(this.glTextureType, GL_TEXTURE_MAG_FILTER, magFilter);
+  glTexParameteri(this.glTextureType, GL_TEXTURE_WRAP_S, wrapS);
+  glTexParameteri(this.glTextureType, GL_TEXTURE_WRAP_T, wrapT);
+  glTexParameteri( this.glTextureType, GL_TEXTURE_WRAP_R, wrapR );
+  this.pendingTextureParameters = false;
+}
+
+function OGLTexture.setTextureParameters!(
+  Integer minFilter,
+  Integer magFilter,
+  Integer wrapS,
+  Integer wrapT
+  ) {
+  this.setTextureParameters( minFilter, magFilter, wrapS, wrapT, wrapT );
+}
+
+function OGLTexture.setShadowTextureParameters!() {
+
+  // Put GL_LINEAR as it will result in a free antialiasing on NVidia carts
+  if( this.glTextureType != GL_TEXTURE_CUBE_MAP && this.glTextureType != GL_TEXTURE_CUBE_MAP_ARRAY )
+    this.setTextureParameters(GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_BORDER, GL_CLAMP_TO_BORDER);
+  else
+    this.setTextureParameters(GL_LINEAR, GL_LINEAR, GL_REPEAT, GL_REPEAT);
+  this.isShadow = true;
+
+  if(!cpglHaveContext() || this.bufferID == 0) {
+    this.pendingShadowTextureParameters = true;
+    return;
+  }
+  this.parent.incrementValueVersion();
+  glBindTexture(this.glTextureType, this.bufferID);
+  glTexParameteri(this.glTextureType, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_R_TO_TEXTURE);
+  glTexParameteri(this.glTextureType, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+  if( this.glTextureType != GL_TEXTURE_CUBE_MAP && this.glTextureType != GL_TEXTURE_CUBE_MAP_ARRAY ) {
+    Scalar data[4];
+    data[0] = 1;
+    data[1] = 1;
+    data[2] = 1;
+    data[3] = 1;
+    glTexParameterfv( this.glTextureType, GL_TEXTURE_BORDER_COLOR, data );
+  }
+  this.pendingShadowTextureParameters = false;
+}
+
+// cube map: TODO
+
+// 3D texture: TODO
+
+//TODO: version with state cache
+inline OGLTexture.bind!( UInt32 textureUnit ) {
+  if (this.bufferID ) {
+    glActiveTexture(GL_TEXTURE0 + textureUnit);
+    glBindTexture(this.glTextureType, this.bufferID);
+  }
+}
+
+function OGLTexture.loadTexture2D!(
+  io Mat44 matrices[],
+  io Ref<OGLContext> context
+) {
+  this.setType( GL_TEXTURE_2D, GL_RGBA, GL_RGBA32F, false );
+  this.setTextureParameters(GL_NEAREST, GL_NEAREST, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE);
+  Size height = (matrices.size()+255)/256;
+
+  //Ensure we don't get out of allocated array data
+  Size requiredDataSize = 256*height;
+  matrices.reserve(requiredDataSize);
+  this.loadTexture2D( 256*4, height, GL_FLOAT, matrices.data(), context );
+}
+
+/// \internal
+function UInt64 OGLTexture.getApproximateGPUMemoryUsage() {
+  if( !this.bufferID )
+    return 0;
+
+  SInt64 size = this.width * this.height * (this.depth ? this.depth : 1) * this.samples * this.samples;
+  if(this.glTextureType == GL_TEXTURE_CUBE_MAP)
+    size *= 6;
+  if(this.hasMipMaps)
+    size = (size*4)/3;
+  return _getTextureApproximateGPUMemoryUsage(size, this.glInternalFormat);
+}
+
+function getTypeInformation(UInt32 glInternalFormat, io UInt32 componentType, io UInt32 redBits, io UInt32 greenBits, io UInt32 blueBits, io UInt32 alphaBits, io UInt32 depthBits, io UInt32 stencilBits ) {
+}
+
+///Implementation of StatisticSource interface's 'getStatistics()'.
+/// \internal
+function StatisticRecord[] OGLTexture.getStatistics() {
+  StatisticRecord stats[] = this.parent.getStatistics();
+  SInt64 size = this.width * this.height * (this.depth ? this.depth : 1);
+  stats.push( StatisticRecord( "Size", size ) );
+  stats.push( StatisticRecord( "Width", this.width ) );
+  stats.push( StatisticRecord( "Height", this.height ) );
+  if(this.depth > 1)
+    stats.push( StatisticRecord( "Depth", this.depth ) );
+  stats.push( StatisticRecord( Statistic_MemoryUsage, 20*4 ) );
+  return stats;
+}

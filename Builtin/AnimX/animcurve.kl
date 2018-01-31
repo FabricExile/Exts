@@ -1,0 +1,594 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+require FabricInterfaces;
+require FTL;
+require Math;
+
+namespace AnimX
+{
+  object AnimCurve : ICurve, RTValToJSONEncoder, RTValFromJSONDecoder, BaseVersioned
+  {
+    private Boolean weighted;
+    private InfinityType m_preInfinityType, m_postInfinityType;
+    private String name;
+    private Color color;
+    private Keyframe keys[];
+
+    private KeyIds ids;
+  };
+
+  AnimCurve()
+  {
+    this.init(true, 'curve', Color(1.0, 0.0, 0.0));
+  }
+
+  AnimCurve(Boolean weighted)
+  {
+    this.init(weighted, 'curve', Color(1.0, 0.0, 0.0));
+  }
+
+  AnimCurve(Boolean weighted, String name, Color color)
+  {
+    this.init(weighted, name, color);
+  }
+
+  private AnimCurve.init!(Boolean weighted, String name, Color color)
+  {
+    this.weighted = weighted;
+    this.m_preInfinityType = InfinityType_Constant;
+    this.m_postInfinityType = InfinityType_Constant;
+    this.name = name;
+    this.color = color;
+  }
+
+  /// \dfgPresetOmit
+  function String AnimCurve.getName()
+  {
+    return this.name;
+  }
+
+  /// \dfgPresetOmit
+  function Color AnimCurve.getColor()
+  {
+    return this.color;
+  }
+
+  /// \dfgPresetOmit
+  inline AnimCurve.useIds!( Boolean using )
+  {
+    if( using )
+    {
+      if( this.ids == null )
+      {
+        this.ids = KeyIds();
+        this.ids.reset( this.keys.size() );
+      }
+    }
+    else
+      this.ids = null;
+  }
+
+  /// \dfgPresetOmit
+  inline Index AnimCurve.getKeyId( Index i )
+  {
+    if( Fabric_Guarded && ( this.ids == null ) )
+      throw "AnimCurve.useIds!() was not set to True";
+    return this.ids.getId( i );
+  }
+
+  /// \dfgPresetOmit
+  inline AnimCurve.setKeyId!( Index i, Index id )
+  {
+    if( Fabric_Guarded && ( this.ids == null ) )
+      throw "AnimCurve.useIds!() was not set to True";
+    this.ids.setId( i, id );
+  }
+
+  /// \dfgPresetOmit
+  inline Index AnimCurve.getKeyIndex( Index id )
+  {
+    if( Fabric_Guarded && ( this.ids == null ) )
+      throw "AnimCurve.useIds!() was not set to True";
+    return this.ids.getIndex( id );
+  }
+
+  /// \dfgPresetOmit
+  AnimCurve.clear!()
+  {
+    this.keys.resize(0);
+    if( this.ids )
+      this.ids.resize(0);
+    this.incrementStructureVersion();
+  }
+
+  /// \dfgPresetOmit
+  private AnimCurve.pushKeyframeUnordered!()
+  {
+    Keyframe key;
+    key.index = this.keys.size();
+    this.keys.push( key );
+    if( this.ids )
+      this.ids.push();
+    this.incrementStructureVersion();
+  }
+
+  /// \dfgPresetOmit
+  function Boolean AnimCurve.setKeyframe!(
+    io Index index,
+    Float64 time,
+    Float64 value,
+    TangentType tanInType,
+    Float64 tanInX,
+    Float64 tanInY,
+    TangentType tanOutType,
+    Float64 tanOutX,
+    Float64 tanOutY
+    )
+  {
+    // special case - we cannot have two 
+    // keys with the same exact time
+    /* // Disabled this check; this case might be needed
+       // when doing 1) push Key0Time0 2) push K1T0 3) move K1T1 3) undo
+    Index existingIndex;
+    if(this.keyframeIndex(time, existingIndex))
+    {
+      if(existingIndex != index)
+      {
+        if(this.keys[existingIndex].time == time)
+          return false;
+      }
+    }
+    */
+
+    Keyframe key;
+    key.time = time;
+    key.value = value;
+    key.index = index;
+
+    Tangent tanIn;
+    tanIn.type = tanInType;
+    tanIn.x = tanInX;
+    tanIn.y = tanInY;
+    key.tanIn = tanIn;
+
+    Tangent tanOut;
+    tanOut.type = tanOutType;
+    tanOut.x = tanOutX;
+    tanOut.y = tanOutY;
+    key.tanOut = tanOut;
+
+    key.quaternionW = 1.0;
+
+    key.linearInterpolation = (tanIn.type == TangentType_Linear) && (tanOut.type == TangentType_Linear);
+
+    // correct tangents
+    if(key.curveInterpolationMethod(this.weighted) == CurveInterpolatorMethod_Hermite)
+    {
+      Float64 l = sqrt(key.tanIn.x * key.tanIn.x + key.tanIn.y * key.tanIn.y);
+      key.tanIn.x /= l;
+      key.tanIn.y /= l;
+
+      l = sqrt(key.tanOut.x * key.tanOut.x + key.tanOut.y * key.tanOut.y);
+      key.tanOut.x /= l;
+      key.tanOut.y /= l;
+    }
+    
+    this.keys[index] = key;
+
+    // keep the keys sorted over time
+    Boolean keyIndexChanged = false;
+    while(index > 0 && this.keys[index-1].time > key.time)
+    {
+      this.keys[index] = this.keys[index-1];
+      this.keys[index].index = index;
+      index--;
+      this.keys[index] = key;
+      this.keys[index].index = index;
+      if( this.ids )
+        this.ids.swap(index,index+1);
+      keyIndexChanged = true;
+    }
+    while(index < this.keys.size() -1 && this.keys[index+1].time < key.time)
+    {
+      this.keys[index] = this.keys[index+1];
+      this.keys[index].index = index;
+      index++;
+      this.keys[index] = key;
+      this.keys[index].index = index;
+      if( this.ids )
+        this.ids.swap(index,index-1);
+      keyIndexChanged = true;
+    }
+    if( keyIndexChanged )
+      this.incrementStructureVersion();
+    else
+      this.incrementValueVersion();
+
+    return true;
+  }
+
+  /// \title AddKeyframe
+  /// \dfgPresetDefault tanInType 2
+  /// \dfgPresetCombo tanInType ("Global", "Fixed", "Linear", "Flat", "Step", "Slow", "Fast", "Smooth", "Clamped", "Auto", "Sine", "Parabolic", "Log", "Plateau", "StepNext")
+  /// \dfgPresetDefault tanOutType 2
+  /// \dfgPresetCombo tanOutType ("Global", "Fixed", "Linear", "Flat", "Step", "Slow", "Fast", "Smooth", "Clamped", "Auto", "Sine", "Parabolic", "Log", "Plateau", "StepNext")
+  Keyframe AnimCurve.pushKeyframe!(
+    Float64 time,
+    Float64 value,
+    TangentType tanInType,
+    Float64 tanInX,
+    Float64 tanInY,
+    TangentType tanOutType,
+    Float64 tanOutX,
+    Float64 tanOutY
+    )
+  {
+    this.pushKeyframeUnordered();
+    Index index = this.keys.size()-1;
+    this.setKeyframe(
+      index,
+      time,
+      value,
+      tanInType,
+      tanInX,
+      tanInY,
+      tanOutType,
+      tanOutX,
+      tanOutY
+    );
+    return this.keys[index];
+  }
+
+  /// \dfgPresetOmit
+  Keyframe AnimCurve.pushKeyframe!(
+    Float64 time,
+    Float64 value
+    )
+  {
+    return this.pushKeyframe(time, value, TangentType_Smooth, 0.0, 0.0, TangentType_Smooth, 0.0, 0.0);
+  }
+
+  /// \dfgPresetOmit
+  inline Keyframe AnimCurve.pushKeyframe!() { return this.pushKeyframe( 0, 0 ); }
+
+  /// \dfgPresetOmit
+  Boolean AnimCurve.removeKeyframe!(Index index)
+  {
+    if(index >= this.keys.size())
+      return false;
+
+    for(Size i=index+1;i<this.keys.size();i++)
+    {
+      this.keys[i-1] = this.keys[i];
+      this.keys[i-1].index = i-1;
+    }
+    if( this.ids )
+      this.ids.remove( index );
+    this.incrementStructureVersion();
+
+    this.keys.resize(this.keys.size()-1);
+    return true;
+  }
+
+  /// \dfgPresetOmit
+  Boolean AnimCurve.removeKeyframes!(Index indices<>)
+  {
+    if(indices.size() == 0)
+      return false;
+
+    Boolean keep[](this.keys.size());
+    for(Size i=0;i<keep.size();i++)
+      keep[i] = true;
+
+    for(Size i=0;i<indices.size();i++)
+    {
+      if(indices[i] >= keep.size())
+        return false;
+      keep[indices[i]] = false;
+    }
+
+    Keyframe newKeys[];
+    for(Size i=0;i<keep.size();i++)
+    {
+      if(!keep[i])
+        continue;
+      Keyframe key = this.keys[i];
+      key.index = newKeys.size();
+      newKeys.push(key);
+    }
+    this.keys = newKeys;
+
+    if( this.ids )
+      this.ids.remove( indices );
+    this.incrementStructureVersion();
+
+    return true;
+  }
+
+  /// \dfgPresetOmit
+  Boolean AnimCurve.keyframeAtIndex(SInt32 index, io Keyframe key)
+  {
+    if(index < 0 || index >= this.keys.size())
+      return false;
+
+    key = this.keys[index];
+    return true;
+  }
+
+  /// \dfgPresetOmit
+  private Boolean AnimCurve.keyframeIndexSearch(Float64 time, io UInt32 index, UInt32 l, UInt32 r)
+  {
+    if(this.keys[index].time == time)
+      return true;
+
+    if(r == l)
+    {
+      index = r;
+      return true;
+    }
+
+    if(r - l == 1)
+    {
+      if(time >= this.keys[r].time)
+        index = r + 1;
+      else
+        index = r;
+
+      return true;
+    }
+
+    index = (l+r) / 2;
+    if(this.keys[index].time > time)
+      return this.keyframeIndexSearch(time, index, l, index);
+    return this.keyframeIndexSearch(time, index, index, r);
+  }
+
+  /// \dfgPresetOmit
+  Boolean AnimCurve.keyframeIndex(Float64 time, io UInt32 index)
+  {
+    if(this.keys.size() == 0)
+      return false;
+
+    if(this.keys.size() == 1)
+    {
+      index = 0;
+    }
+    else if(time <= this.keys[0].time)
+    {
+      index = 0;
+    }
+    else if(time >= this.keys[this.keys.size()-1].time)
+    {
+      index = this.keys.size()-1;
+    }
+    else
+    {
+      index = this.keys.size() / 2;
+      return this.keyframeIndexSearch(time, index, 0, this.keys.size()-1);
+    }
+    return true;
+  }
+
+  /// \dfgPresetOmit
+  Boolean AnimCurve.keyframe(Float64 time, io Keyframe key)
+  {
+    UInt32 index = 0;
+    if(!this.keyframeIndex(time, index))
+      return false;
+    key = this.keys[index];
+    return true;
+  }
+
+  /// \dfgPresetOmit
+  Boolean AnimCurve.first(io Keyframe key)
+  {
+    if(this.keys.size() == 0)
+      return false;
+    key = this.keys[0];
+    return true;
+  }
+
+  /// \dfgPresetOmit
+  Boolean AnimCurve.last(io Keyframe key)
+  {
+    if(this.keys.size() == 0)
+      return false;
+    key = this.keys[this.keys.size()-1];
+    return true;
+  }
+
+  /// \dfgPresetOmit
+  inline InfinityType AnimCurve.preInfinityType()
+  {
+    return this.m_preInfinityType;
+  }
+
+  /// \dfgPresetOmit
+  inline InfinityType AnimCurve.postInfinityType()
+  {
+    return this.m_postInfinityType;
+  }
+
+  /// \dfgPresetOmit
+  inline AnimCurve.setPreInfinityType!( InfinityType t )
+  {
+    this.m_preInfinityType = t;
+    this.incrementValueVersion();
+  }
+
+  /// \dfgPresetOmit
+  inline AnimCurve.setPostInfinityType!( InfinityType t )
+  {
+    this.m_postInfinityType = t;
+    this.incrementValueVersion();
+  }
+
+  /// \dfgPresetOmit
+  Boolean AnimCurve.isWeighted()
+  {
+    return this.weighted;
+  }
+
+  /// \dfgPresetOmit
+  UInt32 AnimCurve.keyframeCount()
+  {
+    return UInt32(this.keys.size());
+  }
+
+  /// \dfgPresetOmit
+  inline Boolean AnimCurve.isStatic()
+  {
+    return this.keys.size() == 1;
+  }
+  
+  inline Float64 AnimCurve.evaluate( Float64 time )
+  {
+    return evaluateCurve( time, this );
+  }
+
+  /// \dfgPresetOmit
+  inline AnimCurve.autoTangent!( Index index )
+  {
+    if( this.keyframeCount() > 1 )
+    {
+      Boolean usePrev = ( index > 0 );
+      Boolean useNext = ( index < this.keyframeCount() - 1 );
+      KeyTimeValue prev = ( usePrev ? this.keys[index-1] : Keyframe() );
+      KeyTimeValue next = ( useNext ? this.keys[index+1] : Keyframe() );
+      for( Index direction = 0; direction < 2; direction++ )
+      {
+        Seconds tx = ( direction == 0 ? this.keys[index].tanIn.x : this.keys[index].tanOut.x );
+        Seconds ty = ( direction == 0 ? this.keys[index].tanIn.y : this.keys[index].tanOut.y );
+        AnimX::autoTangent(
+          ( direction == 0 ),
+          this.keys[index],
+          prev,
+          next,
+          this.keys[index].curveInterpolationMethod(this.weighted),
+          tx,
+          ty,
+          usePrev,
+          useNext
+        );
+        if( direction == 0 )
+        {
+          this.keys[index].tanIn.x = tx;
+          this.keys[index].tanIn.y = ty;
+        }
+        else
+        {
+          this.keys[index].tanOut.x = tx;
+          this.keys[index].tanOut.y = ty;          
+        }
+      }
+      if( usePrev )
+      {
+        this.keys[index-1].time = prev.time;
+        this.keys[index-1].value = prev.value;
+      }
+      if( useNext )
+      {
+        this.keys[index+1].time = next.time;
+        this.keys[index+1].value = next.value;
+      }
+      this.incrementValueVersion();
+    }
+  }
+
+  /// \dfgPresetOmit
+  AnimCurve.convertToJSON?(io FTL_JSONObjectEncoder encoder)
+  {
+    {
+      FTL_JSONArrayEncoder keyArrayEncoder = encoder.setArray('keys');
+      for( Index i = 0; i < this.keys.size(); i++ )
+      {
+        Keyframe key = this.keys[i];
+        FTL_JSONArrayEncoder keyEncoder = keyArrayEncoder.pushArray();
+        keyEncoder.pushFloat64( key.time );
+        keyEncoder.pushFloat64( key.value );
+        keyEncoder.pushSInt32( key.index );
+        keyEncoder.pushSInt32( key.tanIn.type );
+        keyEncoder.pushFloat64( key.tanIn.x );
+        keyEncoder.pushFloat64( key.tanIn.y );
+        keyEncoder.pushSInt32( key.tanOut.type );
+        keyEncoder.pushFloat64( key.tanOut.x );
+        keyEncoder.pushFloat64( key.tanOut.y );
+        keyEncoder.pushFloat64( key.quaternionW );
+        keyEncoder.pushBoolean( key.linearInterpolation );
+      }
+    }
+    encoder.setBoolean( "weighted", this.weighted );
+    encoder.setSInt32( "preInfinityType", this.m_preInfinityType );
+    encoder.setSInt32( "postInfinityType", this.m_postInfinityType );
+    encoder.setString( "name", this.name );
+    encoder.setFloat64( "color.r", this.color.r );
+    encoder.setFloat64( "color.g", this.color.g );
+    encoder.setFloat64( "color.b", this.color.b );
+    encoder.setFloat64( "color.a", this.color.a );
+  }
+
+  /// \dfgPresetOmit
+  Boolean AnimCurve.convertFromJSON!(FTL_JSONObject decoder)
+  {
+    this.clear();
+
+    FTL_JSONArray keyArrayDecoder = decoder.getArray('keys');
+    this.keys.resize(UInt32(keyArrayDecoder.size()));
+    for( Index i = 0; i < keyArrayDecoder.size(); i++ )
+    {
+      Keyframe key();
+      FTL_JSONArray keyDecoder = keyArrayDecoder.getArray( i );
+
+      Index j = 0;
+      key.time = keyDecoder.getFloat64( j++ );
+      key.value = keyDecoder.getFloat64( j++ );
+      key.index = keyDecoder.getSInt32( j++ );
+      key.tanIn.type = keyDecoder.getSInt32( j++ );
+      key.tanIn.x = keyDecoder.getFloat64( j++ );
+      key.tanIn.y = keyDecoder.getFloat64( j++ );
+      key.tanOut.type = keyDecoder.getSInt32( j++ );
+      key.tanOut.x = keyDecoder.getFloat64( j++ );
+      key.tanOut.y = keyDecoder.getFloat64( j++ );
+      key.quaternionW = keyDecoder.getFloat64( j++ );
+      key.linearInterpolation = keyDecoder.getBoolean( j++ );
+      this.keys[i] = key;
+    }
+    this.weighted = decoder.getBoolean( "weighted" );
+    this.name = decoder.getString('name').string();
+    if( decoder.has( "preInfinityType" ) )
+      this.setPreInfinityType( decoder.getSInt32( "preInfinityType" ) );
+    if( decoder.has( "postInfinityType" ) )
+      this.setPostInfinityType( decoder.getSInt32( "postInfinityType" ) );
+    this.color.r = Float32(decoder.getFloat64('color.r'));
+    this.color.g = Float32(decoder.getFloat64('color.g'));
+    this.color.b = Float32(decoder.getFloat64('color.b'));
+    this.color.a = Float32(decoder.getFloat64('color.a'));
+
+    if( this.ids )
+      this.ids.reset( this.keys.size() );
+    this.incrementStructureVersion();
+
+    return true;
+  }
+
+  /// \dfgPresetOmit
+  String AnimCurve.convertToString?()
+  {
+    FTL_JSONEncoder encoder;
+    {
+      FTL_JSONObjectEncoder rootEncoder = encoder.getObject();
+      this.convertToJSON(rootEncoder);
+    }
+    return encoder.encode();
+  }
+
+  /// \dfgPresetOmit
+  Boolean AnimCurve.convertFromString!(String data)
+  {
+    FTL_JSONDecoder decoder = FTL_JSONDecoder(data);
+    FTL_JSONObject rootDecoder = decoder.decode();
+    return this.convertFromJSON(rootDecoder);
+  }
+}

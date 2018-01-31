@@ -1,0 +1,124 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+
+namespace RBF {
+
+const UInt32 gaussian = 0;
+const UInt32 odd_harmonic = 1;
+const UInt32 even_harmonic = 2;
+const UInt32 quadric = 3;
+const UInt32 inv_quadric = 4;
+const UInt32 mquadric = 5;
+const UInt32 inv_mquadric = 6;
+
+/**
+  \versionadded 2.6.0
+
+  Kernel defines the RBF functions. It supports gaussian, polyharmonic 
+  (thin-plates-spline), quadric and multi-quadric based RBFs. 
+  
+  See:
+  - https://en.wikipedia.org/wiki/Radial_basis_function
+  - https://www.siam.org/students/siuro/vol4/S01084.pdf
+*/
+struct Kernel {
+  /// Radial basis function
+  UInt32 rbf;
+  /// Power parameter
+  UInt32 power;
+  /// Scalar parameter
+  Float32 c;
+};
+
+/// Constructs a default tps kernel.
+Kernel() {
+  this.init(even_harmonic, 2, -1.0f);
+}
+
+/// Constructs a kernel
+/// \param rbf Radial basis function
+/// \param power Power parameter
+Kernel(UInt32 rbf, UInt32 power) {
+  this.init(rbf, power, -1.0f);
+}
+
+/// Constructs a kernel
+/// \param rbf Radial basis function
+/// \param power Power parameter
+/// \param c Scalar parameter
+Kernel(UInt32 rbf, UInt32 power, Float32 c) {
+  this.init(rbf, power, c);
+}
+
+/// \internal
+private Kernel.init!(UInt32 rbf, UInt32 power, Float32 c) {
+  this.c = c;
+  this.power = power > 0 ? power : 1;
+  this.rbf = rbf;
+}
+
+/// \internal
+/// Computes the scalar parameter from the control points.
+Kernel.computeScalarParameter!(Mat C) {
+  
+  if(this.c < 0)
+  {
+    Vec min = C.getColsMin();
+    Vec max = C.getColsMax();
+
+    Float32 size=0.0f, prod = 1.0f;
+    for(UInt32 i=0; i < C.cols(); i++) 
+    {
+      Float32 edge = max.get(i) - min.get(i);
+      if(edge != 0)
+      {
+        prod *= edge;
+        size += 1.0f;
+      }
+    }
+
+    this.c = pow(prod / C.rows(), 1.0f / size);
+  }
+}
+
+inline Float32 Kernel.quadric(Float32 x) { return pow( pow(x * this.c, 2.0f) + 1.0f, 1.0f/Float32(this.power) ); }
+
+inline Float32 Kernel.invQuadric(Float32 x) { return 1.0f / this.quadric(x); }
+
+inline Float32 Kernel.multiQuadric(Float32 x) { return sqrt(this.quadric(x)); }
+
+inline Float32 Kernel.invMultiQuadric(Float32 x) { return 1.0f / this.multiQuadric(x); }
+
+inline Float32 Kernel.gaussian(Float32 x) { return exp(- pow(x * this.c, 2.0f)); }
+
+inline Float32 Kernel.evenPolyHarmonic(Float32 x) { return x < 1.0f ? pow(x, this.power-1) * log(pow(x, x)) : pow(x, this.power) * log(x); }
+
+inline Float32 Kernel.oddPolyHarmonic(Float32 x) { return pow(x, this.power); }
+
+/// Computes the RBF value at 'x'.
+inline Float32 Kernel.distance(Float32 x) {
+  
+  switch(this.rbf)
+  {
+    case gaussian: return this.gaussian(x);
+
+    case odd_harmonic: return this.oddPolyHarmonic(x);
+
+    case even_harmonic: return this.evenPolyHarmonic(x);
+
+    case quadric: return this.quadric(x);
+
+    case inv_quadric: return this.invQuadric(x);
+
+    case mquadric: return this.multiQuadric(x);
+
+    case inv_mquadric: return this.invMultiQuadric(x);   
+  }
+
+  return this.multiQuadric(x);
+}
+
+} // namespace RBF

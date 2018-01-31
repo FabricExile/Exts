@@ -1,0 +1,150 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  alias String EventName;
+  const String Event_Begin = "begin";
+  const String Event_End = "end";
+  const String Event_Changed = "changed";
+  const String Event_Call = "call";
+  const String Event_ChangeMainState = "changeState";// A state change is requested
+  const String Event_AddState = "addState";// A state change is requested
+  const String Event_RemoveState = "removeState";// A state change is requested
+  const String Event_EnteredState = "enteredState";// Sender's state changed
+  const String Event_LeftState = "leftState";// Sender's state changed
+  const String Event_Invalidated = "invalidated";
+
+  alias UInt32 EventPropagationType;
+  const UInt32 EventPropagationType_none = 0; // No hierarchy event propagation
+  const UInt32 EventPropagationType_parent = 1; // Propagate event to parent, recursively or until handled
+  const UInt32 EventPropagationType_children = 2; // Propagate event to children, recursively or until handled
+
+  /// The ToolEventUserID is a user data (cookie) that is defined by the
+  /// event listener and is attached to the sent event, so the listener
+  /// can use it to ease the processing or classification of the event.
+  /// For example, this can be used when the listener registerers to a same event from
+  /// different sources.
+  struct ToolEventUserID {
+    UInt32 ID;
+    String tag;
+    Object objData; // Additional user data.
+  };
+
+  ToolEventUserID( UInt32 ID ) {
+    this.ID = ID;
+  }
+
+  ToolEventUserID( String tag ) {
+    this.tag = tag;
+  }
+
+  ToolEventUserID( Object objData ) {
+    this.objData = objData;
+  }
+
+  Boolean == ( ToolEventUserID a, ToolEventUserID b ) {
+    return a.ID == b.ID && a.tag == b.tag && a.objData === b.objData;
+  }
+
+  interface EventSource;
+
+  /// A ToolEvent is a named event that can be sent from an EventSource
+  /// to an EventListener (:kl-ref:`Tool::EventListener.onEvent`).
+  /// It can also be propagated through the BaseTool
+  /// hierarchy, if propagationType is set to EventPropagationType_parent 
+  /// or EventPropagationType_children.
+  ///
+  /// The sender contains the EventSource that initated the event.
+  /// The tag and customData usage is defined by the sender in 
+  /// a documented convention. For example, state enter event use the tag
+  /// to store the state name.
+  ///
+  /// See :ref:`TPG.events` for more information and examples.
+  struct ToolEvent {
+    Ref<EventSource> sender;
+    EventName name;
+    String tag;//State name for state change events
+    Ref<Object> customData;
+    EventPropagationType propagationType;//EventPropagationType_parent or EventPropagationType_children
+  };
+
+  ToolEvent( Ref<EventSource> sender, EventName name ) {
+    this.sender = sender;
+    this.name = name;
+  }
+
+  ToolEvent.setPropagateToParent!( ) {
+    this.propagationType = EventPropagationType_parent;
+  }
+
+  ToolEvent.setPropagateToChildren!( ) {
+    this.propagationType = EventPropagationType_children;
+  }
+
+  /// An EventListener can receive events that were registered to an EventSource.
+  /// The ToolEventUserID argument contains the identifier (cookie) that was provided
+  /// by the listener when connecting to the EventSource.
+  /// For example, this can be used when the listener registerers to a same event from
+  /// different sources.
+  ///
+  /// See :ref:`TPG.events` for more information and examples.
+  interface EventListener {
+    onEvent!( ToolEvent event, ToolEventUserID userID );
+
+    /// If the eventSource is destroyed first, the listener must clear its related references.
+    eventSourceDestroying!( Ref<EventSource> eventSource, ToolEventUserID userID );
+  };
+
+  /// The EventSource can send events to connected event listeners.
+  /// Event listeners can connect to all sent events or specific events.
+  /// The EventSource can also map events to listener-provided event names.
+  ///
+  /// See :ref:`TPG.events` for more information and examples.
+  interface EventSource {
+    /// \note If "owned", not only the this object will create an owner reference, but it will consider the owned listener as its child if it is a Component (setParent, invalidate).
+    addListener!( Ref<EventListener> listener, Boolean owned );
+    /// \note If "owned", not only the this object will create an owner reference, but it will consider the owned listener as its child if it is a Component (setParent, invalidate).
+    addListener!( Ref<EventListener> listener, Boolean owned, String sourceEvent );
+    /// \note If "owned", not only the this object will create an owner reference, but it will consider the owned listener as its child if it is a Component (setParent, invalidate).
+    addListener!( Ref<EventListener> listener, Boolean owned, String sourceEvent, String mappedListenerEvent );
+    /// \note If "owned", not only the this object will create an owner reference, but it will consider the owned listener as its child if it is a Component (setParent, invalidate).
+    addListener!( Ref<EventListener> listener, Boolean owned, String sourceEvent, String mappedListenerEvent, ToolEventUserID userID );
+
+    removeListener!( Ref<EventListener> listener );
+    removeListener!( Ref<EventListener> listener, String sourceEvent );
+    removeListener!( Ref<EventListener> listener, String sourceEvent, ToolEventUserID userID );
+  };
+
+  inline Boolean ShouldTraceEvent( ToolEvent event ) {
+    if( ToolEventDebugTrace )
+      return true;
+    return StateDebugTrace && ( event.name == Event_ChangeMainState || event.name == Event_AddState || event.name == Event_RemoveState || event.name == Event_EnteredState || event.name == Event_LeftState );
+  }
+
+  String DescribeEvent( ToolEvent event ) {
+    String result = "name ='" + event.name + "'";
+    if( event.tag )
+      result += " tag=" + event.tag;
+    if( event.propagationType == EventPropagationType_parent )
+      result += " propag=Parent";
+    else if( event.propagationType == EventPropagationType_children )
+      result += " propag=Children";
+    return result;
+  }
+
+  String DescribeUserIDIfAny( ToolEventUserID userID ) {
+    String result;
+    if( userID.ID )
+      result += "userID=" + userID.ID;
+    if( userID.tag )
+      result += " usertag=" + userID.tag;
+    if( userID.objData )
+      result += " objData=<" + userID.objData.type() + ">";
+    if( result )
+      result = "UserID={" + result + "}";
+    return result;
+  }
+
+}// namespace Tool

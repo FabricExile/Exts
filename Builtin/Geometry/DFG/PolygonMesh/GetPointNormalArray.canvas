@@ -1,0 +1,93 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/PolygonMesh.html",
+    "uiTooltip" : "Returns the stored normal of the point, at a specific neighbor index.\n\n Supported by PolygonMesh"
+    },
+  "title" : "GetPointNormal[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "PolygonMesh[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "point",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Size[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Size[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "neighborPolygonIndex",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Size[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Size[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Vec3[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "4AEBA1CE4B4021F2945C74C5B470F7DA",
+  "code" : "require Geometry;
+
+operator Geometry_PolygonMesh_getPointNormal_task<<<index>>>(
+  io Vec3[] result
+, in PolygonMesh[] this
+, in Size[] point
+, in Size[] neighborPolygonIndex
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].getPointNormal(point[index < point.size() ? index : point.size() - 1], neighborPolygonIndex[index < neighborPolygonIndex.size() ? index : neighborPolygonIndex.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( point.size() == 0) return;
+  if( neighborPolygonIndex.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < point.size()) task_size = point.size();
+  if(task_size < neighborPolygonIndex.size()) task_size = neighborPolygonIndex.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Geometry_PolygonMesh_getPointNormal_task(index, result, this, point, neighborPolygonIndex);
+    }
+  } else {
+    Geometry_PolygonMesh_getPointNormal_task<<<task_size>>>(result, this, point, neighborPolygonIndex);
+  }
+}
+"
+  }

@@ -1,0 +1,483 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+// Queries
+
+inline SparseGridStruct.addVeryLargeObjects?( io IndexSet result ) {
+  for( Size i = 0; i < this.veryLargeObjects.size(); ++i )
+    result.add( this.veryLargeObjects[i] );
+}
+
+function SparseGridStruct.bBoxQueryInternal?( IntBBoxInclusive coordBBox, Vec3 min, Vec3 max, Boolean doBBoxTest, io IndexSet result ) {
+  LocalBoundingVolume bbox;
+  bbox.bBoxInit(min, max);
+
+  UInt64 totalCells = coordBBox.getTotalCells();
+  if( totalCells > this.objectCount*4 ) {// faster to test all objects
+    Size nb = this.objects.size();
+    for( Size i = 0; i < nb; ++i ) {
+      if( this.objects[i].isUsed() && this.objects[i].intersectsBBox(bbox) )
+        result.add(i);
+    }
+  } else {
+    this.addVeryLargeObjects(result);
+    for( SInt32 i = coordBBox.min.x; i <= coordBBox.max.x; ++i ) {
+      for( SInt32 j = coordBBox.min.y; j <= coordBBox.max.y; ++j ) {
+        for( SInt32 k = coordBBox.min.z; k <= coordBBox.max.z; ++k ) {
+          IntVec3 coords(i, j, k);
+          UInt32 objectsDataOffset, objectCount;
+          this.getCellData( coords, objectsDataOffset, objectCount );
+
+          for( Size n = 0; n < objectCount; ++n )
+            result.add(this.data.data[objectsDataOffset+n]);
+        }
+      }
+    }
+    if( doBBoxTest ) {
+      Size target = 0;
+      for( Size i = 0; i < result.size(); ++i ) {
+        Size objectIndex = result.indices[i];
+        if( this.objects[objectIndex].intersectsBBox(bbox) )
+          result.indices[target++] = objectIndex;
+        else
+          result.memberBits.clear( objectIndex );
+      }
+      result.indicesSize = target;
+    }
+  }
+}
+
+inline SparseGridStruct.bBoxQuery?( Vec3 min, Vec3 max, io IndexSet result ) {
+  result.clear();
+  if( !this.initialized )
+    throw("SparseGridStruct.bBoxQuery: updateGrid() was not called after changes");
+
+  Vec3 min2(min), max2(max);
+  if( !this.reduceBBoxToGrid( min2, max2 ) )
+    return;
+
+  IntBBoxInclusive coordBBox;
+  coordBBox.min = this.getCellCoords(min2);
+  coordBBox.max = this.getCellCoords(max2);
+  this.bBoxQueryInternal( coordBBox, min, max, true, result );
+}
+
+function SparseGridStruct.getObjectsAtPositionInternal( IntVec3 coords, Vec3 pos, Boolean doBBoxTest, io IndexSet result ) {
+  this.addVeryLargeObjects( result );
+
+  UInt32 objectsDataOffset, objectCount;
+  this.getCellData( coords, objectsDataOffset, objectCount );
+
+  for( Size n = 0; n < objectCount; ++n )
+    result.add( this.data.data[objectsDataOffset + n] );
+
+  if( doBBoxTest ) {
+    Size target = 0;
+    for( Size i = 0; i < result.size(); ++i ) {
+      Size objectIndex = result.indices[i];
+      if( this.objects[objectIndex].containsPoint( pos ) )
+        result.indices[target++] = objectIndex;
+      else
+        result.memberBits.clear( objectIndex );
+    }
+    result.indicesSize = target;
+  }
+}
+
+inline SparseGridStruct.getObjectsAtPosition( Vec3 position, io IndexSet result ) {
+  result.clear();
+  if( !this.initialized )
+    throw( "SparseGridStruct.getObjectsAtPosition: updateGrid() was not called after changes" );
+
+  this.getObjectsAtPositionInternal( this.getCellCoords( position ), position, true, result );
+}
+
+
+// Queries
+function SparseGridStruct.bSphereQuery?( Vec3 center, Scalar radius, io IndexSet result ) {
+  result.clear();
+
+  if( !this.initialized )
+    throw("SparseGridStruct.bSphereQuery: updateGrid() was not called after changes");
+
+  Vec3 radiusVec(radius, radius, radius);
+  Vec3 min = center-radiusVec;
+  Vec3 max = center+radiusVec;
+
+  if( !this.reduceBBoxToGrid( min, max ) )
+    return;
+
+  IntBBoxInclusive coordBBox;
+  coordBBox.min = this.getCellCoords(min);
+  coordBBox.max = this.getCellCoords(max);
+
+  LocalBoundingVolume bSphere;
+  bSphere.bSphereInit(center, radius*1.00001);
+
+  //Full cells can only be culled significatively if the bbox is >= 6X6, and at 6X6 it is not cutting much.
+  if( radius*this.invCellSize < 3.0f ) {
+    //1st gathering pass: use simple bbox (not enough full cells would be culled)
+    this.bBoxQueryInternal( coordBBox, min, max, false, result );
+  } else {
+    UInt64 totalCells = coordBBox.getTotalCells();
+    if( totalCells > this.objectCount*4 ) { // probably faster to test all objects
+      Size nb = this.objects.size();
+      for( Size i = 0; i < nb; ++i ) {
+        if( this.objects[i].isUsed() && this.objects[i].intersectsBSphere(bSphere) )
+          result.add(i);
+      }
+      return;
+    }
+    this.addVeryLargeObjects(result);
+    SphereCellsLoopData sphereLoopData;
+    this.SphereCellsLoopDataInit( center, radius, coordBBox, sphereLoopData );
+
+    for( SInt32 i = coordBBox.min.x; i <= coordBBox.max.x; ++i ) {
+      sphereLoopData.preLoopX();
+      for( SInt32 j = coordBBox.min.y; j <= coordBBox.max.y; ++j ) {
+        sphereLoopData.preLoopY();
+        for( SInt32 k = coordBBox.min.z; k <= coordBBox.max.z; ++k ) {
+          sphereLoopData.preLoopZ();
+
+          IntVec3 coords(i, j, k);
+          UInt32 hash, hashDataOffset, hashCellCount;
+          this.getHashDataOffset( coords, hash, hashDataOffset );
+
+          if( hashDataOffset ) {
+            if( sphereLoopData.loopZTest() ) {
+              UInt32 cellDataOffset = this.getCellDataOffsetInternal( coords, hashDataOffset, hashCellCount );
+              if( cellDataOffset ) {
+                UInt32 objectsDataOffset, objectCount;
+                this.getCellData( cellDataOffset, objectsDataOffset, objectCount );
+
+                for( Size n = 0; n < objectCount; ++n )
+                  result.add(this.data.data[objectsDataOffset+n]);
+              }
+            }
+          }
+          sphereLoopData.postLoopZ();
+        }
+        sphereLoopData.postLoopY();
+      }
+      sphereLoopData.postLoopX();
+    }
+  }
+
+  //Do more precise filtering
+  Size target = 0;
+  for( Size i = 0; i < result.size(); ++i ) {
+    Size objectIndex = result.indices[i];
+    if( this.objects[objectIndex].intersectsBSphere(bSphere) )
+      result.indices[target++] = objectIndex;
+    else
+      result.memberBits.clear( objectIndex );
+  }
+  result.indicesSize = target;
+}
+
+/// \internal
+struct StatialQuerySparseGridPerThreadData {
+  UInt32 inUse;//0 == reserved.
+  IndexSet visitedItems;
+};
+
+inline StatialQuerySparseGridPerThreadData.cleanup!( Size objectCount ) {
+  this.visitedItems.clear();
+  this.visitedItems.memberBits.resize(objectCount);
+}
+
+inline SparseGridStruct.raycastObject( Size objectIndex, io RayQueryData rayData, io SpatialQueryData tempData, Boolean firstLoop, Vec3 initialPos ) {
+  if( tempData.visitedItems.add(objectIndex) ) {
+    if( firstLoop && this.objects[objectIndex].contains(initialPos) )
+      rayData.bestResult.compareAndUpdate( objectIndex, rayData.distFactor );
+    else {
+      Scalar dirFactor;
+      Vec3 min, max;
+      this.objects[objectIndex].getBBox(min, max);
+      if( intersectBBoxFromOutside( min, max, rayData, dirFactor ) && dirFactor >= rayData.startFactor )
+        rayData.bestResult.compareAndUpdate( objectIndex, rayData.distFactor );
+    }
+  }
+}
+
+function SparseGridStruct.raycast( Ray ray, Boolean doubleSided, Scalar maxDistance, io SpatialQueryData tempData, io Ref<RaycastResult> result ) {
+  tempData.cleanup(false);
+  if( !this.initialized )
+    throw("SparseGridStruct.raycast: updateGrid() was not called after changes");
+
+  RayQueryData rayData(ray, doubleSided, maxDistance, result);
+
+  Vec3 initialPos = rayData.start;
+  if( !_insideBBox( this.currentBBox.pt1, this.currentBBox.pt2, rayData.start ) ) {
+    if( !intersectBBoxFromOutside( this.currentBBox.pt1, this.currentBBox.pt2, rayData, rayData.startFactor ) )
+      return;
+    initialPos += rayData.startFactor*rayData.unitDir;
+  }
+  //Get max distance from bbox
+  Scalar maxGridDistance;
+  UInt8 side;
+  intersectBBoxFromInside( this.currentBBox.pt1, this.currentBBox.pt2, rayData, maxGridDistance, side );
+  maxGridDistance = maxGridDistance*1.00001+1e-5;//add eps
+  if( maxGridDistance < rayData.distFactor )
+    rayData.distFactor = maxGridDistance;
+
+  IntVec3 currentCoords = this.getCellCoords(initialPos);
+
+  //Test very large objects
+  Size veryLargeCount = this.veryLargeObjects.size();
+  for( Size i = 0; i < veryLargeCount; ++i ) {
+    UInt32 objectIndex = this.veryLargeObjects[i];
+    this.raycastObject( objectIndex, rayData, tempData, true, initialPos );
+  }
+
+  Boolean firstLoop = true;
+  while( true ) {
+    UInt32 objectsDataOffset, objectCount;
+    this.getCellData( currentCoords, objectsDataOffset, objectCount );
+    //Test objects
+    for( Size i = 0; i < objectCount; ++i ) {
+      UInt32 objectIndex = this.data.data[objectsDataOffset+i];
+      this.raycastObject( objectIndex, rayData, tempData, firstLoop, initialPos );
+    }
+    //Goto next cell
+    Vec3 cellMin, cellMax;
+    this.getCellBBox( currentCoords, cellMin, cellMax );//Compute as 'absolute' to minimize accumulated errors
+    Scalar cellIntersectDistance;
+    intersectBBoxFromInside( cellMin, cellMax, rayData, cellIntersectDistance, side );
+    if( cellIntersectDistance > rayData.distFactor )
+      break;//done
+
+    Integer delta = rayData.dirSign3[side];
+    if( side == 0 )
+      currentCoords.x += delta;
+    else if( side == 1 )
+      currentCoords.y += delta;
+    else
+      currentCoords.z += delta;
+    firstLoop = false;
+  }
+}
+
+function SparseGridStruct.closestCheckAndPushObject( UInt32 objectIndex, io ClosestQueryData closestData, io SpatialQueryData tempData ) {
+  if( tempData.visitedItems.add(objectIndex) ) {
+    Vec3 min, max;
+    this.objects[objectIndex].getBBox(min, max);
+    Scalar bboxSqDist = getBBoxSquaredDistance( min, max, closestData );
+    if( bboxSqDist < closestData.maxScaledSquaredDist ) {
+      if( bboxSqDist < 1.0e-10 ) //squared 1e-5 eps
+        closestData.bestResult.compareAndUpdate( objectIndex, closestData.maxScaledSquaredDist );
+      else {
+        QueryHeapItem heapItem;
+        heapItem.objIndex = objectIndex;
+        heapItem.distFactor = bboxSqDist;
+        tempData.heap.insert(heapItem);
+      }
+    }
+  }
+}
+
+/// \internal
+struct SparseGridClosestConstants {
+  IntBBoxInclusive gridCoordBBox;
+  UInt32 gridBBoxXSize;
+  UInt32 gridBBoxXZSize;
+};
+
+inline SparseGridClosestConstants(SparseGridStruct grid) {
+  this.gridCoordBBox.min = grid.getCellCoords( grid.currentBBox.pt1 );
+  this.gridCoordBBox.max = grid.getCellCoords( grid.currentBBox.pt2 );
+  this.gridBBoxXSize = this.gridCoordBBox.max.x - this.gridCoordBBox.min.x + 1;
+  this.gridBBoxXZSize = (this.gridCoordBBox.max.z - this.gridCoordBBox.min.z + 1)*this.gridBBoxXSize;
+}
+
+inline UInt32 SparseGridClosestConstants.getUniqueCellIndex( IntVec3 coords ) {
+  IntVec3 relativeCoord( coords.x - this.gridCoordBBox.min.x, coords.y - this.gridCoordBBox.min.y, coords.z - this.gridCoordBBox.min.z );
+  return relativeCoord.x + relativeCoord.z*this.gridBBoxXSize + relativeCoord.y*this.gridBBoxXZSize;
+}
+
+inline SparseGridClosestConstants.initHeapItemFromCell( IntVec3 cellCoords, io QueryHeapItem heapItem ) {
+  //Add +1 so we can distinguish from an object
+  heapItem.cellIndex = UInt32(cellCoords.x - this.gridCoordBBox.min.x + 1);
+  heapItem.cellDepth = UInt32(cellCoords.y - this.gridCoordBBox.min.y + 1);
+  heapItem.objIndex = UInt32(cellCoords.z - this.gridCoordBBox.min.z + 1);
+}
+
+inline Boolean SparseGridClosestConstants.getHeapItemCell( QueryHeapItem heapItem, io IntVec3 cellCoords ) {
+  if( heapItem.cellIndex ) {
+    cellCoords.x = SInt32(heapItem.cellIndex) + this.gridCoordBBox.min.x - 1;
+    cellCoords.y = SInt32(heapItem.cellDepth) + this.gridCoordBBox.min.y - 1;
+    cellCoords.z = SInt32(heapItem.objIndex) + this.gridCoordBBox.min.z - 1;
+    return true;
+  }
+  return false;
+}
+
+function SparseGridStruct.closestCheckAndPushCell( IntVec3 coords, SparseGridClosestConstants constants, ClosestQueryData closestData, io SpatialQueryData tempData ) {
+  if( !constants.gridCoordBBox.contains(coords) )
+    return;//not a real cell
+
+  UInt32 uniqueCellIndex = constants.getUniqueCellIndex( coords );
+  if( uniqueCellIndex >= tempData.tempBits.size() )
+    tempData.tempBits.resize( uniqueCellIndex+1 );
+
+  if( tempData.tempBits.getThenSet(uniqueCellIndex) )
+    return;//already tested
+
+  Vec3 min, max;
+  this.getCellBBox( coords, min, max );
+
+  Scalar bboxSqDist = getBBoxSquaredDistance( min, max, closestData );
+  if( bboxSqDist < closestData.maxScaledSquaredDist ) {
+    QueryHeapItem heapItem;
+    constants.initHeapItemFromCell( coords, heapItem );
+    heapItem.distFactor = bboxSqDist;
+    tempData.heap.insert(heapItem);
+  }
+}
+
+function SparseGridStruct.getClosest( Vec3 position, Vec3 scaling, Scalar maxUnscaledDistance, io SpatialQueryData tempData, io Ref<ClosestResult> result ) {
+  tempData.cleanup(true);
+
+  ClosestQueryData closestData;
+  closestData.position = position;
+  closestData.scaling = scaling;
+  closestData.hasScaling = abs(scaling.x-1.0)>1.0e-5 || abs(scaling.y-1.0)>1.0e-5 || abs(scaling.z-1.0)>1.0e-5;
+  closestData.maxScaledSquaredDist = maxUnscaledDistance*maxUnscaledDistance;
+  closestData.bestResult = result;
+  closestData.bestResult.reset( position, scaling, closestData.hasScaling );
+
+  //first, push very large objects
+  Size veryLargeCount = this.veryLargeObjects.size();
+  for( Size i = 0; i < veryLargeCount; ++i ) {
+    UInt32 objectIndex = this.veryLargeObjects[i];
+    this.closestCheckAndPushObject( objectIndex, closestData, tempData );
+  }
+
+  SparseGridClosestConstants constants(this);
+  IntVec3 initialCellCoords = this.getCellCoords( bBoxGetClosestPoint( this.currentBBox.pt1, this.currentBBox.pt2, closestData.position ) );
+  this.closestCheckAndPushCell( initialCellCoords, constants, closestData, tempData );
+
+  while( true ) {
+    QueryHeapItem heapItem;
+
+    if( !tempData.heap.popMin(heapItem) || heapItem.distFactor > closestData.maxScaledSquaredDist )
+      break;
+
+    IntVec3 cellCoords;
+    if( constants.getHeapItemCell( heapItem, cellCoords ) ) {
+      //Add cell objects, if any
+      UInt32 objectsDataOffset, objectCount;
+      this.getCellData( cellCoords, objectsDataOffset, objectCount );
+
+      //Test objects
+      for( Size i = 0; i < objectCount; ++i ) {
+        UInt32 objectIndex = this.data.data[objectsDataOffset+i];
+        this.closestCheckAndPushObject( objectIndex, closestData, tempData );
+      }
+
+      //Painter's algorithm: push adjacent cells (if not already done)
+      //This could be made more efficient by checking which side we are compared to initial bbox
+      for( SInt32 i = -1; i <= 1; ++i ) {
+        for( SInt32 j = -1; j <= 1; ++j ) {
+          for( SInt32 k = -1; k <= 1; ++k )
+            this.closestCheckAndPushCell( IntVec3(cellCoords.x+i, cellCoords.y+j, cellCoords.z+k), constants, closestData, tempData );
+        }
+      }
+    } else //Test object
+      closestData.bestResult.compareAndUpdate( heapItem.objIndex, closestData.maxScaledSquaredDist );
+  }
+}
+
+function SparseGridStruct.lineQuery( Vec3 start, Vec3 end, UInt8 intersectionLineTypeEnum, io IndexSet result ) {
+  result.clear();
+  if( !this.initialized )
+    throw("SparseGridStruct.raycast: updateGrid() was not called after changes");
+
+  RayQueryData rayData(start, end, intersectionLineTypeEnum);
+
+  for( Size dir = 0; dir < 2; ++dir ) {
+    //dir == 1: reversed direction if applicable
+    Vec3 initialPos = rayData.start;
+    if( intersectBBox( this.currentBBox.pt1, this.currentBBox.pt2, rayData, rayData.startFactor ) ) {
+      Boolean initialFromInside = rayData.startFactor == 0.0;
+      initialPos += rayData.startFactor*rayData.unitDir;
+      //Get max distance from bbox
+      Scalar maxGridDistance;
+      UInt8 side;
+      intersectBBoxFromInside( this.currentBBox.pt1, this.currentBBox.pt2, rayData, maxGridDistance, side );
+      maxGridDistance = maxGridDistance*1.00001+1e-5;//add eps
+      if( maxGridDistance < rayData.distFactor )
+        rayData.distFactor = maxGridDistance;
+
+      IntVec3 currentCoords = this.getCellCoords(initialPos);
+
+      if( dir == 0 ) {
+        //Test very large objects
+        Size veryLargeCount = this.veryLargeObjects.size();
+        for( Size i = 0; i < veryLargeCount; ++i ) {
+          UInt32 objectIndex = this.veryLargeObjects[i];
+          result.add(objectIndex);//Will filter later
+        }
+      }
+
+      Boolean firstLoop = true;
+      while( true ) {
+        //Test initial cell only at first direction if bidirectional
+        if( dir == 0 || !(initialFromInside && firstLoop) ) {
+          UInt32 objectsDataOffset, objectCount;
+          this.getCellData( currentCoords, objectsDataOffset, objectCount );
+          //Test objects
+          for( Size i = 0; i < objectCount; ++i ) {
+            UInt32 objectIndex = this.data.data[objectsDataOffset+i];
+            result.add(objectIndex);//Will filter later
+          }
+        }
+        //Goto next cell
+        Vec3 cellMin, cellMax;
+        this.getCellBBox( currentCoords, cellMin, cellMax );//Compute as 'absolute' to minimize accumulated errors
+        Scalar cellIntersectDistance;
+        intersectBBoxFromInside( cellMin, cellMax, rayData, cellIntersectDistance, side );
+        if( cellIntersectDistance > rayData.distFactor )
+          break;//done
+
+        Integer delta = rayData.dirSign3[side];
+        if( side == 0 )
+          currentCoords.x += delta;
+        else if( side == 1 )
+          currentCoords.y += delta;
+        else
+          currentCoords.z += delta;
+        firstLoop = false;
+      }
+    }
+
+    if( !rayData.bidirectional )
+      break;
+
+    //Flip direction
+    rayData.distFactor = SCALAR_INFINITE;
+    rayData.unitDir = -rayData.unitDir;
+
+    for( Size comp = 0; comp < 3; ++comp ) {
+      rayData.unitDir3[comp] = -rayData.unitDir3[comp];
+      rayData.dirSign3[comp] = -rayData.dirSign3[comp];
+    }
+  }
+  Size numObjects = result.size();
+  if( numObjects == 0 )
+    return;
+
+  Size target;
+  for( Size i = 0; i < numObjects; ++i ) {
+    UInt32 objectID = result.indices[i];
+    Scalar dummy;
+    Vec3 min, max;
+    this.objects[objectID].getBBox(min, max);
+    if( intersectBBox( min, max, rayData, dummy ) )
+      result.indices[target++] = objectID;
+    else
+      result.memberBits.clear( objectID );
+  }
+  result.indicesSize = target;
+}

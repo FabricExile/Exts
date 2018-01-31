@@ -1,0 +1,52 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "write a single sample into the AlembicOCamera\n\nSupported types:\n  this: AlembicCameraWriter\n  result: Boolean\n"
+    },
+  "title" : "WriteSample[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicCameraWriter[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "02B2F174FEB8FBE1659ABA749432D100",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicCameraWriter_writeSample_task<<<index>>>(
+  io Boolean[] result
+, io AlembicCameraWriter[] this
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].writeSample();
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  Size task_size = this.size();
+  result.resize(task_size);
+  for(Size index = 0; index < task_size; index++) {
+    AlembicWrapper_AlembicCameraWriter_writeSample_task(index, result, this);
+  }
+}
+"
+  }

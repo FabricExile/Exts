@@ -1,0 +1,2249 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+const String CurvesRationalWeightsAttributeName = "rationalWeights";
+
+object Curves_lengthComputeCache;
+
+/**
+
+\rst
+
+The Curves geometry is a Curve container, which can hold one or multiple curves of various types.
+Currently supported types include linear, Bezier and NURBS curves. Bezier and NURBS can have 
+rational weights, and NURBS can have explicit knots. All curves can be
+open or closed, and NURBS can be periodic.
+
+Individual curves are assigned a `curveIndex` that allows to access their individual parameters. 
+In order to ease the access to a single curve, the Curve class wraps the `<Curves, curveIndex>` pair, 
+and provides the same methods in the context of that curve.
+
+To increase performance with many curves, attributes of all curves, such as point positions, are regrouped in a single GeometryAttributes buffer.
+Similarly, the definitions of all curves is regrouped in big arrays, allowing to create and interactively draw thousands of curves.
+The :kl-ref:`Curves.getAttributeIndex` method provides a mapping from a curve sub-point to a global GeometryAttributes index.
+
+The draw sampling precision can be controlled by method :kl-ref:`Curves.setDrawSamplesPerSpan`, and the default is 8 samples
+per span. GeometryAttribute values, such as UVs and colors, will be interpolated with curve interpolation, with the same
+weights as the points. To improve interactive display performance of deforming curves, regular sampled curve data can be created
+and cached with the method :kl-ref:`Curves.getUpdatedSampling`. Curve interpolation weights are pre-computed and cached
+globally for optimal multithreaded computation speed.
+
+Note: Methods that read Curve parameters, get or set their attributes are thread safe. Methods that modify \
+the curve set or their topology (eg: :kl-ref:`Curve.addPoints`) are not thread safe.
+
+Next, we will give more details about the supported curve types.
+
+Linear curves
+----------------------
+
+A linear curve is defining line segments that join each curve points. An additional segment is added from the last to the first point if it is closed.
+The parametric domain of a linear curve goes from [0..number of segments-1] (:kl-ref:`Curves.getDomain`).
+
+Mathematically, tangents are constant over segments, and there is no curvature. However, in order to have more continuous values, smoothed
+tangents can be computed so they are interpolated between line segments. This behavior is disabled by default, but can be changed with the
+method :kl-ref:`Curves.smoothLinearCurveTangents`.
+
+
+Bezier curves
+----------------------
+
+Bezier curves are defined as pieces, and the curve shape for each of these pieces is influenced by `N` points (`N` = order = curve degree + 1).
+Each piece corresponds to one curve span, and the curve's parametric domain is defined from [0.. number of pieces-1] (:kl-ref:`Curves.getDomain`).
+
+An open Bezier curve of degree D (D = `order-1`) with N pieces has D*N+1 points.
+A closed Bezier curve of degree D with N pieces has D*N points.
+Note that, while it is possible to create a Bezier curve with any number of points, last points that are not forming a complete piece are
+ignored until more points are added to complete it.
+
+While the curve is continuous inside a piece, curve's smoothness at the pieces' boundary depends on the alignment of previous and next points,
+which can be interpreted as "tangent points".
+
+NURBS curves
+----------------------
+
+NURBS (Non-Uniform Rational B-Spline) curves are a superset of Bezier curves, which can define a curve that can be smooth over
+an arbitrary number of points (no intrinsic concept of "pieces" like Bezier curves). 
+
+Similarly to the Bezier curve, each NURBS curve span (curve section) is influenced by order (degree of the curve + 1) points.
+When moving from a span to the next one, the set of influencing points changes. For example, if the current span was influenced
+by points [A,B,C,D], the next span will be influenced by points [B,C,D,E]. At the span boundary, the weight of A becomes zero, while 
+the weight of E becomes non-zero.
+
+There exists three forms of NURBS:
+
+- An open curve (`curveForm_open`) will clamp the curve to the first and last point positions. Curve's evaluated position at the beginning of the
+  parametric domain will be the same as point 0, and its position at the end of the parametric domain will be the same as point N-1.
+  Unless specific conditions are set, the curve will not pass by other points, and will evolve between them.
+  The number of curve spans (sections) can be computed as the number of points (P) minus degree (D): P - D.
+  For example, a cubic open curve (degree 3) of 5 points will have 2 spans.
+
+- A closed curve (`curveForm_closed`) will clamp the curve start and end at point 0. Curve's evaluated position at the beginning and the end of the
+  parametric domain will be the same as point 0. Unless the first and last points are properly aligned, the curve will not be smooth at point 0.
+  Unless specific conditions are set, the curve will not pass by other points, and will evolve between them.
+  The number of curve spans (sections) can be computed as the number of points (P) minus degree (D) plus one: P - D + 1. 
+  For example, a cubic closed curve (degree 3) of 5 points will have 2 spans.
+  Note: As opposed to Maya, the closed curve points don't include the repeated point.
+
+- A periodic curve (`curveForm_periodic`) will be defined as if the points defined a circular list. As such, the curve will be smooth everywhere,
+  since it is not clamped to end points. Unless specific conditions are set, the curve will pass by no points, and will evolve between them.
+  The number of curve spans (sections) is equal to the number of points (exluding the repeated points).
+  For example, a cubic periodic curve (degree 3) of 5 points will have 5 spans.
+  Note: As opposed to Maya, the periodic curve points don't include the D repeated points.
+
+Additionally to points, NURBS curves' definition include a notion of a knot vector. In most cases, the default knot vector is desired and
+the user doesn't have to worry about the notion of knots. Knot values will be automatically created internally to match curve's number of points
+and form (open, closed, periodic). Non-default knot values is mostly useful for preserving curve definition when importing from
+other software. The knot vector defines the parametric interval for each span. For example, this can allow to have the "U" parameter
+change more slowly depending on the knot vector (eg: knots [-2, -1, 0, 0.5, 2.0, 3.0...]). The number of knots depends strictly of the number
+of points and the degree of the curve:
+
+- Open curve: the number of knots (K) equals the number of points (P) plus degree (D) - 1: K = P + D - 1
+
+- Closed curve: the number of knots equals the number of points (P) plus degree (D) - 2: K = P + D - 2
+  Note: As opposed to Maya, the closed curve points don't include the repeated point.
+
+- Closed curve: the number of knots equals the number of points (P) plus 2*degree (2*D) - 1: K = P + 2*D - 1
+  Note: As opposed to Maya, the periodic curve points don't include the D repeated point.
+
+Note: Non-uniform knots are often used to express a Bezier in NURBS form. While this will work, it is better to create a Bezier curve instead, for optimal performance.
+
+Rational curves
+--------------------
+
+NURBS and Bezier curves can have rational weights. By default, points are associated with a weight of 1.0. However, it is possible to assign
+a different weight to each point (:kl-ref:`Curves.setPointPosition( UInt32, UInt32, Vec3_d, Float32 )`). The weight is interpreted
+relatively to other points that influence a span. Points of higher weight will attract the curve closer to them, while points
+with smaller weight will have less influence on curve's trajectory.
+
+The rational weights for all curves are stored in a ScalarAttribute named "rationalWeights". This attribute
+is created only if a weight != 1.0 is set.
+
+
+A homogeneous coordinate is a 4D coordinate where XYZ are pre-multiplied with the weight: (w*x, w*y, w*z, w).
+
+Before setting rational weights != 1.0 in parallel, ensure that the "rationalWeights" ScalarAttribute exists by calling :kl-ref:`ensureRationalWeightsAttributeExists` before the parallel evaluation.
+
+\endrst
+
+\dfgTypeColor Color( 51, 1, 106 )
+*/
+object Curves : BaseGeometry, Geometry {
+  private CurvesStructure data;
+  UInt32 memType; // CPU = 0, GPU = 1;
+
+  Ref<Vec3Attribute> positionsAttribute;
+  Ref<Vec3_dAttribute> positionsAttribute_d;
+  Ref<ScalarAttribute> weightsAttribute;//For non-rational curves
+  Ref<UInt32Attribute> pointToCurveAttribute;//Created at 1st call to getCurveFromPoint()
+
+  UInt32 drawSamplesPerSpan;// For non-linear curves
+  Float32 drawThickness;// In pixels
+
+  UInt32 topoChangesBracket;// Delayed recompacting of data
+
+  Curves_lengthComputeCache lengthComputeCache;
+  LockedInitialize lengthComputeCacheInit;
+  LockedInitialize pointToCurveAttributeInit;
+};
+
+/// Constructor. By default, the Curves points (CVs) use a Float32 precision.
+inline Curves() {
+  this._init( "Curves", false );
+}
+
+/// Constructor taking the string to be used as the name. 
+/// \param debugName the name displayed in debugging
+function Curves( String debugName ) {
+  this._init( debugName, false );
+}
+
+/// Constructor.
+/// \param float64Positions If true, positions will use a Float64 precision (Vec3_d)
+inline Curves( Boolean float64Positions ) {
+  this._init( "Curves", float64Positions );
+}
+
+/// \internal initialize members
+Curves._init!( String debugName, Boolean float64Positions ) {
+  this.parent._init( debugName );
+  if( float64Positions ) {
+    this.positionsAttribute_d = this.attributes.getOrCreatePositions_d();
+    this.data.positions_d = this.positionsAttribute_d.values;
+  } else {
+    this.positionsAttribute = this.attributes.getPositions();
+    this.data.positions = this.positionsAttribute.values;
+  }
+  this.drawSamplesPerSpan = 8;
+  this.drawThickness = 1;
+  this.data.useDoubles = float64Positions;
+}
+
+/// \internal Copies the curves structure
+function Curves.copyStructure!( Curves src ) {
+  this.data.copy( src.data );
+  this.structureVersion += src.structureVersion + 1;
+
+  // Update attribute buffers based on what exists on the source
+  if( src.positionsAttribute_d ) {
+    this.positionsAttribute_d = this.attributes.getOrCreatePositions_d();
+    this.data.positions_d = this.positionsAttribute_d.values;
+    this.positionsAttribute = null;
+    Vec3 emptyPos[];
+    this.data.positions = emptyPos;
+  }
+  if( src.positionsAttribute ) {
+    this.positionsAttribute = this.attributes.getOrCreatePositions();
+    this.data.positions = this.positionsAttribute.values;
+    this.positionsAttribute_d = null;
+    Vec3_d emptyPos[];
+    this.data.positions_d = emptyPos;
+  }
+  if( src.weightsAttribute )
+    this.createRationalWeightsAttribute();
+  else {
+    this.weightsAttribute = null;
+    Scalar emptyWeights[];
+    this.data.weights = emptyWeights;
+  }
+}
+
+/// Copies the content from the source Curves.
+function Curves.copy!( Curves src ) {
+  this.copyStructure( src );
+  this.attributes.copy( src.attributes );
+  this.drawSamplesPerSpan = src.drawSamplesPerSpan;
+  this.drawThickness = src.drawThickness;
+}
+
+/// Copies the content from the source Geometry.
+function Curves.copy!( Geometry src ) {
+  Curves srcCurves = src;
+  if( !srcCurves )
+    throw( "Curves Cannot copy data from a non-Curves. Src Geometry is a :" + src.type() );
+  this.copy( srcCurves );
+}
+
+/// \internal
+Curves.cloneMembersTo( io Curves that ) {
+  //The difference with default clone() is that new.parent.autoStat will point to 'new' (from constructor)
+  that.copy( Curves( this ) );
+  that.debugName = this.debugName;
+}
+
+/// Returns the debug name used when constructing the geometry.
+String Curves.getDebugName() {
+  return this.debugName;
+}
+
+/// Returns the version of the geometry including attribute values
+inline UInt32 Curves.getVersion() {
+  return this.parent.getVersion();
+}
+
+/// Returns the version of the geometry structure including the the attribute set (but not attribute values).
+/// For Curves, this includes the knot values of NURBS curve, and also the open/closed state.
+inline UInt32 Curves.getStructureVersion() {
+  return this.parent.getStructureVersion();
+}
+
+/// Returns the metaData container for this Geometry.
+Ref<ThreadsafeMetaDataContainer> Curves.getMetaData() {
+  return this.metaData;
+}
+
+/// \dfgPresetOmit
+Curves.convertToGPU!( ) {
+  // TODO!
+}
+
+/// \dfgPresetOmit
+Curves.convertToCPU!( ) {
+  // TODO!
+}
+
+/// Returns the memory location id. CPU = 0, GPU = 1, VSM = 2;
+/// \note GPU support for Curves is not implemented, however its data structure was written to allow this eventually.
+inline UInt32 Curves.getMemType() {
+  return this.memType;
+}
+
+/// Geometry interface: returns the number of curves.
+Size Curves.elementCount() {
+  return this.curveCount();
+}
+
+/// Geometry interface: return the bounding volume of a curve, by including its points (conservative bounding box).
+LocalBoundingVolume Curves.getElementBoundingVolume( Size index ) {
+  Box3 bbox;
+  UInt32 pointCount = this.getPointCount( index );
+  for( Size i = 0; i < pointCount; ++i )
+    bbox += this.data.getPointPosition_nocheck( this.data.curvesData[index], i );
+
+  LocalBoundingVolume bVol;
+  bVol.bBoxInit( bbox.min, bbox.max );
+  return bVol;
+}
+
+LocalBoundingVolume Curves.getBoundingVolume() {
+  return this.parent.getBoundingVolume();
+}
+
+/// Geometry interface: transforms the positions of the geometry
+Curves.applyTransform!( Mat44 transform ) {
+  this.parent.applyTransform( transform );
+}
+
+/// Geometry interface: transforms the positions of the geometry
+Curves.applyTransform!( Xfo transform ) {
+  this.parent.applyTransform( transform );
+}
+
+/// Returns true if the curves stores its positions in Float64 (double precision Vec3_d),
+/// otherwise they are stored in Float32 (single precision Vec3).
+inline Boolean Curves.hasFloat64Positions() {
+  return Boolean( this.positionsAttribute_d );
+}
+
+/// Returns the GeometryAttributes container for this Curves.
+/// \category attributes
+inline Ref<GeometryAttributes> Curves.getAttributes() {
+  return this.attributes;
+}
+
+/**
+/// Returns the number of curves.
+ \note If a curve was removed (:kl-ref:`Curves.removeCurve`) within the current structure change bracket (:kl-ref:`Curves.beginStructureChanges`)\
+ then the includes removed curves (their indices have not been replaced yet).
+*/
+inline UInt32 Curves.curveCount() {
+  return this.data.curveCount();
+}
+
+/// Returns the total number of points for all curves.
+inline UInt32 Curves.allCurvesPointRange() {
+  return this.attributes.size();
+}
+
+/// Returns the total number of unused points.
+/// For scalability reasons, a portion of unused points is tolerated before recompacting.
+/// To force a point usage recompaction, call :kl-ref:`Curves.recompactPointIndices`
+/// \internal
+inline UInt32 Curves.allCurvesUnusedPointCount() {
+  return this.data.unusedPointCount;
+}
+
+/// Sets the number of curve samples per span created for the drawing.
+/// This has no impact on linear curves (1 sample per point).
+/// \dfgPresetDefault samples 8
+Curves.setDrawSamplesPerSpan!( UInt32 samples ) {
+  this.drawSamplesPerSpan = samples;
+  this.parent.incrementStructureVersion();
+}
+
+/// If enabled, linear curve tangents will be interpolated from mid-segments.
+/// This will also have an effect on the derivatives and the normal.
+/// \seealso Curves.smoothedLinearCurveTangents
+Curves.smoothLinearCurveTangents!( Boolean enable ) {
+  this.data.smoothLinearCurveTangents = enable;
+  this.parent.incrementStructureVersion();
+}
+
+/// Returns true if the curve tangents are interpolated from mid-segments.
+/// This will also has an effect on the derivatives and the normal.
+/// \seealso Curves.smoothLinearCurveTangents
+inline Boolean Curves.smoothedLinearCurveTangents() {
+  return this.data.smoothLinearCurveTangents;
+}
+
+/// Sets the draw thickness, in pixels, to be used by the drawing.
+/// \dfgPresetDefault pixels 1
+Curves.setDrawThickness!( UInt32 pixels ) {
+  this.drawThickness = pixels;
+  this.parent.incrementValueVersion();
+}
+
+
+/// \internal
+Curves.resizeAttributes!( Size size ) {
+  Size prevSize = this.pointCount();
+  this.attributes.resize( size );
+  if( this.pointToCurveAttribute ) {
+    // init to InvalidIndex
+    for( Size i = prevSize; i < size; ++i )
+      this.pointToCurveAttribute.values[i] = InvalidIndex;
+  }
+}
+
+/// Provides the curve and curvePoint indices from a global point index.
+/// If the point is unused, indices will be set to InvalidIndex.
+Curves.pointIndexToCurveIndex( UInt32 pointIndex, io UInt32 curveIndex, io UInt32 curvePointIndex ) {
+  Ref<Curves> mutableThis = this;
+  InitializeBracket bracket( mutableThis.pointToCurveAttributeInit );
+
+  if( bracket.mustInitialize() ) {
+    mutableThis.pointToCurveAttribute = mutableThis.attributes.getOrCreateUInt32Attribute( 'pointToCurveIndex' );
+    // Not all points might be used; initialize to InvalidIndex first
+    for( Size i = 0; i < mutableThis.pointToCurveAttribute.values.size(); ++i )
+      mutableThis.pointToCurveAttribute.values[i] = InvalidIndex;
+
+    for( Size i = 0; i < mutableThis.curveCount(); ++i )
+      mutableThis.updatePointToCurve( i, false );
+  }
+  curveIndex = mutableThis.pointToCurveAttribute.values[pointIndex];
+  if( curveIndex == InvalidIndex ) {
+    curvePointIndex = InvalidIndex;
+    return;
+  }
+  Size firstPoint = mutableThis.getFirstPointIndex( curveIndex );
+  curvePointIndex = pointIndex - firstPoint;
+}
+
+/// Copies a curve from the source curves. The source curves can be this or another object.
+/// \param createMissingSourceAttributes If a source attribute doesn't exist on this container, create it. If false, that source attribute is ignored.
+/// \dfgPresetOmit
+Curves.copyCurve!( Ref<Curves> sourceCurves, UInt32 sourceCurveIndex, UInt32 targetCurveIndex, Boolean createMissingSourceAttributes ) {
+
+  if( this.hasFloat64Positions() != sourceCurves.hasFloat64Positions() )
+    throw( "Curves.copyCurve: unsupported: position precision (Float32/64) is incompatible" );
+
+  if( this.data.freeCurveIndexCount )
+    throw( "Curves.copyCurve: not supported if there are some removed curves inside a beginStructureChanges bracket" );
+
+  this.beginStructureChanges();
+  this.data.copyCurve( sourceCurves.data, sourceCurveIndex, targetCurveIndex );
+  this.resizeAttributes( this.data.pointCount );
+  this.parent.incrementStructureVersion();
+  this.attributes.copyValues( sourceCurves.attributes, 
+                              sourceCurves.getFirstPointIndex( sourceCurveIndex ), 
+                              this.getPointCount( targetCurveIndex ), 
+                              this.getFirstPointIndex( targetCurveIndex ), 
+                              createMissingSourceAttributes );
+
+  this.endStructureChanges();
+}
+
+/// Push source curve to our last index.
+/// \param createMissingSourceAttributes If a source attribute doesn't exist on this container, create it. If false, that source attribute is ignored.
+/// \return Index of the added curve
+/// \dfgPresetOmit
+inline UInt32 Curves.pushCurve!( Ref<Curves> sourceCurves, UInt32 sourceCurveIndex, Boolean createMissingSourceAttributes ) {
+  UInt32 curveCount = this.curveCount();
+  this.setCurveCount( curveCount+1 );
+  this.copyCurve( sourceCurves, sourceCurveIndex, curveCount, createMissingSourceAttributes );
+  return curveCount;
+}
+
+/// \dfgPresetOmit
+inline Curves.copyCurve!( UInt32 sourceCurveIndex, UInt32 targetCurveIndex ) {
+  this.copyCurve( this, sourceCurveIndex, targetCurveIndex, false );
+}
+
+/// Appends all source curves at our last index.
+/// \param createMissingSourceAttributes If a source attribute doesn't exist on this container, create it. If false, that source attribute is ignored.
+/// \return Index of the first created curve (others have consecutive indices)
+UInt32 Curves.mergeCurves!( Ref<Curves> sourceCurves, Boolean createMissingSourceAttributes ) {
+  UInt32 curveCount = this.curveCount();
+  UInt32 sourceCurveCount = sourceCurves.curveCount();
+
+  this.setCurveCount( curveCount + sourceCurveCount );
+
+  for( Size i = 0; i < sourceCurveCount; ++i )
+    this.copyCurve( sourceCurves, i, curveCount + i, createMissingSourceAttributes );
+
+  return curveCount;
+}
+
+/// Appends all source curves at our last index.
+/// \param createMissingSourceAttributes If a source attribute doesn't exist on this container, create it. If false, that source attribute is ignored.
+/// \return Index of the first created curve (others have consecutive indices)
+UInt32 Curves.mergeCurves!( Curves sourceCurves[], Boolean createMissingSourceAttributes ) {
+  UInt32 curveCount = this.curveCount();
+  for( Size i = 0; i < sourceCurves.size(); ++i )
+    this.mergeCurves( sourceCurves[i], createMissingSourceAttributes );
+  return curveCount;
+}
+
+/**
+  Returns the first "global" point index for that curve, which corresponds to its index in the GeometryAttributes.
+  Other curve points use the next indices: [ Curves.getFirstPointIndex(C) .. Curves.getPointCount(C)-1 ]
+  \seealso Curves.getPointCount, Curves.getPointRange
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline UInt32 Curves.getFirstPointIndex( UInt32 curveIndex ) {
+  return this.data.getFirstPointIndex( this.data.curvesData[curveIndex] );
+}
+
+/// Returns the number of points, based on a global indexing (for all curves).
+inline Size Curves.pointCount() {
+  return this.parent.pointCount();
+}
+
+/**
+  Returns the number of points (control vertices) for the curve.
+  \category point
+  \seealso Curves.getFirstPointIndex, Curves.getPointRange
+  \dfgCreateArrayPreset
+*/
+inline UInt32 Curves.getPointCount( UInt32 curveIndex ) {
+  return this.data.getPointCount( this.data.curvesData[curveIndex] );
+}
+
+/**
+  Returns the point (control vertices) count for the curve.
+  \param includeRepeatedPoints If true, the point count will include repeated points, which is one additional point for a closed curve, and (order-1) points for a periodic NURBS curve.
+  \seealso Curves.getFirstPointIndex, Curves.getPointRange
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline UInt32 Curves.getPointCount( UInt32 curveIndex, Boolean includeRepeatedPoints ) {
+    return this.data.getPointCount( this.data.curvesData[curveIndex], includeRepeatedPoints );
+}
+
+/// Returns true if the curve has at least one rational weight != 1.0.
+/// \category point
+inline Boolean Curves.isRational( UInt32 curveIndex ) {
+  return this.data.curvesData[curveIndex].isRational();
+}
+
+/**
+  Returns the point index range correponding to curve's points. Last point index is pointsEnd - 1 (if > 0 points).
+  \seealso Curves.getFirstPointIndex, Curves.getPointCount
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline Curves.getPointRange( UInt32 curveIndex, io UInt32 firstPoint, io UInt32 pointsEnd ) {
+  this.data.getPointRange( this.data.curvesData[curveIndex], firstPoint, pointsEnd );
+}
+
+/// Returns true if the curve is closed (starts and ends at its first point).
+/// \category topology
+inline Boolean Curves.isClosed( UInt32 curveIndex ) {
+  return this.data.isClosed( this.data.curvesData[curveIndex] );
+}
+
+/// Returns true if the curve is open (starts at its first point, ends at its last point).
+/// \category topology
+inline Boolean Curves.isOpen( UInt32 curveIndex ) {
+  return !this.data.isClosed( this.data.curvesData[curveIndex] );
+}
+
+/// Returns the curve type: curveType_linear, curveType_bezier or curveType_NURBS
+inline UInt8 Curves.getCurveType( UInt32 curveIndex ) {
+  return this.data.getCurveType( this.data.curvesData[curveIndex] );
+}
+
+/// Returns the curve type as a String: "linear", "Bezier" or "NURBS".
+String Curves.getCurveTypeString( UInt32 curveIndex ) {
+  UInt8 type = this.getCurveType( curveIndex );
+  switch( type ) {
+    case curveType_linear: return "linear";
+    case curveType_bezier: return "Bezier";
+    case curveType_NURBS: return "NURBS";
+  }
+  return "(none)";
+}
+
+/**
+  Returns the order of the curve. The order is equal to curve's degree + 1.
+  The order also corresponds to the number of weighted points that influence the curve at a specific parameter.
+  A higher order allows a smoother curve, but implies more complex computations.
+  For NURBS and Bezier curves, the most common order is 4.
+  \seealso Curves.getDegree
+*/
+inline UInt8 Curves.getOrder( UInt32 curveIndex ) {
+  return this.data.getOrder( this.data.curvesData[curveIndex] );
+}
+
+/**
+  Returns the degree of the curve. The order is equal to curve's order - 1.
+  A higher degree allows a smoother curve, but implies more complex computations.
+  For NURBS and Bezier curves, the most common degree is 3.
+  \seealso Curves.getOrder
+*/
+inline UInt8 Curves.getDegree( UInt32 curveIndex ) {
+  return this.getOrder( curveIndex ) - 1;
+}
+
+/**
+  Returns the curve domain start and end. This is the range of parameter ("t" or "u")
+  at which the curve can be evaluated. For NURBS, the domain depends on the knot values
+  and its form. For linear and Bezier curves, the domain depends on the number of 
+  spans (curve segments or pieces). See Curves for more details.
+  \note For all curve types, it is possible that the domain doesn't start at 0, if the curve was imported or if a NURBS has explicit knot values.
+*/
+inline Vec2 Curves.getDomain( UInt32 curveIndex ) {
+  return this.data.getDomain( this.data.curvesData[curveIndex] );
+}
+
+/// \internal
+Curves.copyAttributes!( UInt32 curveIndex, UInt32 prevFirstPointOrInvalidIndex, UInt32 pointCount ) {
+  if( prevFirstPointOrInvalidIndex != InvalidIndex ) {
+    // Copy attributes
+    UInt32 firstPoint = this.getFirstPointIndex( curveIndex );
+    UInt32 prevFirstPoint = prevFirstPointOrInvalidIndex;
+    for( Size i = 0; i < pointCount; ++i )
+      this.attributes.copyValue( prevFirstPoint++, firstPoint + i );
+  }
+}
+
+/// Pre-allocates point space for this curve so that :kl-ref:`Curves.addPoints` doesn't need to resize the memory vector.
+/// \warning If not under a structure change bracket (:kl-ref:`Curves.beginStructureChanges` or CurvesStructureChangeBracket), \
+             first point index of all curves might be changed because of memory compaction.
+/// \warning Structural changes and change brackets are not thread safe
+Curves.reservePoints!( UInt32 curveIndex, UInt32 pointCount ) {
+  this.beginStructureChanges();
+
+  UInt32 prevFirstPointIfMoved = InvalidIndex;
+  UInt32 prevCount = this.data.curvesData[curveIndex].pointCount;
+  this.data.reservePoints( this.data.curvesData[curveIndex], pointCount, prevFirstPointIfMoved );
+  if(prevFirstPointIfMoved != InvalidIndex)
+    this.parent.incrementStructureVersion();
+
+  UInt32 firstPoint = this.getFirstPointIndex( curveIndex );
+  this.initNewCurveAttributes( curveIndex, firstPoint + prevCount, firstPoint + pointCount );
+  this.copyAttributes( curveIndex, prevFirstPointIfMoved, this.getPointCount( curveIndex ) );
+  this.endStructureChanges();
+}
+
+/**
+  Adds points to the curve, and returns the first added point index.
+  \return First added point index (global index)
+  \note For some curve types, such as Beziers, added point will have an effect only if a full piece is formed (eg: `degree` points; see Curves)
+
+  \warning If not under a structure change bracket (:kl-ref:`Curves.beginStructureChanges` or CurvesStructureChangeBracket), \
+             first point index of all curves might be changed because of memory compaction.
+  \warning Structural changes and change brackets are not thread safe
+  \category modeling
+*/
+UInt32 Curves.addPoints!( UInt32 curveIndex, UInt32 addedPointCount ) {
+  this.beginStructureChanges();
+  UInt32 pointCount = this.getPointCount( curveIndex );
+
+  UInt32 prevFirstPointIfMoved, prevPointCountIfMoved;
+  this.data.resizePoints( this.data.curvesData[curveIndex], pointCount + addedPointCount, prevFirstPointIfMoved, prevPointCountIfMoved );
+  this.resizeAttributes( this.data.pointCount );
+  this.copyAttributes( curveIndex, prevFirstPointIfMoved, prevPointCountIfMoved );
+  this.parent.incrementStructureVersion();
+
+  this.endStructureChanges();
+
+  UInt32 firstPoint = this.getFirstPointIndex( curveIndex ) + pointCount;
+  this.initNewCurveAttributes( curveIndex, firstPoint, firstPoint + addedPointCount );
+
+  return firstPoint;
+}
+
+/**
+Inserts a point in the curve, and returns the added point index. Note that this will add a curve segment, and will change curve's shape.
+For NURBS curves, a delta knot value of 1 is inserted after the point, or before if it is the last point. For Bezier, in order to keep
+pieces' alignment, it is recommended to insert 'degree' consecutive points, at piece boundary index (P*degree multiplier).
+
+\note For some curve types, such as Beziers, added point will have an effect only if a full piece is formed (eg: `degree` points; see Curves)
+
+\warning If not under a structure change bracket (:kl-ref:`Curves.beginStructureChanges` or CurvesStructureChangeBracket), \
+point indices of all curves might be changed because of memory compaction.
+\warning Structural changes and change brackets are not thread safe
+\return Added point index (global index)
+\param curvePointIndex Curve point index where the point will be inserted, between 0 and Curves.getPointCount( curveIndex )
+\param pointPosition Position of the inserted point
+\category modeling
+*/
+UInt32 Curves.insertPoint!( UInt32 curveIndex, UInt32 curvePointIndex, Vec3 pointPosition ) {
+
+  this.beginStructureChanges();
+  UInt32 pointCount = this.getPointCount( curveIndex );
+  if( curvePointIndex > pointCount ) {
+    setError( "Curves.insertPoint: curvePointIndex (" + curvePointIndex + ") > curve point count (" + pointCount + ")" );
+    return InvalidIndex;
+  }
+  UInt32 prevFirstPointIfMoved, prevPointCountIfMoved;
+  this.data.insertPoint( this.data.curvesData[curveIndex], curvePointIndex, prevFirstPointIfMoved, prevPointCountIfMoved );
+  this.resizeAttributes( this.data.pointCount );
+  this.copyAttributes( curveIndex, prevFirstPointIfMoved, prevPointCountIfMoved );
+
+  // Copy attributes data for subsequent points
+  UInt32 firstPointIndex = this.getFirstPointIndex( curveIndex );
+  UInt32 pointIndex = firstPointIndex + curvePointIndex;
+  for( Size i = firstPointIndex+pointCount; i > pointIndex; --i )
+    this.attributes.copyValue( i-1, i );
+
+  this.initNewCurveAttributes( curveIndex, pointIndex );
+  this.setPointPosition( pointIndex, pointPosition );
+
+  this.parent.incrementStructureVersion();
+
+  this.endStructureChanges();
+  return this.getFirstPointIndex( curveIndex ) + curvePointIndex;//Get again; indices might have changed upon endStructureChanges
+}
+
+/**
+Deletes a point from the curve.
+
+\warning If not under a structure change bracket (:kl-ref:`Curves.beginStructureChanges` or CurvesStructureChangeBracket), \
+point indices of all curves might be changed because of memory compaction.
+\warning Structural changes and change brackets are not thread safe
+\param curvePointIndex Curve point index of the point to be removed, between 0 and Curves.getPointCount( curveIndex )-1
+\category modeling
+*/
+Curves.deletePoint!( UInt32 curveIndex, UInt32 curvePointIndex ) {
+  this.beginStructureChanges();
+  UInt32 pointCount = this.getPointCount( curveIndex );
+  if( curvePointIndex >= pointCount ) {
+    setError( "Curves.deletePoint: curvePointIndex (" + curvePointIndex + ") >= curve point count (" + pointCount + ")" );
+    return;
+  }
+  UInt32 pointIndex = this.getFirstPointIndex( curveIndex ) + curvePointIndex;
+  this.data.deletePoint( this.data.curvesData[curveIndex], curvePointIndex );
+
+  // Copy attributes data for subsequent points
+  --pointCount;
+  for( Size i = pointIndex; i < pointCount; ++i )
+    this.attributes.copyValue( i + 1, i );
+
+  this.parent.incrementStructureVersion();
+
+  this.endStructureChanges();
+}
+
+/**
+  Adds points to the curve, and returns the first added point index.
+  \return First added point index (global index)
+  \note For some curve types, such as Beziers, added point will have an effect only if a full piece is formed (eg: `degree` points; see Curves)
+
+  \warning If not under a structure change bracket (:kl-ref:`Curves.beginStructureChanges` or CurvesStructureChangeBracket), \
+             first point index of all curves might be changed because of memory compaction.
+  \warning Structural changes and change brackets are not thread safe
+  \dfgPresetType pointPositions Vec3[]
+  \category modeling
+*/
+UInt32 Curves.addPoints!( UInt32 curveIndex, Vec3 pointPositions<> ) {
+  UInt32 firstAddedPoint = this.addPoints( curveIndex, pointPositions.size() );
+  for( Size i = 0; i < pointPositions.size(); ++i )
+    this.setPointPosition( curveIndex, i, pointPositions[i] );
+  return firstAddedPoint;
+}
+
+/**
+  Adds points to the curve, and returns the first added point index.
+  \param pointPositions Positions, in actual 3D coordinates (not in homogeneous coordinates)
+  \param rationalWeights Rational weights for the curve points
+  \return First added point index (global index)
+  \note For some curve types, such as Beziers, added point will have an effect only if a full piece is formed (eg: `degree` points; see Curves)
+
+  \warning If not under a structure change bracket (:kl-ref:`Curves.beginStructureChanges` or CurvesStructureChangeBracket), \
+             first point index of all curves might be changed because of memory compaction.
+  \warning Structural changes and change brackets are not thread safe
+  \dfgPresetTitle AddRationalPoints
+  \dfgPresetType pointPositions Vec3[]
+  \dfgPresetType rationalWeights Float32[]
+  \category modeling
+*/
+UInt32 Curves.addPoints!( UInt32 curveIndex, Vec3 pointPositions<>, Float32 rationalWeights<> ) {
+  if( pointPositions.size() != rationalWeights.size() )
+    throw( "Error: pointPositions and rationalWeights have different sizes" );
+
+  UInt32 firstAddedPoint = this.addPoints( curveIndex, pointPositions.size() );
+  for( Size i = 0; i < pointPositions.size(); ++i )
+    this.setPointPosition( curveIndex, i, pointPositions[i], rationalWeights[i] );
+  return firstAddedPoint;
+}
+
+/**
+  Removes the curve. If the caller didn't open a structure change bracket (:kl-ref:`Curves.beginStructureChanges` or CurvesStructureChangeBracket),
+  the curve index will be replaced by the last valid one if applicable, so that all indices are used. If there a structure change bracket,
+  this index replacement will be delayed until the last bracket is closed.
+  \warning Structural changes and change brackets are not thread safe
+  \category modeling
+*/
+Curves.removeCurve!( UInt32 curveIndex ) {
+  this.beginStructureChanges();
+  this.clearCurve( curveIndex );
+  this.data.removeCurve( curveIndex );
+  this.parent.incrementStructureVersion();
+  this.endStructureChanges();
+}
+
+/// \internal
+Curves.updatePointToCurve!( Size curveIndex, Boolean deleted ) {
+  if( this.pointToCurveAttribute ) {
+    UInt32 firstPoint, pointsEnd;
+    this.getPointRange( curveIndex, firstPoint, pointsEnd );
+    for( Size i = firstPoint; i < pointsEnd; ++i )
+      this.pointToCurveAttribute.values[i] = deleted ? InvalidIndex : curveIndex;
+  }
+}
+
+/// \internal
+Curves.clearCurve!( Size curveIndex ) {
+  this.updatePointToCurve( curveIndex, true );
+  this.data.clearCurve( curveIndex );
+}
+
+/// Changes the curve count. If size is increasing, undefined empty curves are added (type = curveType_none).
+/// If decreasing, last curves are removed.
+/// \warning Structural changes and change brackets are not thread safe
+Curves.setCurveCount!( Size curveCount ) {
+  if( this.curveCount() != curveCount ) {
+    UInt32 prevCount = this.curveCount();
+    Boolean increasing = curveCount > prevCount;
+
+    if( !increasing )
+      this.recompactData( true );//Only supported if no free curve indices
+
+    for( Size i = curveCount; i < prevCount; ++i )
+      this.clearCurve( i );
+
+    this.data.curvesData.resize( curveCount );
+    this.parent.incrementStructureVersion();
+
+    if( !increasing )
+      this.recompactData( true );//Recompact point indices of deleted curves
+  }
+}
+
+/**
+  Opens or closes the curve.
+  
+  - For a linear curve, this only results in an added or removed segment between the last and first point.
+
+  - For a Bezier curve:
+
+     - When closing, the last point (end of last piece) is removed so the piece ends with the first point (shared with the 1st piece).
+
+     - When opening, the a last point is added, and it position is copied from the first point. The curve is then topologically
+       open, even if visually it is not open until a different position is assigned to the last point.
+
+  - For a NURBS curve:
+
+    - When closing, the last point is removed so the curve ends with the first point (shared).
+
+    - When opening, the a last point is added, and it position is copied from the first point. The curve is then topologically
+      open, even if visually it is not open until a different position is assigned to the last point.
+
+  \note If a NURBS curve is in periodic form, it is first converted to closed form without changing the point positions (the curve shape changes).
+
+  \warning Structural changes and change brackets are not thread safe
+  \category modeling
+*/
+Curves.openOrCloseCurve!( UInt32 curveIndex, Boolean open ) {
+  if( open == this.isClosed( curveIndex ) ) {
+    this.beginStructureChanges();
+    UInt32 reservedPointCount = this.data.openOrCloseCurve_getReservedPointCount( this.data.curvesData[curveIndex], open );
+    this.reservePoints( curveIndex, reservedPointCount );
+
+    LocalL8UInt32Array copyAttrFrom, copyAttrTo;
+    this.data.openOrCloseCurve_reservedPoints( this.data.curvesData[curveIndex], open, copyAttrFrom, copyAttrTo );
+    this.parent.incrementStructureVersion();
+    for( Size i = 0; i < copyAttrFrom.size(); ++i )
+      this.attributes.copyValue( copyAttrFrom.get( i ), copyAttrTo.get( i ) );
+
+    this.endStructureChanges();
+  }
+}
+
+/**
+Opens the curve (or does nothing is already open).
+
+- For a linear curve, this only results in a removed segment between the last and first point.
+
+- For a Bezier and NURBS curve, the a last point is added, and it position is copied from the first point. The curve is then topologically
+  open, even if visually it is not open until a different position is assigned to the last point.
+
+\note If a NURBS curve is in periodic form, it is first converted to closed form without changing the point positions (the curve shape changes).
+
+\warning Structural changes and change brackets are not thread safe
+\category modeling
+*/
+inline Curves.openCurve!( UInt32 curveIndex ) {
+  this.openOrCloseCurve( curveIndex, true );
+}
+
+/**
+Closes the curve (or does nothing is already closed).
+
+- For a linear curve, this only results in a removed segment between the last and first point.
+
+- For a Bezier curve, the last point (end of last piece) is removed so the piece ends with the first point (shared with the 1st piece).
+
+- For a NURBS curve, the last point is removed so the curve ends with the first point (shared).
+
+\note If a NURBS curve is in periodic form, it is first converted to closed form without changing the point positions (the curve shape changes).
+
+\warning Structural changes and change brackets are not thread safe
+\category modeling
+*/
+inline Curves.closeCurve!( UInt32 curveIndex ) {
+  this.openOrCloseCurve( curveIndex, false );
+}
+
+/// Various methods can cause some point indices to be unused, and for scalability reasons these are not filled immediately.
+/// This methods will recompact curve point index usage so all indices are used.
+/// \internal
+Curves.recompactPointIndices!() {
+
+  if( this.data.unusedPointCount ) {
+    // We don't have a precise table of point usage; just build it
+    UInt32 ownerCurve[];
+    ownerCurve.resize( this.data.pointCount );
+    for( Size i = 0; i < this.data.pointCount; ++i )
+      ownerCurve[i] = InvalidIndex;
+
+    Size curveCount = this.curveCount();
+    for( Size i = 0; i < curveCount; ++i ) {
+      UInt32 firstPoint, pointsEnd;
+      this.data.getReservedPointRange( this.data.curvesData[i], firstPoint, pointsEnd );
+      for( Size j = firstPoint; j < pointsEnd; ++j ) {
+        if( Fabric_Guarded && ownerCurve[j] != InvalidIndex )
+          throw( "Curves.recompactPointIndices: point owned by two curves:" + j );
+        ownerCurve[j] = i;
+      }
+    }
+
+    UInt32 target;
+    UInt32 currCurve = InvalidIndex;
+
+    for( Size i = 0; i < this.data.pointCount; ++i ) {
+      UInt32 curveIndex = ownerCurve[i];
+      if( curveIndex == InvalidIndex )
+        continue;
+      if( target != i ) {
+        if( currCurve != curveIndex ) {
+          // New curve start: update the first point info
+          this.data.curvesData[curveIndex].firstPoint = target;
+          currCurve = curveIndex;
+        }
+        this.attributes.copyValue( i, target );
+      }
+      ++target;
+    }
+    this.resizeAttributes( target );
+    this.data.pointCount = target;
+    this.data.unusedPointCount = 0;
+    this.parent.incrementStructureVersion();
+  }
+}
+
+/// \internal
+Curves.recompactData!( Boolean forceCompactPoints ) {
+  if( this.data.freeCurveIndexCount ) {
+    this.parent.incrementStructureVersion();
+    Size renamed[] = this.data.recompactCurveIndices();
+    for( Size i = 0; i < renamed.size(); ++i )
+      this.updatePointToCurve( renamed[i], false );
+  }
+  if( forceCompactPoints || this.data.unusedPointCount * 4 > this.data.pointCount )
+    this.recompactPointIndices();
+}
+
+/**
+  Marks the end of structural changes for the curves. If some point or curve indices is unused, this might recompact the indices for all curves
+  to maximize memory usage.
+  \warning Structural changes and change brackets are not thread safe
+  \note The :kl-ref:`CurvesStructureChangeBracket` wraps a being/endStructureChanges using its constructor and destructor, which can reduce unbalanced bracket errors.
+  \note Structure change brackets can be nested, in which case only the outer :kl-ref:`Curves.endStructureChanges` will compile the changes.
+  \seealso Curves.beginStructureChanges, Curves.removeCurve
+*/
+Curves.endStructureChanges!( ) {
+  if( Fabric_Guarded && !Fabric_OnGPU && this.topoChangesBracket == 0 )
+    throw( "Curves.endStructureChanges: no corresponding Begin" );
+  --this.topoChangesBracket;
+  if( this.topoChangesBracket == 0 )
+    this.recompactData( false );
+}
+
+/// Returns true if the curve has been removed by method :kl-ref:`Curves.removeCurve` (invalid curve index).
+inline Boolean Curves.isRemoved( UInt32 curveIndex ) {
+  return curveIndex >= this.data.curvesData.size() || this.data.isRemoved( this.data.curvesData[curveIndex] );
+}
+
+/**
+  Signals the beginning of structural changes for the curves, like adding points or removing curve.
+  Structure change brackets will delay the recompaction of point and curve indices, which might happen if
+  some indices are unused after the changes.
+  \warning Structural changes and change brackets are not thread safe
+  \note The :kl-ref:`CurvesStructureChangeBracket` wraps a being/endStructureChanges using its constructor and destructor, which can reduce unbalanced bracket errors.
+  \note Structure change brackets can be nested, in which case only the outer :kl-ref:`Curves.endStructureChanges` will compile the changes.
+  \category modeling
+  \seealso Curves.endStructureChanges, Curves.removeCurve
+*/
+inline Curves.beginStructureChanges!( ) {
+  ++this.topoChangesBracket;
+}
+
+/**
+  Local bracket wrapper for :kl-ref:`Curves.beginStructureChanges` and :kl-ref:`Curves.endStructureChanges`.
+  Using this mechanism avoids potential unbalanced bracket errors.
+  \warning Structural changes and change brackets are not thread safe
+  \dfgPresetOmit
+*/
+struct CurvesStructureChangeBracket {
+  Ref<Curves> curves;
+};
+
+/// \internal
+inline CurvesStructureChangeBracket() {
+  throw "CurvesStructureChangeBracket: default constructor not supported";
+}
+
+/// Construct a local structure change bracket for the curves.
+/// \warning Structural changes and change brackets are not thread safe
+/// \dfgPresetOmit
+inline CurvesStructureChangeBracket( Ref<Curves> curves ) {
+  this.curves = curves;
+  if( this.curves )
+    this.curves.beginStructureChanges();
+}
+
+/// \internal
+inline ~CurvesStructureChangeBracket() {
+  if( this.curves )
+    this.curves.endStructureChanges();
+}
+
+/**
+  Returns the global point index for a curve's sub-point.
+  This index corresponds to this point's position in the GeometryAttributes container.
+  \param curvePointIndex Curve's sub-point index, ranging from 0 to :kl-ref:`Curves.getPointCount` - 1
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline UInt32 Curves.getPointIndex( UInt32 curveIndex, UInt32 curvePointIndex ) {
+  return this.data.getPointIndex_check( this.data.curvesData[curveIndex], curvePointIndex );
+}
+
+/**
+  Returns the global attribute index for a curve's sub-point.
+  This index corresponds to this point's values in the GeometryAttributes container.
+  \param curvePointIndex Curve's sub-point index, ranging from 0 to :kl-ref:`Curves.getPointCount` - 1
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline UInt32 Curves.getAttributeIndex( UInt32 curveIndex, UInt32 curvePointIndex ) {
+  return this.getPointIndex( curveIndex, curvePointIndex );
+}
+
+/**
+  Returns the point position. If there is a rational weight, it will be divided by that weight (converted from homogeneous).
+  \param curvePointIndex Curve's sub-point index, ranging from 0 to :kl-ref:`Curves.getPointCount` - 1
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline Vec3 Curves.getPointPosition( UInt32 curveIndex, UInt32 curvePointIndex ) {
+  return this.data.getPointPosition( this.data.curvesData[curveIndex], curvePointIndex );
+}
+
+/**
+  Returns the point position. If there is a rational weight, it will be divided by that weight (converted from homogeneous).
+  \param curvePointIndex Curve's sub-point index, ranging from 0 to :kl-ref:`Curves.getPointCount` - 1
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline Vec3_d Curves.getPointPosition_d( UInt32 curveIndex, UInt32 curvePointIndex ) {
+  return this.data.getPointPosition_d( this.data.curvesData[curveIndex], curvePointIndex );
+}
+
+/// Returns the position of a point, based on a global indexing (for all curves).
+/// \dfgCreateArrayPreset
+inline Vec3 Curves.getPointPosition( Size point ) {
+  return this.parent.getPosition( point );
+}
+
+/// Geometry interface: returns all point positions, for all curves.
+Vec3[] Curves.getAllPointPositions() {
+  return this.parent.getAllPointPositions();
+}
+
+/**
+  Returns a 4D point in homogeneous coordinate, which is (x*W, y*W, z*W, W), where W is the rational weight.
+  \param curvePointIndex Curve's sub-point index, ranging from 0 to :kl-ref:`Curves.getPointCount` - 1
+  \category point
+  \seealso Curves.getRationalWeight, Curves.getHomogeneousPointPosition_d
+  \dfgCreateArrayPreset
+*/
+inline Vec4 Curves.getHomogeneousPointPosition( UInt32 curveIndex, UInt32 curvePointIndex ) {
+  return this.data.getHomogeneousPointPosition( this.data.curvesData[curveIndex], curvePointIndex );
+}
+
+/**
+  Returns the rational weight for curve's point. By default, rational weights are 1.0.
+  \param curvePointIndex Curve's sub-point index, ranging from 0 to :kl-ref:`Curves.getPointCount` - 1
+  \category point
+  \seealso Curves.getHomogeneousPointPosition
+  \dfgCreateArrayPreset
+*/
+inline Float32 Curves.getRationalWeight( UInt32 curveIndex, UInt32 curvePointIndex ) {
+  return this.data.getRationalWeight( this.data.curvesData[curveIndex], curvePointIndex );
+}
+
+/**
+  Returns a 4D point in homogeneous coordinate in double precision, which is (x*W, y*W, z*W, W), where W is the rational weight.
+  \param curvePointIndex Curve's sub-point index, ranging from 0 to :kl-ref:`Curves.getPointCount` - 1
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline Vec4_d Curves.getHomogeneousPointPosition_d( UInt32 curveIndex, UInt32 curvePointIndex ) {
+  return this.data.getHomogeneousPointPosition_d( this.data.curvesData[curveIndex], curvePointIndex );
+}
+
+/**
+ Sets the position of a curve point.
+ \note Once point positions have been set, call :kl-ref:`Curves.incrementPointPositionsVersion` (see :ref:`attributeversioning`)
+ \note If positions are stored as Vec3_d (Float64), a conversion will be applied.
+ \note This function is threadsafe if the curves structure and attribute sharing layout is not modified by another thread.
+ \param curvePointIndex Curve's sub-point index, ranging from 0 to :kl-ref:`Curves.getPointCount` - 1
+ \seealso Curves.hasFloat64Positions, Curves.setPointPosition( UInt32, UInt32, Vec3_d )
+ \category point
+ \dfgCreateArrayPreset
+*/
+inline Curves.setPointPosition!( UInt32 curveIndex, UInt32 curvePointIndex, Vec3 position ) {
+  this.data.setPointPosition( this.data.curvesData[curveIndex], curvePointIndex, position );
+}
+
+/**
+  Sets the position of a curve point.
+  The position is the actual 3D position and not an homogeneous coordinate; it will be made an homogeneous coordinate internally.
+  \note Once point positions have been set, call :kl-ref:`Curves.incrementPointPositionsVersion` (see :ref:`attributeversioning`)
+  \note If positions are stored as Vec3_d (Float64), a conversion will be applied.
+  \note This function is threadsafe if the curves structure and attribute sharing layout is not modified by another thread.
+  \param curvePointIndex Curve's sub-point index, ranging from 0 to :kl-ref:`Curves.getPointCount` - 1
+  \seealso Curves.hasFloat64Positions, Curves.setPointPosition( UInt32, UInt32, Vec3_d, Float32 )
+  \category point
+  \dfgCreateArrayPreset
+  \dfgPresetTitle SetRationalPointPosition
+*/
+inline Curves.setPointPosition!( UInt32 curveIndex, UInt32 curvePointIndex, Vec3 position, Float32 rationalWeight ) {
+  this.data.setPointPosition( this.data.curvesData[curveIndex], curvePointIndex, position );
+  this.setRationalWeight( curveIndex, curvePointIndex, rationalWeight );
+}
+
+/**
+  Sets the position of the point in double precision (Float64).
+  \note If positions are stored as Vec3 (Float32), a conversion will be applied.
+  \note Once point positions have been set, call :kl-ref:`Curves.incrementPointPositionsVersion` (see :ref:`attributeversioning`)
+  \note This function is threadsafe if the curves structure and attribute sharing layout is not modified by another thread.
+  \param curvePointIndex Curve's sub-point index, ranging from 0 to :kl-ref:`Curves.getPointCount` - 1
+  \seealso Curves.hasFloat64Positions, Curves.setPointPosition( Size, Vec3 )
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline Curves.setPointPosition_d!( UInt32 curveIndex, UInt32 curvePointIndex, Vec3_d position ) {
+  this.data.setPointPosition_d( this.data.curvesData[curveIndex], curvePointIndex, position );
+}
+
+/**
+  Sets the position of the point in double precision (Float64), along with its rational weight.
+  The position is the actual 3D position and not an homogeneous coordinate; it will be made an homogeneous coordinate internally.
+  \note If positions are stored as Vec3 (Float32), a conversion will be applied.
+  \note Once point positions have been set, call :kl-ref:`Curves.incrementPointPositionsVersion` (see :ref:`attributeversioning`)
+  \note This function is threadsafe if the curves structure and attribute sharing layout is not modified by another thread.
+  \param curvePointIndex Curve's sub-point index, ranging from 0 to :kl-ref:`Curves.getPointCount` - 1
+  \seealso Curves.hasFloat64Positions, Curves.setPointPosition( Size, Vec3 )
+  \category point
+  \dfgCreateArrayPreset
+  \dfgPresetTitle SetRationalPointPosition_d
+*/
+inline Curves.setPointPosition_d!( UInt32 curveIndex, UInt32 curvePointIndex, Vec3_d position, Float32 rationalWeight ) {
+  this.data.setPointPosition_d( this.data.curvesData[curveIndex], curvePointIndex, position );
+  this.setRationalWeight( curveIndex, curvePointIndex, rationalWeight );
+}
+
+/// Sets the positions of a point, based on a global indexing (for all curves).
+/// \note Once positions have been set, call :kl-ref:`Curves.incrementPositionsVersion` (see :ref:`attributeversioning`)
+/// \dfgCreateArrayPreset
+inline Curves.setPointPosition!( Size point, Vec3 position ) {
+  this.parent.setPosition( point, position );
+}
+
+/// Geometry interface: sets all point positions, for all curves
+Curves.setAllPointPositions!( Vec3 positions[] ) {
+  this.parent.setAllPointPositions( positions );
+}
+
+/// Non-inlined portion of ensureRationalWeightsAttributeExists
+/// \internal
+Curves.createRationalWeightsAttribute!( ) {
+  if( !this.weightsAttribute ) {
+    this.weightsAttribute = this.attributes.getOrCreateScalarAttribute( CurvesRationalWeightsAttributeName );
+    this.data.weights = this.weightsAttribute.values;
+    for( Size i = 0; i < this.weightsAttribute.values.size(); ++i )
+      this.weightsAttribute.values[i] = 1.0f;
+  }
+}
+
+/// If the "rationalWeights" ScalarAttribute doesn't exist, it will create one. This must be called before 
+/// setting positions with rational weights is called in parallel.
+/// \category point
+inline Curves.ensureRationalWeightsAttributeExists!( ) {
+  if( !this.weightsAttribute )
+    this.createRationalWeightsAttribute();
+}
+
+/**
+  Sets the rational weight of a curve point. This only has an impact on curves that support rational weights (rational Beziers and NURBS).
+  \note Once weights have been set, call :kl-ref:`Curves.incrementPointPositionsVersion` (see :ref:`attributeversioning`)
+  \note This function is threadsafe if the curves structure and attribute sharing layout is not modified by another thread, and if :kl-ref:`Curves.ensureWeightsAttributeExists` has been called.
+  \seealso Curves.hasFloat64Positions, Curves.setPointPosition( Size, Vec3_d )
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline Curves.setRationalWeight!( UInt32 curveIndex, UInt32 curvePointIndex, Float32 weight ) {
+  if( weight != 1.0f )
+    this.ensureRationalWeightsAttributeExists();
+  else if( !this.weightsAttribute )
+    return;
+
+  this.data.setRationalWeight( this.data.curvesData[curveIndex], curvePointIndex, weight );
+}
+
+/// Helper for incrementing the version of the positions attribute after value changes.
+/// See :ref:`attributeversioning` for more information.
+Curves.incrementPointPositionsVersion!() {
+  if( this.positionsAttribute_d )
+    this.positionsAttribute_d.incrementVersion();
+  else
+    this.positionsAttribute.incrementVersion();
+  if( this.weightsAttribute )
+    this.weightsAttribute.incrementVersion();
+}
+
+/// Returns a position on the curve evaluated at this parameter.
+/// The param should be within the range [domainStart .. domainEnd], as returned by :kl-ref:`Curves.getDomain`.
+/// \dfgCreateArrayPreset
+inline Vec3 Curves.getPositionAtParam( UInt32 curveIndex, Float32 param ) {
+  return this.data.getPositionAtParam( this.data.curvesData[curveIndex], param );
+}
+
+/**
+  Returns a position on the curve evaluated at this normalized parameter.
+  The normalizedParam should be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.
+  \dfgCreateArrayPreset
+  \dfgPresetRange normalizedParam (0.0, 1.0)
+*/
+inline Vec3 Curves.getPositionAtNormalizedParam( UInt32 curveIndex, Float32 normalizedParam ) {
+  return this.data.getPositionAtNormalizedParam( this.data.curvesData[curveIndex], normalizedParam );
+}
+
+/// Returns a double precision position on the curve evaluated at this parameter.
+/// The param should be within the range [domainStart .. domainEnd], as returned by :kl-ref:`Curves.getDomain`.
+/// \dfgCreateArrayPreset
+inline Vec3_d Curves.getPositionAtParam_d( UInt32 curveIndex, Float32 param ) {
+  return this.data.getPositionAtParam_d( this.data.curvesData[curveIndex], param );
+}
+
+/**
+  Returns a double precision position on the curve evaluated at this normalized parameter.
+  The normalizedParam should be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.
+  \dfgCreateArrayPreset
+  \dfgPresetRange normalizedParam (0.0, 1.0)
+*/
+inline Vec3_d Curves.getPositionAtNormalizedParam_d( UInt32 curveIndex, Float32 normalizedParam ) {
+  return this.data.getPositionAtNormalizedParam_d( this.data.curvesData[curveIndex], normalizedParam );
+}
+
+/**
+  Returns the unit curve normal on the curve evaluated at this parameter.
+  The curve normal is computed as the normalized curvature vector. As such, it can be unstable along 
+  the curve, depending on curvature changes, and is ill-defined on straight segments.
+  The param should be within the range [domainStart .. domainEnd], as returned by :kl-ref:`Curves.getDomain`.
+  \dfgCreateArrayPreset
+*/
+inline Vec3 Curves.getNormalAtParam( UInt32 curveIndex, Float32 param ) {
+  return this.data.getNormalAtParam( this.data.curvesData[curveIndex], param );
+}
+
+/**
+  Returns the unit curve normal on the curve evaluated at this normalized parameter.
+  The curve normal is computed as the normalized curvature vector. As such, it can be unstable along 
+  the curve, depending on curvature changes, and is ill-defined on straight segments.
+  The normalizedParam should be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.
+  \dfgCreateArrayPreset
+  \dfgPresetRange normalizedParam (0.0, 1.0)
+*/
+inline Vec3 Curves.getNormalAtNormalizedParam( UInt32 curveIndex, Float32 normalizedParam ) {
+  return this.data.getNormalAtNormalizedParam( this.data.curvesData[curveIndex], normalizedParam );
+}
+
+/// Returns the unit tangent at this parameter.
+/// The param should be within the range [domainStart .. domainEnd], as returned by :kl-ref:`Curves.getDomain`.
+/// \dfgCreateArrayPreset
+inline Vec3 Curves.getTangentAtParam( UInt32 curveIndex, Float32 param ) {
+  return this.data.getTangentAtParam( this.data.curvesData[curveIndex], param );
+}
+
+/**
+  Returns the unit tangent at this normalized parameter.
+  The normalizedParam should be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.
+  \dfgCreateArrayPreset
+  \dfgPresetRange normalizedParam (0.0, 1.0)
+*/
+inline Vec3 Curves.getTangentAtNormalizedParam( UInt32 curveIndex, Float32 normalizedParam ) {
+  return this.data.getTangentAtNormalizedParam( this.data.curvesData[curveIndex], normalizedParam );
+}
+
+/**
+  Returns the curvature vector (normal * arcLength) at this parameter.
+  If no curvature (eg: linear curve), Vec3() is returned.
+  The arc length can be computed as curvature.length(), or SCALAR_INFINITE if length is 0.
+  The param should be within the range [domainStart .. domainEnd], as returned by :kl-ref:`Curves.getDomain`.
+  \dfgCreateArrayPreset
+*/
+inline Vec3 Curves.getCurvatureAtParam( UInt32 curveIndex, Float32 param ) {
+  return this.data.getCurvatureAtParam( this.data.curvesData[curveIndex], param );
+}
+
+/**
+  Returns the curvature vector (normal * arcLength) at this normalized parameter.
+  If no curvature (eg: linear curve), Vec3() is returned.
+  The arc length can be computed as curvature.length(), or SCALAR_INFINITE if length is 0.
+  The normalizedParam should be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.
+  \dfgCreateArrayPreset
+  \dfgPresetRange normalizedParam (0.0, 1.0)
+*/
+inline Vec3 Curves.getCurvatureAtNormalizedParam( UInt32 curveIndex, Float32 normalizedParam ) {
+  return this.data.getCurvatureAtNormalizedParam( this.data.curvesData[curveIndex], normalizedParam );
+}
+
+/**
+  Returns the unit tangent and the curvature vector (normal * arcLength) at this parameter.
+  If no curvature (eg: linear curve), `curvature` is set to Vec3().
+  The arc length can be computed as curvature.length(), or SCALAR_INFINITE if length is 0.
+  The param should be within the range [domainStart .. domainEnd], as returned by :kl-ref:`Curves.getDomain`.
+  \note This function has the same cost as :kl-ref:`Curves.getCurvatureAtParam` since the tangent is computed internally anyway
+  \dfgCreateArrayPreset
+*/
+inline Curves.getTangentAndCurvatureAtParam( UInt32 curveIndex, Float32 param, io Vec3 tangent, io Vec3 curvature ) {
+  this.data.getTangentAndCurvatureAtParam( this.data.curvesData[curveIndex], param, tangent, curvature );
+}
+
+/**
+  Returns the unit tangent and the curvature vector (normal * arcLength) at this normalized parameter.
+  If no curvature (eg: linear curve), `curvature` is set to Vec3().
+  The arc length can be computed as curvature.length(), or SCALAR_INFINITE if length is 0.
+  The normalizedParam should be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.
+  \note This function has the same cost as :kl-ref:`Curves.getCurvatureAtNormalizedParam` since the tangent is computed internally anyway
+  \dfgCreateArrayPreset
+  \dfgPresetRange normalizedParam (0.0, 1.0)
+*/
+inline Curves.getTangentAndCurvatureAtNormalizedParam( UInt32 curveIndex, Float32 normalizedParam, io Vec3 tangent, io Vec3 curvature ) {
+  this.data.getTangentAndCurvatureAtNormalizedParam( this.data.curvesData[curveIndex], normalizedParam, tangent, curvature );
+}
+
+/// Returns the curve derivative vector at this parameter (relative to `param` units).
+/// The param should be within the range [domainStart .. domainEnd], as returned by :kl-ref:`Curves.getDomain`.
+/// \dfgCreateArrayPreset
+inline Vec3 Curves.getDerivativeAtParam( UInt32 curveIndex, Float32 param ) {
+  return this.data.getDerivativeAtParam( this.data.curvesData[curveIndex], param );
+}
+
+/**
+  Returns the curve derivative vector at this normalized parameter (relative to `normalized param` units).
+  The normalizedParam should be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.
+  \dfgCreateArrayPreset
+  \dfgPresetRange normalizedParam (0.0, 1.0)
+*/
+inline Vec3 Curves.getDerivativeAtNormalizedParam( UInt32 curveIndex, Float32 normalizedParam ) {
+  return this.data.getDerivativeAtNormalizedParam( this.data.curvesData[curveIndex], normalizedParam );
+}
+
+/// Returns the curve first and second derivative vectors at this parameter (relative to `param` units).
+/// The param should be within the range [domainStart .. domainEnd], as returned by :kl-ref:`Curves.getDomain`.
+/// \dfgCreateArrayPreset
+inline Curves.getDerivativesAtParam( UInt32 curveIndex, Float32 param, io Vec3 dU, io Vec3 dUU ) {
+  this.data.getDerivativesAtParam( this.data.curvesData[curveIndex], param, dU, dUU );
+}
+
+/**
+  Returns the curve first and second derivative vectors at this normalized parameter (relative to `normalized param` units).
+  The normalizedParam should be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.
+  \dfgCreateArrayPreset
+  \dfgPresetRange normalizedParam (0.0, 1.0)
+*/
+inline Curves.getDerivativesAtNormalizedParam( UInt32 curveIndex, Float32 normalizedParam, io Vec3 dU, io Vec3 dUU ) {
+  this.data.getDerivativesAtNormalizedParam( this.data.curvesData[curveIndex], normalizedParam, dU, dUU );
+}
+
+/// Returns the array of point indices and associated weights that correspond to curve's evaluation basis at this parameter.
+/// These can be used to evaluate any curve attribute from a convex (linear) combination of point values.
+inline Curves.getPointIndicesAndWeightsAtParam( UInt32 curveIndex, Float32 param, io LocalL8UInt32Array pointIndices, io LocalL8ScalarArray pointWeights ) {
+  this.data.getPointIndicesAndWeightsAtParam( this.data.curvesData[curveIndex], param, pointIndices, pointWeights );
+}
+
+/**
+  Returns the array of point indices and associated weights that correspond to curve's evaluation basis at this normalized parameter.
+  These can be used to evaluate any curve attribute from a convex (linear) combination of point values.
+  The normalizedParam should be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.
+  \dfgPresetRange normalizedParam (0.0, 1.0)
+*/
+inline Curves.getPointIndicesAndWeightsAtNormalizedParam( UInt32 curveIndex, Float32 normalizedParam, io LocalL8UInt32Array pointIndices, io LocalL8ScalarArray pointWeights ) {
+  this.data.getPointIndicesAndWeightsAtNormalizedParam( this.data.curvesData[curveIndex], normalizedParam, pointIndices, pointWeights );
+}
+
+/**
+  Returns the array of point indices and associated weights and derivative weights that correspond to curve's evaluation basis at this parameter.
+  These can be used to evaluate any curve attribute and its derivative from a convex (linear) combination of point values.
+  The normalizedParam should be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.
+  \dfgPresetRange normalizedParam (0.0, 1.0)
+*/
+inline Curves.getPointIndicesAndWeightsAtParam( UInt32 curveIndex, Float32 param, io LocalL8UInt32Array pointIndices, io LocalL8ScalarArray pointWeights, io LocalL8ScalarArray derivativePointWeights ) {
+  this.data.getPointIndicesAndWeightsAtParam( this.data.curvesData[curveIndex], param, pointIndices, pointWeights, derivativePointWeights );
+}
+
+/**
+  Returns the array of point indices and associated weights and derivative weights that correspond to curve's evaluation basis at this normalized parameter.
+  These can be used to evaluate any curve attribute and its derivative from a convex (linear) combination of point values.
+  The normalizedParam should be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.
+  \dfgPresetRange normalizedParam (0.0, 1.0)
+*/
+inline Curves.getPointIndicesAndWeightsAtNormalizedParam( UInt32 curveIndex, Float32 normalizedParam, io LocalL8UInt32Array pointIndices, io LocalL8ScalarArray pointWeights, io LocalL8ScalarArray derivativePointWeights ) {
+  this.data.getPointIndicesAndWeightsAtNormalizedParam( this.data.curvesData[curveIndex], normalizedParam, pointIndices, pointWeights, derivativePointWeights );
+}
+
+/**
+Sets the computation strategy for curve length related methods:
+
+- :kl-ref:`Curves.getCurveLength`
+- :kl-ref:`Curves.getParameterFromLength`
+- :kl-ref:`Curves.getNormalizedParameterFromLengthRatio`
+- :kl-ref:`Curves.getLengthFromParameter`
+- :kl-ref:`Curves.getLengthRatioFromNormalizedParameter`
+
+\param preciseMode If true, the length computation and conversion will be more costly and precise, based on preciseModeTolerance
+\param initialSamplesPerSpan Initial sampling per span used to compute the length (optimized). If preciseMode is true, additional sampling will be done if required.
+\param preciseModeTolerance If preciseMode is true, the total curve length will be accurate to at least the passed-in precision, which is a ratio of the actual curve length.
+
+\category length
+
+\dfgPresetDefault preciseMode true
+\dfgPresetDefault initialSamplesPerSpan 16
+\dfgPresetDefault preciseModeTolerance 0.001
+*/
+Curves.setLengthComputeParameters!( Boolean preciseMode, UInt32 initialSamplesPerSpan, Float32 preciseModeTolerance ) {
+
+  Ref<Curves_lengthComputeCache> cache = this.getLengthComputeCache();
+  LightWriteBracket cacheWriteLockBracket( cache.structureRWLock );
+
+  Boolean changed;
+  if( preciseMode != cache.precise ) {
+    cache.precise = preciseMode;
+    changed = true;
+  }
+
+  // Force a minimum of samples, else precision might not be matched (and performance will actually be worse)
+  UInt32 minimalSamples = preciseMode ? 8 : 4;
+  UInt32 actualInitialSamplesPerSpan = initialSamplesPerSpan < minimalSamples ? minimalSamples : initialSamplesPerSpan;
+  if( actualInitialSamplesPerSpan != cache.initialSamplesPerSpan ) {
+    cache.initialSamplesPerSpan = actualInitialSamplesPerSpan;
+    changed = true;
+  }
+
+  // For a max precision, else it won't be reached anyway (max recursion depth -> max 16 sub-samples between original samples)
+  Float32 actualTolerance = preciseModeTolerance < 1e-5 ? 1e-5 : preciseModeTolerance;
+  if( actualTolerance != cache.preciseTolerance ) {
+    cache.preciseTolerance = actualTolerance;
+    changed = true;
+  }
+
+  if( changed )
+    cache.lastStructureVersion = 0;
+}
+
+/**
+  Returns the computation of the curve length.
+  \note This computation can be relatively costly, as it cannot be done analytically. The computation is cached along with a table that \
+maps length to parameter values. The computation speed and precision of length-related methods is controlled \
+by parameters of :kl-ref:`Curves.setLengthComputeParameters`
+  \category length
+*/
+inline Float32 Curves.getCurveLength( UInt32 curveIndex ) {
+  Ref<Curves_lengthComputeCache> cache = this.getUpdatedComputeCache( curveIndex );
+  return cache.perCurveData[curveIndex].len;
+}
+
+/**
+  Returns the parameter corresponding to the curve length, where 0 is mapped to domainStart, and length is mapped to domainEnd.
+  Values outside of 0..length will be clamped to that range.
+  \note This computation can be relatively costly, as it cannot be done analytically. The computation is cached along with a table that \
+maps length to parameter values. The computation speed and precision of length-related methods is controlled \
+by parameters of :kl-ref:`Curves.setLengthComputeParameters`
+  \category length
+  \dfgCreateArrayPreset
+*/
+inline Float32 Curves.getParameterFromLength( UInt32 curveIndex, Float32 length ) {
+  Ref<Curves_lengthComputeCache> cache = this.getUpdatedComputeCache( curveIndex );
+  return cache.perCurveData[curveIndex].getParamFromLen( length );
+}
+
+/**
+  Returns the normalized parameter (0..1) corresponding to the curve length ratio (0..1).
+  Values outside of 0..1 will be clamped to that range.
+  \note This computation can be relatively costly, as it cannot be done analytically. The computation is cached along with a table that \
+maps length to parameter values. The computation speed and precision of length-related methods is controlled \
+by parameters of :kl-ref:`Curves.setLengthComputeParameters`
+  \category length
+  \dfgCreateArrayPreset
+  \dfgPresetRange ratio (0.0, 1.0)
+*/
+inline Float32 Curves.getNormalizedParameterFromLengthRatio( UInt32 curveIndex, Float32 ratio ) {
+  Ref<Curves_lengthComputeCache> cache = this.getUpdatedComputeCache( curveIndex );
+  return this.data.curvesData[curveIndex].getNormalizedParamFromParam( cache.perCurveData[curveIndex].getParamFromLen( ratio*cache.perCurveData[curveIndex].len ) );
+}
+
+/**
+  Returns the curve length corresponding to the parameter, where domainStart is mapped to 0, and domainEnd is mapped to length.
+  Values outside of domainStart..domainEnd will be clamped to that range.
+  \note This computation can be relatively costly, as it cannot be done analytically. The computation is cached along with a table that \
+maps length to parameter values. The computation speed and precision of length-related methods is controlled \
+by parameters of :kl-ref:`Curves.setLengthComputeParameters`
+  \category length
+  \dfgCreateArrayPreset
+*/
+inline Float32 Curves.getLengthFromParameter( UInt32 curveIndex, Float32 param ) {
+  Ref<Curves_lengthComputeCache> cache = this.getUpdatedComputeCache( curveIndex );
+  return cache.perCurveData[curveIndex].getLenFromParam( param );
+}
+
+/**
+  Returns the curve length ratio (0..1) corresponding to the normalized parameter (0..1).
+  Values outside of 0..1 will be clamped to that range.
+  \note This computation can be relatively costly, as it cannot be done analytically. The computation is cached along with a table that \
+maps length to parameter values. The computation speed and precision of length-related methods is controlled \
+by parameters of :kl-ref:`Curves.setLengthComputeParameters`
+  \category length
+  \dfgCreateArrayPreset
+  \dfgPresetRange normalizedParam (0.0, 1.0)
+*/
+inline Float32 Curves.getLengthRatioFromNormalizedParameter( UInt32 curveIndex, Float32 normalizedParam ) {
+  Ref<Curves_lengthComputeCache> cache = this.getUpdatedComputeCache( curveIndex );
+  return cache.perCurveData[curveIndex].getLenFromParam( this.data.curvesData[curveIndex].getParamFromNormalizedParam( normalizedParam ) ) * cache.perCurveData[curveIndex].invLen;
+}
+
+/// \internal
+Curves.initNewCurveAttributes!( UInt32 curveIndex, UInt32 firstIndex, UInt32 lastIndex) {
+  this.resizeAttributes( this.data.pointCount );
+
+  // if there is a rational weight attribute, init values to 1.0
+  if( this.weightsAttribute ) {
+    for( Size i = firstIndex; i < lastIndex; ++i )
+      this.weightsAttribute.values[i] = 1.0f;
+  }
+  if( this.pointToCurveAttribute ) {
+    for( Size i = firstIndex; i < lastIndex; ++i )
+      this.pointToCurveAttribute.values[i] = curveIndex;
+  }
+}
+
+/// \internal
+inline Curves.initNewCurveAttributes!( UInt32 curveIndex, UInt32 curvePointIndex ) {
+  this.initNewCurveAttributes( curveIndex, curvePointIndex, curvePointIndex+1 );
+}
+
+/// \internal
+Curves.initNewCurveAttributes!( UInt32 curveIndex ) {
+  UInt32 firstPoint = this.getFirstPointIndex( curveIndex );
+  this.initNewCurveAttributes( curveIndex, firstPoint, firstPoint + this.getPointCount( curveIndex ) );
+}
+
+/**
+Returns a String description of a curve
+\param withAttributes Include the attribute values in the description.
+\param useUnitTestPrint use the unitTestPrint method to ensure that the values are consistent accross platforms (used in unit testing).
+\category debugging
+*/
+function String Curves.getCurveDescInternal( UInt32 curveIndex, Boolean withAttributes, Boolean useUnitTestPrint, String indent ) {
+
+  if( this.isRemoved( curveIndex ) )
+    return indent + "Curve " + curveIndex + ": (removed)";
+
+  String desc;
+  desc += indent + "Curve " + curveIndex
+    + ": type = " + ( this.isPeriodic( curveIndex ) ? "periodic " : ( this.isClosed( curveIndex ) ? "closed " : "open " ) ) + ( this.isRational( curveIndex ) ? "rational " : "" ) + this.getCurveTypeString( curveIndex )
+    + ", pointCount = " + this.getPointCount( curveIndex ) + '\n';
+
+  if( this.getCurveTypeString( curveIndex ) == curveType_NURBS )
+    desc += indent + "  Knots: " + this.getNURBSKnots( curveIndex ) + '\n';
+
+  if( withAttributes ) {
+    for( UInt32 i = 0; i < this.getPointCount( curveIndex ); ++i ) {
+      desc += indent + "  Point " + i + ":\n";
+      UInt32 pointIndex = this.getPointIndex( curveIndex, i );
+
+      for( UInt32 j = 0; j < this.attributes.attributes.size(); ++j ) {
+        Ref<GeometryAttribute> attr = this.attributes.attributes[j];
+        if( attr === this.weightsAttribute && !this.isRational( curveIndex ) )
+          continue;
+
+        if( attr ) {
+          desc += indent + "    Attr " + attr.getName() + ":";
+          if( useUnitTestPrint )
+            desc += attr.unitTestPrint( pointIndex );
+          else
+            desc += attr.valueDesc( pointIndex );
+          desc += '\n';
+        }
+      }
+    }
+  }
+  return desc;
+}
+
+/**
+Returns a String description of a curve
+\param withAttributes Include the attribute values in the description.
+\param useUnitTestPrint use the unitTestPrint method to ensure that the values are consistent accross platforms (used in unit testing).
+\category debugging
+*/
+String Curves.getCurveDesc( UInt32 curveIndex, Boolean withAttributes, Boolean useUnitTestPrint ) {
+  return this.getCurveDescInternal( curveIndex, withAttributes, useUnitTestPrint, String() );
+}
+
+/**
+Returns a String description of the curves
+\param withAttributes Include the attribute values in the description.
+\param useUnitTestPrint use the unitTestPrint method to ensure that the values are consistent accross platforms (used in unit testing).
+\category debugging
+*/
+String Curves.getDesc( Boolean withAttributes, Boolean useUnitTestPrint ) {
+  String desc;
+  desc += "Curves: count: " + this.curveCount() + ", total pointCount: " + this.allCurvesPointRange() + '\n';
+  for( Size i = 0; i < this.curveCount(); ++i )
+    desc += this.getCurveDescInternal( i, withAttributes, useUnitTestPrint, "  " ) + '\n';
+  return desc;
+}
+
+/// Returns a String description of the Curves
+/// \param withAttributes Prints all attribute values
+/// \category debugging
+String Curves.getDesc( Boolean withAttributes ) {
+  return this.getDesc( withAttributes, false );
+}
+
+/******************************************************************************
+  LINEAR CURVES
+******************************************************************************/
+
+/// \internal
+Curves.initLinearCurve!( UInt32 curveIndex, UInt32 pointCount, Boolean isClosed ) {
+  this.parent.incrementStructureVersion();
+  this.data.initCurve( curveIndex, curveType_linear, 2, isClosed, pointCount );
+  this.data.linear_updateDomainAndSpanCountFromPoints( this.data.curvesData[curveIndex] );
+  this.initNewCurveAttributes( curveIndex );
+}
+
+/**
+  Adds a linear curve, and returns its curve index.
+  If the curve is closed, the pointCount excludes repeated end point count (repeated point is implicit).
+  See Curves for more information about various curve types.
+  \category linear
+  \dfgPresetOmit
+*/
+UInt32 Curves.addLinearCurveIndex!( UInt32 pointCount, Boolean isClosed ) {
+  UInt32 curveIndex = this.data.addCurveIndex( this.topoChangesBracket );//TODO: advanced option with recycled indices?
+  this.initLinearCurve( curveIndex, pointCount, isClosed );
+  return curveIndex;
+}
+
+/**
+  Adds a linear curve, and returns its curve index.
+  If the curve is closed, pointPositions exclude repeated end point (implicitly point 0).
+  See Curves for more information about various curve types.
+  \category linear
+  \dfgPresetOmit
+*/
+UInt32 Curves.addLinearCurveIndex!( Vec3 pointPositions<>, Boolean isClosed ) {
+  UInt32 curveIndex = this.addLinearCurveIndex( pointPositions.size(), isClosed );
+  for( Size i = 0; i < pointPositions.size(); ++i )
+    this.setPointPosition( curveIndex, i, pointPositions[i] );
+  return curveIndex;
+}
+
+/******************************************************************************
+BEZIER CURVES
+******************************************************************************/
+
+/// \internal
+Curves.initBezierCurve!( UInt32 curveIndex, UInt32 pointCount, UInt8 degree, Boolean isClosed ) {
+  if( degree > curves_maxDegree )
+    throw( "Error: maximum degree for a bezier is 7" );
+  else if( degree < 2 )
+    throw( "Error: minimum degree for a bezier is 2" );
+
+  this.parent.incrementStructureVersion();
+  this.data.initCurve( curveIndex, curveType_bezier, degree + 1, isClosed, pointCount );
+  this.data.bezier_updateDomainAndSpanCountFromPoints( this.data.curvesData[curveIndex] );
+  this.initNewCurveAttributes( curveIndex );
+}
+
+/// \internal
+UInt32 Curves.addBezierIndexInternal!( UInt32 pointCount, UInt8 degree, Boolean isClosed ) {
+  UInt32 curveIndex = this.data.addCurveIndex( this.topoChangesBracket );//TODO: advanced option with recycled indices?
+  this.initBezierCurve( curveIndex, pointCount, degree, isClosed );
+  return curveIndex;
+}
+
+/**
+  Adds a bezier curve, and returns its curve index.
+  See Curves for more information about various curve types.
+  \param pieceCount Number of Bezier pieces. Point count will be `pieceCount*degree + 1` for an open curve, and `pieceCount*degree` for a closed curve.
+  \param degree Degree of the curve (order - 1). Must be between 2 and 7.
+  \category bezier
+  \dfgPresetOmit
+*/
+UInt32 Curves.addBezierIndex!( UInt32 pieceCount, UInt8 degree, Boolean isClosed ) {
+  UInt32 pointCount = isClosed ? degree*pieceCount : degree*pieceCount + 1;
+  return this.addBezierIndexInternal( pointCount, degree, isClosed );
+}
+
+/**
+  Adds a bezier curve, and returns its curve index.
+  If the curve is closed, pointPositions exclude the repeated end point (repeated point is implicit).
+  See Curves for more information about various curve types.
+  \note End points that are not forming a full Bezier piece are ignored until more points are added to complete that piece.
+  \param pointPositions Point positions of the curve, also indicates the number of points for the curve.
+  \param degree Degree of the curve (order - 1). Must be between 2 and 7.
+  \category bezier
+  \dfgPresetOmit
+*/
+UInt32 Curves.addBezierIndex!( Vec3 pointPositions<>, UInt8 degree, Boolean isClosed ) {
+  UInt32 curveIndex = this.addBezierIndexInternal( pointPositions.size(), degree, isClosed );
+  for( Size i = 0; i < pointPositions.size(); ++i )
+    this.setPointPosition( curveIndex, i, pointPositions[i] );
+  return curveIndex;
+}
+
+/**
+  Adds a bezier curve, and returns its curve index.
+  If the curve is closed, pointPositions exclude the repeated end point (repeated point is implicit).
+  See Curves for more information about various curve types.
+  \note End points that are not forming a full Bezier piece are ignored until more points are added to complete that piece.
+  \param degree Degree of the curve (order - 1). Must be between 2 and 7.
+  \param pointPositions Point positions of the curve (3D coordinates, not in homogeneous coordinates), also indicates the number of points for the curve.
+  \param rationalWeights Rational weights for the curve points
+  \category bezier
+  \dfgPresetOmit
+*/
+UInt32 Curves.addBezierIndex!( Vec3 pointPositions<>, Float32 rationalWeights<>, UInt8 degree, Boolean isClosed ) {
+  if( pointPositions.size() != rationalWeights.size() )
+    throw( "Error: pointPositions and rationalWeights have different sizes" );
+
+  UInt32 curveIndex = this.addBezierIndexInternal( pointPositions.size(), degree, isClosed );
+  for( Size i = 0; i < pointPositions.size(); ++i )
+    this.setPointPosition( curveIndex, i, pointPositions[i], rationalWeights[i] );
+  return curveIndex;
+}
+
+/**
+  Adds a quadratic bezier curve, and returns its curve index.
+  If the curve is closed, the pointCount excludes repeated end point count (repeated point is implicit).
+  See Curves for more information about various curve types.
+  \param pieceCount Number of Bezier pieces. Point count will be `pieceCount*degree + 1` for an open curve, and `pieceCount*degree` for a closed curve.
+  \category bezier
+  \dfgPresetOmit
+*/
+inline UInt32 Curves.addQuadraticBezierIndex!( UInt32 pieceCount, Boolean isClosed ) {
+  return this.addBezierIndex( pieceCount, 2, isClosed );
+}
+
+/**
+  Adds a quadratic bezier curve, and returns its curve index.
+  If the curve is closed, pointPositions exclude repeated end point (implicitly point 0).
+  See Curves for more information about various curve types.
+  \note End points that are not forming a full Bezier piece are ignored until more points are added to complete that piece.
+  \param pointPositions Point positions of the curve, also indicates the number of points for the curve.
+  \category bezier
+  \dfgPresetOmit
+*/
+inline UInt32 Curves.addQuadraticBezierIndex!( Vec3 pointPositions<>, Boolean isClosed ) {
+  return this.addBezierIndex( pointPositions, 2, isClosed );
+}
+
+/**
+  Adds a quadratic bezier curve, and returns its curve index.
+  If the curve is closed, pointPositions exclude repeated end point (implicitly point 0).
+  See Curves for more information about various curve types.
+  \note End points that are not forming a full Bezier piece are ignored until more points are added to complete that piece.
+  \param pointPositions Point positions of the curve (3D coordinates, not in homogeneous coordinates), also indicates the number of points for the curve.
+  \param rationalWeights Rational weights for the curve points
+  \category bezier
+  \dfgPresetOmit
+*/
+inline UInt32 Curves.addQuadraticBezierIndex!( Vec3 pointPositions<>, Float32 rationalWeights<>, Boolean isClosed ) {
+  return this.addBezierIndex( pointPositions, rationalWeights, 2, isClosed );
+}
+
+/**
+  Adds a cubic bezier curve, and returns its curve index.
+  If the curve is closed, the pointCount excludes repeated end point count (repeated point is implicit).
+  See Curves for more information about various curve types.
+  \param pieceCount Number of Bezier pieces. Point count will be `pieceCount*degree + 1` for an open curve, and `pieceCount*degree` for a closed curve.
+  \category bezier
+  \dfgPresetOmit
+*/
+inline UInt32 Curves.addCubicBezierIndex!( UInt32 pieceCount, Boolean isClosed ) {
+  return this.addBezierIndex( pieceCount, 3, isClosed );
+}
+
+/**
+  Adds a cubic bezier curve, and returns its curve index.
+  If the curve is closed, pointPositions exclude repeated end point (implicitly point 0).
+  See Curves for more information about various curve types.
+  \note End points that are not forming a full Bezier piece are ignored until more points are added to complete that piece.
+  \param pointPositions Point positions of the curve, also indicates the number of points for the curve.
+  \category bezier
+  \dfgPresetOmit
+*/
+inline UInt32 Curves.addCubicBezierIndex!( Vec3 pointPositions<>, Boolean isClosed ) {
+  return this.addBezierIndex( pointPositions, 3, isClosed );
+}
+
+/**
+  Adds a cubic bezier curve, and returns its curve index.
+  If the curve is closed, pointPositions exclude repeated end point (implicitly point 0).
+  See Curves for more information about various curve types.
+  \note End points that are not forming a full Bezier piece are ignored until more points are added to complete that piece.
+  \param pointPositions Point positions of the curve (3D coordinates, not in homogeneous coordinates), also indicates the number of points for the curve.
+  \param rationalWeights Rational weights for the curve points
+  \category bezier
+  \dfgPresetOmit
+*/
+inline UInt32 Curves.addCubicBezierIndex!( Vec3 pointPositions<>, Float32 rationalWeights<>, Boolean isClosed ) {
+  return this.addBezierIndex( pointPositions, rationalWeights, 3, isClosed );
+}
+
+/******************************************************************************
+NURBS CURVES
+******************************************************************************/
+
+/// \category NURBS
+/// Returns true if it is a NURBS curve of periodic form.
+inline Boolean Curves.isPeriodic( UInt32 curveIndex ) {
+  return this.data.curvesData[curveIndex].isPeriodic();
+}
+
+
+/// \internal
+Curves.initNURBSCurve!( UInt32 curveIndex, UInt32 pointCount, UInt8 degree, UInt8 curveForm ) {
+  if( degree > curves_maxDegree )
+    throw( "Error: maximum degree for a NURBS is 7" );
+  else if( degree < 1 )
+    throw( "Error: minimum degree for a NURBS is 1" );
+
+  this.data.initNURBSCurve( curveIndex, degree + 1, curveForm, pointCount );
+  this.parent.incrementStructureVersion();
+  this.initNewCurveAttributes( curveIndex );
+}
+
+/**
+  Adds a NURBS curve, and returns its curve index.
+  If the curve is closed or periodic, pointCount exclude repeated end point (implicitly point 0).
+  See Curves for more information about various curve types.
+  \note For a closed NURBS curve, it implicitly wraps over point 0. For a periodic NURBS curve,\
+it implicitly wraps over points [0 .. degree-1].
+  \param pointCount Point count without the implicit repeated points (in the case of closed / periodic).
+  \param degree Degree of the curve (order - 1). Must be between 1 and 7.
+  \param curveForm Must be curveForm_open, curveForm_closed or curveForm_periodic.
+  \category NURBS
+  \dfgPresetOmit
+*/
+UInt32 Curves.addNURBSIndex!( UInt32 pointCount, UInt8 degree, UInt8 curveForm ) {
+  UInt32 curveIndex = this.data.addCurveIndex( this.topoChangesBracket );//TODO: advanced option with recycled indices?
+  this.initNURBSCurve( curveIndex, pointCount, degree, curveForm );
+  return curveIndex;
+}
+
+/**
+  Adds a NURBS curve, and returns its curve index.
+  If the curve is closed or periodic, pointPositions exclude repeated end point (implicitly point 0).
+  See Curves for more information about various curve types.
+  \note For a closed NURBS curve, it implicitly wraps over point 0. For a periodic NURBS curve,\
+it implicitly wraps over points [0 .. degree-1].
+  \param pointPositions Point positions of the curve, also indicates the number of points for the curve.
+  \param degree Degree of the curve (order - 1). Must be between 1 and 7.
+  \param curveForm Must be curveForm_open, curveForm_closed or curveForm_periodic.
+  \category NURBS
+  \dfgPresetOmit
+*/
+UInt32 Curves.addNURBSIndex!( Vec3 pointPositions<>, UInt8 degree, UInt8 curveForm ) {
+  UInt32 curveIndex = this.addNURBSIndex( pointPositions.size(), degree, curveForm );
+  for( Size i = 0; i < pointPositions.size(); ++i )
+    this.setPointPosition( curveIndex, i, pointPositions[i] );
+  return curveIndex;
+}
+
+/**
+  Adds a NURBS curve, and returns its curve index.
+  If the curve is closed or periodic, pointPositions exclude repeated end point (implicitly point 0).
+  See Curves for more information about various curve types.
+  \note For a closed NURBS curve, it implicitly wraps over point 0. For a periodic NURBS curve,\
+it implicitly wraps over points [0 .. degree-1].
+  \param pointPositions Point positions of the curve (3D coordinates, not in homogeneous coordinates), also indicates the number of points for the curve.
+  \param rationalWeights Rational weights for the curve points
+  \param degree Degree of the curve (order - 1). Must be between 1 and 7.
+  \param curveForm Must be curveForm_open, curveForm_closed or curveForm_periodic.
+  \category NURBS
+  \dfgPresetOmit
+*/
+UInt32 Curves.addNURBSIndex!( Vec3 pointPositions<>, Float32 rationalWeights<>, UInt8 degree, UInt8 curveForm ) {
+  if( pointPositions.size() != rationalWeights.size() )
+    throw( "Error: pointPositions and rationalWeights have different sizes" );
+
+  UInt32 curveIndex = this.addNURBSIndex( pointPositions.size(), degree, curveForm );
+  for( Size i = 0; i < pointPositions.size(); ++i )
+    this.setPointPosition( curveIndex, i, pointPositions[i], rationalWeights[i] );
+  return curveIndex;
+}
+
+/// \internal
+/// pointCount should be InvalidIndex or contain the provided point count
+Curves.validateNURBSKnots!( Float32 knots<>, UInt8 degree, UInt8 curveForm, io UInt32 pointCount ) {
+  if( knots.size() < degree*2 )
+    throw( "Error: not enough knots" );
+
+  for( Size i = 1; i < knots.size(); ++i ) {
+    if( knots[i] < knots[i - 1] )
+      throw( "Error: some knots values are in decreasing order" );
+  }
+  UInt32 expectedPointCountWithRepeats = knots.size() + 1 - degree;
+  UInt32 expectedPointCount = expectedPointCountWithRepeats;
+
+  if( curveForm == curveForm_open ) {
+    if( knots.size() < degree * 2 )
+      throw( "Error: knots vector of open curve is smaller than degree*2" );
+    for( Size i = 1; i < degree; ++i ) {
+      if( knots[i] != knots[i - 1] )
+        throw( "Error: start knots of open curve don't have degree multiplicity" );
+      if( knots[knots.size() - i] != knots[knots.size() - i - 1] )
+        throw( "Error: end knots of open curve don't have degree multiplicity" );
+    }
+  }
+  else if( curveForm == curveForm_closed ) {
+    expectedPointCount = knots.size() - degree; //We don't include repeated CV
+  }
+  else if( curveForm == curveForm_periodic ) {
+    for( Size i = 1; i < degree; ++i ) {
+      Float32 startInterval = knots[i] - knots[i - 1];
+      UInt32 endIndex = knots.size() - degree;
+      Float32 endInterval = knots[endIndex+1] - knots[endIndex];
+      if( startInterval - endInterval > startInterval * 1e-4 )
+        throw( "Error: start and end intervals are not the same in a periodic curve" );
+    }
+    expectedPointCount = knots.size() - (degree - 1)*2 - 1; //We don't include repeated CVs
+  }
+  if( pointCount != InvalidIndex && expectedPointCount != pointCount && expectedPointCount != expectedPointCountWithRepeats )
+    throw( "Error: provided pointCount (" + pointCount + ") differs from expected pointCount (" + expectedPointCount + ( expectedPointCount != expectedPointCountWithRepeats ? ", or " + expectedPointCountWithRepeats + " with repeated closed/periodic CVs" : "" ) + ")" );
+  pointCount = expectedPointCount;
+}
+
+/**
+  Adds a NURBS curve, and returns its curve index.
+  If the curve is closed or periodic, pointPositions exclude repeated end point (implicitly point 0).
+  This method is useful for specifying non-uniform knot values.
+  See Curves for more information about NURBS knots and forms.
+  \param degree Degree of the curve (order - 1). Must be between 1 and 7.
+  \param curveForm Must be curveForm_open, curveForm_closed or curveForm_periodic.
+  \param knots Knot sequence vector. Values must be in increasing order. For an open and closed curve, the first and last degree\
+  knots must be identical (multiplicity = degree). For a periodic curve, the intervals between the first and last order knots must\
+  be the same.
+  \category NURBS
+  \dfgPresetOmit
+*/
+UInt32 Curves.addNURBSIndex!( UInt8 degree, UInt8 curveForm, Float32 knots<> ) {
+  // Do some validation
+  UInt32 pointCount = InvalidIndex;
+  this.validateNURBSKnots( knots, degree, curveForm, pointCount );
+  UInt32 curveIndex = this.addNURBSIndex( pointCount, degree, curveForm );
+
+  //First call setExplicitDomainStart to increase chances that it matches "implicit knots"
+  this.data.curvesData[curveIndex].setExplicitDomainStart( knots[degree - 1] );
+  for( Size i = 0; i < knots.size(); ++i )
+    this.data.setNURBSKnot( this.data.curvesData[curveIndex], i, knots[i] );
+
+  return curveIndex;
+}
+
+/**
+  Adds a NURBS curve, and returns its curve index.
+  If the curve is closed or periodic, pointPositions exclude repeated end point (implicitly point 0).
+  This method is useful for specifying non-uniform knot values.
+  See Curves for more information about NURBS knots and forms.
+  \note For a closed NURBS curve, it implicitly wraps over point 0. For a periodic NURBS curve,\
+it implicitly wraps over points [0 .. degree-1].
+  \param pointPositions Point positions of the curve, also indicates the number of points for the curve.\
+  For an open curve, `pointPositions.size() = knots.size() - degree + 1`.\
+  For a closed curve, `pointPositions.size() = knots.size() - degree`.\
+  For a periodic curve, `pointPositions.size() = knots.size() - degree*2 - 1`.\
+  \param degree Degree of the curve (order - 1). Must be between 1 and 7.
+  \param curveForm Must be curveForm_open, curveForm_closed or curveForm_periodic.
+  \param knots Knot sequence vector. Values must be in increasing order. For an open and closed curve, the first and last degree\
+  knots must be identical (multiplicity = degree). For a periodic curve, the intervals between the first and last order knots must\
+  be the same.
+  \category NURBS
+  \dfgPresetOmit
+*/
+UInt32 Curves.addNURBSIndex!( Vec3 pointPositions<>, UInt8 degree, UInt8 curveForm, Float32 knots<> ) {
+  // Do some validation
+  UInt32 pointCount = pointPositions.size();
+  this.validateNURBSKnots( knots, degree, curveForm, pointCount );
+  UInt32 curveIndex = this.addNURBSIndex( pointCount, degree, curveForm );
+
+  //First call setExplicitDomainStart to increase chances that it matches "implicit knots"
+  this.data.curvesData[curveIndex].setExplicitDomainStart( knots[degree - 1] );
+  for( Size i = 0; i < knots.size(); ++i )
+    this.data.setNURBSKnot( this.data.curvesData[curveIndex], i, knots[i] );
+
+  for( Size i = 0; i < pointPositions.size(); ++i )
+    this.setPointPosition( curveIndex, i, pointPositions[i] );
+
+  return curveIndex;
+}
+
+/**
+  Adds a NURBS curve, and returns its curve index.
+  If the curve is closed or periodic, pointPositions exclude repeated end point (implicitly point 0).
+  This method is useful for specifying non-uniform knot values.
+  See Curves for more information about NURBS knots and forms.
+  \note For a closed NURBS curve, it implicitly wraps over point 0. For a periodic NURBS curve,\
+it implicitly wraps over points [0 .. degree-1].
+  \param pointPositions Point positions of the curve (3D coordinates, not in homogeneous coordinates), also indicates the number of points for the curve.
+  For an open curve, `pointPositions.size() = knots.size() - degree + 1`.\
+  For a closed curve, `pointPositions.size() = knots.size() - degree`.\
+  For a periodic curve, `pointPositions.size() = knots.size() - degree*2 - 1`.\
+  \param rationalWeights Rational weights for the curve points
+  \param degree Degree of the curve (order - 1). Must be between 1 and 7.
+  \param curveForm Must be curveForm_open, curveForm_closed or curveForm_periodic.
+  \param knots Knot sequence vector. Values must be in increasing order. For an open and closed curve, the first and last degree\
+  knots must be identical (multiplicity = degree). For a periodic curve, the intervals between the first and last order knots must\
+  be the same.
+  \category NURBS
+  \dfgPresetOmit
+*/
+UInt32 Curves.addNURBSIndex!( Vec3 pointPositions<>, Float32 rationalWeights<>, UInt8 degree, UInt8 curveForm, Float32 knots<> ) {
+  // Do some validation
+  UInt32 pointCount = pointPositions.size();
+  this.validateNURBSKnots( knots, degree, curveForm, pointCount );
+  UInt32 curveIndex = this.addNURBSIndex( pointCount, degree, curveForm );
+
+  //First call setExplicitDomainStart to increase chances that it matches "implicit knots"
+  this.data.curvesData[curveIndex].setExplicitDomainStart( knots[degree - 1] );
+  for( Size i = 0; i < knots.size(); ++i )
+    this.data.setNURBSKnot( this.data.curvesData[curveIndex], i, knots[i] );
+
+  for( Size i = 0; i < pointPositions.size(); ++i )
+    this.setPointPosition( curveIndex, i, pointPositions[i], rationalWeights[i] );
+
+  return curveIndex;
+}
+
+/// Returns the number of knots for this NURBS curve.
+/// \category NURBS
+inline UInt32 Curves.getNURBSKnotCount( UInt32 curveIndex ) {
+  return this.data.getNURBSKnotCount( this.data.curvesData[curveIndex] );
+}
+
+/// Returns a knot value for this NURBS curve.
+/// \param knotIndex Knot index, between 0 and :kl-ref:`Curves.getNURBSKnotCount-1`
+/// \category NURBS
+inline Float32 Curves.getNURBSKnot( UInt32 curveIndex, UInt32 knotIndex ) {
+  return this.data.getNURBSKnot( this.data.curvesData[curveIndex], knotIndex );
+}
+
+/// Returns the knot vector for this NURBS curve.
+/// \category NURBS
+Float32[] Curves.getNURBSKnots( UInt32 curveIndex ) {
+  Float32 knots[];
+  knots.resize( this.getNURBSKnotCount( curveIndex ) );
+  for( Size i = 0; i < knots.size(); ++i )
+    knots[i] = this.getNURBSKnot( curveIndex, i );
+  return knots;
+}
+
+/// Sets a knot value for this NURBS curve.
+/// \param knotIndex Knot index, between 0 and :kl-ref:`Curves.getNURBSKnotCount-1`
+/// \note Since knots are set one by one, no validation is made to the knot vector as it can be in an intermediary state
+/// \category NURBS
+Curves.setNURBSKnot!( UInt32 curveIndex, UInt32 knotIndex, Float32 knotValue ) {
+  if( this.data.setNURBSKnot( this.data.curvesData[curveIndex], knotIndex, knotValue ) )
+    this.parent.incrementStructureVersion();
+}
+
+/// \internal
+Boolean Curves.areNURBSKnotsImplicit( UInt32 curveIndex ) {
+  return this.data.curvesData[curveIndex].NURBS_hasImplicitUniformKnots();
+}
+
+/**
+  This is used for fast Maya -> Fabric conversion, in a single call.
+  curveIndex must be valid; call :kl-ref:`setCurveCount()` to ensure it is.
+  \note For a closed NURBS curve, it implicitly wraps over point 0. For a periodic NURBS curve,\
+it implicitly wraps over points [0 .. degree-1].
+  \param homogeneousPosWithRepeats 4D homogeneous coordinates, which includes the rational weight.\
+Positions will be converted to 32 bits. For closed curve, this assumes one repeated point, and for periodic, degree repeated points.
+  \param curveForm Must be curveForm_open, curveForm_closed or curveForm_periodic.
+  \dfgPresetOmit
+  \internal
+*/
+Curves.setCurveFromMaya!( UInt32 curveIndex, UInt8 degree, UInt8 curveForm, Float64 homogeneousPosWithRepeats<>, Float64 knotsIfNURBS<> ) {
+
+//report( "IMPORT FROM MAYA " + curveIndex + " degree " + degree + " curveForm " + curveForm + " homogeneousPosWithRepeats " + homogeneousPosWithRepeats + " knotsIfNURBS " + knotsIfNURBS );
+
+  if( curveIndex >= this.curveCount() )
+    throw( "Curves.setCurveFromExternalArray: curveIndex " + curveIndex + " out of " + this.curveCount() + " range" );
+
+  Float32 domainStart;
+  UInt8 curveType = curveType_NURBS;
+
+  // Detect Bezier form
+  if( knotsIfNURBS.size() ) {
+    domainStart = Float32(knotsIfNURBS[degree - 1]);
+    Float32 range = Float32(knotsIfNURBS[knotsIfNURBS.size()-1] - knotsIfNURBS[0]);
+    UInt32 expectedBezierRange = knotsIfNURBS.size() / degree - 1;
+    if( knotsIfNURBS.size() == (expectedBezierRange+1)*degree && 
+        abs( range - expectedBezierRange ) < 1e-5 ) {
+      // Go over the knot values to be sure
+      Float32 bezKnot = domainStart;
+      UInt32 offset;
+
+      Boolean isBezier = true;
+      for( Size i = 0; i < expectedBezierRange+1; ++i ) {
+        for( Size j = 0; j < degree; ++j ) {
+          if( abs( knotsIfNURBS[offset++] - bezKnot ) > 1e-5 )
+            isBezier = false;
+        }
+        bezKnot += 1.0f;
+      }
+      if( isBezier ) {
+        curveType = curveType_bezier;
+//report( "DETECTED BEZIER!!!" );
+      }
+    }
+  }
+  //First call setExplicitDomainStart to increase chances that it matches "implicit knots"
+  this.data.curvesData[curveIndex].setExplicitDomainStart( domainStart );
+
+  // TODO: detect linear!
+
+  // First, check if the topology changed
+  Boolean topologyChanged;
+  if( curveType != this.data.curvesData[curveIndex].curveType
+      || curveForm != this.data.curvesData[curveIndex].getCurveForm() )
+      topologyChanged = true;
+
+  UInt32 pointCount = homogeneousPosWithRepeats.size() / 4;
+
+  if( curveType == curveType_NURBS && pointCount > 0 ) {
+    if( curveForm == curveForm_closed )
+      pointCount--;
+    else if( curveForm == curveForm_periodic ) {
+      if( pointCount < degree )
+        throw( "Unexpected: prediodic curve has less than degree points" );
+      pointCount -= degree;
+    }
+  }
+
+  if( pointCount != this.getPointCount( curveIndex ) )
+    topologyChanged = true;
+
+  if( topologyChanged ) {
+    this.clearCurve( curveIndex );
+    this.recompactData( false );
+
+    if( curveType == curveType_linear || degree <= 1 )
+      this.initLinearCurve( curveIndex, pointCount, curveForm == curveForm_closed );
+    else if( curveType == curveType_bezier )
+      this.initBezierCurve( curveIndex, pointCount, degree, curveForm == curveForm_closed );
+    else if( curveType == curveType_NURBS )
+      this.initNURBSCurve( curveIndex, pointCount, degree, curveForm );
+  }
+
+  for( Size i = 0; i < pointCount; ++i ) {
+    UInt32 offset = i * 4;
+    Float32 weight = Float32( homogeneousPosWithRepeats[offset + 3] );
+    Vec3 pos( Float32( homogeneousPosWithRepeats[offset + 0] ), Float32( homogeneousPosWithRepeats[offset + 1] ), Float32( homogeneousPosWithRepeats[offset + 2] ) );
+
+    if( weight != 1.0f )
+      this.setPointPosition( curveIndex, i, pos/weight, weight );//Convert to heterogeneous
+    else
+      this.setPointPosition( curveIndex, i, pos );
+  }
+  this.incrementPointPositionsVersion();
+
+  if( curveType == curveType_NURBS ) {
+    Size knotCount = this.getNURBSKnotCount( curveIndex );
+    if( knotCount > knotsIfNURBS.size() )
+      knotCount = knotsIfNURBS.size();
+
+    for( Size i = 0; i < knotCount; ++i )
+      this.setNURBSKnot( curveIndex, i, Float32( knotsIfNURBS[i] ) );
+  }
+}
+
+/**
+  Returns curve data in Maya NURBS format.
+  Implicitly convert linear and bezier to NURBS.
+  Include "repeated" closed curve points.
+  \internal
+*/
+Curves.getCurveInfoForMaya( UInt32 curveIndex, io UInt8 degree, io UInt8 curveForm, io Boolean isRational, io UInt32 knotCount, io UInt32 pointCountWithDuplicates ) {
+  degree = this.getDegree( curveIndex );
+
+  UInt8 curveType = this.getCurveType( curveIndex );
+  curveForm = this.data.curvesData[curveIndex].getCurveForm();
+
+  pointCountWithDuplicates = this.data.getPointCount( this.data.curvesData[curveIndex], true );
+
+  knotCount = pointCountWithDuplicates;
+  if( curveType == curveType_bezier )
+    knotCount = ( this.data.curvesData[curveIndex].spanCount + 1 ) * degree;
+  else if( curveType == curveType_NURBS )
+    knotCount = this.getNURBSKnotCount( curveIndex );
+
+  isRational = this.isRational( curveIndex );
+//report( "getCurveInfoForMaya curveIndex " + curveIndex + " degree " + degree + " curveForm " + curveForm + " isRational " + isRational + " knotCount " + knotCount + " pointCountWithDuplicates " + pointCountWithDuplicates );
+}
+
+/// Size of arrays should be derived from Curves.getCurveInfoForMaya.
+/// \internal
+Curves.getCurveDataForMaya( UInt32 curveIndex, io Float64<> points, io Float64<> knots ) {
+
+  UInt8 curveType = this.getCurveType( curveIndex );
+  if( curveType == curveType_bezier ) {
+    Float32 domainStart = this.getDomain( curveIndex ).x;// If the curve came from Maya, the domain might be shifted
+    UInt8 degree = this.getDegree( curveIndex );
+    UInt32 count = this.data.curvesData[curveIndex].spanCount + 1;
+    UInt32 offset;
+    for( Size i = 0; i < count; ++i ) {
+      for( Size j = 0; j < degree; ++j )
+        knots[offset++] = i + domainStart;
+    }
+  } else if( curveType == curveType_NURBS ) {
+    UInt32 knotCount = this.getNURBSKnotCount( curveIndex );
+    for( Size i = 0; i < knotCount; ++i )
+      knots[i] = this.getNURBSKnot( curveIndex, i );
+
+    if( this.data.curvesData[curveIndex].getCurveForm() == curveForm_periodic ) {
+      // Make sure that in Float64 the differences of first and end know pairs are the same
+      UInt8 order = this.getOrder( curveIndex );
+      UInt32 target = knotCount - order;
+      for( Size i = 0; i < order; ++i ) {
+        Float64 delta = knots[i + 1] - knots[i];
+        knots[target] = knots[target - 1] + delta;
+        ++target;
+      }
+    }
+  } else {
+    for( Size i = 0; i < knots.size(); ++i )
+      knots[i] = i;
+  }
+
+  UInt32 pointCount = points.size() / 4;
+  UInt32 offset;
+  for( Size i = 0; i < pointCount; ++i ) {
+    Vec4_d pos = this.getHomogeneousPointPosition_d( curveIndex, i );
+    points[offset++] = pos.x;
+    points[offset++] = pos.y;
+    points[offset++] = pos.z;
+    points[offset++] = pos.t;
+  }
+//report( "EXPORT TO MAYA " + curveIndex + " points " + points + " knots " + knots );
+}

@@ -1,0 +1,43 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Geometry;
+
+/// \internal
+private function Boolean BaseGeometry.getAttributeValue_CheckIndex(
+  SInt32 mode,
+  Index index
+) {
+  if(index >= this.attributes.size())
+    return false;
+
+  Geometry geometry = this;
+  if(geometry == null)
+    return false;
+
+  // all of the other modes only work with PolygonMeshes
+  PolygonMesh mesh = null;
+  if(mode == 0)
+  {
+    if(index >= geometry.getAttributes().size())
+      return false;
+  }
+  else
+  {
+    mesh = geometry;
+    if(mesh == null)
+      return false;
+
+    if(mode == 1 && index >= mesh.polygonCount()) // per face
+      return false;
+
+    if(mode == 2 && index >= mesh.polygonCount()) // per face
+      return false;
+
+    if(mode == 3 && index >= mesh.pointCount()) // per vertex (average)
+      return false;
+  }  
+
+  return true;
+}

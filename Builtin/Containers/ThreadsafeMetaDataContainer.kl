@@ -1,0 +1,87 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+require FabricSynchronization;
+
+object ThreadsafeMetaDataContainer;
+
+interface ThreadsafeMetaDataOwner {
+  Ref<ThreadsafeMetaDataContainer> getMetaDataContainer();
+};
+
+/// The ThreadsafeMetaDataContainer can be used to store any number of
+/// KL objects in a dictionary in a thread safe fashion.
+object ThreadsafeMetaDataContainer : BaseVersioned {
+  /// \internal
+  Object dict[String]; //eg: raycast cache
+  /// The container's lock
+  SimpleLock simpleLock;
+};
+
+/// \internal
+function ThreadsafeMetaDataContainer() {
+  this.simpleLock = SimpleLock("ThreadsafeMetaDataContainer");
+}
+
+/// gets a single object out of the container or null if it doesn't exist
+function Ref<Object> ThreadsafeMetaDataContainer.get( String name ) {
+  AutoLock AL(this.simpleLock);
+  return this.dict.get( name, null );
+}
+
+/// Returns true if the data exists
+function Boolean ThreadsafeMetaDataContainer.has( String name ) {
+  AutoLock AL( this.simpleLock );
+  return this.dict.has( name );
+}
+
+/// gets an object from of the, or creates one of the provided type it doesn't exist.
+/// \param type An instance of that object type will be created if required
+function Ref<Object> ThreadsafeMetaDataContainer.getOrCreate!( String name, Type type ) {
+  AutoLock AL( this.simpleLock );
+  Ref<Object> value = this.dict.get( name, null );
+  if( !value ) {
+    Object newValue = type.createNew();
+    this.dict[name] = newValue;
+    value = newValue;
+    this.incrementStructureVersion(); // Entry created
+  }
+  return value;
+}
+
+/// gets a single object out of the container or null if it doesn't exist,
+/// but expects this container to be locked already.
+function Ref<Object> ThreadsafeMetaDataContainer.lockedGet( String name ) {
+  if( !this.simpleLock.locked() )
+    throw("ThreadsafeMetaDataContainer.lockedGet: this.simpleLock needs to be locked externally when calling");
+  return this.dict.get( name, null );
+}
+
+/// sets a single object in the container
+/// and expects this container to be locked already.
+/// \note When setting the data container value, it needs to be locked externally, so the value creation is protected too under that same lock (avoids to lock twice). Preferred method is to build a local AutoLock AL(metaData.lock);
+function ThreadsafeMetaDataContainer.lockedSet!( String name, Object value ) {
+  if( !this.simpleLock.locked() )
+    throw("ThreadsafeMetaDataContainer.lockedSet: this.simpleLock needs to be locked externally when calling");
+  if(!this.dict.has(name)) { this.incrementStructureVersion(); }
+  this.dict[name] = value;
+  this.incrementValueVersion();
+}
+
+function ThreadsafeMetaDataContainer.set!( String name, Object value ) {
+  AutoLock AL( this.simpleLock );
+  if(!this.dict.has(name)) { this.incrementStructureVersion(); }
+  this.dict[name] = value;
+  this.incrementValueVersion();
+}
+
+/// removes a single KL object from this container
+function Boolean ThreadsafeMetaDataContainer.remove!( String name ) {
+  AutoLock AL(this.simpleLock);
+  if( this.dict.has( name ) ) {
+    this.dict.delete( name );
+    this.incrementStructureVersion();
+    return true;
+  }
+  return false;
+}

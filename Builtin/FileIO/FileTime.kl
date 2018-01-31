@@ -1,0 +1,55 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+/**
+\versionadded 1.12.0
+
+The FileTime maps closely to the **std::time_t**.
+*/
+
+struct FileTime {
+  /// seconds since the epoch
+  UInt64 epoch; 
+  /// seconds of minutes from 0 to 61
+  UInt64 sec;   
+  /// minutes of hour from 0 to 59
+  UInt64 min;   
+  /// hours of day from 0 to 24
+  UInt64 hour;  
+  /// day of month from 1 to 31
+  UInt64 mday;  
+  /// month of year from 0 to 11
+  UInt64 mon;   
+  /// year since 1900
+  UInt64 year;  
+  /// days since sunday
+  UInt64 wday;  
+  /// days since January 1st
+  UInt64 yday;  
+  /// hours of daylight savings time
+  UInt64 isdst; 
+};
+
+/// returns the time as a string, in the format "YYYY-MM-DD HH-MM-SS"
+function String FileTime.string() {
+  return this.year + '-' + (this.mon < 10 ? '0' + this.mon : this.mon) + '-' +
+    (this.mday < 10 ? '0' + this.mday : this.mday) + ' ' +
+    (this.hour < 10 ? '0' + this.hour : this.hour) + ':' +
+    (this.min < 10 ? '0' + this.min : this.min) + ':' +
+    (this.sec < 10 ? '0' + this.sec : this.sec);
+}
+
+/// returns true if a time matches
+function Boolean == (FileTime a, FileTime b) {
+  return a.epoch == b.epoch;
+}
+
+/// returns true if a time matches
+function Boolean > (FileTime a, FileTime b) {
+  return a.epoch > b.epoch;
+}
+
+/// returns true if a time matches
+function Boolean < (FileTime a, FileTime b) {
+  return a.epoch < b.epoch;
+}

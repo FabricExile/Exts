@@ -1,0 +1,122 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  Specialized GeometryAttribute containing one RGBA per element.
+  Values can be accessed with the RGBAAttribute.values array member, but its usage might be restricted by the owner Geometry.
+*/
+object RGBAAttribute : BaseAttribute {
+  /// Values array container
+  RGBA values[];
+};
+
+function StatisticRecord[] RGBAAttribute.getStatistics() {
+  StatisticRecord stats[] = this.parent.getStatistics();
+  stats.push( StatisticRecord( Statistic_MemoryUsage, this.values.size()*4 ) );
+  return stats;
+}
+
+/// \dfgPresetOmit
+RGBAAttribute.cloneMembersTo( io RGBAAttribute that ) {
+  //The difference with default clone() is that new.parent.autoStat will point to 'new' (from constructor)
+  this.parent.cloneMembersTo(that);//Copies all but the values
+  that.copyFrom(this);
+}
+
+inline RGBAAttribute.resize!(Size count) {
+  this.parent.resize(count);
+  this.values.resize(count);
+}
+
+inline Boolean RGBAAttribute.checkConsistency() {
+  if( this.size() != this.values.size() )
+    return false;
+  return this.parent.checkConsistency();
+}
+
+inline Data RGBAAttribute.data() {
+  return this.values.data();
+}
+
+inline UInt32 RGBAAttribute.getElementsMemType( ) {
+  return this.values.getElementsMemType();
+}
+
+inline RGBAAttribute.convertToGPU!( ) {
+  this.values.convertToGPU();
+  this.incrementVersion();
+}
+
+inline RGBAAttribute.convertToCPU!( ) {
+  this.values.convertToCPU();
+  this.incrementVersion();
+}
+
+inline RGBAAttribute.copyValue!( Size sourceIndex, Size targetIndex ) {
+  this.values[targetIndex] = this.values[sourceIndex];
+}
+
+inline RGBAAttribute.copyValue!( Ref<Object> sourceAttr, Size sourceIndex, Size targetIndex ) {
+  Ref<RGBAAttribute> source = sourceAttr;
+  this.values[targetIndex] = source.values[sourceIndex];
+}
+
+inline RGBAAttribute.copyFrom!( Ref<Object> otherAttr ) {
+  this.parent.copyFrom( otherAttr );
+  Ref<RGBAAttribute> other = otherAttr;
+  other.values.copyTo(this.values);
+}
+
+/** Returns a linear combination of source values.
+    \param sourceIndices The array of source indices
+    \param sourceWeights The array of source weights, which need to correspond to each sourceIndices. Normally the sum of the weights should be 1.0
+*/
+inline RGBA RGBAAttribute.getLinearCombination( LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights ) {
+  Vec4 result;//Use Vec3: avoid precision problems & leverage SIMD
+  for( Size i = 0; i < sourceIndices.size(); ++i ) {
+    RGBA sourceData = this.values[sourceIndices.get(i)];
+    Vec4 source = Vec4(sourceData.r, sourceData.g, sourceData.b, sourceData.a);
+    result += source*sourceWeights.get(i);
+  }
+  result = result*255.0 + Vec4(0.5,0.5,0.5,0.5);//rounding
+  return RGBA(Byte(result.x), Byte(result.y), Byte(result.z), Byte(result.t));
+}
+
+inline RGBAAttribute.linearCombine!( Ref<Object> sourceAttr, LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights, Size targetIndex ) {
+  Ref<RGBAAttribute> source = sourceAttr;
+  this.values[targetIndex] = source.getLinearCombination( sourceIndices, sourceWeights );
+}
+
+inline RGBAAttribute.setFromScalar!( Size index, LocalL16ScalarArray value ) {
+  this.values[index].r = value.get(0)*255;
+  this.values[index].g = value.get(1)*255;
+  this.values[index].b = value.get(2)*255;
+  this.values[index].a = value.get(3)*255;
+}
+
+inline Size RGBAAttribute.getScalarValueSize() {
+  return 4;
+}
+
+inline Boolean RGBAAttribute.equalValues( Size index1, Size index2 ) {
+  return this.values[index1].equal( this.values[index2] );
+}
+
+function String RGBAAttribute.valueDesc( Size index ) {
+  return String(this.values[index]);
+}
+
+require Util;
+function String RGBAAttribute.unitTestPrint( Size index ) {
+  return this.valueDesc(index);
+}
+
+function String RGBAAttribute.truncateDecimalsPrint( Size index, UInt32 n ) {
+  return this.valueDesc(index);
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+function Ref<RGBAAttribute> GeometryAttributes.getOrCreateRGBAAttribute!( String name ) {
+  return this.getOrCreateAttribute( name, RGBAAttribute );
+}

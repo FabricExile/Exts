@@ -1,0 +1,126 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  Specialized GeometryAttribute containing one Quat per element.
+  Values can be accessed with the QuatAttribute.values array member, but its usage might be restricted by the owner Geometry.
+*/
+object QuatAttribute : BaseAttribute {
+  /// Values array container
+  Quat values[];
+
+  /// If true, IntegerAttribute.linearCombine and IntegerAttribute.getLinearCombination
+  /// will normalize the resulting value.
+  Boolean normalize;
+};
+
+function StatisticRecord[] QuatAttribute.getStatistics() {
+  StatisticRecord stats[] = this.parent.getStatistics();
+  stats.push( StatisticRecord( Statistic_MemoryUsage, this.values.size()*4*4 ) );
+  return stats;
+}
+
+/// \dfgPresetOmit
+QuatAttribute.cloneMembersTo( io QuatAttribute that ) {
+  //The difference with default clone() is that new.parent.autoStat will point to 'new' (from constructor)
+  this.parent.cloneMembersTo(that);//Copies all but the values
+  that.copyFrom(this);
+  that.normalize = this.normalize;
+}
+
+inline QuatAttribute.resize!(Size count) {
+  this.parent.resize(count);
+  this.values.resize(count);
+}
+
+inline Data QuatAttribute.data() {
+  return this.values.data();
+}
+
+inline Boolean QuatAttribute.checkConsistency() {
+  if( this.size() != this.values.size() )
+    return false;
+  return this.parent.checkConsistency();
+}
+
+inline UInt32 QuatAttribute.getElementsMemType( ) {
+  return this.values.getElementsMemType();
+}
+
+inline QuatAttribute.convertToGPU!( ) {
+  this.values.convertToGPU();
+  this.incrementVersion();
+}
+
+inline QuatAttribute.convertToCPU!( ) {
+  this.values.convertToCPU();
+  this.incrementVersion();
+}
+
+inline QuatAttribute.copyValue!( Size sourceIndex, Size targetIndex ) {
+  this.values[targetIndex] = this.values[sourceIndex];
+}
+
+inline QuatAttribute.copyValue!( Ref<Object> sourceAttr, Size sourceIndex, Size targetIndex ) {
+  Ref<QuatAttribute> source = sourceAttr;
+  this.values[targetIndex] = source.values[sourceIndex];
+}
+
+inline QuatAttribute.copyFrom!( Ref<Object> otherAttr ) {
+  this.parent.copyFrom( otherAttr );
+  Ref<QuatAttribute> other = otherAttr;
+  other.values.copyTo(this.values);
+}
+
+
+/** Returns a linear combination of source values. If QuatAttribute.normalize, the resulting value will be normalized.
+    \param sourceIndices The array of source indices
+    \param sourceWeights The array of source weights, which need to correspond to each sourceIndices. Normally the sum of the weights should be 1.0
+*/
+inline Quat QuatAttribute.getLinearCombination( LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights ) {
+  Quat result;
+  for( Size i = 0; i < sourceIndices.size(); ++i )
+    result += this.values[sourceIndices.get(i)]*sourceWeights.get(i);
+  if(this.normalize)
+    result = result.unit_safe();
+  return result;
+}
+
+inline QuatAttribute.linearCombine!( Ref<Object> sourceAttr, LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights, Size targetIndex ) {
+  Ref<QuatAttribute> source = sourceAttr;
+  this.values[targetIndex] = source.getLinearCombination( sourceIndices, sourceWeights );
+}
+
+inline QuatAttribute.setFromScalar!( Size index, LocalL16ScalarArray value ) {
+  this.values[index].v.x = value.get(0);
+  this.values[index].v.y = value.get(1);
+  this.values[index].v.z = value.get(2);
+  this.values[index].w = value.get(3);
+}
+
+inline Size QuatAttribute.getScalarValueSize() {
+  return 4;
+}
+
+inline Boolean QuatAttribute.equalValues( Size index1, Size index2 ) {
+  return this.values[index1].equal( this.values[index2] );
+}
+
+function String QuatAttribute.valueDesc( Size index ) {
+  return String(this.values[index]);
+}
+
+require Util;
+function String QuatAttribute.unitTestPrint( Size index ) {
+  return unitTestPrint(this.values[index]);
+}
+
+function String QuatAttribute.truncateDecimalsPrint( Size index , UInt32 n) {
+  return truncateDecimalsPrint(this.values[index], n);
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+function Ref<QuatAttribute> GeometryAttributes.getOrCreateQuatAttribute!( String name ) {
+  return this.getOrCreateAttribute( name, QuatAttribute );
+}

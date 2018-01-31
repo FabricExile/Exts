@@ -1,0 +1,52 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+\versionadded 1.12.0
+
+The InlineLinesShape inherits from the InlineShape object. It provides a shape type for Lines objects. The InlineLinesShape keeps a reference to the lines, so if the lines change (being deformed etc) the shape will updates its buffers automatically.
+
+\example
+    //Create curve circle
+    Curves curves = Curves();
+    curves.addLinearCircle( Xfo(), 5.0, 10 );
+
+    // create a shape
+    InlineShape shape = InlineLinesShape('circle', curves);
+\endexample
+\dfgPresetOmit
+*/
+object InlineCurvesShape : InlineGeometryShape{};
+
+/// default constructor, taking a name and a Curves
+function InlineCurvesShape( String name, Curves curves ) {
+  this.init( name, curves );
+}
+
+/// returns the Curves used by this shape
+function Curves InlineCurvesShape.getCurves() {
+  Ref<Curves> curves = this.geo;
+  return curves;
+}
+
+/// sets the Curves used by this shape
+function InlineCurvesShape.setCurves!( Curves curves ) {
+  this.geo = curves;
+}
+
+/// returns the point size used for rendering
+function Scalar InlineCurvesShape.getLineWidth() {
+  Ref<Curves> curves = this.geo;
+  if( curves )
+    return curves.drawThickness;
+  else
+    return 1;
+}
+
+/// sets the point size used for rendering
+function InlineCurvesShape.setLineWidth!( Scalar lineWidth ) {
+  Ref<Curves> curves = this.geo;
+  if( curves )
+    curves.drawThickness = lineWidth;
+}

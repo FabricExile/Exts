@@ -1,0 +1,173 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+require Math, FabricStatistics;
+
+/**
+The Image2D is a base class for image types. The Image2D provides services for sampling images.
+
+\example
+
+  require OpenImageIO;
+  require FileIO;
+  require Images;
+
+  function Boolean loadRGBAImageData(
+    String filePath,
+    io Image2DRGBA image
+  ) {
+
+    OpenImageInput oiimage = OpenImageInput();
+    oiimage.open(filePath);
+    if(oiimage.valid()) {
+      OpenImageTypeDesc desc = OpenImageTypeDesc(OpenImage_BASETYPE_UINT8, OpenImage_AGGREGATE_SCALAR, OpenImage_VECSEMANTICS_NOXFORM);
+
+      OpenImageSpec spec = oiimage.spec();
+      image.resize(spec.get_full_width(), spec.get_full_height());
+      Boolean success = false;
+      if(spec.get_nchannels() == 4) {
+        Data data = image.pixels.data();
+        success = oiimage.read_image(desc, data, 0, 0, 0);
+      } else if(spec.get_nchannels() == 3) {
+        image.resize(image.width, image.height);
+        Byte bytes[];
+        bytes.resize(image.width * image.height * spec.get_nchannels());
+        Data data = bytes.data();
+        success = oiimage.read_image(desc, data, 0, 0, 0);
+        if(success) {
+          Size offset = 0;
+          for(Size i=0;i< image.pixels.size();i++) {
+            image.pixels[i].r = bytes[offset++];
+            image.pixels[i].g = bytes[offset++];
+            image.pixels[i].b = bytes[offset++];
+            image.pixels[i].a = 255;
+          }
+        }
+      }
+      if(!success) {
+        setError("Image2D '"+filePath+"' could not be converted to RGBA.");
+      }
+    }
+    else {
+      setError("Image2D '"+filePath+"' could not be opened!");
+      return false;
+    }
+    return true;
+  }
+
+  operator entry() {
+
+    FilePath inputPath = FilePath('${FABRIC_SCENE_GRAPH_DIR}/Python/Apps/Resources/Images/logo.png').expandEnvVars();
+
+    Image2DRGBA image();
+    loadRGBAImageData(inputPath.string(), image);
+
+    // report some pixel
+    for(Size i=1;i<5;i++)
+      for(Size j=1;j<5;j++)
+        report(image.sample(Scalar(i)/5.0, Scalar(j)/5.0));
+  }
+
+\endexample
+\seealso OpenImageInput
+*/
+object Image2D : StatisticSourceWithAutoRegisterMember {
+  /// The name of the image.
+  String name;
+  /// the width of the image
+  Size width;
+  /// the height of the image
+  Size height;
+  /// the current version number of the image
+  UInt32 version;
+  /// A set of binary flags for the image.
+  UInt32 flags;
+  /// A statistics collection member used to track memory usage throughout an application.
+  /// \private
+  StatisticsAutoRegisterMember autoStats;
+};
+
+// Increment the version whenever the image changes.
+inline Image2D.incrementVersion!( )
+{
+  this.version++;
+}
+
+// Given pixel integer coordinates in 2D, return the index of the pixel, handling clamping etc..
+/// \internal
+function UInt32 Image2D.getPixelIndex(
+  in Integer uindex,
+  in Integer vindex,
+){
+  UInt32 uindexLocal, vindexLocal;
+  if(uindex < 0) 
+    if(true) // CLAMP
+      uindexLocal = 0;
+    else     // LOOP
+      uindexLocal += this.width;
+  else if(uindex >= this.width)
+    if(true) // CLAMP
+      uindexLocal = this.width - 1;
+    else     // LOOP
+      uindexLocal = uindex % this.width;
+  else
+    uindexLocal = uindex;
+  if(vindex < 0)
+    if(true) // CLAMP
+      vindexLocal = 0;
+    else     // LOOP
+      vindexLocal += this.height;
+  else if(vindex >= this.height)
+    if(true) // CLAMP
+      vindexLocal = this.height - 1;
+    else     // LOOP
+      vindexLocal = vindex % this.height;
+  else
+    vindexLocal = vindex;
+  return (vindexLocal * this.width) + uindexLocal;
+}
+
+/// Get the parameters used to bi-linearly interpollate a pixel values based on u and v coordinates.
+/// \internal
+function Image2D.getSampleParams(
+  in Scalar u,
+  in Scalar v,
+
+  io Scalar u1,
+  io Scalar u2,
+  io Scalar v1,
+  io Scalar v2,
+
+  io UInt32 tl,
+  io UInt32 bl,
+  io UInt32 tr,
+  io UInt32 br,
+
+  io Scalar uinterp,
+  io Scalar vinterp
+){
+  u1 = floor((u * Scalar(this.width)) - 0.5);
+  u2 = floor((u * Scalar(this.width)) + 0.5);
+  v1 = floor((v * Scalar(this.height)) - 0.5);
+  v2 = floor((v * Scalar(this.height)) + 0.5);
+
+  // CLAMP, LOOP
+  tl = this.getPixelIndex(u1, v1);
+  bl = this.getPixelIndex(u2, v1);
+  tr = this.getPixelIndex(u1, v2);
+  br = this.getPixelIndex(u2, v2);
+  
+  uinterp = (u * Scalar(this.width)) - u1;
+  vinterp = (v * Scalar(this.height)) - v1;
+}
+
+/// Implementation of StatisticSource interface's 'getStatistics()'.
+function StatisticRecord[] Image2D.getStatistics() {
+  StatisticRecord stats[];
+  stats.push( StatisticRecord( Statistic_Name, this.name ) );
+  stats.push( StatisticRecord( Statistic_Category, "Image" ) );
+  stats.push( StatisticRecord( "PixWidth", this.width ) );
+  stats.push( StatisticRecord( "PixHeight", this.height ) );
+  return stats;
+}

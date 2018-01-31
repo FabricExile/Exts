@@ -1,0 +1,651 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+require FabricOGL, Util;
+
+/// \internal
+struct OGLFramebuffer_perContextData {
+  UInt32 bufferID;
+  UInt32 lastStructureAndStateVersion;
+  UInt32 lastAttachmentSize;
+  UInt32 lastColorAttachmentVersions[];
+  UInt32 lastDepthAttachmentVersion;
+};
+
+/// \internal
+struct OGLFramebuffer_attachment {
+  String name;
+  OGLImageObject attachment;
+  Ref<OGLBaseObject> baseObjectAttachment;
+  Boolean noBuffer;
+  Boolean shared;
+
+  UInt32 activeLayerOrCubeface;
+  UInt32 activeLevel;
+
+  Boolean isRenderbuffer;
+  Boolean isShadow;
+  Boolean isLayered;
+  Boolean isCube;
+  Boolean isDepthStencil;
+
+  UInt32 version;
+};
+
+inline OGLFramebuffer_attachment.initTypeFlags!() {
+  this.isRenderbuffer = false;
+  this.isLayered = false;
+  this.isCube = false;
+  this.isDepthStencil = false;
+  this.isShadow = false;
+
+  if( this.attachment ) {
+    UInt32 textureType = this.attachment.getTextureType();
+    if( textureType == GL_RENDERBUFFER )
+      this.isRenderbuffer = true;
+    else {
+      if( textureType == GL_TEXTURE_CUBE_MAP || textureType == GL_TEXTURE_CUBE_MAP_ARRAY )
+        this.isCube = true;
+
+      this.isShadow = this.attachment.isShadow();
+
+      if(  textureType == GL_TEXTURE_1D_ARRAY || textureType == GL_TEXTURE_2D_ARRAY
+        || textureType == GL_TEXTURE_CUBE_MAP_ARRAY || textureType == GL_TEXTURE_2D_MULTISAMPLE_ARRAY )
+        this.isLayered = true;
+    }
+
+    UInt32 glInternalFormat = this.attachment.getInternalFormat();
+    if( glInternalFormat == GL_DEPTH_STENCIL || glInternalFormat == GL_DEPTH24_STENCIL8 )
+      this.isDepthStencil = true;
+  }
+}
+
+/// For an OGLFramebuffer, the container version is the name and number of attachments.
+/// The value version is the size, and the types / bufferIDs of the individual attachments.
+/// It doesn't reflect the pixel data value version of the individual buffers.
+object OGLFramebuffer : OGLBaseObject {
+  Size width, height, samples;
+
+  OGLFramebuffer_attachment colors[];
+  OGLFramebuffer_attachment depth;//or depthStencil
+
+  UInt32 activeStateVersion;
+  OGLFramebuffer_perContextData perContextData[];
+};
+
+function OGLFramebuffer() {
+  this.samples = 1;
+  this.depth.name = "depth";
+  // Since the real bufferID is per-viewport, just allocate a fake global ID for debugging purposes
+  this.bufferID = this.wrapperGlobals.nextGlobalFramebufferID++;
+}
+
+inline ~OGLFramebuffer() {
+  this.releaseGL();
+}
+
+inline OGLFramebuffer.releaseGL!() {
+  for( Size i = 0; i < this.perContextData.size(); ++i ) {
+    UInt32 bufferID = this.perContextData[i].bufferID;
+    if( bufferID ) {
+      Ref<OGLContext> context = this.wrapperGlobals.contexts[i];
+      if( context ) {
+        LightLockBracket lock( context.vertexArrayIDsToDeleteLock );
+        context.vertexArrayIDsToDelete.push( bufferID );
+      }
+    }
+  }
+}
+
+inline OGLFramebuffer.setSize!( Size width, Size height, Size samples) {
+  Boolean changed;
+  updateValue( width, this.width, changed );
+  updateValue( height, this.height, changed );
+  updateValue( samples, this.samples, changed );
+  if( changed ) {
+    this.parent.incrementValueVersion();
+    //Set the size of all attachments
+    for( Size i = 0; i < this.colors.size(); ++i ) {
+      Ref<OGLImageObject> image = this.colors[i].attachment;
+      if( image ) {
+        //NOTE: OGLTexture this will automatically convert to equivalent single/multisample format
+        image.setSamples( samples );
+        image.setSize( width, height );
+        this._attachmentStructureChange(this.colors[i]);
+      }
+    }
+    Ref<OGLImageObject> image = this.depth.attachment;
+    if( image ) {
+      //NOTE: OGLTexture this will automatically convert to equivalent single/multisample format
+      image.setSamples( samples );
+      image.setSize( width, height );
+      this._attachmentStructureChange(this.depth);
+    }
+  }
+}
+
+inline OGLFramebuffer.setSize!( Size width, Size height) {
+  this.setSize( width, height, 1 );
+}
+
+inline Size OGLFramebuffer.getColorAttachmentCount() {
+  return this.colors.size();
+}
+
+function OGLFramebuffer.setColorAttachmentCount!( Size count ) {
+  Size prevCount = this.colors.size();
+  if( count != prevCount ) {
+    this.parent.incrementStructureVersion();
+    this.colors.resize( count );
+  }
+}
+
+inline Ref<OGLImageObject> OGLFramebuffer.getColorAttachment( Size index ) {
+  return this.colors[index].attachment;
+}
+
+inline Ref<OGLImageObject> OGLFramebuffer.getDepthAttachment() {
+  return this.depth.attachment;
+}
+
+inline String OGLFramebuffer.getColorAttachmentName( Size index ) {
+  return this.colors[index].name;
+}
+
+inline String OGLFramebuffer.getDepthAttachmentName() {
+  return this.depth.name;
+}
+
+/// Returns UInt32Max if not found
+inline Size OGLFramebuffer.getColorAttachmentIndex( String name ) {
+  for( Size i = 0; i < this.colors.size(); ++i ) {
+    if( this.colors[i].name == name )
+      return i;
+  }
+  return UInt32Max;
+}
+
+inline OGLFramebuffer.setColorAttachmentName!( UInt32 index, String name ) {
+  if( updateValue( name, this.colors[index].name ) )
+    this.parent.incrementStructureVersion();
+}
+
+inline OGLFramebuffer.setDepthAttachmentName!( String name ) {
+  if( updateValue( name, this.depth.name ) )
+    this.parent.incrementStructureVersion();
+}
+
+inline Boolean OGLFramebuffer.isColorAttachmentShared( Size index ) {
+  return this.colors[index].shared;
+}
+
+function OGLFramebuffer.removeColorAttachment!( UInt32 index ) {
+  if( Boolean(this.colors[index].name) || Boolean(this.colors[index].attachment) ) {
+    this.parent.incrementStructureVersion();
+    this.colors[index] = OGLFramebuffer_attachment();
+  }
+}
+
+function OGLFramebuffer.incrementColorAttachmentValueVersion( Size index ) {
+  Ref<OGLBaseObject> baseObjectAttachment = this.colors[index].baseObjectAttachment;
+  if( baseObjectAttachment )
+    baseObjectAttachment.parent.incrementValueVersion();//.parent: avoid virtual call
+}
+
+function OGLFramebuffer.incrementDepthAttachmentValueVersion() {
+  Ref<OGLBaseObject> baseObjectAttachment = this.depth.baseObjectAttachment;
+  if( baseObjectAttachment )
+    baseObjectAttachment.parent.incrementValueVersion();//.parent: avoid virtual call
+}
+
+/// \internal
+function OGLFramebuffer._prepareSetAttachment!( io OGLFramebuffer_attachment attachmentData, String name, Boolean shared, io Boolean changeAccumulator ) {
+  updateValue( name, attachmentData.name, changeAccumulator );
+  if( changeAccumulator )
+    this.parent.incrementStructureVersion();
+
+  if( updateValue( shared, attachmentData.shared ) ) {
+    changeAccumulator = true;
+    attachmentData.attachment = null;
+  }
+}
+
+/// \internal
+function OGLFramebuffer._initNewAttachmentData!( io OGLFramebuffer_attachment attachmentData, io Ref<OGLImageObject> newAttachment, io Boolean changeAccumulator ) {
+  changeAccumulator = true;
+  attachmentData.attachment = newAttachment;
+  Ref<Object> objAttach = newAttachment;
+  attachmentData.baseObjectAttachment = objAttach;
+
+  if( this.tracingEnabled() )
+    attachmentData.baseObjectAttachment.name = this.name + '_' + attachmentData.name;
+
+  if(FabricStatisticsEnabled())
+    AddStatisticsChild(this.autoStats, attachmentData.baseObjectAttachment.autoStats);
+
+  newAttachment.setSize( this.width, this.height );
+}
+
+/// \internal
+function OGLFramebuffer._attachmentStructureChange!( io OGLFramebuffer_attachment attachmentData ) {
+  this.incrementStructureVersion();
+  ++attachmentData.version;
+  this.parent.incrementStructureVersion();
+}
+
+/// \internal
+function OGLFramebuffer._setTextureAttachment!( io OGLFramebuffer_attachment attachmentData, String name, Boolean shadow, UInt32 glTextureType, UInt32 glFormat, UInt32 glInternalFormat ) {
+  Boolean changed;
+  this._prepareSetAttachment( attachmentData, name, false, changed );
+  Ref<OGLTexture> attachment = attachmentData.attachment;
+  if( !attachment ) {
+    OGLTexture newAttachment();
+    Ref<OGLImageObject> newAttachmentImage = newAttachment;
+    this._initNewAttachmentData( attachmentData, newAttachmentImage, changed );
+    attachment = newAttachment;
+  }
+  UInt32 prevVersion = attachment.getValueVersion();
+  attachment.setType( glTextureType, glFormat, glInternalFormat, false, this.samples );
+  if( shadow )
+    attachment.setShadowTextureParameters();
+  if( attachment.getValueVersion() != prevVersion ) {
+    attachmentData.initTypeFlags();
+    changed = true;
+  }
+
+  if( changed )
+    this._attachmentStructureChange( attachmentData );
+}
+
+/// \internal
+function OGLFramebuffer._setRenderbufferAttachment!( io OGLFramebuffer_attachment attachmentData, String name, UInt32 glInternalFormat ) {
+  Boolean changed;
+  this._prepareSetAttachment( attachmentData, name, false, changed );
+  Ref<OGLRenderbuffer> attachment = attachmentData.attachment;
+  if( !attachment ) {
+    OGLRenderbuffer newAttachment();
+    Ref<OGLImageObject> newAttachmentImage = newAttachment;
+    this._initNewAttachmentData( attachmentData, newAttachmentImage, changed );
+    attachment = newAttachment;
+  }
+  UInt32 prevStructureVersion = attachment.getStructureVersion();
+  attachment.setType( glInternalFormat, this.samples );
+  if( attachment.getStructureVersion() != prevStructureVersion ) {
+    attachmentData.initTypeFlags();
+    changed = true;
+  }
+  if( changed )
+    this._attachmentStructureChange( attachmentData );
+}
+
+/// \internal
+inline OGLFramebuffer._setSharedAttachmentInternal!( io OGLFramebuffer_attachment attachmentData, String name, Ref<OGLImageObject> attachment ) {
+  Boolean changed;
+  this._prepareSetAttachment( attachmentData, name, true, changed );
+  if( attachmentData.attachment !== attachment ) {
+    attachmentData.attachment = attachment;
+    attachmentData.baseObjectAttachment = attachment;
+    attachmentData.initTypeFlags();
+    attachmentData.attachment.setSize( this.width, this.height );
+    changed = true;
+  }
+  if( changed )
+    this._attachmentStructureChange( attachmentData );
+}
+
+inline OGLFramebuffer.setSharedColorAttachment!( UInt32 index, String name, Ref<OGLImageObject> attachment ) {
+  this._setSharedAttachmentInternal( this.colors[index], name, attachment );
+}
+
+inline OGLFramebuffer.setSharedDepthAttachment!( Ref<OGLImageObject> attachment ) {
+  this._setSharedAttachmentInternal( this.depth, "depth", attachment );
+}
+
+inline OGLFramebuffer.setColorTextureAttachment!( UInt32 index, String name, Boolean isShadow, UInt32 glTextureType, UInt32 glFormat, UInt32 glInternalFormat ) {
+  this._setTextureAttachment( this.colors[index], name, isShadow, glTextureType, glFormat, glInternalFormat );
+}
+
+/// \internal
+inline OGLFramebuffer._setAttachmentDepth!( io OGLFramebuffer_attachment attachmentData, Size depth ) {
+  Size width, height, prevDepth, samples;
+  attachmentData.attachment.getSize( width, height, prevDepth, samples );
+  if( prevDepth != depth ) {
+    attachmentData.attachment.setSize( width, height, depth );
+    this._attachmentStructureChange(attachmentData);
+  }
+}
+
+inline OGLFramebuffer.setColorAttachmentDepth!( UInt32 index, Size depth ) {
+  this._setAttachmentDepth( this.colors[index], depth );
+}
+
+inline UInt32 OGLFramebuffer.pushColorTextureAttachment!( String name, Boolean isShadow, UInt32 glTextureType, UInt32 glFormat, UInt32 glInternalFormat ) {
+  Size index = this.getColorAttachmentCount();
+  this.setColorAttachmentCount( index + 1 );
+  this.setColorTextureAttachment( index, name, isShadow, glTextureType, glFormat, glInternalFormat );
+  return index;
+}
+
+inline OGLFramebuffer.setColorRenderbufferAttachment!( UInt32 index, String name, UInt32 glInternalFormat ) {
+  this._setRenderbufferAttachment( this.colors[index], name, glInternalFormat );
+}
+
+inline UInt32 OGLFramebuffer.pushColorRenderbufferAttachment!( String name, UInt32 glInternalFormat ) {
+  Size index = this.getColorAttachmentCount();
+  this.setColorAttachmentCount( index + 1 );
+  this.setColorRenderbufferAttachment( index, name, glInternalFormat );
+  return index;
+}
+
+inline OGLFramebuffer.setDepthTextureAttachment!( Boolean shadow, UInt32 glTextureType, UInt32 glFormat, UInt32 glInternalFormat ) {
+  this._setTextureAttachment( this.depth, this.depth.name, shadow, glTextureType, glFormat, glInternalFormat );
+}
+
+inline OGLFramebuffer.setDepthAttachmentDepth!( Size depth ) {
+  this._setAttachmentDepth( this.depth, depth );
+}
+
+//Depth or depth_stencil
+inline OGLFramebuffer.setDepthRenderbufferAttachment!( UInt32 glInternalFormat ) {
+  this._setRenderbufferAttachment( this.depth, this.depth.name, glInternalFormat );
+}
+
+/// \internal
+inline OGLFramebuffer._setActiveLayerOrCubeFace!( io OGLFramebuffer_attachment attachmentData, UInt32 layer ) {
+  if( updateValue( layer, attachmentData.activeLayerOrCubeface ) ) {
+    //Note: this is not a 'valueChange', but a volatile state change.
+    ++attachmentData.version;
+    ++this.activeStateVersion;
+  }
+}
+
+/// \internal
+inline OGLFramebuffer._setActiveLevel!( io OGLFramebuffer_attachment attachmentData, UInt32 level ) {
+  if( updateValue( level, attachmentData.activeLevel ) ) {
+    //Note: this is not a 'valueChange', but a volatile state change.
+    ++attachmentData.version;
+    ++this.activeStateVersion;
+  }
+}
+
+inline Boolean OGLFramebuffer.isColorLayered( UInt32 index ) {
+  return this.colors[index].isLayered;
+}
+
+inline Boolean OGLFramebuffer.isColorCubeMapped( UInt32 index ) {
+  return this.colors[index].isCube;
+}
+
+inline UInt32 OGLFramebuffer.getColorActiveLayerOrCubeFace( UInt32 index ) {
+  return this.colors[index].activeLayerOrCubeface;
+}
+
+inline OGLFramebuffer.setColorActiveLayerOrCubeFace!( UInt32 index, UInt32 layer ) {
+  this._setActiveLayerOrCubeFace( this.colors[index], layer );
+}
+
+inline UInt32 OGLFramebuffer.getColorActiveMipmapLevel( UInt32 index ) {
+  return this.colors[index].activeLevel;
+}
+
+inline OGLFramebuffer.setColorActiveMipmapLevel!( UInt32 index, UInt32 level ) {
+  this._setActiveLevel( this.colors[index], level );
+}
+
+inline Boolean OGLFramebuffer.isDepthLayered() {
+  return this.depth.isLayered;
+}
+
+inline Boolean OGLFramebuffer.isDepthCubeMapped() {
+  return this.depth.isCube;
+}
+
+inline UInt32 OGLFramebuffer.getDepthActiveLayerOrCubeFace() {
+  return this.depth.activeLayerOrCubeface;
+}
+
+inline OGLFramebuffer.setDepthActiveLayerOrCubeFace!( UInt32 layer ) {
+  this._setActiveLayerOrCubeFace( this.depth, layer );
+}
+
+inline UInt32 OGLFramebuffer.getDepthActiveMipmapLevel( UInt32 index ) {
+  return this.depth.activeLevel;
+}
+
+inline OGLFramebuffer.setDepthActiveMipmapLevel!( UInt32 level ) {
+  this._setActiveLevel( this.depth, level );
+}
+
+/// \internal
+function String OGLFramebufferAttachmentIDToString( UInt32 attachmentID ) {
+  if( attachmentID == 0 )
+    return "<unknown>";
+  else if( attachmentID == GL_DEPTH_ATTACHMENT )
+    return "depth";
+  else if( attachmentID == GL_STENCIL_ATTACHMENT )
+    return "stencil";
+  else if( attachmentID == GL_DEPTH_STENCIL_ATTACHMENT )
+    return "depth_stencil";
+  else
+    return "color_" + (attachmentID - GL_COLOR_ATTACHMENT0);
+}
+
+/// \internal
+function OGLFramebuffer._attachIfRequired!( io OGLFramebuffer_attachment attachmentData, UInt32 attachmentID, io Ref<OGLContext> context, io UInt32 lastVersion ) {
+  if( synchronizeVersion( attachmentData.version, lastVersion ) ) {
+
+    Boolean tracing = this.tracingEnabled();
+    UInt32 bufferID;
+    if( attachmentData.baseObjectAttachment ) {
+      bufferID = attachmentData.baseObjectAttachment.bufferID;
+      if( !bufferID ) {
+        attachmentData.baseObjectAttachment.create(context);
+        bufferID = attachmentData.baseObjectAttachment.bufferID;
+      }
+    }
+    if( bufferID ) {
+      attachmentData.noBuffer = false;
+      if( attachmentData.isLayered ) {
+        glFramebufferTextureLayer(GL_FRAMEBUFFER, attachmentID, bufferID, attachmentData.activeLevel, attachmentData.activeLayerOrCubeface);
+        if( tracing )
+          report(this.getTraceName() + ": attaching " + OGLFramebufferAttachmentIDToString(attachmentID) + " to layered texture " + attachmentData.baseObjectAttachment.getTraceName() + ", layer=" + attachmentData.activeLayerOrCubeface + " level=" + attachmentData.activeLevel);
+      } else if( attachmentData.isCube ) {
+        glFramebufferTexture2D(GL_FRAMEBUFFER, attachmentID, attachmentData.activeLayerOrCubeface, bufferID, attachmentData.activeLevel);
+        if( tracing )
+          report(this.getTraceName() + ": attaching " + OGLFramebufferAttachmentIDToString(attachmentID) + " to cube texture " + attachmentData.baseObjectAttachment.getTraceName() + ", layer=" + attachmentData.activeLayerOrCubeface + " level=" + attachmentData.activeLevel);
+      } else {
+        if( attachmentData.isRenderbuffer )
+          glFramebufferRenderbuffer( GL_FRAMEBUFFER, attachmentID, GL_RENDERBUFFER, bufferID );
+        else
+          glFramebufferTexture( GL_FRAMEBUFFER, attachmentID, bufferID, 0 );
+        if( tracing )
+          report(this.getTraceName() + ": attaching " + OGLFramebufferAttachmentIDToString(attachmentID) + " to texture " + attachmentData.baseObjectAttachment.getTraceName() + ", layer=" + attachmentData.activeLayerOrCubeface + " level=" + attachmentData.activeLevel);
+      }
+    } else {
+      glFramebufferTexture2D(GL_FRAMEBUFFER, attachmentID, GL_TEXTURE_2D, 0, 0);
+      attachmentData.noBuffer = true;
+      if( tracing )
+        report(this.getTraceName() + ": detaching " + OGLFramebufferAttachmentIDToString(attachmentID));
+    }
+  }
+}
+
+function Boolean OGLFramebuffer.activate!( UInt32 target, io Ref<OGLContext> context, io OGLFramebuffer_perContextData contextData ) {
+  if( contextData.bufferID == 0 ) {
+    UInt32 buffers[1];
+    UInt32 buffersExt<> = buffers;
+    glGenFramebuffers(1, buffersExt);
+    contextData.bufferID = buffers[0];
+  }
+  context.stateCache.bindFramebuffer( target, contextData.bufferID );
+
+  if( this.tracingEnabled() )
+    report( this.getTraceName() + ": activating: w=" + this.width + " h=" + this.height );
+
+  if( synchronizeVersion( this.getStructureVersion_() + this.activeStateVersion, contextData.lastStructureAndStateVersion ) ) {
+
+    if( this.colors.size() > contextData.lastColorAttachmentVersions.size() )
+      contextData.lastColorAttachmentVersions.resize( this.colors.size() );
+
+    if( this.colors.size() >= context.capabilities.maxDrawBuffers )
+      setError("OGLFramebuffer.activate: " + this.getTraceName() + "max supported color buffer count is "+context.capabilities.maxDrawBuffers+", "+this.colors.size()+" required");
+    for( Size i = 0; i < this.colors.size(); ++i )
+      this._attachIfRequired( this.colors[i], GL_COLOR_ATTACHMENT0+i, context, contextData.lastColorAttachmentVersions[i] );
+
+    for( Size i = this.colors.size(); i < contextData.lastAttachmentSize; ++i )
+      glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0+i, GL_TEXTURE_2D, 0, 0);
+    contextData.lastAttachmentSize = 0;
+
+    this._attachIfRequired( this.depth, this.depth.isDepthStencil ? GL_DEPTH_STENCIL_ATTACHMENT : GL_DEPTH_ATTACHMENT, context, contextData.lastDepthAttachmentVersion );
+
+    if( this.tracingEnabled() ) {
+      Integer status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+      if(status==GL_FRAMEBUFFER_UNDEFINED)
+        setError(this.getTraceName() + ": glCheckFramebufferStatus: GL_FRAMEBUFFER_UNDEFINED");
+      else if(status==GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT)
+        setError(this.getTraceName() + ": glCheckFramebufferStatus: GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT");
+      else if(status==GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT)
+        setError(this.getTraceName() + ": glCheckFramebufferStatus: GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT");
+      else if(status==GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER)
+        setError(this.getTraceName() + ": glCheckFramebufferStatus: GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER");
+      else if(status==GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER)
+        setError(this.getTraceName() + ": glCheckFramebufferStatus: GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER");
+      else if(status==GL_FRAMEBUFFER_UNSUPPORTED)
+        setError(this.getTraceName() + ": glCheckFramebufferStatus: GL_FRAMEBUFFER_UNSUPPORTED");
+      else if(status==GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE)
+        setError(this.getTraceName() + ": glCheckFramebufferStatus: GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE");
+      else if(status==GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS)
+        setError(this.getTraceName() + ": glCheckFramebufferStatus: GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS");
+    }
+  }
+  //TODO: if we are preparing to render other mipmapLevels, then this should be size/2^L?
+  context.stateCache.viewport(0, 0, this.width, this.height);
+  //In theory, scissors should be updated too...
+  return contextData.bufferID != 0;
+}
+
+inline Boolean OGLFramebuffer.activate!( UInt32 target, io Ref<OGLContext> context ) {
+  UInt32 ID = context.ID;
+  if( ID >= this.perContextData.size() )
+    this.perContextData.resize( ID+1 );
+  return this.activate( target, context, this.perContextData[ID] );
+}
+
+inline Boolean OGLFramebuffer.create!( io Ref<OGLContext> context ) {
+  return this.activate( GL_FRAMEBUFFER, context );
+}
+
+function OGLFramebuffer.activateAllDefinedColors!( io Ref<OGLContext> context ) {
+  this.activate( GL_FRAMEBUFFER, context );
+  LocalL16UInt32Array buffers;
+  Size count = this.colors.size();
+  buffers.resize( count );
+  for( Size i = 0; i < count; ++i )
+    buffers.set(i, this.colors[i].noBuffer ? GL_NONE : GL_COLOR_ATTACHMENT0 + i);
+  context.stateCache.drawBuffers( buffers );
+}
+
+function OGLFramebuffer.clearAllColors!( Color color, io Ref<OGLContext> context ) {
+  this.activateAllDefinedColors( context );
+  context.stateCache.colorMask( true, true, true, true );//In theory there's the scissor too that should be reset
+  glClearColor( color.r, color.g, color.b, color.a );
+  glClear( GL_COLOR_BUFFER_BIT );
+}
+
+/// \internal
+function UInt32 OGLFramebuffer.ensureColorActiveAndGetDrawIndex!( UInt32 colorIndex, io Ref<OGLContext> context ) {
+  this.activate( GL_FRAMEBUFFER, context );
+  UInt32 drawIndex = UInt32Max;
+  drawIndex = context.stateCache.getDrawBufferIndexForColorAttachmentIndex( colorIndex );
+
+  if( drawIndex == UInt32Max ) {
+    //Activate
+    LocalL16UInt32Array buffers;
+    buffers.push(GL_COLOR_ATTACHMENT0+colorIndex);
+    context.stateCache.drawBuffers( buffers );
+    drawIndex = 0;
+  }
+  return drawIndex;
+}
+
+/// Note: this will modify the DrawBuffers, unless color attachment 'index' is defined as a draw buffer in stateCache
+function OGLFramebuffer.clearColor!( Size index, Color color, Boolean noMask, io Ref<OGLContext> context ) {
+  Size drawIndex = this.ensureColorActiveAndGetDrawIndex( index, context );
+  if( noMask )
+    context.stateCache.colorMaski(drawIndex, true, true, true, true );
+  Scalar colors[4];
+  colors[0] = color.r;
+  colors[1] = color.g;
+  colors[2] = color.b;
+  colors[3] = color.a;
+  glClearBufferfv( GL_COLOR, drawIndex, colors );
+}
+
+function OGLFramebuffer.clearInteger!( Size index, SInt32 values[4], Boolean noMask, io Ref<OGLContext> context ) {
+  Size drawIndex = this.ensureColorActiveAndGetDrawIndex( index, context );
+  if( noMask )
+    context.stateCache.colorMaski(drawIndex, true, true, true, true );
+  glClearBufferiv( GL_COLOR, drawIndex, values );
+}
+
+function OGLFramebuffer.clearUnsignedInteger!( Size index, UInt32 values[4], Boolean noMask, io Ref<OGLContext> context ) {
+  Size drawIndex = this.ensureColorActiveAndGetDrawIndex( index, context );
+  if( noMask )
+    context.stateCache.colorMaski(drawIndex, true, true, true, true );
+  glClearBufferuiv( GL_COLOR, drawIndex, values );
+}
+
+function OGLFramebuffer.clearDepth!( Scalar depth, Boolean noMask, io Ref<OGLContext> context ) {
+  this.activate( GL_FRAMEBUFFER, context );
+  if( noMask )
+    context.stateCache.depthMask( true );
+  Scalar values[1];
+  values[0] = depth;
+  glClearBufferfv( GL_DEPTH, 0, values );
+}
+
+function OGLFramebuffer.clearDepthStencil!( Scalar depth, UInt32 stencil, Boolean noMask, io Ref<OGLContext> context ) {
+  this.activate( GL_FRAMEBUFFER, context );
+  if( noMask ) {
+    context.stateCache.depthMask( true );
+    context.stateCache.stencilMask( UInt32Max );
+  }
+  glClearBufferfi( GL_DEPTH_STENCIL, 0, depth, stencil );
+}
+
+function OGLFramebuffer.getColorFormat( UInt32 index, io UInt32 glComponentType, io UInt32 redBits, io UInt32 greenBits, io UInt32 blueBits, io UInt32 alphaBits ) {
+  if( this.colors[index].attachment ) {
+    UInt32 internalFormat = this.colors[index].attachment.getInternalFormat();
+    UInt32 depthBits, stencilBits;
+    //Note: we don't call glGetFramebufferAttachmentParameteriv since we want this to be available without a GL context
+    _getTextureTypeBits(internalFormat, glComponentType, redBits, greenBits, blueBits, alphaBits, depthBits, stencilBits );
+  } else {
+    glComponentType = GL_UNSIGNED_NORMALIZED;
+    redBits = 0;
+    greenBits = 0;
+    blueBits = 0;
+    alphaBits = 0;
+  }
+}
+
+function Boolean OGLFramebuffer.isColorTexture( UInt32 index ) {
+  return !this.colors[index].isRenderbuffer;
+}
+
+function Boolean OGLFramebuffer.isDepthTexture() {
+  return !this.depth.isRenderbuffer;
+}
+
+function OGLFramebuffer.getDepthFormat( io UInt32 glComponentType, io UInt32 depthBits, io UInt32 stencilBits ) {
+  if( this.depth.attachment ) {
+    UInt32 internalFormat = this.depth.attachment.getInternalFormat();
+    UInt32 redBits, greenBits, blueBits, alphaBits;
+    //Note: we don't call glGetFramebufferAttachmentParameteriv since we want this to be available without a GL context
+    _getTextureTypeBits(internalFormat, glComponentType, redBits, greenBits, blueBits, alphaBits, depthBits, stencilBits );
+  } else {
+    glComponentType = GL_FLOAT;
+    depthBits = 0;
+    stencilBits = 0;
+  }
+}

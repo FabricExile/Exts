@@ -1,0 +1,63 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /**
+  The CameraFacingModifier, when attached to a BaseTool (:kl-ref:`Tool::BaseTool.addDrawModifier` ),
+  Rotates the object (local axis) toward the camera. It is only active in WorldSpace.
+  See :ref:`TPG.tooldrawmodifier` for more information about draw modifiers.
+  */
+  object CameraFacingModifier : BaseDrawModifier{
+    Vec3 localAxisToRotateTowardCamera;
+    Vec3 localUpVector;
+  };
+
+  CameraFacingModifier() {
+    this.setLocalAxis( Vec3( 0, 1, 0 ), Vec3( 1, 0, 0 ) );
+  }
+
+  CameraFacingModifier( Vec3 localAxisToRotateTowardCamera, Vec3 localUpVector ) {
+    this.setLocalAxis( localAxisToRotateTowardCamera, localUpVector );
+  }
+
+  CameraFacingModifier.setLocalAxis!( Vec3 localAxisToRotateTowardCamera, Vec3 localUpVector ) {
+    this.localAxisToRotateTowardCamera = localAxisToRotateTowardCamera;
+    this.localUpVector = localUpVector;
+  }
+
+  Mat44 ComputeViewportAlignedRotation( Ref<Viewport> viewport, String space, Mat44 transform, Vec3 localAxisToRotateTowardCamera, Vec3 localUpVector ) {
+    if( space != WorldSpace )
+      return Mat44();
+
+    // Although it's more complex, keep world space transform
+    Mat33 localToViewportRotate = viewport.getViewMat().upperLeft() * transform.upperLeft();
+    Vec3 localDir = localToViewportRotate * localAxisToRotateTowardCamera;
+    Vec3 localUp = localToViewportRotate * localUpVector;
+
+    Quat q;
+    q.setFromDirectionAndUpvector( -localDir, localUp );// This is -Z to localDir; we'll then inverse to have localDir to -Z
+    Mat44 rotation;
+    rotation.setFromMat33( localToViewportRotate.inverse() * q.toMat33().inverse() * localToViewportRotate );// move back to local space
+
+    return rotation;
+  }
+
+  inline Mat44 CameraFacingModifier.computeViewportAlignedRotation( Ref<Viewport> viewport, String space, Mat44 transform ) {
+    return ComputeViewportAlignedRotation( viewport, space, transform, this.localAxisToRotateTowardCamera, this.localUpVector );
+  }
+
+  CameraFacingModifier.updateDrawData!( io DrawContext context, Ref<Object> target ) {
+    this.parent.updateDrawData( context, target );
+
+    String space = GetTransformSpace( context.contextualProperties );
+    Mat44 transform = GetTransform( context.contextualProperties );
+
+    if( space == WorldSpace )
+      SetTransform( context.contextualProperties, transform * this.computeViewportAlignedRotation( context.viewport, space, transform ) );
+
+    // Update the renderTransform (viewport space) accordingly
+    UpdateRenderTransform( context );
+  }
+}// namespace Tool

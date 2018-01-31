@@ -1,0 +1,556 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+/**
+The :kl-ref:`Xfo` type represents a 3D transform. It uses a :kl-ref:`Vec3` for translation as scaling as well as a :kl-ref:`Quat` for its rotation. The :kl-ref:`Xfo` can also be expressed as a :kl-ref:`Mat44`, and provides conversion methods for that type.
+
+
+\rst
+  .. kl-example:: Xfo
+
+    // create a transform
+    Xfo xfo;
+
+    // change the transform
+    xfo.tr.x = 3.0;
+    xfo.ori.setFromAxisAndAngle(Vec3(1.0, 0.0, 0.0), 0.65);
+    xfo.sh.x = 2.0;
+    xfo.sc *= Vec3(1, 2, 3);
+
+    // project a vector
+    Vec3 pos = xfo.transformVector(Vec3(0, 10, 0));
+
+\endrst
+
+\seealso Quat, Vec3, Euler, Mat44, Mat33
+\dfgTypeColor Color(249, 157, 28)
+\dfgPresetColor Color(99, 129, 92)
+*/
+
+struct Xfo
+{
+  Quat ori;
+  Vec3 tr;
+  Vec3 sc;
+  Vec3 sh;/// Shearing vector as  {x shearing along y, x shearing along z, y shearing along z}
+};
+
+/// Default constructor
+/// set the transform to the identity
+inline Xfo() {
+  this.setIdentity();
+}
+
+/// Constructor from just the translation
+inline Xfo(Vec3 tr) {
+  this.set(tr);
+}
+
+/// Constructor from just the rotation
+inline Xfo(Quat ori) {
+  this.set(ori);
+}
+
+/// Constructor from the translation and rotation
+inline Xfo(Vec3 tr, Quat ori) {
+  this.set(tr,ori);
+}
+
+/// Constructor from the translation, rotation and scaling
+/// \dfgPresetDefault sc {"x": 1.0, "y": 1.0, "z": 1.0}
+inline Xfo(Vec3 tr, Quat ori, Vec3 sc) {
+  this.set(tr,ori,sc);
+}
+
+/// Constructor from the translation, rotation, scaling and shearing
+/// \param sh Shearing vector as  {x shearing along y, x shearing along z, y shearing along z}
+/// \dfgPresetDefault sc {"x": 1.0, "y": 1.0, "z": 1.0}
+inline Xfo( Vec3 tr, Quat ori, Vec3 sc, Vec3 sh ) {
+  this.set( tr, ori, sc, sh );
+}
+
+/// Constructor from the orientation, translation and scaling
+/// \dfgPresetDefault sc {"x": 1.0, "y": 1.0, "z": 1.0}
+inline Xfo(Quat ori, Vec3 tr, Vec3 sc) {
+  this.set(tr,ori,sc);
+}
+
+/// Constructor from the orientation, translation, scaling and shearing
+/// \param sh Shearing vector as  {x shearing along y, x shearing along z, y shearing along z}
+/// \dfgPresetDefault sc {"x": 1.0, "y": 1.0, "z": 1.0}
+inline Xfo( Quat ori, Vec3 tr, Vec3 sc, Vec3 sh ) {
+  this.set( tr, ori, sc, sh );
+}
+
+/// Constructor from single channels
+/// \dfgPresetTitle XfoFromSRT
+/// \dfgPresetDefault scX 1.0
+/// \dfgPresetDefault scY 1.0
+/// \dfgPresetDefault scZ 1.0
+/// \dfgPresetRange trX (-5.0, 5.0)
+/// \dfgPresetRange trY (-5.0, 5.0)
+/// \dfgPresetRange trZ (-5.0, 5.0)
+/// \dfgPresetRange eulerX (-3.14, 3.14)
+/// \dfgPresetRange eulerY (-3.14, 3.14)
+/// \dfgPresetRange eulerZ (-3.14, 3.14)
+inline Xfo(Scalar scX, Scalar scY, Scalar scZ, Scalar eulerX, Scalar eulerY, Scalar eulerZ, Scalar trX, Scalar trY, Scalar trZ) {
+  Quat q;
+  q.setFromEulerAngles(Vec3(eulerX, eulerY, eulerZ));
+  this.set(Vec3(trX, trY, trZ), q, Vec3(scX, scY, scZ));
+}
+
+/// Constructor from single channels
+/// \param shXY x shearing along y
+/// \param shXZ x shearing along z
+/// \param shYZ y shearing along z
+/// \dfgPresetTitle XfoFromSRT
+/// \dfgPresetDefault scX 1.0
+/// \dfgPresetDefault scY 1.0
+/// \dfgPresetDefault scZ 1.0
+/// \dfgPresetRange trX (-5.0, 5.0)
+/// \dfgPresetRange trY (-5.0, 5.0)
+/// \dfgPresetRange trZ (-5.0, 5.0)
+/// \dfgPresetRange eulerX (-3.14, 3.14)
+/// \dfgPresetRange eulerY (-3.14, 3.14)
+/// \dfgPresetRange eulerZ (-3.14, 3.14)
+inline Xfo( Scalar scX, Scalar scY, Scalar scZ, Scalar eulerX, Scalar eulerY, Scalar eulerZ, Scalar trX, Scalar trY, Scalar trZ, Scalar shXY, Scalar shXZ, Scalar shYZ ) {
+  Quat q;
+  q.setFromEulerAngles( Vec3( eulerX, eulerY, eulerZ ) );
+  this.set( Vec3( trX, trY, trZ ), q, Vec3( scX, scY, scZ ), Vec3( shXY, shXZ, shYZ ) );
+}
+
+/// Constructor from Mat44
+inline Xfo(Mat44 mat) {
+  this.setFromMat44(mat);
+}
+
+/// Setter from just the rotation
+inline Xfo.set!(Quat ori) {
+  this.ori = ori;
+  this.sc = Vec3(1.0, 1.0, 1.0);
+}
+
+/// Setter from Mat33 (only setting rotation)
+inline Xfo.set!(Mat33 mat) {
+  this.ori.setFromMat33(mat);
+}
+
+/// Setter from just the translation
+inline Xfo.set!(Vec3 tr) {
+  this.tr = tr;
+  this.sc = Vec3(1.0, 1.0, 1.0);
+}
+
+/// Setter from the translation and rotation
+inline Xfo.set!(Vec3 tr, Quat ori) {
+  this.tr = tr;
+  this.ori = ori;
+  this.sc = Vec3(1.0, 1.0, 1.0);
+}
+
+/// Setter from the translation, rotation, scaling
+inline Xfo.set!(Vec3 tr, Quat ori, Vec3 sc) {
+  this.tr = tr;
+  this.ori = ori;
+  this.sc = sc;
+}
+
+/// Setter from the orientation, translation and scaling
+inline Xfo.set!(Quat ori, Vec3 tr, Vec3 sc) {
+  this.tr = tr;
+  this.ori = ori;
+  this.sc = sc;
+}
+
+/// Setter from the translation, rotation, scaling and shearing
+/// \param sh Shearing vector as  {x shearing along y, x shearing along z, y shearing along z}
+inline Xfo.set!( Vec3 tr, Quat ori, Vec3 sc, Vec3 sh ) {
+  this.tr = tr;
+  this.ori = ori;
+  this.sc = sc;
+  this.sh = sh;
+}
+
+/// Setter from the orientation, translation, scaling and shearing
+/// \param sh Shearing vector as  {x shearing along y, x shearing along z, y shearing along z}
+inline Xfo.set!( Quat ori, Vec3 tr, Vec3 sc, Vec3 sh ) {
+  this.tr = tr;
+  this.ori = ori;
+  this.sc = sc;
+  this.sh = sh;
+}
+
+/// Setter from (standard/external) float32 array and an offset
+inline Xfo.set!(Float32 v<>, UInt32 o) {
+  // Note: is method this still used?
+  if(v.size() >= 13 + o) {
+    this.sc.set(v, o + 0);
+    this.sh.set(v, o + 3);
+    this.ori.set(v, o + 6);
+    this.tr.set(v, o + 10);
+  }
+}
+
+/// Getter as external float32 array and an offset
+inline Xfo.get(io Float32 v<>, UInt32 o) {
+  // Note: is method this still used?
+  if(v.size() >= 13 + o) {
+    this.sc.get(v, o + 0);
+    this.sh.get(v, o + 3);
+    this.ori.get(v, o + 6);
+    this.tr.get(v, o + 10);
+  }
+}
+
+/// Getter as float32 array and an offset
+inline Xfo.get(io Float32 v[], UInt32 o) {
+  // Note: is method this still used?
+  if(v.size() < 13 + o)
+    v.resize(13 + o);
+  this.sc.get(v, o + 0);
+  this.sh.get(v, o + 3);
+  this.ori.get(v, o + 6);
+  this.tr.get(v, o + 10);
+}
+
+/// Setter from (standard/external) float64 array and an offset
+inline Xfo.set!(Float64 v<>, UInt32 o) {
+  // Note: is method this still used?
+  if(v.size() >= 13 + o) {
+    this.sc.set(v, o + 0);
+    this.sh.set(v, o + 3);
+    this.ori.set(v, o + 6);
+    this.tr.set(v, o + 10);
+  }
+}
+
+/// Getter as external float64 array and an offset
+inline Xfo.get(io Float64 v<>, UInt32 o) {
+  // Note: is method this still used?
+  if(v.size() >= 13 + o) {
+    this.sc.get(v, o + 0);
+    this.sh.get(v, o + 3);
+    this.ori.get(v, o + 6);
+    this.tr.get(v, o + 10);
+  }
+}
+
+/// Getter as float64 array and an offset
+inline Xfo.get(io Float64 v[], UInt32 o) {
+  // Note: is method this still used?
+  if(v.size() < 13 + o)
+    v.resize(13 + o);
+  this.sc.get(v, o + 0);
+  this.sh.get(v, o + 3);
+  this.ori.get(v, o + 6);
+  this.tr.get(v, o + 10);
+}
+
+/// Setter from (standard/external) float32 array
+inline Xfo.set!(Float32 v<>) {
+  // Note: is method this still used?
+  this.set(v, 0);
+}
+
+/// Getter as external float32 array
+inline Xfo.get(io Float32 v<>) {
+  // Note: is method this still used?
+  this.get(v, 0);
+}
+
+/// Getter as float32 array
+inline Xfo.get(io Float32 v[]) {
+  // Note: is method this still used?
+  this.get(v, 0);
+}
+
+/// Setter from (standard/external) float64 array
+inline Xfo.set!(Float64 v<>) {
+  // Note: is method this still used?
+  this.set(v, 0);
+}
+
+/// Getter as external float64 array
+inline Xfo.get(io Float64 v<>) {
+  // Note: is method this still used?
+  this.get(v, 0);
+}
+
+/// Getter as float64 array
+inline Xfo.get(io Float64 v[]) {
+  // Note: is method this still used?
+  this.get(v, 0);
+}
+
+/// Sets this transform to the identity
+inline Xfo.setIdentity!() {
+  this.tr.setNull();
+  this.ori.setIdentity();
+  this.sc = Vec3(1.0, 1.0, 1.0);
+  this.sh.setNull();
+}
+
+/// \internal
+/// If checkIfLossless is true, it will do additional checks to see if some data was lost in translation.
+/// If checkIfLossless is false, it always returns true.
+Boolean Xfo.setFromMat44Internal!(Mat44 m, Boolean checkIfLossless)
+{
+  Mat33 rotMat;
+  Boolean lossless;
+  Boolean silent = checkIfLossless; // log warnings internally if we don't use the boolean result
+  lossless = m.decompose(this.sc, this.sh, rotMat, this.tr, silent, checkIfLossless );
+  this.ori.setFromMat33(rotMat);
+  return lossless;
+}
+
+/// Sets this transform from a given Mat44
+inline Xfo.setFromMat44!(Mat44 m) {
+  this.setFromMat44Internal( m, false );
+}
+
+/// Sets this transform from a given Mat44
+/// \param lossless Returns true iff the conversion was lossless
+inline Xfo.setFromMat44!(Mat44 m, out Boolean lossless) {
+  lossless = this.setFromMat44Internal( m, true );
+}
+
+/// Returns this xfo as a Mat44
+inline Mat44 Xfo.toMat44() {
+  Mat33 shearScale = BuildShearScaleMat33( this.sh, this.sc );
+  Mat33 rot = this.ori.toMat33();
+
+  Mat44 result( rot * shearScale );
+  result.row0.t = this.tr.x;
+  result.row1.t = this.tr.y;
+  result.row2.t = this.tr.z;
+
+  return result;
+}
+
+/// Equals operator
+inline Boolean == (Xfo a, Xfo b) {
+  return a.ori == b.ori && a.tr == b.tr && a.sc == b.sc && a.sh == b.sh;
+}
+
+/// Not equals operator
+inline Boolean != (Xfo a, Xfo b) {
+  return a.ori != b.ori || a.tr != b.tr || a.sc != b.sc || a.sh != b.sh;
+}
+
+/// Returns true if this transform has shearing (more than epsilon)
+inline Boolean Xfo.hasShearing() {
+  return abs( this.sh.x ) > PRECISION || abs( this.sh.y ) > PRECISION || abs( this.sh.z ) > PRECISION;
+}
+
+/// Hash for this value
+inline UInt32 Xfo.hash() {
+  return this.ori.hash() ^ this.tr.hash() ^ this.sc.hash() ^ this.sh.hash();
+}
+
+/// Multiplies two transforms
+Xfo * (in Xfo local, in Xfo global) {
+  //[jcg] We shouldn't need this, and it's not done in JS
+  Quat lcl_ori = local.ori.unit();
+  Quat glb_ori = global.ori.unit();
+
+  Boolean localHasShearingOrNonUnifScaling;
+  if( local.hasShearing() )
+    localHasShearingOrNonUnifScaling = true;
+  else if(local.sc.x != local.sc.y || local.sc.x != local.sc.z) {
+    Scalar relativePrecision = abs(local.sc.x)*PRECISION*10.0;
+    if( abs( local.sc.x - local.sc.y ) > relativePrecision || abs( local.sc.x - local.sc.z ) > relativePrecision )
+      localHasShearingOrNonUnifScaling = true;
+  }
+
+  Xfo result;
+  if( !localHasShearingOrNonUnifScaling ) {
+    // Simpler, optimized maths if no local shearing or or non-uniform scaling
+    result.tr = local.tr + lcl_ori.rotateVector( local.sc * global.tr );
+    result.ori = lcl_ori * glb_ori;
+    result.ori.setUnit();
+    result.sc = local.sc * global.sc;
+    result.sh = local.sc * global.sh;
+  } else {
+    // Longer, less optimized path if local shearing or non-uniform scaling
+    Mat33 localShSc = BuildShearScaleMat33( local.sh, local.sc );
+
+    // Translation: treat differently as it is not part of the Mat33
+    // Multiply by scaling then shearing; many zeroes in that triangulat matrix so writhe the trimmed down version
+    Vec3 shearedScaledTr = global.tr * local.sc 
+                                + Vec3( global.tr.y * localShSc.row0.y + global.tr.z * localShSc.row0.z, global.tr.z * localShSc.row1.z, 0 );
+
+    result.tr = local.tr + lcl_ori.rotateVector( shearedScaledTr );
+
+    // For the Mat33, multiply and decompose
+    Mat33 rotShearSc = lcl_ori.toMat33() * localShSc * glb_ori.toMat33() * BuildShearScaleMat33( global.sh, global.sc );
+    Mat33 rotation;
+    rotShearSc.decompose( result.sc, result.sh, rotation, true, false );
+    result.ori.setFromMat33( rotation );
+  }
+  return result;
+}
+
+/// Multiplies this transform with another one
+inline Xfo. *= (in Xfo global) {
+  this = this * global;
+}
+
+/// Overload method for the multiply operator
+inline Xfo Xfo.multiply(in Xfo global) {
+  return this * global;
+}
+
+/// Transforms a vector with the transform
+inline Vec3 * ( in Xfo xfo, in Vec3 v ) {
+  return xfo.transformVector( v );
+}
+
+/// Transforms a vector with this transform
+inline Vec3 Xfo.transformVector(in Vec3 v) {
+  Vec3 shearTranslation( v.y * this.sc.y * this.sh.x + v.z * this.sc.z * this.sh.y, v.z * this.sc.z * this.sh.z, 0 );
+  return this.ori.rotateVector(v * this.sc + shearTranslation ) + this.tr;
+}
+
+/// Transforms a vector with this transform
+inline Ray Xfo.transformRay(in Ray ray) {
+  Ray result;
+  result.start = this.transformVector(ray.start);
+  Vec3 shearTranslation( ray.direction.y * this.sc.y * this.sh.x + ray.direction.z * this.sc.z * this.sh.y, ray.direction.z * this.sc.z * this.sh.z, 0 );
+  result.direction = this.ori.rotateVector(ray.direction * this.sc + shearTranslation);
+  return result;
+}
+
+/// Returns the inverse transform of this one
+Xfo Xfo.inverse() {
+  Xfo result;
+  Boolean hasShearingOrNonUnifScaling;
+  if( this.hasShearing() )
+    hasShearingOrNonUnifScaling = true;
+  else if(this.sc.x != this.sc.y || this.sc.x != this.sc.z) {
+    Scalar relativePrecision = abs(this.sc.x)*PRECISION*10.0;
+    if( abs(this.sc.x - this.sc.y) > relativePrecision || abs(this.sc.x - this.sc.z) > relativePrecision )
+      hasShearingOrNonUnifScaling = true;
+  }
+  if( !hasShearingOrNonUnifScaling ) {
+    // Simpler, optimized maths if no local shearing or or non-uniform scaling
+    result.sc = this.sc.inverse();
+    result.ori = this.ori.inverse();
+    result.tr = result.ori.rotateVector( this.tr.negate()*result.sc );
+  } else {
+    // Longer, less optimized path if local shearing or non-uniform scaling
+    Mat33 rotation;
+    Mat33 invRotShearScale = ( this.ori.toMat33() * BuildShearScaleMat33( this.sh, this.sc ) ).inverse();
+    invRotShearScale.decompose( result.sc, result.sh, rotation, true, false );
+    result.ori.setFromMat33( rotation );
+    result.tr = invRotShearScale * this.tr.negate();
+  }
+  return result;
+}
+
+/// Transforms a vector with this xfo inversely
+/// \note we have 'inverseTransformVector' because Xfos with non-uniform scaling cannot be inverted as Xfos
+inline Vec3 Xfo.inverseTransformVector(in Vec3 vec) {
+  return this.ori.inverse().rotateVector(vec - this.tr) * this.sc.inverse();
+}
+
+/// Linearly interpolates this Xfo with another one based on 
+/// a scalar blend value (0.0 to 1.0)
+/// \dfgPresetRange t (0.0, 1.0)
+inline Xfo Xfo.linearInterpolate(in Xfo other, in Scalar t) {
+  Xfo result;
+  result.tr = this.tr.linearInterpolate(other.tr, t);
+  result.ori = this.ori.linearInterpolate(other.ori, t);
+  result.sc = this.sc.linearInterpolate(other.sc, t);
+  result.sh = this.sh.linearInterpolate( other.sh, t );
+  return result;
+}
+
+/// interpolates two Xfos spherically (slerp)
+/// given a scalar blend value (0.0 to 1.0).
+function Xfo Xfo.sphericalLinearInterpolate(in Xfo other, in Scalar t) {
+  Xfo result;
+  result.tr = this.tr.linearInterpolate(other.tr, t);
+  result.ori = this.ori.sphericalLinearInterpolate(other.ori, t);
+  result.sc = this.sc.linearInterpolate(other.sc, t);
+  result.sh = this.sc.linearInterpolate( other.sh, t );
+  return result;
+}
+
+/// returns the translation distance between two xfos
+inline Scalar Xfo.distanceTo(in Xfo other) {
+  return this.tr.distanceTo(other.tr);
+}
+
+/// returns the translation subtraction between two xfos
+inline Vec3 Xfo.subtractTranslation(in Xfo other) {
+  return this.tr - other.tr;
+}
+
+/// Setter from scaling, rotation (in degrees) and translation.
+/// \dfgPresetDefault sc {"x": 1.0, "y": 1.0, "z": 1.0}
+inline Xfo.XfoFromVec3s!(in Vec3 sc, in Vec3 rotInDeg, in Vec3 tr) {
+  this.tr = tr;
+  this.ori.setFromEulerAngles(Vec3(Math_degToRad(rotInDeg.x), Math_degToRad(rotInDeg.y), Math_degToRad(rotInDeg.z)));
+  this.sc = sc;
+}
+
+/// Setter from scaling, rotation (in degrees) and translation.
+/// \param sh Shearing vector as  {x shearing along y, x shearing along z, y shearing along z}
+/// \dfgPresetDefault sc {"x": 1.0, "y": 1.0, "z": 1.0}
+inline Xfo.XfoFromVec3s!( in Vec3 sc, in Vec3 sh, in Vec3 rotInDeg, in Vec3 tr ) {
+  this.tr = tr;
+  this.ori.setFromEulerAngles( Vec3( Math_degToRad( rotInDeg.x ), Math_degToRad( rotInDeg.y ), Math_degToRad( rotInDeg.z ) ) );
+  this.sc = sc;
+  this.sh = sh;
+}
+
+/// Setter from single channels, the rotation being in degrees
+/// \dfgPresetDefault scX 1.0
+/// \dfgPresetDefault scY 1.0
+/// \dfgPresetDefault scZ 1.0
+/// \dfgPresetRange trX (-5.0, 5.0)
+/// \dfgPresetRange trY (-5.0, 5.0)
+/// \dfgPresetRange trZ (-5.0, 5.0)
+/// \dfgPresetRange degreeX (-180, 180)
+/// \dfgPresetRange degreeY (-180, 180)
+/// \dfgPresetRange degreeZ (-180, 180)
+inline Xfo.XfoFromScalars!(Scalar scX, Scalar scY, Scalar scZ, Scalar degreeX, Scalar degreeY, Scalar degreeZ, Scalar trX, Scalar trY, Scalar trZ) {
+  this.tr = Vec3(trX, trY, trZ);
+  this.ori.setFromEulerAngles(Vec3(Math_degToRad(degreeX), Math_degToRad(degreeY), Math_degToRad(degreeZ)));
+  this.sc = Vec3(scX, scY, scZ);
+}
+
+/// Setter from single channels, the rotation being in degrees
+/// \param shXY x shearing along y
+/// \param shXZ x shearing along z
+/// \param shYZ y shearing along z
+/// \dfgPresetDefault scX 1.0
+/// \dfgPresetDefault scY 1.0
+/// \dfgPresetDefault scZ 1.0
+/// \dfgPresetRange trX (-5.0, 5.0)
+/// \dfgPresetRange trY (-5.0, 5.0)
+/// \dfgPresetRange trZ (-5.0, 5.0)
+/// \dfgPresetRange degreeX (-180, 180)
+/// \dfgPresetRange degreeY (-180, 180)
+/// \dfgPresetRange degreeZ (-180, 180)
+inline Xfo.XfoFromScalars!( Scalar scX, Scalar scY, Scalar scZ, Scalar shXY, Scalar shXZ, Scalar shYZ, Scalar degreeX, Scalar degreeY, Scalar degreeZ, Scalar trX, Scalar trY, Scalar trZ ) {
+  this.tr = Vec3( trX, trY, trZ );
+  this.ori.setFromEulerAngles( Vec3( Math_degToRad( degreeX ), Math_degToRad( degreeY ), Math_degToRad( degreeZ ) ) );
+  this.sc = Vec3( scX, scY, scZ );
+  this.sh = Vec3( shXY, shXZ, shYZ );
+}
+
+/// Returns true if this xfo is
+/// almost equal to another one (given a precision)
+inline Boolean Xfo.almostEqual(in Xfo other, in Float32 precision) {
+  return this.tr.almostEqual(other.tr, precision) && 
+      this.ori.almostEqual(other.ori, precision) && 
+      this.sc.almostEqual(other.sc, precision) &&
+      this.sh.almostEqual( other.sh, precision );
+}
+
+/// Returns true if this xfo is
+/// almost equal to another one (using a default precision)
+inline Boolean Xfo.almostEqual(in Xfo other) {
+  return this.almostEqual(other, PRECISION);
+}

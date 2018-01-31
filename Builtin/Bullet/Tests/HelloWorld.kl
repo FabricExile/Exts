@@ -1,0 +1,119 @@
+
+require Bullet;
+/// This is a Hello World program for running a basic Bullet physics simulation
+
+operator entry(){
+	///-----includes_end-----
+
+	Integer i;
+	///-----initialization_start-----
+
+	///collision configuration contains default setup for memory, collision setup. Advanced users can create their own configuration.
+	BulletDefaultCollisionConfiguration collisionConfiguration = BulletDefaultCollisionConfiguration();
+
+	///use the default collision dispatcher. For parallel processing you can use a diffent dispatcher (see Extras/BulletMultiThreaded)
+	BulletCollisionDispatcher dispatcher = BulletCollisionDispatcher(collisionConfiguration);
+
+	///BulletDbvtBroadphase is a good general purpose broadphase. You can also try out BulletAxis3Sweep.
+	BulletBroadphaseInterface overlappingPairCache = BulletDbvtBroadphase();
+
+	///the default constraint solver. For parallel processing you can use a different solver (see Extras/BulletMultiThreaded)
+	BulletSequentialImpulseConstraintSolver solver = BulletSequentialImpulseConstraintSolver();
+
+	BulletDiscreteDynamicsWorld dynamicsWorld = BulletDiscreteDynamicsWorld(dispatcher,overlappingPairCache,solver,collisionConfiguration);
+
+	dynamicsWorld.setGravity(Vec3(0,-10,0));
+
+	///-----initialization_end-----
+
+	///create a few basic rigid bodies
+	BulletCollisionShape groundShape = BulletBoxShape(Vec3(50.0, 50.0, 50.0));
+
+	//keep track of the shapes, we release memory at exit.
+	//make sure to re-use collision shapes among rigid bodies whenever possible!
+	BulletCollisionShape collisionShapes[];
+
+	collisionShapes.push(groundShape);
+
+	Xfo groundTransform;
+	groundTransform.setIdentity();
+	groundTransform.tr = Vec3(0,-56,0);
+
+	{
+		Scalar mass(0.0);
+
+		//rigidbody is dynamic if and only if mass is non zero, otherwise static
+		Boolean isDynamic = (mass != 0.0);
+
+		Vec3 localInertia(0,0,0);
+		if (isDynamic)
+			groundShape.calculateLocalInertia(mass, localInertia);
+
+		//using motionstate is recommended, it provides interpolation capabilities, and only synchronizes 'active' objects
+		BulletDefaultMotionState myMotionState = BulletDefaultMotionState(groundTransform);
+		BulletRigidBodyConstructionInfo rbInfo(mass, myMotionState, groundShape, localInertia);
+		BulletRigidBody body = BulletRigidBody(rbInfo);
+
+		//add the body to the dynamics world
+		dynamicsWorld.addRigidBody(body);
+	}
+
+
+	{
+		//create a dynamic rigidbody
+
+		//BulletCollisionShape colShape = BulletBoxShape(Vec3(1,1,1));
+		BulletCollisionShape colShape = BulletSphereShape(1.0);
+		collisionShapes.push(colShape);
+
+		/// Create Dynamic Objects
+		Xfo startTransform;
+		startTransform.setIdentity();
+
+		Scalar	mass(1.0);
+
+		//rigidbody is dynamic if and only if mass is non zero, otherwise static
+		Boolean isDynamic = (mass != 0.0);
+
+		Vec3 localInertia(0,0,0);
+		if (isDynamic)
+			colShape.calculateLocalInertia(mass, localInertia);
+
+		startTransform.tr = Vec3(2,10,0);
+	
+		//using motionstate is recommended, it provides interpolation capabilities, and only synchronizes 'active' objects
+		BulletDefaultMotionState myMotionState = BulletDefaultMotionState(startTransform);
+		BulletRigidBodyConstructionInfo rbInfo(mass, myMotionState, colShape, localInertia);
+		BulletRigidBody body = BulletRigidBody(rbInfo);
+
+		dynamicsWorld.addRigidBody(body);
+	}
+
+
+
+/// Do some simulation
+
+
+	///-----stepsimulation_start-----
+	for (i=0;i<100;i++)
+	{
+		dynamicsWorld.stepSimulation(1.0/60.0, 10);
+		
+		//print positions of all objects
+		for (Integer j=dynamicsWorld.getNumCollisionObjects()-1; j>=0 ;j--)
+		{
+			BulletICollisionObject obj = dynamicsWorld.getCollisionObjectArray()[j];
+			// upcast to BulletRigidBody;
+			BulletRigidBody body = obj.getObject();
+			if (body != null && body.getMotionState() != null)
+			{
+				Xfo trans;
+				body.getMotionState().getWorldTransform(trans);
+				report("world pos = "+trans.tr.x+", "+trans.tr.y+", "+trans.tr.z);
+			}
+		}
+	}
+
+	///-----stepsimulation_end-----
+}
+

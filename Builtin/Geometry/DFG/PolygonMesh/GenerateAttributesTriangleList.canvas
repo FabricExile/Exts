@@ -1,0 +1,44 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/PolygonMesh.html",
+    "uiTooltip" : "Generates a packed list of triangle attributeIndex triplets, for rendering directly into the GeometryAttributes buffers (eg: OpenGL).\nAn **attributeIndex is not a point index**, and this is true as soon there is at least one attribute value split for any attribute.\nThe generated list has the following layout, where polygon triangles form index triplets:\nSee :ref:`polygonmeshattributes` for detailed information about attribute indices.\n\nIf the topolgy has been moved to the GPU, then temporarily move it back\nso we can generate a triangles list from it.\nNote: this will be expensive if topology changes frequently, while also being\nused in GPU compute.\nTODO: Use proper triangulation algo for concave polygons (and use MR since it will be more costly)\nUntil then we don't use the positions\n\n Supported by PolygonMesh"
+    },
+  "title" : "GenerateAttributesTriangleList",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "PolygonMesh"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "UInt32[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "ED23577E586C4E6B5E09EC555D13C54F",
+  "code" : "require Geometry;
+
+dfgEntry {
+  result = this.generateAttributesTriangleList();
+}
+"
+  }

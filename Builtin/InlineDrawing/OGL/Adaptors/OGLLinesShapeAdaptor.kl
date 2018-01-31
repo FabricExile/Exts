@@ -1,0 +1,135 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+\versionadded 1.12.0
+
+The OGLLinesShapeAdaptor implements the InlineShapeAdaptor interface. It is used to draw a InlineShape within an OpenGL viewport.
+\dfgPresetOmit
+*/
+object OGLLinesShapeAdaptor : InlineShapeAdaptor {};
+
+/// default constructor
+function OGLLinesShapeAdaptor() {}
+
+/// returns the types this adaptor is capable of drawing
+function String[] OGLLinesShapeAdaptor.getShapeTypes() {
+  String result[];
+  result.push('InlineLinesShape');
+  return result;
+}
+
+/// draws the lines to the screen. this is used by the 
+/// InlineInstance, and should not be called manually.
+/// \internal
+function Boolean OGLLinesShapeAdaptor.draw!(io DrawContext context, io Ref<InlineShape> shape) {
+
+  // access the lines shape
+  InlineLinesShape linesShape = shape;
+  Lines lines = linesShape.getLines();
+  if(lines == null)
+    return true;
+
+  OGLBufferDictionary buffers = linesShape.getMetaData('buffers');
+  if(buffers == null) {
+    buffers = OGLBufferDictionary();
+    linesShape.setMetaData('buffers', buffers);
+  }
+
+  if(lines.indices.size() == 0)
+    return true;
+
+  // reset all versions if the uid changed
+  if(buffers.getVersion('uid') != lines.uid()) {
+    buffers.resetAllVersions();
+    buffers.setVersion('uid', lines.uid());
+  }
+
+  Ref<InlineShader> shader = context.getMetaData('currentShader');
+  OGLShape_updateGeometryAttributeBuffers(context, buffers, lines.getAttributes());
+
+  if(lines.getVersion() == 0 && lines.indices.size() > 0){
+    setError("Error drawing "+shape.getName() + ": topology version has not been incremented. Call lines.incrementVersion after making topology changes.");
+    return false;
+  }
+
+  if(buffers.getVersion('topology') != lines.getVersion()) {
+
+    if( Fabric_Guarded && !Fabric_OnGPU )
+    {
+      UInt32 maxIndicesRange = OGLShape_GetArrayMaxValue(lines.indices);
+      if(!OGLShape_CheckGeometryAttributesIndicesRange(lines.getAttributes(), maxIndicesRange))
+        return false;
+    }
+    
+    OGLBuffer buffer = buffers.get('topology');
+    if(buffer == null) {
+      buffer = OGLBuffer();
+      buffer.bufferType = GL_ARRAY_BUFFER;
+      buffer.bufferUsage = GL_STATIC_DRAW;
+      buffers.set('topology', buffer);
+    }
+    if( buffer.bufferID )
+      buffer.bufferUsage = GL_DYNAMIC_DRAW;//Loaded at least 2 times: lazily upgrade to "dynamic"
+    buffer.bufferElementComponentType = GL_UNSIGNED_INT;
+
+    UInt32 memType = lines.getMemType();
+    if(memType == Fabric_MemType_CPU){
+      // Generate the openGL buffer for the data using the traditional method without modifying the mem type.
+      buffer.genBuffer( lines.indices.data(), lines.indices.dataSize(), lines.indices.size() );
+    }
+    else if(memType == Fabric_MemType_GLBuffer){
+      // The data is already on the GPU so retrieve its buffer id.
+      buffer.bufferID = lines.indices.getBufferId();
+    }
+    else{
+      if(buffer.bufferID != 0)
+        buffer.deleteBuffer();
+      // We need to convert the GPU data to CPU data, so we can convert it to VBO backed GPU data.
+      lines.convertToCPU();
+
+      buffer.bufferID = lines.indices.convertToGLBuffer(buffer.bufferType, buffer.bufferUsage);
+      buffer.elementCount = lines.indices.size();
+    }
+
+    buffers.setVersion('topology', lines.getVersion());
+  }
+    
+  OGLBuffer buffer = buffers.get('topology');
+  if(buffer == null){
+    report("Warning: invalid topology for :" +shape.getName());
+    return false;
+  }
+
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffer.bufferID);
+
+  glLineWidth(linesShape.getLineWidth());
+  Data NULL;
+
+  Ref<InlineInstance> instance = context.getMetaData('currentInstance');
+  Xfo xfos[] = instance.transform.nonLocking_getAllGlobalXfos();
+
+  if(shader.supportsHardwareInstancing())
+  {
+    shader.enableHardwareInstancing(context, true, instance.instancingStorage, xfos, instance.transform.getVersion());
+
+    glDrawElementsInstanced(GL_LINES, buffer.elementCount, buffer.bufferElementComponentType, NULL, xfos.size());
+
+    shader.enableHardwareInstancing(context, false, instance.instancingStorage, xfos, instance.transform.getVersion());
+  }
+  else
+  {
+    for(Size i=0;i<xfos.size();i++)
+    {
+      if(!OGLTransform_draw(context, shader, xfos[i].toMat44()))
+        return false;
+      if(!instance.drawTransformUniforms(context, shader, i))
+        return false;
+      glDrawElements(GL_LINES, buffer.elementCount, buffer.bufferElementComponentType, NULL);
+    }
+  }
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+  return true;
+}

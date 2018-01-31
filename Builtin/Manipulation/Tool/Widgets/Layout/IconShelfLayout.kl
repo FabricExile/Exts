@@ -1,0 +1,297 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// This tool allows to define a HUD tool shelf that
+  /// can contain a mix of (textured) checkboxes,
+  /// buttons or radio buttons.
+  ///
+  /// See :ref:`TPG.2Dwidgets` for an overview of available 2D tool widgets and examples.
+  object IconShelfLayout : BaseTool, LayoutAlignment{
+    UInt8 alignment; // WAlignment_X
+    Boolean horizontal;
+
+    UInt32 viewportMarginPixels;
+    Vec2 iconPixelSizes;
+    UInt32 iconSpacingPixels;
+
+    CheckBoxWidget collapseCheckbox;
+    RadioButtonBehavior radioButtonBehavior;
+
+    Vec2 pixelOffset;
+
+    UInt32 nextItem;
+  };
+
+  IconShelfLayout() {
+    this.setAlignment( Alignment_upperLeft );
+    this.setOrientation( true );
+    this.setSpacing( 10, Vec2( 30 ), 5 );
+    this.addDrawModifier( IconShelfChildLayoutModifier(), true );
+    this.pixelOffset = Vec2( SCALAR_INFINITE );
+    this.setTransformSpace( PixelCoordinatesSpace );
+    this.setVisibleToActiveViewportOnly( true );// By default, only show in active viewport
+  }
+
+  /// Implementation of LayoutAlignment.
+  UInt8 IconShelfLayout.getAlignment() {
+    return this.alignment;
+  }
+
+  /// Implementation of LayoutAlignment.
+  IconShelfLayout.setAlignment!( UInt8 alignment ) {
+    this.alignment = alignment;
+  }
+
+  IconShelfLayout.setOrientation!( Boolean horizontal ) {
+    this.horizontal = horizontal;
+  }
+
+  /// Adds the collapseAll icon, which will be at the 1st position of the shelf.
+  /// Its size will be CheckBoxWidget's pixelSize.
+  IconShelfLayout.addCollapseAllIcon!( Ref<CheckBoxWidget> collapseCheckbox, Boolean enableDrag ) {
+    this.collapseCheckbox = collapseCheckbox;
+    this.collapseCheckbox.setChecked( true );
+
+    IconShelfChild widgetLayout();
+    widgetLayout.index = InvalidIndex;
+    widgetLayout.addChild( "widget", collapseCheckbox );
+    this.addChild( "collapse", widgetLayout );
+
+    this.collapseCheckbox.addListener( this, false, CheckBoxWidget_onChecked, "onCollapse" );
+    this.collapseCheckbox.addListener( this, false, CheckBoxWidget_onUnchecked, "onExpand" );
+
+    if( enableDrag ) {
+      // Add a drag interaction to the shape
+      MouseClickDragRaycastInteraction dragInteraction = this.collapseCheckbox.useClickDragInteraction();
+      dragInteraction.addListener( this, false );
+    }
+  }
+
+  /// Adds the default collapseAll icon, which will be at the 1st position of the shelf.
+  IconShelfLayout.addCollapseAllIcon!( Boolean enableDrag ) {
+
+    Image2DColor collapseIconImg = ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/CollapseIcon.png" );
+    Image2DColor collapseIconHImg = ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/CollapseIconHighlight.png" );
+    Image2DColor collapseIconCImg = ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/CollapseIconChecked.png" );
+    Image2DColor collapseIconCHImg = ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/CollapseIconCheckedHighlight.png" );
+
+    CheckBoxWidget collapseIcon( null, Vec2( 12 ), collapseIconImg, collapseIconHImg, collapseIconCImg, collapseIconCHImg );
+
+    this.addCollapseAllIcon( collapseIcon, enableDrag );
+  }
+
+  /// \internal
+  IconShelfLayout.onEvent!( ToolEvent event, ToolEventUserID userID ) {
+    if( event.name == "onCollapse" || event.name == "onExpand" ) {
+      // Just refresh visibility status
+      for( Size i = 0; i < this.nextItem; ++i ) {
+        Ref<IconShelfChild> child = this.getIconShelfChild( i );
+        if( child )
+          child.setVisible( !child.collapsed && !this.allCollapsed() );
+      }
+    } else {
+      Ref<DragInteraction> dragInteraction = event.sender;
+      if( Boolean( dragInteraction ) && event.name == ToolEvent_DragMove )
+        this.pixelOffset = dragInteraction.getCurrentPixelPosition();
+      else
+        this.parent.onEvent( event, userID );
+    }
+  }
+
+  /// Sets the properties widget outer and row spacing.
+  /// \param viewportMarginPixels Distance to the viewport corner, in pixels (see setAlignment())
+  /// \param iconPixelSizes Size of the icons, in pixels
+  /// \param iconSpacingPixels Spacing between icons, in pixels.
+  IconShelfLayout.setSpacing!( UInt32 viewportMarginPixels, Vec2 iconPixelSizes, UInt32 iconSpacingPixels ) {
+    this.viewportMarginPixels = viewportMarginPixels;
+    this.iconPixelSizes = iconPixelSizes;
+    this.iconSpacingPixels = iconSpacingPixels;
+  }
+
+  /// \internal
+  Ref<IconShelfChild> IconShelfLayout.getIconShelfChild( Size index ) {
+    if( index >= this.nextItem )
+      return null;
+    return this.getChild( index + "Widget" );
+  }
+
+  /// \internal
+  Ref<BaseTool> IconShelfLayout.getIcon( Size index ) {
+    Ref<IconShelfChild> child = this.getIconShelfChild( index );
+    if( !child )
+      return null;
+    return child.getChild( 0 );
+  }
+
+  /// Adds an icon (CheckBoxWidget, PushButtonWidget) to the shelf
+  /// Returns the added widget for convenience.
+  Ref<BaseTool> IconShelfLayout.addIcon!( BaseTool widget, String name ) {
+    UInt32 index = this.nextItem++;
+
+    IconShelfChild widgetLayout();
+    widgetLayout.index = index;
+    widgetLayout.addChild( name, widget );
+
+    this.addChild( index + "Widget", widgetLayout );
+
+    if( this.radioButtonBehavior ) {
+      Ref<CheckBoxWidget> checkBox = widget;
+      if( checkBox )
+        this.radioButtonBehavior.addCheckBox( checkBox );
+    }
+    return widget;
+  }
+
+  Boolean IconShelfLayout.allCollapsed() {
+    return Boolean( this.collapseCheckbox ) && !this.collapseCheckbox.target.getValue();
+  }
+
+  IconShelfLayout.collapseIcon!( Size index, Boolean collapsed ) {
+    Ref<IconShelfChild> child = this.getIconShelfChild( index );
+    if( child ) {
+      child.collapsed = collapsed;
+      child.setVisible( !collapsed && !this.allCollapsed() );
+    }
+  }
+
+  IconShelfLayout.addRadioButtonBehaviorToAllCheckBoxes!( Size selectedItemIndex ) {
+    if( !this.radioButtonBehavior ) {
+      this.radioButtonBehavior = RadioButtonBehavior();
+      for( Size i = 0; i < this.nextItem; ++i ) {
+        Ref<CheckBoxWidget> checkBox = this.getIcon( i );
+        if( checkBox )
+          this.radioButtonBehavior.addCheckBox( checkBox );
+      }
+      if( selectedItemIndex != InvalidIndex )
+        this.radioButtonBehavior.setSelectedItem( selectedItemIndex );
+    }
+  }
+
+  /// \internal
+  object IconShelfChild : BaseTool, LayoutAlignment{
+    UInt32 index;
+    Boolean collapsed;
+    UInt8 alignment;
+  };
+
+  /// Implementation of LayoutAlignment.
+  UInt8 IconShelfChild.getAlignment() {
+    return this.alignment;
+  }
+
+  /// Implementation of LayoutAlignment.
+  IconShelfChild.setAlignment!( UInt8 alignment ) {
+    this.alignment = alignment;
+  }
+
+  /// \internal
+  object IconShelfChildLayoutModifier : TransformModifier{
+  };
+
+  IconShelfChildLayoutModifier() {
+    this.composeWithParent = false;
+  }
+
+  IconShelfChildLayoutModifier.updateDrawData!( io DrawContext context, Ref<Object> target ) {
+    Ref<IconShelfLayout> parentLayout = target;
+    Box2 bbox;
+
+    // Push layout to all children
+    Size count = parentLayout.childCount();
+    Size x = parentLayout.viewportMarginPixels;
+    Vec2 pixelOffset;
+
+    for( Size i = 0; i < count + 1; ++i ) {
+      Ref<IconShelfChild> child = null;
+      Vec2 childSize = parentLayout.iconPixelSizes;
+
+      if( i == 0 ) {
+        // First, collapse all checkbox, if any
+        child = parentLayout.getChild( "collapse" );
+        if( parentLayout.collapseCheckbox )
+          childSize = parentLayout.collapseCheckbox.pixelSize;
+      } else {
+        Size index = i - 1;
+        if( parentLayout.alignment == Alignment_lowerLeft || parentLayout.alignment == Alignment_lowerRight ) {
+          // Inverse order, since we'll do a symmetry later
+          index = parentLayout.nextItem - 1 - index;
+        }
+        child = parentLayout.getIconShelfChild( index );
+      }
+
+      if( Boolean( child ) && !child.collapsed ) {
+        Vec2 viewportDims = context.viewport.getDimensions();
+
+        if( parentLayout.horizontal )
+          Swap( childSize.x, childSize.y );
+
+        // First, compute as if aligned with upperLeft corner.
+        Vec2 upperLeftCorner, lowerRightCorner;
+
+        upperLeftCorner.x = x;
+        x += childSize.x + parentLayout.iconSpacingPixels;
+
+        lowerRightCorner.x = upperLeftCorner.x + childSize.x;
+        upperLeftCorner.y = parentLayout.viewportMarginPixels;
+        lowerRightCorner.y = upperLeftCorner.y + childSize.y;//For labels, this doesn't matter
+
+        if( !parentLayout.horizontal ) {
+          Swap( upperLeftCorner.x, upperLeftCorner.y );
+          Swap( lowerRightCorner.x, lowerRightCorner.y );
+        }
+
+        if( parentLayout.alignment == Alignment_upperRight || parentLayout.alignment == Alignment_lowerRight ) {
+          lowerRightCorner.x = viewportDims.x - lowerRightCorner.x;
+          upperLeftCorner.x = viewportDims.x - upperLeftCorner.x;
+          Swap( lowerRightCorner.x, upperLeftCorner.x );
+        }
+
+        if( parentLayout.alignment == Alignment_lowerLeft || parentLayout.alignment == Alignment_lowerRight ) {
+          lowerRightCorner.y = viewportDims.y - lowerRightCorner.y;
+          upperLeftCorner.y = viewportDims.y - upperLeftCorner.y;
+          Swap( lowerRightCorner.y, upperLeftCorner.y );
+        }
+
+        // If applicable, compute and apply pixel offset (from click & drag)
+        if( i == 0 && parentLayout.pixelOffset.x != SCALAR_INFINITE ) {
+          Vec2 center = ( upperLeftCorner + lowerRightCorner ) * 0.5;
+          pixelOffset = parentLayout.pixelOffset - center;
+        }
+
+        upperLeftCorner += pixelOffset;
+        lowerRightCorner += pixelOffset;
+
+        child.setPixelCoordinatesTransform( upperLeftCorner, lowerRightCorner, context );
+        bbox += upperLeftCorner;
+        bbox += lowerRightCorner;
+
+        // If child is an icon widget, set its tooltip offset based on the alignment type
+        Ref<IconWidget> childIcon = child.getChild( 0 );
+        if( childIcon ) {
+          Vec2 tooltipOffset;
+          if( parentLayout.horizontal ) {
+            if( parentLayout.alignment | Alignment_up )
+              tooltipOffset = Vec2( 0, 1 );
+            else
+              tooltipOffset = Vec2( 0, -1 );
+          } else {
+            if( parentLayout.alignment | Alignment_left )
+              tooltipOffset = Vec2( 1, 0 );
+            else
+              tooltipOffset = Vec2( -1, 0 );
+          }
+          childIcon.setToolTipOffset( tooltipOffset );
+        }
+
+        child.setAlignment( ( parentLayout.alignment & Alignment_left ) ? Alignment_right : Alignment_left );
+      }
+    }
+    //Put our pixel size, since for now it's not automatically computed from children.
+    parentLayout.setPixelCoordinatesTransform( bbox.min, bbox.max, context );
+    this.parent.updateDrawData( context, target );
+  }
+
+}// namespace Tool

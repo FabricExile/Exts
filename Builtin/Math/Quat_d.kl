@@ -1,0 +1,874 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+/**
+The :kl-ref:`Quat_d` represents a 3D rotation as a quaternion. Quaternions are used within the :kl-ref:`Xfo` type. A :kl-ref:`Quat_d` can be converted to and from :kl-ref:`Mat33_d`  as well as :kl-ref:`Euler_d` types.
+
+\rst
+  .. kl-example:: Quat_d
+
+    // create several quaternions
+    Quat_d q0, q1, q2, q3, q4;
+    q0 = Quat_d(Vec3_d(1.0, 0.0, 0.0), 0.0);
+    q1.setFromEuler_d(Euler_d(PI, 0.0, 0.0));
+    q2.setFromDirectionAndUpvector(Vec3_d(1.0, 0.0, 0.0), Vec3_d(0.0, 1.0, 0.0));
+    q3.setFrom2Vectors(Vec3_d(1.0, 0.0, 0.0), Vec3_d(1.0, 1.0, 0.0));
+    q4.setFromAxisAndAngle(Vec3_d(0.0, 1.0, 0.0), HALF_PI);
+
+\endrst
+\seealso Xfo, Euler_d, Mat33_d
+\dfgTypeColor Color(0, 191, 232)
+\dfgPresetColor Color(99, 129, 92)
+*/
+
+struct Quat_d
+{
+  Vec3_d v;
+  Float64 w;
+};
+
+/// Default constructor - set to identity
+inline Quat_d() {
+  this.setIdentity();
+}
+
+/// Construct from scalars
+/// \dfgPresetDefault w 1
+inline Quat_d(in Float64 x, in Float64 y, in Float64 z, in Float64 w) {
+  this.v.set(x, y, z);
+  this.w = w;
+}
+
+/// Construct from scalar and vector
+inline Quat_d(in Float64 w, in Vec3_d v) {
+  this.v = v;
+  this.w = w;
+}
+
+/// Construct from vector and scalar
+inline Quat_d(in Vec3_d v, in Float64 w) {
+  this.v = v;
+  this.w = w;
+}
+
+/// Construct from euler angles
+inline Quat_d(in Euler_d e) {
+  this.setFromEuler_d(e);
+}
+
+/// Construct from Mat33_d
+inline Quat_d(in Mat33_d mat) {
+  this.setFromMat33_d(mat);
+}
+
+/// Sets each component with a single scalar value.
+inline Quat_d.set!(in Float64 x, in Float64 y, in Float64 z, in Float64 w) {
+  this.v.set(x, y, z);
+  this.w = w;
+}
+
+/// Setter from scalar and vector
+inline Quat_d.set!(in Float64 w, in Vec3_d v) {
+  this.v = v;
+  this.w = w;
+}
+
+/// Setter from vector and scalar
+inline Quat_d.set!(in Vec3_d v, in Float64 w) {
+  this.v = v;
+  this.w = w;
+}
+
+/// Setter from (standard/external) float32 array and an offset
+inline Quat_d.set!(Float32 v<>, UInt32 o) {
+  if(v.size() >= 4 + o) {
+    this.v.set(v, o);
+    this.w = v[o + 3];
+  }
+}
+/// Getter as external float32 array and an offset
+inline Quat_d.get(io Float32 v<>, UInt32 o) {
+  if(v.size() >= 4 + o) {
+    this.v.get(v, o);
+    v[o + 3] = Float32(this.w);
+  }
+}
+
+/// Getter as float32 array and an offset
+inline Quat_d.get(io Float32 v[], UInt32 o) {
+  if(v.size() < 4 + o)
+    v.resize(4 + o);
+  this.v.get(v, o);
+  v[o + 3] = Float32(this.w);
+}
+
+/// Setter from (standard/external) float64 array and an offset
+inline Quat_d.set!(Float64 v<>, UInt32 o) {
+  if(v.size() >= 4 + o) {
+    this.v.set(v, o);
+    this.w = Float32(v[o + 3]);
+  }
+}
+
+/// Getter as external float64 array and an offset
+inline Quat_d.get(io Float64 v<>, UInt32 o) {
+  if(v.size() >= 4 + o) {
+    this.v.get(v, o);
+    v[o + 3] = this.w;
+  }
+}
+
+/// Getter as float64 array and an offset
+inline Quat_d.get(io Float64 v[], UInt32 o) {
+  if(v.size() < 4 + o)
+    v.resize(4 + o);
+  this.v.get(v, o);
+  v[o + 3] = this.w;
+}
+
+/// Setter from (standard/external) float32 array
+inline Quat_d.set!(Float32 v<>) {
+  this.set(v, 0);
+}
+
+/// Getter as external float32 array
+inline Quat_d.get(io Float32 v<>) {
+  this.get(v, 0);
+}
+
+/// Getter as float32 array
+inline Quat_d.get(io Float32 v[]) {
+  this.get(v, 0);
+}
+
+/// Setter from (standard/external) float64 array
+inline Quat_d.set!(Float64 v<>) {
+  this.set(v, 0);
+}
+
+/// Getter as external float64 array
+inline Quat_d.get(io Float64 v<>) {
+  this.get(v, 0);
+}
+
+/// Getter as float64 array
+inline Quat_d.get(io Float64 v[]) {
+  this.get(v, 0);
+}
+
+/// Sets from Vec.
+inline Quat_d(Vec_d vec) {
+  this.set(vec);
+}
+
+/// Sets from Vec.
+inline Quat_d.set!(Vec_d vec) {
+  this.v.x = vec.get(0);
+  this.v.y = vec.get(1);
+  this.v.z = vec.get(2);
+  this.w = vec.get(3);
+}
+
+/// Converts to Vec.
+inline Vec_d Quat_d.toVec() {
+  Vec_d vec(4);
+  vec.set(0, this.v.x);
+  vec.set(1, this.v.y);
+  vec.set(2, this.v.z);
+  vec.set(3, this.w);
+  return vec;
+}
+
+/// Set this quat to the identity
+inline Quat_d.setIdentity!() {
+  this.v = Vec3_d(0.0, 0.0, 0.0);
+  this.w = 1.0;
+}
+
+/// Set this quat from a euler rotation
+function Quat_d Quat_d.setFromEuler_d!(in Euler_d e) {
+  Vec3_d ordered;
+  if (e.ro.isXYZ()) {
+    ordered.set(e.z,e.y,e.x);
+  }
+  else if (e.ro.isYZX()) {
+    ordered.set(e.x,e.z,e.y);
+  }
+  else if (e.ro.isZXY()) {
+    ordered.set(e.y,e.x,e.z);
+  }
+  else if (e.ro.isXYZ()) {
+    ordered.set(e.y,-e.z,e.x);
+  }
+  else if (e.ro.isZYX()) {
+    ordered.set(e.x,-e.y,e.z);
+  }
+  else if (e.ro.isYXZ()) {
+    ordered.set(e.z,-e.x,e.y);
+  }
+
+  Float64 ti, tj, tk;
+  ti = ordered.x * 0.5;
+  tj = ordered.y * 0.5;
+  tk = ordered.z * 0.5;
+  Float64 ci = cos(ti), cj = cos(tj), ck = cos(tk);
+  Float64 si = sin(ti), sj = sin(tj), sk = sin(tk);
+  Float64 cc = ci * ck, cs = ci * sk, sc = si * ck, ss = si * sk;
+  Float64 ai, aj, ak;
+  ai = cj * sc - sj * cs;
+  aj = cj * ss + sj * cc;
+  ak = cj * cs - sj * sc;
+
+  this.w = cj * cc + sj * ss;
+
+  if (e.ro.isXYZ()) {
+    this.v.x = ak; this.v.y = aj; this.v.z = ai;
+  }
+  else if (e.ro.isYZX()) {
+    this.v.x = ai; this.v.y = ak; this.v.z = aj;
+  }
+  else if (e.ro.isZXY()) {
+    this.v.x = aj; this.v.y = ai; this.v.z = ak;
+  }
+  else if (e.ro.isXZY()) {
+    this.v.x = ak; this.v.y = ai; this.v.z = -aj;
+  }
+  else if (e.ro.isZYX()) {
+    this.v.x = ai; this.v.y = -aj; this.v.z = ak;
+  }
+  else if (e.ro.isYXZ()) {
+    this.v.x = -aj; this.v.y = ak; this.v.z = ai;
+  }
+  return this;
+}
+
+/// Set this quat to a given angles vector (in radians) and a rotation order
+inline Quat_d Quat_d.setFromEuler_dAngles!(Vec3_d angles, RotationOrder ro) {
+  Euler_d euler(angles, ro);
+  return this.setFromEuler_d(euler);
+}
+
+/// Set this quat to a given angles vector (in radians) using
+/// the default XYZ rotation order
+inline Quat_d Quat_d.setFromEuler_dAngles!(Vec3_d angles) {
+  return this.setFromEuler_dAngles(angles, RotationOrder(0));
+}
+
+/// Set this quat to a given angles vector (in radians) and a rotation order
+/// \dfgPresetRange eulerX (-3.14, 3.14)
+/// \dfgPresetRange eulerY (-3.14, 3.14)
+/// \dfgPresetRange eulerZ (-3.14, 3.14)
+inline Quat_d Quat_d.setFromEuler_dAngles!(Float64 eulerX, Float64 eulerY, Float64 eulerZ, RotationOrder ro) {
+  Euler_d euler(Vec3_d(eulerX, eulerY, eulerZ), ro);
+  return this.setFromEuler_d(euler);
+}
+
+/// Set this quat to a given angles vector (in radians) using
+/// the default XYZ rotation order
+/// \dfgPresetRange eulerX (-3.14, 3.14)
+/// \dfgPresetRange eulerY (-3.14, 3.14)
+/// \dfgPresetRange eulerZ (-3.14, 3.14)
+inline Quat_d Quat_d.setFromEuler_dAngles!(Float64 eulerX, Float64 eulerY, Float64 eulerZ) {
+  return this.setFromEuler_dAngles(Vec3_d(eulerX, eulerY, eulerZ), RotationOrder(0));
+}
+
+/// Set this quat to a rotation defined by an axis and an angle (in radians)
+inline Quat_d Quat_d.setFromAxisAndAngle!(in Vec3_d axis, in Float64 angle) {
+  Float64 halfAngle = angle / 2.0;
+  this.set(cos(halfAngle), sin(halfAngle) * axis.unit());
+  return this;
+}
+
+/// Set this quat to the rotation described by a
+/// 3x3 rotation matrix
+function Quat_d Quat_d.setFromMat33_d!(in Mat33_d mat) {
+  Float64 trace = mat.row0.x + mat.row1.y + mat.row2.z;
+  if (trace > 0) {
+    Float64 s = 2.0 * sqrt(trace + 1.0);
+    this.w = 0.25 * s;
+    if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( s ) )
+      Math_reportBadDivisor( s, "Quat_d.setFromMat33_d" );
+    Float64 invS = 1.0 / s;
+    this.v.x = (mat.row2.y - mat.row1.z) * invS;
+    this.v.y = (mat.row0.z - mat.row2.x) * invS;
+    this.v.z = (mat.row1.x - mat.row0.y) * invS;
+  }
+  else if (mat.row0.x > mat.row1.y && mat.row0.x > mat.row2.z) {
+    Float64 s = 2.0 * sqrt(1.0 + mat.row0.x - mat.row1.y - mat.row2.z);
+    if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( s ) )
+      Math_reportBadDivisor( s, "Quat_d.setFromMat33_d" );
+    Float64 invS = 1.0 / s;
+    this.w = (mat.row2.y - mat.row1.z) * invS;
+    this.v.x = 0.25 * s;
+    this.v.y = (mat.row0.y + mat.row1.x) * invS;
+    this.v.z = (mat.row0.z + mat.row2.x) * invS;
+  }
+  else if (mat.row1.y > mat.row2.z) {
+    Float64 s = 2.0 * sqrt(1.0 + mat.row1.y - mat.row0.x - mat.row2.z);
+    Float64 invS = 1.0 / s;
+    if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( s ) )
+      Math_reportBadDivisor( s, "Quat_d.setFromMat33_d" );
+    this.w = (mat.row0.z - mat.row2.x) * invS;
+    this.v.x = (mat.row0.y + mat.row1.x) * invS;
+    this.v.y = 0.25 * s;
+    this.v.z = (mat.row1.z + mat.row2.y) * invS;
+  }
+  else {
+    Float64 s = 2.0 * sqrt(1.0 + mat.row2.z - mat.row0.x - mat.row1.y);
+    Float64 invS = 1.0 / s;
+    if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( s ) )
+      Math_reportBadDivisor( s, "Quat_d.setFromMat33_d" );
+    this.w = (mat.row1.x - mat.row0.y) * invS;
+    this.v.x = (mat.row0.z + mat.row2.x) * invS;
+    this.v.y = (mat.row1.z + mat.row2.y) * invS;
+    this.v.z = 0.25 * s;
+  }
+  this.setUnit();
+  return this;
+}
+
+/// Set the quaternion to the rotation required to rotate the source
+/// vector to the destination vector
+/// Function taken from the 'Game Programming Gems' article 'The Shortest Arc Quaternion' by Stan Melax
+/// Both vectors must be units.
+function Quat_d Quat_d.setFrom2Vectors!(in Vec3_d sourceDirVec, in Vec3_d destDirVec, Boolean arbitraryIfAmbiguous) {
+  Float64 val = sourceDirVec.dot(destDirVec) + 1;
+  if( val > 0.0 )
+    val = sqrt(val * 2);
+  if (val <= DIVIDEPRECISION) {
+    if(arbitraryIfAmbiguous) {
+      // the vectors pointed in opposite directions OR they are not unit vectors.
+      // creating the quaternion is ambiguous (many answers)
+      //Take any orthogonal vector as an intermediate step
+      Vec3_d ortho(sourceDirVec.y, sourceDirVec.z, sourceDirVec.x);
+      ortho = ortho.cross(sourceDirVec).unit();
+      //Important: call with arbitraryIfAmbiguous = false, else it could recurse infinitely if sourceDirVec or destDirVec was (0,0,0)
+      Quat_d q1, q2;
+      q1.setFrom2Vectors(sourceDirVec, ortho, false);
+      q2.setFrom2Vectors(ortho, destDirVec, false);
+      this = q1 * q2;
+      return this;
+    }
+    if( Fabric_Guarded && !Fabric_OnGPU )Math_reportBadDivisor( val, "Quat_d.setFromMat33_d: ambiguous answer" );
+  }
+  this.v = sourceDirVec.cross(destDirVec) / val;
+  this.w = val / 2;
+  return this;
+}
+
+/// Overload for previous setFrom2Vectors method, avoid arbitrary rotations.
+inline Quat_d Quat_d.setFrom2Vectors!(in Vec3_d sourceDirVec, in Vec3_d destDirVec) {
+  this.setFrom2Vectors(sourceDirVec, destDirVec, false);
+  return this;
+}
+
+/// Set the quat to represent the direction as the Z axis
+/// and the upvector pointing along the XY plane.
+inline Quat_d Quat_d.setFromDirectionAndUpvector!(in Vec3_d direction, in Vec3_d upvector) {
+  Vec3_d zaxis = direction.unit();
+  Vec3_d yaxis = zaxis.cross(upvector.unit()).cross(zaxis).unit();
+  Vec3_d xaxis = yaxis.cross(zaxis).unit();
+  this.setFromMat33_d(Mat33_d(xaxis, yaxis, zaxis).transpose());
+  return this;
+}
+
+/// Returns true if this quaternion is equal
+/// to another one
+inline Boolean Quat_d.equal (in Quat_d other) {
+  return this.v.equal(other.v) && this.w == other.w;
+}
+
+/// Returns true if this quaternion is
+/// almost equal to another one (given a precision)
+inline Boolean Quat_d.almostEqual(in Quat_d other, in Float64 precision) {
+  return
+      this.v.almostEqual(other.v, precision) &&
+      (abs(this.w - other.w) < precision);
+}
+
+/// Returns true if this quaternion is
+/// almost equal to another one (using a default precision)
+inline Boolean Quat_d.almostEqual(in Quat_d other) {
+  return this.almostEqual(other, PRECISION);
+}
+
+/// Equals operator
+inline Boolean == (Quat_d a, Quat_d b) {
+  return a.v == b.v && a.w == b.w;
+}
+
+/// Not equals operator
+inline Boolean != (Quat_d a, Quat_d b) {
+  return a.v != b.v || a.w != b.w;
+}
+
+/// Hash for this value
+inline UInt32 Quat_d.hash() {
+  return this.v.hash() ^ this.w.hash();
+}
+
+/// Adds two quaternions
+inline Quat_d + (in Quat_d a, in Quat_d b) {
+  return Quat_d(a.w + b.w, a.v + b.v);
+}
+
+/// Adds another quaternion to this one
+inline Quat_d. += (in Quat_d b) {
+  this = this + b;
+}
+
+/// Subtracts two quaternions
+inline Quat_d - (in Quat_d a, in Quat_d b) {
+  return Quat_d(a.w - b.w, a.v - b.v);
+}
+
+/// Subtracts another quaternion from this one
+inline Quat_d. -= (in Quat_d b) {
+  this = this - b;
+}
+
+/// Multiplies two quaternions
+/// \dfgPresetDefault b {"v": {"x": 0, "y": 0, "z": 0}, "w": 1 }
+inline Quat_d * (in Quat_d a, in Quat_d b) {
+  return Quat_d(a.w * b.w - a.v.dot(b.v), a.v.cross(b.v) + (a.w * b.v) + (a.v * b.w));
+}
+
+/// Multiplies this quaternion with another one
+/// \dfgPresetDefault b {"v": {"x": 0, "y": 0, "z": 0}, "w": 1 }
+inline Quat_d. *= (in Quat_d b) {
+  this = this * b;
+}
+
+/// Multiplies a scalar with a quaternion
+/// \dfgPresetDefault a 1
+inline Quat_d * (in Float64 a, in Quat_d b) {
+  return Quat_d(a * b.w, a * b.v);
+}
+
+/// Multiplies a quaternion with a scalar
+/// \dfgPresetDefault b 1
+inline Quat_d * (in Quat_d a, in Float64 b) {
+  return Quat_d(a.w * b, a.v * b);
+}
+
+/// Multiplies this quaternion with a scalar
+/// \dfgPresetDefault b 1
+inline Quat_d. *= (in Float64 b) {
+  this = this * b;
+}
+
+/// Returns the division of two quaternions
+/// \dfgPresetDefault b {"v": {"x": 0, "y": 0, "z": 0}, "w": 1 }
+inline Quat_d / (in Quat_d a, in Quat_d b) {
+  return Quat_d(a.w * b.w + a.v.dot(b.v), (a.v * b.w) - (a.w * b.v) - a.v.cross(b.v));
+}
+
+/// Divides this quaternion by another one
+/// \dfgPresetDefault b {"v": {"x": 0, "y": 0, "z": 0}, "w": 1 }
+inline Quat_d. /= (in Quat_d b) {
+  this = this / b;
+}
+
+/// Returns the division of a quaternion and a scalar
+/// \dfgPresetDefault b 1
+inline Quat_d / (Quat_d a, Float64 b) {
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( b ) )
+    Math_reportBadDivisor( b, "Quat_d.divide" );
+  return a * (1.0 / b);
+}
+
+/// Divides this quaternion by a scalar
+/// \dfgPresetDefault b 1
+inline Quat_d. /= (in Float64 b) {
+  this = this / b;
+}
+
+/// Overload method for the add operator
+inline Quat_d Quat_d.add(Quat_d other) {
+  return this + other;
+}
+
+/// Overload method for the subtract operator
+inline Quat_d Quat_d.subtract(Quat_d other) {
+  return this - other;
+}
+
+/// Overload method for the multiply operator
+/// \dfgPresetDefault other {"v": {"x": 0, "y": 0, "z": 0}, "w": 1 }
+inline Quat_d Quat_d.multiply(Quat_d other) {
+  return this * other;
+}
+
+/// Overload method for the divide operator
+/// \dfgPresetDefault other {"v": {"x": 0, "y": 0, "z": 0}, "w": 1 }
+inline Quat_d Quat_d.divide(Quat_d other) {
+  return this / other;
+}
+
+/// Returns the product of this quaternion and a scalar
+/// \dfgPresetDefault other 1
+inline Quat_d Quat_d.multiplyFloat64(Float64 other) {
+  return this * other;
+}
+
+/// Returns the division of this quaternion and a scalar
+/// \dfgPresetDefault other 1
+inline Quat_d Quat_d.divideFloat64(Float64 other) {
+  return this / other;
+}
+
+/// Rotates a vector by this quaternion.
+/// Don't forget to normalize the quaternion unless
+/// you want axial translation as well as rotation.
+inline Vec3_d Quat_d.rotateVector(in Vec3_d v) {
+  Quat_d vq = Quat_d(0.0, v);
+  Quat_d pq = this * vq * this.conjugate();
+  return pq.v;
+}
+
+/// Returns the dot product of this quaternion and another one
+inline Float64 Quat_d.dot(in Quat_d other) {
+  return this.w * other.w + this.v.dot(other.v);
+}
+
+/// Returns the conjugate of this quaternion
+inline Quat_d Quat_d.conjugate() {
+  return Quat_d(this.w, this.v.negate());
+}
+
+/// Returns the squared length of this quaternion
+inline Float64 Quat_d.lengthSquared() {
+  return this.w * this.w + this.v.lengthSquared();
+}
+
+/// Returns the length of this quaternion
+inline Float64 Quat_d.length() {
+  return sqrt(this.lengthSquared());
+}
+
+/// Returns a unit quaternion of this one
+inline Quat_d Quat_d.unit() {
+  Float64 n = this.length();
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( n ) )
+    Math_reportBadDivisor( n, "Quat_d.unit" );
+  return this / n;
+}
+
+/// Returns a unit quaternion of this one, no error reported if cannot be made unit
+inline Quat_d Quat_d.unit_safe() {
+  Float64 n = this.length();
+  if( Math_badDivisor( n ) )
+    return Quat_d();
+  return this / n;
+}
+
+/// Sets this quaternion to a unit quaternion and returns
+/// the previous length
+inline Float64 Quat_d.setUnit!() {
+  Float64 n = this.length();
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( n ) )
+    Math_reportBadDivisor( n, "Quat_d.setUnit" );
+  this /= n;
+  return n;
+}
+
+/// Returns a inverse quaternion of this one
+inline Quat_d Quat_d.inverse() {
+  return this.unit().conjugate();
+}
+
+/// Matches this quaternion with another one ensuring that they are 
+/// withing the same hemisphere. The delta between Quaternion values
+/// is the shortest path over the hypersphere.
+inline Quat_d.matchHemisphere!(in Quat_d other) {
+  if(this.dot(other) < 0.0){
+    this = Quat_d(-this.w, this.v.negate());
+  }
+}
+
+/// Deprecated method left for compatability. Method name was obscure and is
+/// now 'matchHemisphere()'.
+/// \dfgPresetOmit
+inline Quat_d.alignWith!(in Quat_d other) {
+  this.matchHemisphere(other);
+}
+
+/// Returns the angle of this quaternion (in radians)
+inline Float64 Quat_d.getAngle() {
+  return acos(this.w) * 2.0;
+}
+
+/// Returns the X axis of this quaternion
+inline Vec3_d Quat_d.getXaxis() {
+  Vec3_d temp;
+  Float64 xy = this.v.x * this.v.y; Float64 xz = this.v.x * this.v.z;
+  Float64 yy = this.v.y * this.v.y; Float64 yw = this.v.y * this.w;
+  Float64 zz = this.v.z * this.v.z; Float64 zw = this.v.z * this.w;
+
+  temp.x = 1.0 - 2.0 * (zz + yy);
+  temp.y = 2.0 * (xy + zw);
+  temp.z = 2.0 * (xz - yw);
+  return temp;
+}
+
+/// Returns the Y axis of this quaternion
+inline Vec3_d Quat_d.getYaxis() {
+  Vec3_d temp;
+  Float64 xx = this.v.x * this.v.x; Float64 xy = this.v.x * this.v.y; Float64 xw = this.v.x * this.w;
+  Float64 yz = this.v.y * this.v.z;
+  Float64 zz = this.v.z * this.v.z; Float64 zw = this.v.z * this.w;
+
+  temp.x = 2.0 * (xy - zw);
+  temp.y = 1.0 - 2.0 * (zz + xx);
+  temp.z = 2.0 * (yz + xw);
+  return temp;
+}
+
+/// Returns the Z axis of this quaternion
+inline Vec3_d Quat_d.getZaxis() {
+  Vec3_d temp;
+  Float64 xx = this.v.x * this.v.x; Float64 xz = this.v.x * this.v.z; Float64 xw = this.v.x * this.w;
+
+  Float64 yy = this.v.y * this.v.y; Float64 yz = this.v.y * this.v.z; Float64 yw = this.v.y * this.w;
+
+  temp.x = 2.0 * (yw + xz);
+  temp.y = 2.0 * (yz - xw);
+  temp.z = 1.0 - 2.0 * (yy + xx);
+  return temp;
+}
+
+/// Returns an axis and angle from this quaternion
+Quat_d.getAxisAndAngle( out Vec3_d axis, out Float64 angle ) {
+  // Ensure it's normalized
+  Quat_d q = this;
+  if( q.w > 0.99999 || q.w < 1.00001 )
+    q.setUnit();
+  angle = 2 * acos( q.w );
+  Float64 s = sqrt( 1 - q.w * q.w );
+  if (s < DIVIDEPRECISION) {
+    // axis not important (no rotation)
+    axis.x = 1;
+    axis.y = 0;
+    axis.z = 0;
+  } else {
+    // normalize
+    axis.x = q.v.x / s;
+    axis.y = q.v.y / s;
+    axis.z = q.v.z / s;
+  }
+}
+
+/// Reflects this Quaternion according to the axis provided.
+/// \param axisIndex An integer with value of 0 for the X axis, 1 for the Y axis, and 2 for the Z axis.
+inline Quat_d.mirror!(in Integer axisIndex) {
+  Float64 tempW = this.w;
+  switch (axisIndex) {
+    case 0: this.w =  this.v.y; this.v.set(this.v.z, tempW, this.v.x); break;
+    case 1: this.w = -this.v.x; this.v.set(-tempW, this.v.z, this.v.y); break;
+    case 2: this.w = -this.w; this.v.set(this.v.x, this.v.y, - this.v.z); break;
+  }
+}
+
+/// Returns this quaternion as a 3x3 rotation matrix
+inline Mat33_d Quat_d.toMat33_d() {
+  Mat33_d temp;
+
+  Float64 xx = this.v.x * this.v.x, xy = this.v.x * this.v.y, xz = this.v.x * this.v.z, xw = this.v.x * this.w;
+  Float64 yy = this.v.y * this.v.y, yz = this.v.y * this.v.z, yw = this.v.y * this.w;
+  Float64 zz = this.v.z * this.v.z, zw = this.v.z * this.w;
+
+  temp.row0.x = 1.0 - 2.0 * (zz + yy);
+  temp.row1.x = 2.0 * (xy + zw);
+  temp.row2.x = 2.0 * (xz - yw);
+
+  temp.row0.y = 2.0 * (xy - zw);
+  temp.row1.y = 1.0 - 2.0 * (zz + xx);
+  temp.row2.y = 2.0 * (yz + xw);
+
+  temp.row0.z = 2.0 * (yw + xz);
+  temp.row1.z = 2.0 * (yz - xw);
+  temp.row2.z = 1.0 - 2.0 * (yy + xx);
+
+  return temp;
+}
+
+/// Returns this quaternion as a Euler_d rotation
+/// giving a rotation order
+function Euler_d Quat_d.toEuler_d( RotationOrder rotationOrder ) {
+  Quat_d unit = this.unit();//We cannot modify 'this'...
+  Vec3_d ordered;
+  if (rotationOrder.isXYZ()) {
+    ordered.set(unit.v.x,-unit.v.z,unit.v.y);
+  }
+  else if (rotationOrder.isYZX()) {
+    ordered.set(unit.v.y,-unit.v.x,unit.v.z);
+  }
+  else if (rotationOrder.isZXY()) {
+    ordered.set(unit.v.z,-unit.v.y,unit.v.x);
+  }
+  else if (rotationOrder.isXZY()) {
+    ordered.set(unit.v.x,unit.v.y,unit.v.z);
+  }
+  else if (rotationOrder.isZYX()) {
+    ordered.set(unit.v.z,unit.v.x,unit.v.y);
+  }
+  else if (rotationOrder.isYXZ()) {
+    ordered.set(unit.v.y,unit.v.z,unit.v.x);
+  }
+
+  Vec3_d euler;
+  Float64 test = ordered.x*ordered.y + ordered.z*unit.w;
+	if (test > 0.49999) { // singularity at north pole
+		euler.y = 2.0 * atan2(ordered.x, unit.w);
+		euler.z = HALF_PI;
+		euler.x = 0.0;
+	}
+  else if (test < -0.49999) { // singularity at south pole
+		euler.y = -2.0 * atan2(ordered.x,unit.w);
+		euler.z = -HALF_PI;
+		euler.x = 0.0;
+	}
+  else {
+    Float64 sqx = ordered.x*ordered.x;
+    Float64 sqy = ordered.y*ordered.y;
+    Float64 sqz = ordered.z*ordered.z;
+    euler.y = atan2(2.0*ordered.y*unit.w-2.0*ordered.x*ordered.z , 1.0 - 2.0*sqy - 2.0*sqz);
+	  euler.z = asin(2.0*test);
+	  euler.x = atan2(2.0*ordered.x*unit.w-2.0*ordered.y*ordered.z , 1.0 - 2.0*sqx - 2.0*sqz);
+  }
+
+  if (rotationOrder.isXYZ()) {
+    return Euler_d(euler.x,euler.z,-euler.y,rotationOrder);
+  }
+  else if (rotationOrder.isYZX()) {
+    return Euler_d(-euler.y,euler.x,euler.z,rotationOrder);
+  }
+  else if (rotationOrder.isZXY()) {
+    return Euler_d(euler.z,-euler.y,euler.x,rotationOrder);
+  }
+  else if (rotationOrder.isXZY()) {
+    return Euler_d(euler.x,euler.y,euler.z,rotationOrder);
+  }
+  else if (rotationOrder.isZYX()) {
+    return Euler_d(euler.y,euler.z,euler.x,rotationOrder);
+  }
+  else if (rotationOrder.isYXZ()) {
+    return Euler_d(euler.z,euler.x,euler.y,rotationOrder);
+  }
+  return Euler_d(0.0,0.0,0.0);
+}
+
+/// Returns this quaternion as a Euler_d angles using the rotationorder XYZ
+inline Vec3_d Quat_d.toEuler_dAngles(RotationOrder order) {
+  return this.toEuler_d(order).getAngles();
+}
+
+/// Returns this quaternion as a Euler_d angles using the rotationorder XYZ
+inline Vec3_d Quat_d.toEuler_dAngles() {
+  return this.toEuler_dAngles(RotationOrder(0));
+}
+
+/// interpolates two quaternions spherically (slerp)
+/// given a scalar blend value (0.0 to 1.0).
+/// \dfgPresetRange t (0.0, 1.0)
+/// \note this and q2 should be unit Quaternions
+function Quat_d Quat_d.sphericalLinearInterpolate(in Quat_d q2, in Float64 t) {
+  Float64 angle = this.dot(q2);
+  Quat_d _q2 = q2;
+  if (angle < 0.0) {
+    _q2.v = _q2.v.negate();
+    _q2.w *= - 1.0;
+  }
+
+  Quat_d r;
+
+  Float64 cosHalfTheta = this.dot(_q2);
+
+  if (abs(cosHalfTheta) < 1.0) {
+    Float64 halfTheta = acos(cosHalfTheta);
+    Float64 sinHalfTheta = sqrt(1.0 - cosHalfTheta * cosHalfTheta);
+
+    if (abs(sinHalfTheta) < DIVIDEPRECISION) {
+      r = Quat_d((this.w + _q2.w) * 0.5, (this.v + _q2.v) * 0.5);
+    }
+    else {
+      Float64 rA = sin((1 - t) * halfTheta) / sinHalfTheta;
+      Float64 rB = sin(t * halfTheta) / sinHalfTheta;
+
+      r = Quat_d(this.w * rA + _q2.w * rB, this.v * rA + _q2.v * rB);
+    }
+  }
+  else {
+    // They're the same
+    r = this;
+  }
+  return r.unit();
+}
+
+/// Interpolates two quaternions lineally (lerp)
+/// with a given blend value (0.0 to 1.0).
+/// \note The interpolation of the 2 quaternions will result acceleration and deceleration. Use :kl-ref:`Quat_d.sphericalLinearInterpolate` for an interpolation that does not introduce acceleration.
+function Quat_d Quat_d.linearInterpolate(in Quat_d other, in Float64 t) {
+  Float64 angle = this.dot(other);
+  Quat_d _other = other;
+  if (angle < 0.0) {
+    _other.v = _other.v.negate();
+    _other.w *= - 1.0;
+  }
+
+  Quat_d q;
+  q.v = this.v.linearInterpolate(_other.v, t);
+  q.w = this.w + ((_other.w - this.w) * t);
+  return q.unit();
+}
+
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgPresetFolder Random
+/// \dfgCreateArrayPreset false
+/// \dfgPresetDefault min 0.0
+/// \dfgPresetDefault min 1.0
+inline Quat_d mathRandomQuat_d(Size seed, Size index, Float32 min, Float32 max) {
+  Quat_d result;
+  result.v.x = mathRandomScalar(seed, index+0, -1, 1);
+  result.v.y = mathRandomScalar(seed, index+1, -1, 1);
+  result.v.z = mathRandomScalar(seed, index+2, -1, 1);
+  result.v.setUnit();
+  result.w = mathRandomScalar(seed, index+3, min, max);
+  return result;
+}
+
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgCreateArrayPreset false
+function Quat_d Quat_d.log() {
+  Quat_d qLog;
+  Float64 scale = this.v.length();
+  Float64 theta = atan2(scale, this.w);
+  if (scale > 0.0)
+      scale = theta / scale;
+  qLog.v.x = scale * this.v.x;
+  qLog.v.y = scale * this.v.y;
+  qLog.v.z = scale * this.v.z;
+  qLog.w = 0.0;
+  return qLog;
+}
+
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgCreateArrayPreset false
+function Quat_d Quat_d.exp() {
+  Quat_d qExp;
+  Float64 theta = this.v.length();
+  Float64 scale = 1.0;
+  if (theta > 1.0e-20) 
+    scale = sin(theta) / theta;
+  qExp.v.x = scale * this.v.x;
+  qExp.v.y = scale * this.v.y;
+  qExp.v.z = scale * this.v.z;
+  qExp.w = cos(theta);
+  return qExp;
+}
+
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgCreateArrayPreset false
+function Quat_d Quat_d.pow(Float64 s) {
+  return (s * this.log()).exp();
+}

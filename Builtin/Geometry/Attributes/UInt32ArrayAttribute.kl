@@ -1,0 +1,76 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+/brief The ``UInt32ArrayAttribute`` contains a sub-array of UInt32 per index. 
+For an index, array items can be set one by one or in batch.
+
+Various strategies are used to lower memory consumption and increase performance:
+
+- contiguous memory storage in a few buffers to lower memory fragmentation and minimize memory allocations
+
+- ``counts`` per index is implicit if values are appended in order (0 to N-1)
+
+\note Changing the size of sub-arrays is not thread safe
+
+*/
+object UInt32ArrayAttribute : BaseArrayAttribute{};
+
+inline UInt32ArrayAttribute.set!( UInt32 index, UInt32 offset, UInt32 value ) {
+  this.internalData.set( index, offset, value );
+}
+
+inline UInt32 UInt32ArrayAttribute.get( UInt32 index, UInt32 offset ) {
+  return this.internalData.get( index, offset );
+}
+
+inline UInt32ArrayAttribute.get( UInt32 index, out LocalL16UInt32Array values ) {
+  this.internalData.get( index, values );
+}
+
+inline UInt32ArrayAttribute.set!( UInt32 index, LocalL16UInt32Array values ) {
+  this.internalData.set( index, values );
+}
+
+require Util;
+
+/// \internal
+function String UInt32ArrayAttribute._valueDesc( Size index, Boolean unitTestPrint, Boolean truncateDec, UInt32 n ) {
+  LocalL16UInt32Array values;
+  this.get( index, values );
+  String result = '[';
+  for( Size i = 0; i < values.size(); ++i ) {
+    if( i )
+      result += ', ';
+    result += values.get( i );
+  }
+  result += ']';
+  return result;
+}
+
+inline String UInt32ArrayAttribute.valueDesc( Size index ) {
+  return this._valueDesc( index, false, false, 0 );
+}
+
+function String UInt32ArrayAttribute.unitTestPrint( Size index ) {
+  return this._valueDesc( index, true, false, 0 );
+}
+
+function String UInt32ArrayAttribute.truncateDecimalsPrint( Size index, UInt32 n ) {
+  return this._valueDesc( index, false, true, n );
+}
+
+// We cannot merge arrays automatically; just keep the one with highest index.
+inline LocalL16UInt32Array UInt32ArrayAttribute.getLinearCombination( LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights ) {
+  UInt32 index = this.getLinearCombinationIndex( sourceIndices, sourceWeights );
+  LocalL16UInt32Array values;
+  if( index != InvalidIndex )
+    this.get( index, values );
+  return values;
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+function Ref<UInt32ArrayAttribute> GeometryAttributes.getOrCreateUInt32ArrayAttribute!( String name ) {
+  return this.getOrCreateAttribute( name, UInt32ArrayAttribute );
+}

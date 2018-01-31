@@ -1,0 +1,57 @@
+// Created by kl2dfg (processFunction)
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "Splits the mesh up in multiple mesh pieces based on a limit on split\nvertices. So for example for a cube the split vertices count is 24 and not\n6, since each vertex has to be split based on the normals for each corner.\nThis function uses an algorithm which grows polygon islands based on neighbor\ninformation.\nIf the chunkSizeLimit is zero this will return one chunk per polygon island.\n\nSupported types:\n  this: PolygonMesh\n  chunkSizeLimit: UInt32\n  result: PolygonMesh[]\n"
+    },
+  "title" : "SplitMeshIntoChunks",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "PolygonMesh"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "chunkSizeLimit",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "UInt32" : 128
+        },
+      "execPortType" : "In",
+      "typeSpec" : "UInt32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "PolygonMesh[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "6E7CCB33972640CB2547DDCC4563E26A",
+  "code" : "require Geometry;
+
+dfgEntry {
+  result = this.splitMeshIntoChunks(chunkSizeLimit);
+}
+"
+  }

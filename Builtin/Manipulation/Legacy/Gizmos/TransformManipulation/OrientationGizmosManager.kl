@@ -1,0 +1,92 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require InlineDrawing;
+
+
+/**
+\versionadded 1.12.0
+
+The :kl-ref:`OrientationGizmosManager` combines 3 :kl-ref:`OrientationAxisGizmoManager` and a :kl-ref:`OrientationSphericalGizmoManager` to support rotation in 3d.
+\dfgPresetOmit
+
+*/
+object  OrientationGizmosManager {
+
+  OrientationAxisGizmoManager xAxisGizmoManager;
+  OrientationAxisGizmoManager yAxisGizmoManager;
+  OrientationAxisGizmoManager zAxisGizmoManager;
+
+  OrientationSphericalGizmoManager sphericalGizmoManager;
+};
+
+function OrientationGizmosManager(io InlineTransform parent, GizmoManipulationCallback callback){
+
+  Xfo offset;
+
+  offset.ori.setFromAxisAndAngle(Vec3(0.0, 0.0, 1.0), HALF_PI);
+  this.xAxisGizmoManager = OrientationAxisGizmoManager( parent, offset, Color(1.0, 0.0, 0.0), callback);
+
+  offset.ori.setIdentity();
+  this.yAxisGizmoManager = OrientationAxisGizmoManager( parent, offset, Color(0.0, 1.0, 0.0), callback);
+
+  offset.ori.setFromAxisAndAngle(Vec3(1.0, 0.0, 0.0), HALF_PI);
+  this.zAxisGizmoManager = OrientationAxisGizmoManager( parent, offset, Color(0.0, 0.0, 1.0), callback);
+
+  this.sphericalGizmoManager = OrientationSphericalGizmoManager(parent, Color(1.0, 1.0, 0.0), callback);
+}
+
+/// Hide gizmos based on the current manipulation mode.
+/// \internal
+function OrientationGizmosManager.hide!(){
+  this.xAxisGizmoManager.hide();
+  this.yAxisGizmoManager.hide();
+  this.zAxisGizmoManager.hide();
+  this.sphericalGizmoManager.hide();
+}
+
+/// Show gizmos based on the current manipulation mode.
+/// \internal
+function OrientationGizmosManager.show!(){
+  this.xAxisGizmoManager.show();
+  this.yAxisGizmoManager.show();
+  this.zAxisGizmoManager.show();
+  this.sphericalGizmoManager.show();
+}
+
+/// Sets the current manipulation mode, hiding/showing the appropriate gizmos
+/// \param mode the bit set defining the visible manipulation gizmos 
+function OrientationGizmosManager.setManipulationMode!(ManipulationMode mode){
+  if(mode&ManipulationMode_Orientation_X)
+    this.xAxisGizmoManager.show();
+  else
+    this.xAxisGizmoManager.hide();
+
+  if(mode&ManipulationMode_Orientation_Y)
+    this.yAxisGizmoManager.show();
+  else
+    this.yAxisGizmoManager.hide();
+
+  if(mode&ManipulationMode_Orientation_Z)
+    this.zAxisGizmoManager.show();
+  else
+    this.zAxisGizmoManager.hide();
+
+  if(mode&ManipulationMode_Orientation_X && mode&ManipulationMode_Orientation_Y && mode&ManipulationMode_Orientation_Z )
+    this.sphericalGizmoManager.show();
+  else
+    this.sphericalGizmoManager.hide();
+}
+
+/// Returns the set of InlineInstances used as gizmos.
+/// \internal
+function InlineInstance[] OrientationGizmosManager.getGizmos(){
+  InlineInstance gizmos[];
+  gizmos = gizmos + this.xAxisGizmoManager.getGizmos();
+  gizmos = gizmos + this.yAxisGizmoManager.getGizmos();
+  gizmos = gizmos + this.zAxisGizmoManager.getGizmos();
+  gizmos = gizmos + this.sphericalGizmoManager.getGizmos();
+  return gizmos;
+}
+

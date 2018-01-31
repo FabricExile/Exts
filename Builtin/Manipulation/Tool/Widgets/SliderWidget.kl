@@ -1,0 +1,206 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  const String SliderWidget_dragging = "sliderDragging";
+  const String SliderWidget_waiting = "sliderWaiting";
+  const String SliderWidget_onBarClicked = "sliderBarClicked";
+  const String SliderWidget_onValueChange = "onSliderValueChange";
+
+  /**
+    The SliderWidget draws a 2D HUD slider that controls a value
+    remapped to the 0..1 range. The target value container is abstracted
+    using a :kl-ref:`Tool::SliderTarget`.
+   
+    The slider can be defined by four colors or textures:
+    left bar, right bar, handle and handle highlight.
+   
+    The slider size is determined by the following:
+   
+    - Tool's screen space rectangle (as set from :kl-ref:`BaseTool.setPixelCoordinatesTransform`)
+      sets slider's width and vertical position (center of the rectangle)
+   
+    - Slider bar's height is set from constructor's barPixelSize.y
+
+    - Slider bar's handle size (x and y) is set from constructor's handlePixelSize
+
+    See :ref:`TPG.2Dwidgets` for an overview of available 2D tool widgets and examples.
+  */
+  object SliderWidget : BaseTool{
+    SliderTarget target;
+
+    RTVal handleDraggingColor;
+    RTVal handleHighlightColor;
+
+    Vec2 handlePixelSize;
+    Vec2 barPixelSize;
+
+    Boolean adjustToParentLayout;
+
+    RectangleShape leftBar;
+    RectangleShape rightBar;
+    RectangleShape handle;
+
+    SliderDragInteraction interaction;
+  };
+
+  SliderWidget( SliderTarget target, Vec2 barPixelSize, Color leftBarColor, Color rightBarColor, Vec2 handlePixelSize, Color handleColor, Color handleHighlightColor, Color handleDraggingColor ) {
+    this.construct( target, barPixelSize, handlePixelSize );
+    this.setColors( leftBarColor, rightBarColor, handleColor, handleHighlightColor, handleDraggingColor );
+    // Set initial state to "unselected"
+    this.setMainState( SliderWidget_waiting );
+  }
+
+  SliderWidget( SliderTarget target, Vec2 barPixelSize, Image2D leftBarTexture, Image2D rightBarTexture, Vec2 handlePixelSize, Image2D handleTexture, Image2D handleHighlightTexture, Image2D handleDraggingTexture ) {
+    this.construct( target, barPixelSize, handlePixelSize );
+    this.setTextures( leftBarTexture, rightBarTexture, handleTexture, handleHighlightTexture, handleDraggingTexture );
+    // Set initial state to "unselected"
+    this.setMainState( SliderWidget_waiting );
+  }
+
+  SliderWidget.construct!( SliderTarget target, Vec2 barPixelSize, Vec2 handlePixelSize ) {
+    if( target )
+      this.target = target;
+    else
+      this.target = BasicSliderTarget();
+
+    this.adjustToParentLayout = true;// Adjust bar width and handle height to parent layout
+    this.handlePixelSize = handlePixelSize;
+    this.barPixelSize = barPixelSize;
+    this.setRenderPass( HUDRenderPass );
+
+    this.leftBar = RectangleShape();
+    this.addChild( "leftBar", this.leftBar );
+
+    this.rightBar = RectangleShape();
+    this.addChild( "rightBar", this.rightBar );
+
+    // Important: draw the handle on top
+    this.handle = RectangleShape();
+    this.addChild( "handle", this.handle );
+
+    this.addDrawModifier( SliderWidgetLayoutModifier(), false );
+
+    // Add a drag interaction to the shape
+    MouseClickDragRaycastInteraction clickAndDragInteraction();
+    this.interaction = SliderDragInteraction( clickAndDragInteraction, this.target );
+    this.handle.attachComponent( this.interaction );
+
+    // When dragging, change our state from "waiting" to "dragging"
+    this.attachComponent( SetMainStateAction( clickAndDragInteraction, ToolEvent_DragBegin, clickAndDragInteraction, ToolEvent_DragEnd, SliderWidget_dragging ) );
+
+    // When clicking on the bar, set the value
+    MouseClickRaycastInteraction leftBarClickInter();
+    this.leftBar.attachComponent( leftBarClickInter );
+    leftBarClickInter.addListener( this, false, MouseClickRaycastInteraction_SuccessEvent, SliderWidget_onBarClicked );
+
+    MouseClickRaycastInteraction rightBarClickInter();
+    this.rightBar.attachComponent( rightBarClickInter );
+    rightBarClickInter.addListener( this, false, MouseClickRaycastInteraction_SuccessEvent, SliderWidget_onBarClicked );
+
+    this.interaction.addListener( this, false, ToolEvent_DragMove, SliderWidget_onValueChange );
+    this.interaction.addListener( this, false, ToolEvent_DragEnd, SliderWidget_onValueChange );
+  }
+
+  SliderWidget.setColors!( Color leftBarColor, Color rightBarColor, Color handleColor, Color handleHighlightColor, Color handleDraggingColor ) {
+
+    this.handleHighlightColor = handleHighlightColor;
+    this.handleDraggingColor = handleDraggingColor;
+    this.leftBar.setColor( leftBarColor );
+    this.rightBar.setColor( rightBarColor );
+    this.handle.setColor( handleColor );
+  }
+
+  SliderWidget.setTextures!( Image2D leftBarTexture, Image2D rightBarTexture, Image2D handleTexture, Image2D handleHighlightTexture, Image2D handleDraggingTexture ) {
+
+    this.handleHighlightColor = handleHighlightTexture;
+    this.handleDraggingColor = handleDraggingTexture;
+
+    this.leftBar.setColor( leftBarTexture );
+    this.rightBar.setColor( rightBarTexture );
+    this.handle.setColor( handleTexture );
+  }
+
+  SliderWidget.onEnterState!( String newState, Boolean mainState ) {
+    switch( newState ) {
+      case SliderWidget_waiting:
+      {
+        // Add a highlight behavior to our shape
+        this.attachStateSpecificChildComponent( newState, HighlightUnderMouse( this.handleHighlightColor ), "handle" );
+        return;
+      }
+      case SliderWidget_dragging:
+      {
+        // Selected: color = yellow for our shape
+        SetColorAction colorAction( this.handleDraggingColor, true );
+        this.attachAndDoStateSpecificChildAction( newState, colorAction, "handle" );
+        return;
+      }
+    }
+  }
+
+  /// Returns slider's normalized ration, between 0 and 1
+  inline Float32 SliderWidget.getSliderRatio() {
+    if( this.target )
+      return this.target.getNormalizedValue();
+    else
+      return 0;
+  }
+
+  /// \internal
+  SliderWidget.onEvent!( ToolEvent event, ToolEventUserID userID ) {
+    if( event.name == SliderWidget_onBarClicked ) {
+      Ref<MouseClickRaycastInteraction> interaction = event.customData;
+      RaycastContext raycastContext = interaction.getCurrentRaycastContext();
+
+      // Find the ratio: compare the X to the screen space rectangle, but relative to the whole widget
+      Vec2 upperLeft, lowerRight;
+      this.getScreenSpaceRectangle( raycastContext.context, upperLeft, lowerRight );
+
+      Float32 ratio = ( raycastContext.viewportCoords.x - upperLeft.x ) / ( lowerRight.x - upperLeft.x );
+      // clamp with small roundup
+      if( ratio > 0.995 )
+        ratio = 1;
+      else if( ratio < 0.005 )
+        ratio = 0;
+
+      this.target.setNormalizedValue( ratio );
+      this.sendEventToListeners( SliderWidget_onValueChange );
+    } else if( event.name == SliderWidget_onValueChange ) {
+      this.sendEventToListeners( SliderWidget_onValueChange );
+    } else
+      this.parent.onEvent( event, userID );
+  }
+
+  /// \internal
+  object SliderWidgetLayoutModifier : BaseDrawModifier{
+  };
+
+  SliderWidgetLayoutModifier.updateDrawData!( io DrawContext context, Ref<Object> target ) {
+    this.parent.updateDrawData( context, target );
+    Ref<SliderWidget> slider = target;
+
+    if( !slider.adjustToParentLayout )
+      throw "Not implemented: SliderWidgetLayoutModifier with adjustToParentLayout = false";
+
+    Vec2 upperLeft, lowerRight;
+    GetScreenSpaceRectangle( context, upperLeft, lowerRight );
+
+    Float32 ratio = slider.target ? slider.target.getNormalizedValue() : 0.5f;
+    Vec2 handleCenter( upperLeft.x + ratio*( lowerRight.x - upperLeft.x ), 0.5f * ( upperLeft.y + lowerRight.y ) );
+
+    Vec2 barUpperLeft( upperLeft.x, handleCenter.y - slider.barPixelSize.y*0.5f );
+    Vec2 barLowerRight( lowerRight.x, handleCenter.y + slider.barPixelSize.y*0.5f );
+
+    slider.interaction.setSliderPixelPosition( Vec2( barUpperLeft.x, handleCenter.y ), Vec2( barLowerRight.x, handleCenter.y ) );
+
+    // Make at least 1 pixel width to avoid divide by zero warnings
+    slider.leftBar.setPixelCoordinatesTransform( barUpperLeft, Vec2( handleCenter.x == barUpperLeft.x ? handleCenter.x + 1 : handleCenter.x, barLowerRight.y ), context );
+    slider.rightBar.setPixelCoordinatesTransform( Vec2( handleCenter.x == barLowerRight.x ? handleCenter.x - 1 : handleCenter.x, barUpperLeft.y ), barLowerRight, context );
+
+    slider.handle.setPixelCoordinatesTransform( handleCenter - slider.handlePixelSize*0.5f, handleCenter + slider.handlePixelSize*0.5f, context );
+  }
+
+}// namespace Tool

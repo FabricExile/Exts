@@ -1,0 +1,157 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+require FabricOGL, Util;
+
+
+interface OGLViewport_virtuals {
+  activate!( UInt32 target, io Ref<OGLContext> context);
+};
+
+object OGLViewport : OGLBaseObject, OGLViewport_virtuals {
+
+  Size startX, startY;
+  Size width, height;
+
+  UInt32 colorBits[4];
+  UInt32 stencilBits;
+  UInt32 depthBits;
+  UInt32 samples;
+
+  UInt32 framebuffer;
+};
+
+function OGLViewport() {
+  this.framebuffer = GL_BACK;
+
+  //TODO: get from OSOGL context (deprecated in GL >= 3)
+  this.colorBits[0] = 8;
+  this.colorBits[1] = 8;
+  this.colorBits[2] = 8;
+  this.colorBits[3] = 8;
+  this.depthBits = 24;
+  this.stencilBits = 8;
+}
+
+function OGLViewport.setSize!( Size startX, Size startY, Size width, Size height, Size samples ) {
+  Boolean changed;
+  updateValue( startX, this.startX, changed );
+  updateValue( startY, this.startY, changed );
+  updateValue( width, this.width, changed );
+  updateValue( height, this.height, changed );
+  updateValue( samples, this.samples, changed );
+  if( changed )
+    this.parent.incrementVersion();
+}
+
+inline OGLViewport.setSize!( Size width, Size height, Size samples) {
+  this.setSize( 0, 0, width, height, samples );
+}
+
+/// Retunrs true if something changed
+function OGLViewport.updateFromContext!( io Ref<OGLContext> context ) {
+
+  Boolean changed;
+  SInt32 tempIDs[4];
+  SInt32 tempIDsExt<> = tempIDs;
+  glGetIntegerv(GL_VIEWPORT, tempIDsExt);
+
+  updateValue( tempIDs[0], this.startX, changed );
+  updateValue( tempIDs[1], this.startY, changed );
+  updateValue( tempIDs[2], this.width, changed );
+  updateValue( tempIDs[3], this.height, changed );
+
+  glGetIntegerv(GL_DRAW_BUFFER, tempIDsExt);
+  updateValue( tempIDs[0], this.framebuffer, changed );
+
+  if( context.capabilities.GLMajorVersion < 3 ) {
+    glGetIntegerv(GL_DEPTH_BITS, tempIDsExt);
+    updateValue( tempIDs[0], this.depthBits, changed );
+
+    glGetIntegerv(GL_RED_BITS, tempIDsExt);
+    updateValue( tempIDs[0], this.colorBits[0], changed );
+
+    glGetIntegerv(GL_GREEN_BITS, tempIDsExt);
+    updateValue( tempIDs[0], this.colorBits[1], changed );
+
+    glGetIntegerv(GL_BLUE_BITS, tempIDsExt);
+    updateValue( tempIDs[0], this.colorBits[2], changed );
+
+    glGetIntegerv(GL_ALPHA_BITS, tempIDsExt);
+    updateValue( tempIDs[0], this.colorBits[3], changed );
+  } else {
+    //TODO: get from OSOGL context (deprecated in GL >= 3)
+    this.colorBits[0] = 8;
+    this.colorBits[1] = 8;
+    this.colorBits[2] = 8;
+    this.colorBits[3] = 8;
+    this.depthBits = 24;
+    this.stencilBits = 8;
+  }
+  if( changed )
+    this.parent.incrementVersion();
+}
+
+function OGLViewport.activate!( UInt32 target, io Ref<OGLContext> context ) {
+  context.stateCache.bindFramebuffer( target, 0 );
+
+  if( this.tracingEnabled() )
+    report( "OGLViewport: activating: x=" + this.startX + " y=" + this.startY + " w=" + this.width +" h=" + this.height );
+
+  if( target == GL_FRAMEBUFFER ) {
+    context.stateCache.bindFramebuffer( target, 0 );
+    context.stateCache.readBuffer( this.framebuffer );
+    context.stateCache.drawBuffer( this.framebuffer );
+  } else if( target == GL_READ_FRAMEBUFFER ) {
+    context.stateCache.bindFramebuffer( GL_READ_FRAMEBUFFER, 0 );
+    context.stateCache.readBuffer( this.framebuffer );
+  } else if( target == GL_DRAW_FRAMEBUFFER ) {
+    context.stateCache.bindFramebuffer( GL_DRAW_FRAMEBUFFER, 0 );
+    context.stateCache.drawBuffer( this.framebuffer );
+  }
+
+  if( this.width == 0 )
+    this.updateFromContext(context);
+  context.stateCache.viewport(this.startX, this.startY, this.width, this.height);
+  //In theory, scissors should be updated too...
+}
+
+function OGLViewport.clearColor!( Color color, Boolean noMask, io Ref<OGLContext> context ) {
+  this.activate(GL_FRAMEBUFFER, context);
+  if( noMask )
+    context.stateCache.colorMask(true, true, true, true);
+  glClearColor(color.r, color.g, color.b, color.a);
+  glClear(GL_COLOR_BUFFER_BIT);
+}
+
+function OGLViewport.clearDepth!( Scalar depth, Boolean noMask, io Ref<OGLContext> context ) {
+  this.activate(GL_FRAMEBUFFER, context);
+  if( noMask )
+    context.stateCache.depthMask( true );
+  glClearDepth(depth);
+  glClear(GL_DEPTH_BUFFER_BIT);
+}
+
+function OGLViewport.clearDepthStencil!( Scalar depth, UInt32 stencil, Boolean noMask, io Ref<OGLContext> context ) {
+  this.activate(GL_FRAMEBUFFER, context);
+  if( noMask ) {
+    context.stateCache.depthMask( true );
+    context.stateCache.stencilMask( UInt32Max );
+  }
+  glClearDepth(depth);
+  glClearStencil(stencil);
+  glClear( GL_DEPTH_BUFFER_BIT|GL_STENCIL_BUFFER_BIT );
+}
+
+function OGLViewport.getFormat( io UInt32 glComponentType, io UInt32 redBits, io UInt32 greenBits, io UInt32 blueBits, io UInt32 alphaBits, io UInt32 depthBits, io UInt32 stencilBits ) {
+  glComponentType = GL_UNSIGNED_NORMALIZED;
+  redBits = this.colorBits[0];
+  greenBits = this.colorBits[1];
+  blueBits = this.colorBits[2];
+  alphaBits = this.colorBits[3];
+  depthBits = this.depthBits;
+  stencilBits = this.stencilBits;
+}
+
+ 

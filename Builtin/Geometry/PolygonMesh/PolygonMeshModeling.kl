@@ -1,0 +1,764 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  Appends multiple transformed polygon meshes to this one, including their attributes.
+  \param sources Meshes to be appended
+  \param transformXfos Transforms to be applied for each source mesh
+  \param transformNormals If true, normals of the source meshes will be transformed with `transformXfos`
+  \param setupMaterialIDs If true, the materialID IntegerAttribute will be setup and filled with ids per source mesh.
+  \note If some of the source meshes define attributes that this mesh doesn't have, these will be added to this mesh's attribute set. If meshes have some attributes of the same name, with different types, an error will be thrown.
+  \category modeling
+*/
+function PolygonMesh.mergeMeshes!( PolygonMesh sources[], Xfo transformXfos[], Boolean transformNormals, Boolean setupMaterialIDs ) {
+  //TODO: have a version with Float64 Xfo
+  Size firstPoints[];
+  Size firstPolygons[];
+  Boolean wasEmpty = this.pointCount() == 0;
+  this.mergeMeshes( sources, firstPoints, firstPolygons );
+  Ref<Vec3Attribute> normals = this.getNormals();
+  Ref<GeometryAttributes> attributes = this.getAttributes();
+  Ref<IntegerAttribute> materialIDs = null;
+  SInt32 materialIDOffset = 0;
+  if(setupMaterialIDs) {
+    materialIDs = attributes.getOrCreateIntegerAttribute('materialID');
+    if(!wasEmpty) {
+      for( Size i = 0; i < materialIDs.values.size(); ++i) {
+        if( materialIDs.values[i] > materialIDOffset )
+          materialIDOffset = materialIDs.values[i];
+      }
+      materialIDOffset++; // if the mesh is not empty we need to shift by one
+    }
+  }
+
+  BitVector transformedNormalsBits;
+  if( transformNormals && normals != null )
+    transformedNormalsBits.resize( normals.size() );
+
+  for( Size i = 0; i < sources.size(); ++i ) {
+    Ref<PolygonMesh> source = sources[i];
+    Mat44 mat44 = transformXfos[i].toMat44();
+    Size firstPoint = firstPoints[i];
+
+    for( Size j = 0; j < source.pointCount(); ++j ) {
+      Vec3 pos = mat44 * this.getPointPosition( firstPoint+j );
+      this.setPointPosition( firstPoint+j, pos );
+    }
+
+    if(transformNormals && normals != null) {
+      Mat33 normMat = mat44.upperLeft().inverse().transpose();
+      for( Size j = 0; j < source.pointCount(); ++j ) {
+        //Sharing is unchanged: just transform all values directly
+        DataIter pointIter = this.topology.getPointIter( firstPoint+j );
+        PolygonMesh_UnsharedAttributeIndexIter iter = this.topology.getPointIterUnsharedAttributeIndexIter( pointIter );
+        UInt32 attributeIndex;
+        while( this.topology.PolygonMesh_UnsharedAttributeIndexIterGetNext( iter, attributeIndex ) ) {
+          if( !transformedNormalsBits.getThenSet( attributeIndex ) )// Transform only once
+            normals.values[attributeIndex] = ( normMat * normals.values[attributeIndex] ).unit_safe();//TODO: don't normalize if no scaling
+        }
+      }
+    }
+
+    if(setupMaterialIDs && materialIDs != null) {
+      Ref<GeometryAttributes> sourceAttributes = source.getAttributes();
+      Ref<IntegerAttribute> sourceMaterialIDs = sourceAttributes.getAttribute('materialID');
+
+      if(sourceMaterialIDs == null) {
+
+        for( Size j = 0; j < source.pointCount(); ++j ) {
+          DataIter pointIter = this.topology.getPointIter( firstPoint+j );
+          PolygonMesh_UnsharedAttributeIndexIter iter = this.topology.getPointIterUnsharedAttributeIndexIter( pointIter );
+          UInt32 attributeIndex;
+          while( this.topology.PolygonMesh_UnsharedAttributeIndexIterGetNext(iter, attributeIndex) )
+            materialIDs.values[ attributeIndex ] = materialIDOffset;
+        }
+        materialIDOffset += 1;
+
+      } else {
+
+        SInt32 maxID = 0;
+
+        for( Size j = 0; j < source.pointCount(); ++j ) {
+          DataIter sourcePointIter = source.topology.getPointIter( j );
+          PolygonMesh_UnsharedAttributeIndexIter sourceIter = source.topology.getPointIterUnsharedAttributeIndexIter( sourcePointIter );
+          UInt32 sourceAttributeIndex;
+          DataIter pointIter = this.topology.getPointIter( firstPoint+j );
+          PolygonMesh_UnsharedAttributeIndexIter iter = this.topology.getPointIterUnsharedAttributeIndexIter( pointIter );
+          UInt32 attributeIndex;
+          while( source.topology.PolygonMesh_UnsharedAttributeIndexIterGetNext(sourceIter, sourceAttributeIndex) &&
+            this.topology.PolygonMesh_UnsharedAttributeIndexIterGetNext(iter, attributeIndex) ) {
+            SInt32 matID = sourceMaterialIDs.values[ sourceAttributeIndex];
+            materialIDs.values[ attributeIndex ] = matID + materialIDOffset;
+            if(matID > maxID)
+              maxID = matID;
+          }
+        }
+
+        materialIDOffset += maxID + 1;
+      }
+    }
+  }
+}
+
+/**
+  Appends multiple transformed polygon meshes to this one, including their attributes.
+  \param sources Meshes to be appended
+  \param transformXfos Transforms to be applied for each source mesh
+  \param transformNormals If true, normals of the source meshes will be transformed with `transformXfos`
+  \note If some of the source meshes define attributes that this mesh doesn't have, these will be added to this mesh's attribute set. If meshes have some attributes of the same name, with different types, an error will be thrown.
+  \category modeling
+*/
+function PolygonMesh.mergeMeshes!( PolygonMesh sources[], Xfo transformXfos[], Boolean transformNormals ) {
+  this.mergeMeshes( sources, transformXfos, transformNormals, false );
+}
+
+/**
+  Appends multiple transformed copies of a same polygon meshes to this one, including its attributes.
+  \param source Mesh to be appended
+  \param transformXfos Transforms to be applied for each copy of the source mesh
+  \param transformNormals If true, normals of the source meshes will be transformed with `transformXfos`
+  \note If some the source mesh defines attributes that this mesh doesn't have, these will be added to this mesh's attribute set. If meshes have some attributes of the same name, with different types, an error will be thrown.
+  \category modeling
+*/
+function PolygonMesh.mergeMeshClones!( Ref<PolygonMesh> source, Xfo transformXfos[], Boolean transformNormals ) {
+  PolygonMesh sources[];
+  sources.resize(transformXfos.size());
+  for( Size i = 0; i < sources.size(); ++i )
+    sources[i] = source;
+  this.mergeMeshes( sources, transformXfos, transformNormals );
+}
+
+/**
+  Appends a mesh to this one, including its attributes.
+  \note If some the source mesh defines attributes that this mesh doesn't have, these will be added to this mesh's attribute set. If meshes have some attributes of the same name, with different types, an error will be thrown.
+  \category modeling
+*/
+//Merge a single mesh to this one.
+inline PolygonMesh.mergeMesh!( Ref<PolygonMesh> source ) {
+  Size firstPoints[];
+  Size firstPolygons[];
+  PolygonMesh sources[];
+  sources.push(source);
+  this.mergeMeshes( sources, firstPoints, firstPolygons );
+}
+
+/**
+  Subdivides the polygons linearly. Each polygon edge will be subdivided in two equal portions, and the created middle points
+  will be joined to a new central point for each polygon.
+  \param polygons Polygons to be subdivided
+  \param firstEdgePoint First index of the points created by splitting the edges (indices from `firsEdgePoint` to `firstCenterPoint-1`)
+  \param firstCenterPoint First index of the center points (count = `polygons.size()`)
+  \note `polygons` must contain no duplicates
+  \category modeling
+*/
+function PolygonMesh.linearSubdividePolygons!( Size polygons[], io Size firstEdgePoint, io Size firstCenterPoint ) {
+  this.beginStructureChanges();
+
+  //Create edge points
+  firstEdgePoint = this.pointCount();
+  for( Size i = 0; i < polygons.size(); ++i ) {
+    Size polygon = polygons[i];
+    LocalIndexArray points;
+    this.topology.getPolygonPoints( polygon, points );
+
+    Size polygonDeltaOffset;
+    for( Size j = 0; j < points.size(); ++j ) {
+      Size offset = j+polygonDeltaOffset;
+      Size point = points.get(j);
+      Size nextPoint = points.get( NextOff( j, points.size() ) );
+      if( point < firstEdgePoint && nextPoint < firstEdgePoint) {
+        //unsplit edge
+        Size newPointIndex = this.splitEdge( polygon, polygonDeltaOffset, 0.5 );
+        ++polygonDeltaOffset;//Skip over the newly created point
+      }
+      ++polygonDeltaOffset;
+    }
+  }
+
+  //Split polygons
+  firstCenterPoint = this.pointCount();
+  for( Size i = 0; i < polygons.size(); ++i ) {
+    Size polygon = polygons[i];
+
+    Size size = this.getPolygonSize(polygon);
+    Size sizeBeforeSplit = size/2;
+
+    //Split edge garantees that added point was at polygonPointIndex+1,
+    //so we can assume that polygon odd indices are new points.
+    if( sizeBeforeSplit == 4 ) {
+      //optimize for quads: in such case, splitting as a cross would lead to proper attribute values right away
+      Size newPolygonIndex, newPolygonEdgeStartPointIndex;
+      this.splitPolygon( polygon, 1, 5, newPolygonIndex, newPolygonEdgeStartPointIndex );
+
+      Size centerPoint = this.splitEdge( newPolygonIndex, newPolygonEdgeStartPointIndex, 0.5 );
+
+      Size otherPolygon;
+      this.splitPolygon( polygon, 2, 5, otherPolygon, newPolygonEdgeStartPointIndex );
+      this.splitPolygon( newPolygonIndex, 2, 5, otherPolygon, newPolygonEdgeStartPointIndex );
+    } else {
+      Size newPolygonIndex, newPolygonEdgeStartPointIndex;
+      this.splitPolygon( polygon, 3, 1, newPolygonIndex, newPolygonEdgeStartPointIndex );
+
+      Size centerPoint = this.splitEdge( newPolygonIndex, newPolygonEdgeStartPointIndex, 0.5 );
+      Size newPolygonSize = size;//removed 1 by addEdge, added 1 by splitEdge
+
+      LocalL16UInt32Array sourceIndices;
+      LocalL16ScalarArray sourceWeights;
+      sourceIndices.resize(sizeBeforeSplit);//only unsplit points
+      sourceWeights.resize(sizeBeforeSplit);//only unsplit points
+      Scalar weight = 1.0f/sizeBeforeSplit;
+      for( Size j = 0; j < sizeBeforeSplit; j++ ) {
+        sourceIndices.set(j, this.getPolygonAttributeIndex(newPolygonIndex, j*2) );
+        sourceWeights.set(j, weight);
+      }
+      //We know that centerPoint has a single, uniform attribute (comes from addEdge+splitPoint)
+      this.attributes.linearCombine( sourceIndices, sourceWeights, centerPoint );
+
+      Size polygonToSplit = newPolygonIndex;
+      this.splitPolygon( polygonToSplit, 2, newPolygonSize-1, newPolygonIndex, newPolygonEdgeStartPointIndex );
+      for( Size j = 0; j < sizeBeforeSplit-3; ++j ) {
+        newPolygonSize -= 2;
+        polygonToSplit = newPolygonIndex;
+        this.splitPolygon( polygonToSplit, 2, newPolygonSize-1, newPolygonIndex, newPolygonEdgeStartPointIndex );
+      }
+    }
+  }
+  this.endStructureChanges();
+}
+
+
+/**
+  Appends a revolution mesh around a profile defined by a linear curve (line segments).
+  \param xfo Transform to be applied to all resulting points
+  \param profile Profile points. A polygon row (or loop if `close`) will be created for each pair of consecutive point.
+  \param center Center (pivot) for profile's rotation around the `axis`
+  \param axis Axis around which the profile will be rotated to create the revolution mesh
+  \param detail Number of rotation steps (to subdivide the `range.x` to `range.y` angles)
+  \param range Start and end angles, in radians, for the revolution
+  \param close If true, the first and the last rotated revolution profiles will be connected to form a closed tube
+  \category modeling
+*/
+function PolygonMesh.addRevolution!(Xfo xfo, Vec3 profile[], Vec3 center, Vec3 axis, Size detail, Vec2 range, Boolean close) {
+  if(detail < 3)
+    return;
+  if(profile.size() < 2)
+    return;
+  if(range.x == range.y)
+    return;
+
+  Size nbSegments = profile.size() - 1;
+  Size nbPointRows = detail;
+  Size nbQuadRows = (close ? detail : detail-1);
+
+  Size nbPoints = profile.size() * nbPointRows;
+  Size firstPoint = this.createPoints(nbPoints);
+  Scalar angleIncrement = (range.y - range.x ) * TWO_PI / Scalar(nbQuadRows);
+
+  Quat q[];
+  q.resize(nbPointRows);
+  for(Size i=0;i<nbPointRows;i++)
+    q[i].setFromAxisAndAngle(axis, range.x + Scalar(i) * angleIncrement);
+
+  for(Size i=0;i<nbPoints;i++) {
+    Size row = i / profile.size();
+    Size pointIndex = i % profile.size();
+    Vec3 pos = center + q[row].rotateVector(profile[pointIndex] - center);
+    this.setPointPosition(firstPoint+i, xfo.transformVector(pos));
+  }
+
+  this.beginStructureChanges();
+
+  Size nbQuads = nbSegments * nbQuadRows;
+  Size v0, v1, v2, v3;
+  for(Size i=0;i<nbQuads;i++) {
+    Size segmentIndex = i % nbSegments;
+    Size row = i / nbSegments;
+    v0 = (profile.size() * row + segmentIndex) % nbPoints;
+    v1 = (profile.size() * row + segmentIndex + 1) % nbPoints;
+    if(row == nbQuadRows - 1 && close) {
+      v2 = (segmentIndex + 1) % nbPoints;
+      v3 = (segmentIndex) % nbPoints;
+    } else {
+      v2 = (profile.size() * (row+1) + segmentIndex + 1) % nbPoints;
+      v3 = (profile.size() * (row+1) + segmentIndex) % nbPoints;
+    }
+    this.addPolygon(firstPoint+v3, firstPoint+v2, firstPoint+v1, firstPoint+v0);
+  }
+
+  this.endStructureChanges();
+}
+
+/**
+  Appends a revolution mesh around a profile defined by a linear curve (line segments).
+  \param xfo Transform to be applied to all resulting points
+  \param profile Profile points. A polygon loop will be created for each pair of consecutive point.
+  \param center Center (pivot) for profile's rotation around the `axis`
+  \param axis Axis around which the profile will be rotated to create the revolution mesh
+  \param detail Number of rotation steps (angle for each step = ``TWO_PI / detail``)
+  \category modeling
+*/
+inline PolygonMesh.addRevolution!(Xfo xfo, Vec3 profile[], Vec3 center, Vec3 axis, Size detail) {
+  this.addRevolution(xfo, profile, center, axis, detail, Vec2(0, 1), true);
+}
+
+/**
+  Appends a mesh extrusion of a profile defined by a linear curve (line segments), where a transform of each
+  section is specified.
+  \param xfo Transform to be applied to each profile copy. Each consecutive transform pair will be connected by a polygon row (or loop if `close`).
+  \param profile Profile points, defining a linear curve (or closed curve if `close`)
+  \param close If true, the `profile` is a treated as a circular array of points (closed curve)
+  \category modeling
+*/
+function PolygonMesh.addExtrusion!(Xfo xfos[], Vec3 profile[], Boolean close) {
+  if(profile.size() < 2)
+    return;
+  if(xfos.size() < 2)
+    return;
+
+  Size nbSegments = close ? profile.size() : profile.size() - 1;
+  Size nbPointRows = xfos.size();
+  Size nbQuadRows = nbPointRows - 1;
+  
+  Size nbPoints = profile.size() * nbPointRows;
+  Size firstPoint = this.createPoints(nbPoints);
+  for(Size i=0;i<nbPoints;i++) {
+    Size row = i / profile.size();
+    Size pointIndex = i % profile.size();
+    Vec3 pos = xfos[row].transformVector(profile[pointIndex]);
+    this.setPointPosition(firstPoint+i, pos);
+  }
+
+  this.beginStructureChanges();
+
+  Size nbQuads = nbSegments * nbQuadRows;
+  Size v0, v1, v2, v3;
+  for(Size i=0;i<nbQuads;i++) {
+    Size segmentIndex = i % nbSegments;
+    Size row = i / nbSegments;
+    if(segmentIndex == profile.size() - 1) {
+      v0 = (profile.size() * row + segmentIndex) % nbPoints;
+      v1 = (profile.size() * row) % nbPoints;
+      v2 = (profile.size() * (row+1)) % nbPoints;
+      v3 = (profile.size() * (row+1) + segmentIndex) % nbPoints;
+    } else {
+      v0 = (profile.size() * row + segmentIndex) % nbPoints;
+      v1 = (profile.size() * row + segmentIndex + 1) % nbPoints;
+      v2 = (profile.size() * (row+1) + segmentIndex + 1) % nbPoints;
+      v3 = (profile.size() * (row+1) + segmentIndex) % nbPoints;
+    }
+    this.addPolygon(firstPoint+v3, firstPoint+v2, firstPoint+v1, firstPoint+v0);
+  }
+
+  this.endStructureChanges();
+}
+
+/**
+  Appends a mesh extrusion of a profile defined by a linear closed curve (line segments), where a transform of each
+  section is specified.
+  \param xfo Transform to be applied to each profile copy. Each consecutive transform pair will be connected by a polygon loop.
+  \param profile Profile points, defining a closed linear curve
+  \category modeling
+*/
+inline PolygonMesh.addExtrusion!(Xfo xfos[], Vec3 profile[]) { 
+  this.addExtrusion(xfos, profile, true);
+}
+
+/**
+  Adds a shell to the object (`solidify`), by copying the surface and connecting all border polygons.
+  The current surface will be pushed by 1/2 `thickness` along the point normals, and the copied surface (interior)
+  will be pushed by the same amount in the opposite direction.
+  \note This simple implementation is not copying attribute values to the interior surface, and is not treating self-intersections.
+  \category modeling
+*/
+function PolygonMesh.addShell!(Scalar thickness) {
+
+  UInt32 counts[];
+  UInt32 indices[];
+  counts.resize(this.polygonCount());
+  indices.resize(this.polygonPointsCount());
+
+  LocalIndexArray vertices;
+  UInt32 border[];
+  UInt32 offset = 0;
+  for(Size i=0;i<this.polygonCount();i++) {
+    counts[i] = this.getPolygonSize(i);
+    this.topology.getPolygonPoints(i, vertices);
+    for(Size j=0;j<counts[i];j++) {
+      if(this.isPolygonBorder(i,j)) {
+        border.push(vertices.get(j));
+        border.push(vertices.get((j+1)%counts[i]));
+      }
+      indices[offset++] = vertices.get(counts[i]-j-1) + this.pointCount();
+    }
+  }
+
+  this.recomputePointNormals();
+  Size firstPoint = this.createPoints(this.pointCount());
+  for(Size i=0;i<firstPoint;i++) {
+    Vec3 pos = this.getPointPosition(i);
+    Vec3 normal = this.getPointNormal(i);
+    this.setPointPosition(i, pos + normal * thickness * 0.5);
+    this.setPointPosition(firstPoint+i, pos - normal * thickness * 0.5);
+  }
+  this.incrementPointPositionsVersion();
+
+  this.beginStructureChanges();
+
+  offset = 0;
+  for(Size i=0;i<counts.size();i++) {
+    vertices.resize(counts[i]);
+    for(Size j=0;j<counts[i];j++)
+      vertices.set(j, indices[offset++]);
+    this.addPolygon(vertices);
+  }
+
+  for(Size i=0;i<border.size();i+=2) {
+    UInt32 v0 = border[i];
+    UInt32 v1 = border[i+1];
+    UInt32 v2 = border[i+1] + firstPoint;
+    UInt32 v3 = border[i] + firstPoint;
+    this.addPolygon(v3, v2, v1, v0);
+  }
+
+  this.endStructureChanges();
+}
+
+/**
+  Extrudes a circular profile along a Lines object.
+  \category modeling
+  \dfgPresetCreate
+  \dfgPresetDefault subdiv 4
+  \dfgPresetDefault thickness 0.1
+  \dfgPresetDefault upvector {"x": 0.0, "y": 1.0, "z": 0.0}
+*/
+function PolygonMesh.extrudeLines!(Lines lines, UInt32 subdiv, Scalar thickness, Vec3 upvector, out Xfo transforms[]) {
+
+  UInt32 indices[] = lines.indices;
+  if(indices.size() < 2)
+    return;
+
+  UInt32 loops = subdiv;
+  if(loops < 3) loops = 3;
+
+  Size nbPoints = lines.pointCount() * loops;
+  Size firstPoint = this.createPoints(nbPoints);
+
+  Vec3 profile[];
+  profile.resize(loops);
+  Float32 step = TWO_PI / Float32(loops);
+  Quat quat;
+  for(UInt32 i=0;i<loops;i++) {
+    quat.setFromAxisAndAngle(Vec3(0.0, 0.0, 1.0), step * Float32(i));
+    profile[i] = quat.rotateVector(Vec3(1.0, 0.0, 0.0));
+  }
+
+  transforms = lines.getPerPointTransforms(upvector);
+
+  // project points
+  for(Size i=0;i<transforms.size();i++) {
+    UInt32 offset = firstPoint + i * loops;
+    for(Size j=0;j<loops;j++) {
+      this.setPointPosition(offset, transforms[i].transformVector(profile[j] * thickness));
+      this.setPointNormal(offset++, transforms[i].ori.rotateVector(profile[j]));
+    }
+  }
+
+  this.beginStructureChanges();
+
+  for(Size i=0;i<indices.size();i+=2) {
+    UInt32 index = indices[i];
+    UInt32 index2 = indices[i+1];
+
+    for(Size j=0;j<loops;j++) {
+      Index a = firstPoint + index * loops + j;
+      Index b = firstPoint + index * loops + (j+1) % loops;
+      Index d = firstPoint + index2 * loops + j;
+      Index c = firstPoint + index2 * loops + (j+1) % loops;
+      this.addPolygon(a, b, c, d);
+    }
+  }
+
+  this.endStructureChanges();
+}
+
+/**
+  Splits the mesh up in multiple mesh pieces based on a limit on split
+  vertices. So for example for a cube the split vertices count is 24 and not
+  6, since each vertex has to be split based on the normals for each corner.
+  This function uses an algorithm which grows polygon islands based on neighbor
+  information.
+  If the chunkSizeLimit is zero this will return one chunk per polygon island.
+  \category modeling
+  \dfgPresetCreate
+  \dfgPresetDefault chunkSizeLimit 128
+*/
+function PolygonMesh[] PolygonMesh.splitMeshIntoChunks(
+  UInt32 chunkSizeLimit,
+  io SInt32 pointToChunkIndex[],
+  io SInt32 pointToChunkPoint[],
+  io SInt32 polyToChunkIndex[],
+  io SInt32 polyToChunkPoly[]
+) {
+  
+  // in case we are running insice of Canvas the mesh might be null
+  PolygonMesh result[];
+  if(this == null)
+    return result;
+
+  GeometryAttributes attributes = this.getAttributes();
+  Vec3Attribute positions = attributes.getAttribute('positions');
+
+  // note that we are checking the size of all split values here
+  if(chunkSizeLimit > 0) {
+    if(positions.values.size() < chunkSizeLimit) {
+      result.push(this);
+      return result;
+    }
+  }
+
+  pointToChunkIndex.resize(this.pointCount());
+  pointToChunkPoint.resize(this.pointCount());
+  polyToChunkIndex.resize(this.polygonCount());
+  polyToChunkPoly.resize(this.polygonCount());
+
+  Size polygonCount = this.polygonCount();
+  // true if the polygon is already processed
+  Boolean polygonHit[](polygonCount);
+  for(UInt32 i=0;i<polygonCount;i++)
+    polygonHit[i] = false;
+  UInt32 firstFreePolygon = 0;
+
+  // number of polygons left
+  UInt32 polygonsLeft = polygonCount;
+
+  // a lookup to define if a given attribute index
+  // has already been hit or not. we need this to know
+  // if we need to increment the chunk's size
+  Boolean attrIndexHitSource[](this.polygonPointsCount());
+  for(UInt32 i=0;i<attrIndexHitSource.size();i++)
+    attrIndexHitSource[i] = false;
+
+  UInt32 chunkSize = 0;
+  UInt32 chunk[]; 
+  UInt32 chunks[][];
+  UInt32 chunkVertexCounts[];
+  UInt32 chunkVertexCount = 0;
+  UInt32 vertexToChunkSource[](this.pointCount());
+  for(Size i=0;i<vertexToChunkSource.size();i++)
+    vertexToChunkSource[i] = InvalidIndex;
+
+  Boolean attrIndexHit[] = attrIndexHitSource.clone();
+  UInt32 vertexToChunk[] = vertexToChunkSource.clone();
+  UInt32 chunkVertexLookup[][];
+
+  UInt32 newPolygonsForChunk[];
+  while(polygonsLeft > 0) {
+
+    if(newPolygonsForChunk.size() == 0) {
+
+      // start a new chunk if we are running in polygon island mode
+      if(chunkSizeLimit == 0 && chunk.size() > 0) {
+        chunks.push(chunk.clone());
+        chunkVertexCounts.push(chunkVertexCount);
+        chunkVertexLookup.push(vertexToChunk);
+        chunk.resize(0);
+        chunkSize = 0;
+        chunkVertexCount = 0;
+        attrIndexHit = attrIndexHitSource.clone();
+        vertexToChunk = vertexToChunkSource.clone();
+      }
+
+      // look for the first free polygon and push it to our new chunk
+      for(;firstFreePolygon<polygonCount;firstFreePolygon++) {
+        if(polygonHit[firstFreePolygon])
+          continue;
+        newPolygonsForChunk.push(firstFreePolygon);
+        break;
+      }
+    }
+
+    // clone the array here so we don't have to loop
+    UInt32 currentPolygonsForChunk[];
+    for(UInt32 i=0;i<newPolygonsForChunk.size();i++) {
+
+      UInt32 polygon = newPolygonsForChunk[i];
+      if(polygonHit[polygon])
+        continue;
+      polygonHit[polygon] = true;
+
+      polyToChunkIndex[polygon] = chunks.size();
+      polyToChunkPoly[polygon] = chunk.size();
+
+      chunk.push(polygon);
+      polygonsLeft--;
+
+      for(UInt32 j=0;j<this.getPolygonSize(polygon);j++) {
+        
+        // see if this chunk contains the attribute index already
+        UInt32 attrIndex = this.getPolygonAttributeIndex(polygon,  j);
+        if(!attrIndexHit[attrIndex]) {
+          attrIndexHit[attrIndex] = true;
+          chunkSize++;
+        }
+
+        // also check if this vertex has been added yet to the chunk
+        UInt32 vertex = this.getPolygonPoint(polygon, j);
+        if(vertexToChunk[vertex] == InvalidIndex) {
+          vertexToChunk[vertex] = chunkVertexCount;
+          pointToChunkIndex[vertex] = chunks.size();
+          pointToChunkPoint[vertex] = chunkVertexCount;
+          chunkVertexCount++;
+        }
+      }
+
+      // start a new chunk if we are running into the limit
+      if(chunkSizeLimit > 0 && (chunkSize >= chunkSizeLimit - 4)) {
+        chunks.push(chunk.clone());
+        chunkVertexCounts.push(chunkVertexCount);
+        chunkVertexLookup.push(vertexToChunk);
+        chunk.resize(0);
+        chunkSize = 0;
+        chunkVertexCount = 0;
+        attrIndexHit = attrIndexHitSource.clone();
+        vertexToChunk = vertexToChunkSource.clone();
+        currentPolygonsForChunk.resize(0);
+      }
+
+      for(UInt32 j=0;j<this.getPolygonSize(polygon);j++) {
+
+        // now check if this polygon has a neighbor which has not
+        // been visited yet and add it to the chunk
+        UInt32 adjPolygon = this.getPolygonAdjacentPolygon(polygon, j);
+
+        if(adjPolygon == InvalidIndex)
+          continue;
+
+        if(polygonHit[adjPolygon])
+          continue;
+        currentPolygonsForChunk.push(adjPolygon);
+      }
+    }
+
+    newPolygonsForChunk = currentPolygonsForChunk;
+  }
+
+  // there might be an unfinished chunk
+  if(chunk.size() > 0) {
+    chunks.push(chunk);
+    chunkVertexLookup.push(vertexToChunk);
+    chunkVertexCounts.push(chunkVertexCount);
+  }
+
+  // now extract all chunks
+  for(Size chunkIndex=0;chunkIndex<chunks.size();chunkIndex++) {
+    chunk = chunks[chunkIndex];
+
+    PolygonMesh chunkMesh = PolygonMesh();
+    result.push(chunkMesh);
+
+    // copy all of the polygons over
+    chunkMesh.createPoints(chunkVertexCounts[chunkIndex]);
+    chunkMesh.beginStructureChanges();
+    for(Size i=0;i<chunk.size();i++) {
+      LocalL8UInt32Array points;
+      this.getPolygonPoints(chunk[i], points);
+      for(Size j=0;j<points.size();j++) {
+        points.set(j, chunkVertexLookup[chunkIndex][points.get(j)]);
+      }
+      chunkMesh.addPolygon(points);
+    }
+    chunkMesh.endStructureChanges();
+
+    // create the same attributes on the target chunk mesh
+    GeometryAttributes chunkAttributes = chunkMesh.getAttributes();
+
+    for(Size i=0;i<attributes.attributes.size();i++) {
+      GeometryAttribute attr = attributes.attributes[i];
+      GeometryAttribute chunkAttr = chunkAttributes.getOrCreateAttribute(attr.getName(), attr.type());
+
+      // now copy all of the attributes' values
+      for(Size j=0;j<chunk.size();j++) {
+        
+        UInt32 polygon = chunk[j];
+        UInt32 polygonSize = this.getPolygonSize(chunk[j]);
+        UInt32 chunkPolygon = j;
+
+        for(Size k=0;k<polygonSize;k++) {
+          UInt32 attrIndex = this.getPolygonAttributeIndex(polygon,  k);
+          UInt32 chunkAttrIndex = chunkMesh.getPolygonAttributeIndex(chunkPolygon, k);
+          chunkAttr.copyValue(attr, attrIndex, chunkAttrIndex);
+        }
+      }
+
+      chunkAttr.incrementVersion();
+    }
+
+    // also create a map on the chunk
+    IntegerAttribute chunkVertexToVertexAttr = chunkAttributes.getOrCreateIntegerAttribute('chunkVertexToVertex');
+    for(Size j=0;j<chunk.size();j++) {
+      
+      UInt32 polygon = chunk[j];
+      UInt32 polygonSize = this.getPolygonSize(chunk[j]);
+      UInt32 chunkPolygon = j;
+
+      for(Size k=0;k<polygonSize;k++) {
+        UInt32 vertex = this.getPolygonPoint(polygon, k);
+        UInt32 chunkAttrIndex = chunkMesh.getPolygonAttributeIndex(chunkPolygon, k);
+        chunkVertexToVertexAttr.values[chunkAttrIndex] = vertex;
+      }
+    }
+    chunkVertexToVertexAttr.incrementVersion();
+  }
+
+  return result;
+}
+
+/**
+  Splits the mesh up in multiple mesh pieces based on a limit on split
+  vertices. So for example for a cube the split vertices count is 24 and not
+  6, since each vertex has to be split based on the normals for each corner.
+  This function uses an algorithm which grows polygon islands based on neighbor
+  information.
+  If the chunkSizeLimit is zero this will return one chunk per polygon island.
+  \category modeling
+  \dfgPresetCreate
+  \dfgPresetDefault chunkSizeLimit 128
+*/
+function PolygonMesh[] PolygonMesh.splitMeshIntoChunks(UInt32 chunkSizeLimit) {
+  SInt32 pointToChunkIndex[];
+  SInt32 pointToChunkPoint[];
+  SInt32 polyToChunkIndex[];
+  SInt32 polyToChunkPoly[];
+  return this.splitMeshIntoChunks(chunkSizeLimit, pointToChunkIndex, pointToChunkPoint, polyToChunkIndex, polyToChunkPoly);
+}
+
+/**
+  Splits the mesh up into pieces based on the polygon islands
+  \category modeling
+  \dfgPresetCreate
+*/
+function PolygonMesh[] PolygonMesh.splitMeshIntoIslands(
+  io SInt32 pointToChunkIndex[],
+  io SInt32 pointToChunkPoint[],
+  io SInt32 polyToChunkIndex[],
+  io SInt32 polyToChunkPoly[]
+) {
+  PolygonMesh result[];
+  if(this == null)
+    return result;
+  return this.splitMeshIntoChunks(0, pointToChunkIndex, pointToChunkPoint, polyToChunkIndex, polyToChunkPoly);
+}
+
+/**
+  Splits the mesh up into pieces based on the polygon islands
+  \category modeling
+  \dfgPresetCreate
+*/
+function PolygonMesh[] PolygonMesh.splitMeshIntoIslands() {
+  SInt32 pointToChunkIndex[];
+  SInt32 pointToChunkPoint[];
+  SInt32 polyToChunkIndex[];
+  SInt32 polyToChunkPoly[];
+  return this.splitMeshIntoIslands(pointToChunkIndex, pointToChunkPoint, polyToChunkIndex, polyToChunkPoly);
+}

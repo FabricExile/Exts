@@ -1,0 +1,58 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /**
+    The MouseClickDragInteraction interaction sets up
+    a DragInteraction that is started when the mouse
+    clicks, and ends when the mouse is released.
+    The mouse button can be specified (MouseButton_LeftButton by default).
+
+    Once active, the DragInteraction will send these various events:
+    ToolEvent_DragBegin, ToolEvent_DragMove, ToolEvent_DragEnd, 
+    ToolEvent_DragBeginEndNoMove.
+
+    See :ref:`TPG.interactive-tools` for more information and examples related to tool interactions.
+  */
+  object MouseClickDragInteraction : BaseDragInteraction{
+    MouseButton mouseButtonsFilter;
+    ModiferKey allowedModifiers;
+  };
+
+  MouseClickDragInteraction() {
+    this.mouseButtonsFilter = MouseButton_LeftButton;
+    this.setAlwaysRegisteredToEvents();
+  }
+
+  MouseClickDragInteraction( UInt32 mouseButtonsFilter ) {
+    this.mouseButtonsFilter = mouseButtonsFilter;
+    this.setAlwaysRegisteredToEvents();
+  }
+
+  MouseClickDragInteraction( UInt32 mouseButtonsFilter, ModiferKey allowedModifiers ) {
+    this.mouseButtonsFilter = mouseButtonsFilter;
+    this.allowedModifiers = allowedModifiers;
+    this.setAlwaysRegisteredToEvents();
+  }
+
+  /// \internal
+  MouseClickDragInteraction.onRawEvent!( io Event event ) {
+    Ref<MouseEvent> mouseEvent = event;
+    if( !event.isAccepted() && Boolean( mouseEvent ) && mouseEvent.button == this.mouseButtonsFilter && ( ( event.getModifiers() & ~this.allowedModifiers ) == 0) ) {
+      if( !this.prepared ) {
+        if( mouseEvent.eventType() == Event_MouseButtonPress ) {
+          event.accept();
+          this.onStart();
+        }
+      } else {
+        if( mouseEvent.eventType() == Event_MouseButtonRelease ) {
+          event.accept();
+          this.onEnd();
+        }
+      }
+    }
+    this.parent.onRawEvent( event );
+  }
+}// namespace Tool

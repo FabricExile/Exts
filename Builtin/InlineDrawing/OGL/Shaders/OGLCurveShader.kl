@@ -1,0 +1,161 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+
+/**
+\versionadded 1.12.0
+
+The OGLCurveShader inherits the OGLInlineShader. It extends the OGLInlineShader for shading with a simple phong model.
+
+\rst
+Uniforms
+----------
+==================== ============ ===================================== ==================================
+Name                 Type         Description                           Default
+==================== ============ ===================================== ==================================
+u_light0Position     Vec3         Position of the first light           Position of the camera
+u_light0Color        Color        Color of the first light              Color(1.0, 1.0, 1.0)
+u_ambientColor       Color        Ambient color component               Color(0.05, 0.05, 0.05)
+u_diffuseColor       Color        Diffuse color component               Color(0.0, 1.0, 0.0)
+u_specularColor      Color        Specular color component              Color(0.2, 0.2, 0.2)
+u_specularFactor     Color        Specular distribution factor          16.0
+==================== ============ ===================================== ==================================
+
+Attributes
+----------
+=============== ============ =====================================
+Name            Type         Description
+=============== ============ =====================================
+positions       Vec3         Geometry positions
+tangents        Vec3         Curve tangents
+=============== ============ =====================================
+\endrst
+
+\example
+  InlineDrawing draw = OGLInlineDrawing();
+  InlineShader shader = draw.registerShader(OGLCurveShader());
+  InlineMaterial mat = shader.getOrCreateMaterial('blue');
+  mat.setUniform('u_diffuseColor', Color(0.0, 0.0, 1.0));
+\endexample
+\dfgPresetOmit
+*/
+object OGLCurveShader : OGLInlineShader{};
+
+/// default constructor
+function OGLCurveShader() {
+  // Avoid calling the init method if this default constructor is being invoked 
+  // during the construction of a derived object.
+  if( this.type() == OGLCurveShader )
+    this.init(String(this.type()));
+}
+
+/// default constructor taking a name
+function OGLCurveShader( String name ) {
+  this.init(name);
+}
+
+/// initialize the shader using a name.
+/// \internal
+function OGLCurveShader.init!( String name ) {
+  this.name = name;
+  this.setVertexCode("
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+      
+      uniform mat4 u_viewMatrix;
+      uniform mat4 u_projection;
+      uniform mat4 u_modelMatrix;
+
+      uniform vec3 u_light0Position;
+      uniform vec4 u_light0Color;
+
+      attribute vec4 positions;
+      attribute vec3 tangents;
+
+      varying vec3 v_tangent;
+      varying vec3 v_lightDir;
+      varying vec4 v_lightColor;
+      varying vec3 v_eyeVec;
+
+      void main(){
+        vec4 position = u_modelMatrix * positions;
+        vec4 v_positionInv = (u_viewMatrix * vec4(position.xyz, 1.0));
+        gl_Position = u_projection * v_positionInv;
+  
+        v_tangent = mat3( u_viewMatrix ) * ( mat3( u_modelMatrix ) * tangents );
+        v_lightDir = ( u_viewMatrix * vec4( u_light0Position, 1.0 ) ).xyz - v_positionInv.xyz;
+        v_lightColor = u_light0Color;
+        v_eyeVec = -v_positionInv.xyz;
+      }
+    ");
+  this.setFragmentCode("
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+      
+      uniform vec4 u_ambientColor;
+      uniform vec4 u_diffuseColor;
+      uniform vec4 u_specularColor;
+      uniform float u_specularFactor;
+
+      varying vec3 v_tangent;
+      varying vec3 v_lightDir;
+      varying vec4 v_lightColor;
+      varying vec3 v_eyeVec;
+
+      void main() {
+        vec4 final_color = u_ambientColor;
+
+        vec3 L = normalize( v_lightDir );
+        vec3 E = normalize( v_eyeVec );
+
+        vec3 halfVector = normalize( L + E );
+        vec3 tangent = normalize( v_tangent );
+        vec3 N = normalize( halfVector - tangent * dot( tangent, halfVector ) );
+
+        float lambertTerm = dot(N,L);
+        lambertTerm = abs(lambertTerm);
+        
+        if(lambertTerm > 0.0)
+        {
+          final_color += v_lightColor * u_diffuseColor * lambertTerm; 
+          vec3 R = reflect(-L, N);
+          float specular = pow( max(dot(R, E), 0.0), u_specularFactor );
+          final_color += u_specularColor * specular;  
+        }
+
+        gl_FragColor = final_color;
+      }
+    ");  
+  this.defineUniform(InlineUniform("u_viewMatrix", Mat44()));
+  this.defineUniform(InlineUniform("u_projection", Mat44()));
+  this.defineUniform(InlineUniform("u_modelMatrix", Mat44()));
+
+  this.defineUniform(InlineUniform("u_light0Position", Vec3(100, 100, 100)));
+  this.defineUniform(InlineUniform("u_light0Color", Color(1.0, 1.0, 1.0)));
+
+  this.defineUniform(InlineUniform("u_ambientColor", Color(0.05, 0.05, 0.05)));
+  this.defineUniform(InlineUniform("u_diffuseColor", Color(0.0, 1.0, 0.0)));
+  this.defineUniform(InlineUniform("u_specularColor", Color(0.2, 0.2, 0.2)));
+  this.defineUniform(InlineUniform("u_specularFactor", 16.0));
+
+  this.defineAttribute('positions', "Vec3");
+  this.defineAttribute('tangents', "Vec3");
+}
+
+/// called by the InlineDrawing, should not be called manually
+/// \internal
+function Boolean OGLCurveShader.draw!( io DrawContext context ) {
+
+  if(this.getName() == 'debug')
+    report( 'OGLCurveShader.draw ' + this.getName() );
+
+  if(context.lightPositions.size() > 0)
+    this.setUniform(InlineUniform('u_light0Position', context.lightPositions[0]));
+  else
+    this.setUniform(InlineUniform('u_light0Position', context.viewport.getCamera().getMat44().translation()));
+
+  if(context.lightColors.size() > 0)
+    this.setUniform(InlineUniform('u_light0Color', context.lightColors[0]));
+
+  return this.parent.draw(context);
+}

@@ -1,0 +1,132 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+
+/**
+\versionadded 1.12.0
+
+The OGLDebugAxesShader inherits the OGLInlineShader. It extends the OGLInlineShader for shading with flat colors, using the vertexColors attribute for the diffuse.
+
+\rst
+Attributes
+----------
+=============== ============ =====================================
+Name            Type         Description
+=============== ============ =====================================
+positions       Vec3        positions attribute
+xdir            Vec3        xdirection attribute
+ydir            Vec3        ydirection attribute
+zdir            Vec3        zdirection attribute
+=============== ============ =====================================
+\endrst
+\dfgPresetOmit
+
+*/
+object OGLDebugAxesShader: OGLInlineShader {};
+
+/// default constructor
+function OGLDebugAxesShader() {
+  // Avoid calling the init method if this default constructor is being invoked 
+  // during the construction of a derived object.
+  if(this.type() == OGLDebugAxesShader)
+    this.init(String(this.type()));
+}
+
+/// default constructor taking a name
+function OGLDebugAxesShader(String name) {
+  this.init(name);
+}
+
+/// initialize the OGLDebugAxesShader using name
+/// \internal
+function OGLDebugAxesShader.init!(String name) {
+  this.name = name;
+  this.setVertexCode("
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+
+      uniform mat4 u_viewMatrix;
+      uniform mat4 u_modelMatrix;
+      uniform mat3 u_normalMatrix;
+
+      attribute vec4 positions;
+      attribute vec3 xdir;
+      attribute vec3 ydir;
+      attribute vec3 zdir;
+
+      varying vec3 v_x;
+      varying vec3 v_y;
+      varying vec3 v_z;
+
+      void main(){
+        gl_Position = u_viewMatrix * (u_modelMatrix * positions);
+        v_x = u_normalMatrix * xdir;
+        v_y = u_normalMatrix * ydir;
+        v_z = u_normalMatrix * zdir;
+      }
+    ");
+  this.setGeometryCode("
+      #version 330
+  
+      layout(points) in;
+      layout (line_strip, max_vertices=6) out;
+  
+      uniform mat4 u_projection;
+      uniform float u_scale;
+
+      in vec3 v_x[];
+      in vec3 v_y[];
+      in vec3 v_z[];
+
+      out vec4 g_vertexColor;
+
+      void main(){
+
+        g_vertexColor = vec4(1.0, 0.0, 0.0, 1.0);
+
+        gl_Position = u_projection * gl_in[0].gl_Position;
+        EmitVertex();
+
+        gl_Position = u_projection * (gl_in[0].gl_Position + vec4(v_x[0], 0.0) * u_scale); 
+        EmitVertex();
+        EndPrimitive();
+
+        g_vertexColor = vec4(0.0, 1.0, 0.0, 1.0);
+
+        gl_Position = u_projection * gl_in[0].gl_Position;
+        EmitVertex();
+
+        gl_Position = u_projection * (gl_in[0].gl_Position + vec4(v_y[0], 0.0) * u_scale); 
+        EmitVertex();
+        EndPrimitive();
+
+        g_vertexColor = vec4(0.0, 0.0, 1.0, 1.0);
+
+        gl_Position = u_projection * gl_in[0].gl_Position;
+        EmitVertex();
+
+        gl_Position = u_projection * (gl_in[0].gl_Position + vec4(v_z[0], 0.0) * u_scale); 
+        EmitVertex();
+        EndPrimitive();
+      }
+    ");   
+  this.setFragmentCode("
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+      
+      in vec4 g_vertexColor;
+      
+      void main(){
+        gl_FragColor = g_vertexColor;
+      }
+    ");  
+  this.defineUniform(InlineUniform("u_viewMatrix", Mat44()));
+  this.defineUniform(InlineUniform("u_projection", Mat44()));
+  this.defineUniform(InlineUniform("u_modelMatrix", Mat44()));
+  this.defineUniform(InlineUniform("u_normalMatrix", Mat33()));
+  this.defineUniform(InlineUniform("u_scale", Float32(1.0)));
+  this.defineAttribute('positions', "Vec4");
+  this.defineAttribute('xdir', "Vec3");
+  this.defineAttribute('ydir', "Vec3");
+  this.defineAttribute('zdir', "Vec3");
+}

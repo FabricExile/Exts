@@ -1,0 +1,108 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Color.html"
+    },
+  "title" : "-> Color[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "r",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "g",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "b",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "a",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 0,\n  \"b\" : 0\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Color[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "2ABF44EF4DC4CF9D0FF4799EC1B5F848",
+  "code" : "require Math;
+
+operator Math_Color_compose_task<<<index>>>(io Color[] result, in Scalar[] r, in Scalar[] g, in Scalar[] b, in Scalar[] a) {
+  result[index].r = r[index < r.size() ? index : r.size() - 1];
+  result[index].g = g[index < g.size() ? index : g.size() - 1];
+  result[index].b = b[index < b.size() ? index : b.size() - 1];
+  result[index].a = a[index < a.size() ? index : a.size() - 1];
+}
+
+dfgEntry {
+  if(r.size() == 0) return;
+  if(g.size() == 0) return;
+  if(b.size() == 0) return;
+  if(a.size() == 0) return;
+  Size task_size = 0;
+  if(task_size < r.size()) task_size = r.size();
+  if(task_size < g.size()) task_size = g.size();
+  if(task_size < b.size()) task_size = b.size();
+  if(task_size < a.size()) task_size = a.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size i = 0; i < task_size; i++) {
+      Math_Color_compose_task(i, result, r, g, b, a);
+    }
+  } else {
+    Math_Color_compose_task<<<task_size>>>(result, r, g, b, a);
+  }
+}
+"
+  }

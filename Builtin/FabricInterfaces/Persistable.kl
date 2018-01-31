@@ -1,0 +1,70 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 1.13.0
+  The Persistable  is an interface that objects can support if they wish to provide 
+  custom persistence within Splice. The Splice plugins call methods on objects supporting
+  the Persistable interface. The data is included into the Host DCC scene file. 
+
+  \note For nested data types, the root object must invoke the save and load methods on any members that must also save thier data.
+
+\rst
+
+Example
+---------
+
+A custom object can save its data to the host application's scene file by supporting the Persistable interface.
+
+.. code-block:: kl
+
+    require FileIO;
+    require FTL;
+    require FabricInterfaces;
+
+    // MyObject supports custom persistence in the Splice application.
+    object MyObject : Persistable {
+      String name;
+      String filePath;
+    };
+
+    function MyObject() {
+
+    }
+
+    // The scene file is being saved, and the KL object can save its own data to the scene file.
+    function String MyObject.saveDataToString(PersistenceContext context) {
+      FTL_JSONEncoder encoder;
+      {
+        FTL_JSONObjectEncoder objEncoder = encoder.getObject();
+        {
+          objEncoder.setString("name", this.name);
+          objEncoder.setString("filePath", this.filePath.string());
+        }
+      }
+      return encoder.encode();
+    }
+
+    // The scene file has been loaded and now the KL obect can load its custom data. 
+    function MyObject.loadDataFromString!(PersistenceContext context, String data) {
+
+      FTL_JSONDecoder decoder = FTL_JSONDecoder(data);
+      FTL_JSONObject objDecoder = decoder.decode();
+      this.name = objDecoder.getString('name');
+      this.filePath = objDecoder.getString('filePath');
+
+    }
+
+\endrst
+\dfgPresetOmit
+
+*/
+interface Persistable {
+
+  /// a callback invoked by Splice when an object is persisted
+  String saveDataToString(PersistenceContext context);
+
+  /// a callback invoked by Splice when an object loaded back within Splice
+  loadDataFromString!(PersistenceContext context, String data);
+};

@@ -1,0 +1,54 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// Builds a shape which draws a Geometry.
+  /// By default, if the Geometry has a "vertexColors" ColorAttribute,
+  /// it will define a local color which will override parents' color.
+  /// This can be disabled by calling :kl-ref:`Tool::GeometricShape.useGeometryColorIfAny`.
+  ///
+  /// See :ref:`TPG.drawing` for more information about drawing tool shapes.
+  object GeometricShape : BaseShape{
+    Geometry geometry;
+    Size lastUpdateKeysVersion;
+    Boolean usingGeometryColorIfAny;
+  };
+
+  GeometricShape() {
+    this.usingGeometryColorIfAny = true;
+  }
+
+  GeometricShape( Ref<Geometry> geometry ) {
+    this.setGeometry( geometry );
+    this.usingGeometryColorIfAny = true;
+  }
+
+  inline GeometricShape.useGeometryColorIfAny!( Boolean use ) {
+    this.usingGeometryColorIfAny = use;
+  }
+
+  inline Ref<Geometry> GeometricShape.getGeometry() {
+    return this.geometry;
+  }
+
+  inline GeometricShape.setGeometry!( Ref<Geometry> geometry ) {
+    this.geometry = geometry;
+  }
+
+  /// Updates the associated RenderEngine instance, its visibility, and its material.
+  GeometricShape.selfUpdateDrawData!( io DrawContext context, io Boolean drawChildren ) {
+    // If the geometry has vertex colors, by default, make these a local color property
+    // to indicate the rendering that this is the color to be used
+    if( this.usingGeometryColorIfAny && Boolean(this.geometry) && !this.hasLocalProperty( ColorProperty ) ) {
+      if( synchronizeVersion( this.geometry.getAttributes().keysVersion, this.lastUpdateKeysVersion ) ) {
+        ColorAttribute vertexColors = this.geometry.getAttributes().getAttribute( "vertexColors" );
+        if( vertexColors )
+          this.setColor( vertexColors );
+      }
+    }
+    this.parent.selfUpdateDrawData( context, drawChildren );
+  }
+
+}// namespace Tool

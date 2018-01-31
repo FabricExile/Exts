@@ -1,0 +1,400 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+alias InlineUniform InlineUniformMap[String];
+
+/**
+\versionadded 1.12.0
+
+The InlineInstance represents a drawable instance of an InlineShape using an InlineTransform. 
+InlineInstance objects are stored within an InlineMaterial.
+*/
+object InlineInstance : InlineEntityBase {
+  /// \internal
+  Ref<InlineTransform> transform;
+  /// \internal
+  InlineShape shape;
+  /// \internal
+  InlineMaterial materials[];
+  /// \internal
+  Boolean mActive;
+  /// \internal
+  InlineUniformMap uniforms[Integer];
+  /// \internal
+  SimpleLock simpleLock;
+  /// \internal
+  String attributeNameMap[String];
+  /// \internal
+  Object instancingStorage;
+};
+
+/// backwards compatibility
+alias InlineInstance SimpleInlineInstance;
+
+/// default constructor given a transform and a shape
+/// \dfgPresetOmit
+inline InlineInstance(String name, InlineTransform transform, InlineShape shape) {
+  this.init(name, transform, shape, true);
+}
+
+/// default constructor given a transform and a shape
+/// \dfgPresetOmit
+inline InlineInstance(String name, InlineTransform transform, InlineShape shape, io InlineMaterial material) {
+  this.init(name, transform, shape, true);
+  this.addMaterial(material);
+}
+
+/// default constructor given a transform and a shape
+/// \dfgPresetOmit
+inline InlineInstance(String name, InlineTransform transform, InlineShape shape, Boolean active) {
+  this.init(name, transform, shape, active);
+}
+
+/// default constructor given a transform and a shape
+/// \dfgPresetOmit
+inline InlineInstance(String name, InlineTransform transform, InlineShape shape, Boolean active, io InlineMaterial material) {
+  this.init(name, transform, shape, active);
+  this.addMaterial(material);
+}
+
+/// \internal
+inline InlineInstance.init!(String name, InlineTransform transform, InlineShape shape, Boolean active) {
+  this.simpleLock = SimpleLock("InlineInstance");
+  this.setName(name);
+  this.setTransform(transform);
+  this.setShape(shape);
+  this.mActive = active;
+}
+
+InlineInstance.removeAndCleanupOwnedMaterials!() {
+  Ref<InlineInstance> this_InlineInstance = this;
+  for( Integer i = 0; i < this.materials.size(); i++ ) {
+    this.materials[i].removeInstance( this_InlineInstance );
+    if( !this.materials[i].instances )
+      this.materials[i].removeFromShader();
+  }
+  this.materials.resize( 0 );
+}
+
+/// standard destructor
+inline ~InlineInstance() {
+  
+  Ref<InlineInstance> this_InlineInstance = this;
+  for(Integer i=0; i<this.materials.size(); i++)
+    this.materials[i].removeInstance(this_InlineInstance);
+
+  this.materials.resize(0);
+}
+
+/// returns the path of the instance.
+/// the path encodes the hierarchy using a '/' character,
+/// so nested instanceA below transfoA results in a path
+/// like this: 'transfoA/instanceA'
+function String InlineInstance.getPath() {
+  if(this.transform)
+    return this.transform.getPath() + '/' + this.getName();
+  return this.getName();
+} 
+
+///////////////////////////
+// Shape
+
+/// returns the shape used by this instance
+/// \dfgPresetOmit
+function InlineShape InlineInstance.getShape() {
+  AutoLock AL(this.simpleLock);
+  return this.shape;
+}
+
+/// sets the shape used by this instance
+/// \dfgPresetOmit
+function InlineInstance.setShape!(InlineShape shape) {
+  AutoLock AL(this.simpleLock);
+  this.shape = shape;
+}
+
+///////////////////////////
+// Transform
+
+/// returns the transform used by this instance
+/// \dfgPresetOmit
+function InlineTransform InlineInstance.getTransform() {
+  AutoLock AL(this.simpleLock);
+  return this.transform;
+}
+
+/// sets the transform used by this instance
+/// \dfgPresetOmit
+function InlineInstance.setTransform!(InlineTransform transform) {
+  AutoLock AL(this.simpleLock);
+  this.transform = transform;
+  if(this.transform)
+    this.transform.addChild(this);
+}
+
+///////////////////////////
+// Materials
+
+/// returns true if the instance has the material
+/// \dfgPresetOmit
+function Boolean InlineInstance.hasMaterial(InlineMaterial material) {
+  AutoLock AL(this.simpleLock);
+  for(Size i=0;i<this.materials.size();i++) {
+    if(this.materials[i] === material) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// returns the material of this instance
+/// \dfgPresetOmit
+function InlineMaterial InlineInstance.getMaterial(Index index) {
+  AutoLock AL(this.simpleLock);
+  if(index >= this.materials.size()){
+    setError("Invalid index for getMaterial:" + index + ". Material count:" + this.materials.size());
+    InlineMaterial nullMaterial = null;
+    return nullMaterial;
+  }
+  return this.materials[index];
+}
+
+/// adds a new material to this instance
+/// \dfgPresetOmit
+function InlineInstance.addMaterial!(io InlineMaterial material) {
+  AutoLock AL(this.simpleLock);
+  this.materials.push(material);
+  if(!material.hasInstance(this)){
+    material.addInstance(this);
+  }
+}
+
+/// removes a material from this instance
+/// \dfgPresetOmit
+function Boolean InlineInstance.removeMaterial!(io Ref<InlineMaterial> material) {
+  
+  AutoLock AL(this.simpleLock);
+ 
+  for(Size i=0; i<this.materials.size(); i++) 
+  {
+    Ref<InlineMaterial> matRef = this.materials[i];
+    if(matRef === material) 
+    {
+      if(i < this.materials.size()-1)
+        this.materials[i] = this.materials[this.materials.size()-1];
+      this.materials.resize(this.materials.size()-1);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/// removes a material from this instance
+/// \dfgPresetOmit
+function InlineInstance.removeMaterial!(io InlineMaterial material) {
+  Ref<InlineMaterial> materialRef = material;
+  this.removeMaterial(materialRef);
+}
+
+/// returns the number of materials applied to this instance
+/// \dfgPresetOmit
+function Size InlineInstance.getNumMaterials() {
+  AutoLock AL(this.simpleLock);
+  return this.materials.size();
+}
+
+///////////////////////////
+// Toggles
+
+/// enables or disables this instance
+function InlineInstance.setActive!(Boolean active) {
+  this.mActive = active;
+}
+
+/// returns true if this instance is currently active
+function Boolean InlineInstance.isActive() {
+  return this.mActive;
+}
+
+///////////////////////////
+// Uniforms
+
+/// returns true if this instance specializes any of the material values
+/// \dfgPresetOmit
+function Boolean InlineInstance.containsUniforms() {
+  AutoLock AL(this.simpleLock);
+  return this.uniforms.size() > 0;
+}
+
+/// sets an uniform specializing a material value for the whole instance
+/// \dfgPresetOmit
+function InlineInstance.setInstanceUniform!(InlineUniform uniform) {
+  AutoLock AL(this.simpleLock);
+  if(!this.uniforms.has(-1))
+    this.uniforms[-1] = InlineUniformMap();
+  this.uniforms[-1][uniform.getName()] = uniform;
+}
+
+/// sets an uniform specializing a material value for the whole instance
+/// \dfgPresetOmit
+function Boolean InlineInstance.hasInstanceUniform?(String name) {
+  return this.uniforms.has(-1) && this.uniforms[-1].has(name);
+}
+
+/// sets an uniform specializing a material value for the whole instance
+/// \dfgPresetOmit
+function InlineUniform InlineInstance.getInstanceUniform?(String name) {
+  if(this.uniforms.has(-1) && this.uniforms[-1].has(name))
+    return this.uniforms[-1][name];
+  InlineUniform result;
+  return result;
+}
+
+/// sets a uniform specializing a material value for a single transform of the instance.
+/// \dfgPresetOmit
+function InlineInstance.setTransformUniform!(InlineUniform uniform, Index index) {
+  AutoLock AL(this.simpleLock);
+  if(!this.uniforms.has(index))
+    this.uniforms[index] = InlineUniformMap();
+  this.uniforms[index][uniform.getName()] = uniform;
+}
+
+/// sets an uniform specializing a material value for the whole instance
+/// \dfgPresetOmit
+function Boolean InlineInstance.hasTransformUniform?(String name, Index index) {
+  return this.uniforms.has(index) && this.uniforms[index].has(name);
+}
+
+/// sets an uniform specializing a material value for the whole instance
+/// \dfgPresetOmit
+function InlineUniform InlineInstance.getTransformUniform?(String name, Index index) {
+  if(this.uniforms.has(index) && this.uniforms[index].has(name))
+    return this.uniforms[index][name];
+  InlineUniform result;
+  return result;
+}
+
+///////////////////////////
+// Drawing
+
+/// draws the instance on screen. this is used by the 
+/// material and should not be called manually.
+/// \dfgPresetOmit
+function Boolean InlineInstance.draw!(io DrawContext context) {
+  // [pzion 20141201] If our transform is null then it means the transform
+  // has been deleted but there is a material (owned by a shared) that
+  // still references us.  In this case don't try to draw.
+  if (!this.transform)
+    return true;
+  
+  if(!this.mActive)
+    return true;
+
+  Size transformCount = this.transform.nonLocking_getGlobalCount();
+  Ref<InlineShader> shader = context.getMetaData('currentShader');
+  InlineEntityMetaDataSetter contextInstanceMetaDataSetter(
+    context, 'currentInstance', this
+    );
+  InlineEntityMetaDataSetter contextTransformMetaDataSetter(
+    context, 'currentTransform', this.transform
+    );
+
+  // draw instance specific uniforms
+  if(this.uniforms.has(-1)) {
+    InlineUniformMap uniforms = this.uniforms[-1];
+    for(name, uniform in uniforms) {
+      if(!shader.drawUniform(context, uniform)) {
+        return false;
+      }
+    }
+  }
+
+  // InlineTransform transform = this.transform;
+  // for(Size i=0; i<transformCount; i++) {
+
+  //   if(!transform.draw(context, i, transformCount)) {
+  //     return false;
+  //   }
+
+  //   // draw transform specific uniforms
+  //   if(!this.drawTransformUniforms(context, shader, i)) {
+  //     return false;
+  //   }
+
+  //   if(!this.shape.draw(context, i, transformCount)) {
+  //     return false;
+  //   }
+  // }
+  // return true;
+  return this.shape.draw(context);
+}
+
+function Boolean InlineInstance.drawTransformUniforms(io DrawContext context, io Ref<InlineShader> shader, Index transformIndex)
+{
+  // draw transform specific uniforms
+  if(this.uniforms.has(transformIndex)) {
+    InlineUniformMap uniforms = this.uniforms[transformIndex];
+    for(name, uniform in uniforms) {
+      if(!shader.drawUniform(context, uniform)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/// Sets the name for a mapped attribute. This allows to switch the geometry attribute
+/// to be used by a shader.
+function InlineInstance.setMappedAttributeName!(String shaderAttribute, String geometryAttribute) {
+  this.attributeNameMap[shaderAttribute] = geometryAttribute;
+}
+
+/// Returns the name of a mapped attribute. Returns the input name if not mapped.
+function String InlineInstance.getMappedAttributeName(String name) {
+  return this.attributeNameMap.get(name, name);
+}
+
+
+///////////////////////////
+// Raycasting
+
+/// returns all hit GeometryLocation when performing a raycast against this instance
+function GeometryLocation[] InlineInstance.raycast(Ray ray, Boolean closest, Boolean doubleSided, Scalar coneThreshold, Scalar maxDistance) {
+
+  AutoLock AL(this.simpleLock);
+  
+  Scalar distance = BIGSCALAR_POSITIVE;
+  GeometryLocation locations[];
+  InlineTransform transform = this.getTransform();
+  InlineShape shape = this.getShape();
+  SpatialQueryable queryable = shape.getGeometry();
+  if(queryable != null){
+    for(Integer i=0; i<transform.getGlobalCount(); i++){
+      Xfo xfo = transform.getGlobalXfo(i);
+      Xfo invXfo = xfo.inverse();
+      Ray objRay = invXfo.transformRay(ray);
+      GeometryLocation location = queryable.raycast(objRay, doubleSided, coneThreshold, maxDistance);
+      if(location.isValid()){
+        if(closest){
+          Geometry geometry = shape.getGeometry();
+          Vec3 objectSpacePoint = queryable.getPositionAtLocation(location);
+          Vec3 worldSpacePoint = xfo.transformVector(objectSpacePoint);
+          Scalar dist = (worldSpacePoint - ray.start).length();
+          if(dist < distance){
+            if(locations.size() == 0)
+              locations.push(location);
+            else
+              locations[0] = location;
+            distance = dist;
+          }
+        }
+        else
+          locations.push(location);
+      }
+    }
+  }
+  return locations;
+
+}

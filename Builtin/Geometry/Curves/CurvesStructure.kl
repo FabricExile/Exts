@@ -1,0 +1,530 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+
+// Some of this code uses a KL translation of OpenNURBS code: <http://www.opennurbs.org>.
+
+const UInt8 curveType_none = 0;
+const UInt8 curveType_linear = 1;
+const UInt8 curveType_bezier = 2;
+const UInt8 curveType_NURBS = 3;
+const UInt8 curveType_maxCount = 16;// We use this to avoid memory allocations. Users can add more curves types between last defined one and this Max.
+
+const UInt8 curves_maxDegree = 7;// We use this to avoid memory allocations. Users can add more curves types between last defined one and this Max.
+const UInt8 curves_maxDegreeMask = 7;// We use this to avoid memory allocations. Users can add more curves types between last defined one and this Max.
+const UInt8 curves_maxOrder = curves_maxDegree+1;// We use this to avoid memory allocations. Users can add more curves types between last defined one and this Max.
+
+const UInt8 curveFlags_closed = 1 << 0;
+const UInt8 curveFlags_rational = 1 << 1;// Applicable to NURBS and Beziers. Rational -> there is a W attribute.
+const UInt8 curveFlags_periodic = 1 << 2;// Applicable to NURBS. If periodic, curveFlags_closed sould be set also.
+const UInt8 curveFlags_explicitKnots = 1 << 3;
+
+const UInt8 curveForm_open = 0;
+const UInt8 curveForm_closed = 1;
+const UInt8 curveForm_periodic = 2;
+
+/// \internal
+struct Curves_data {
+  UInt8 curveType;
+  UInt8 order;// degree + 1
+  UInt8 flags;
+  UInt8 wrappedCVCount;// 1 for closed curve, order-1 for periodic curve.
+  UInt32 firstPoint;
+  UInt32 pointCount;
+  UInt32 reservedPointCount;// >= pointCount
+  UInt32 extraDataOffset;//1st value = curveIndex. 2nd value = data array size. Followed by data array: for NURBS, knot vector.
+  UInt32 selfIndex;//For debug logging
+  UInt32 spanCount;
+
+  Float32 domainStart;
+  Float32 domainEnd;
+  Float32 domainRange;
+  Float32 domainInvFactor;
+
+  UInt32 other_freeCurveIndex; // This data is not related to the current curve, but rather contains an index of a free curve (used as a stack)
+  // TODO: additional cache data: for display sampling etc...
+};
+
+Curves_data() {
+  this.extraDataOffset = InvalidIndex;
+  this.other_freeCurveIndex = InvalidIndex;
+}
+
+inline Boolean Curves_data.isClosed() {
+  return getFlag( this.flags, curveFlags_closed );
+}
+
+inline UInt8 Curves_data.getCurveForm() {
+  return this.isClosed() ? ( this.isPeriodic() ? curveForm_periodic : curveForm_closed ) : curveForm_open;
+}
+
+inline Boolean Curves_data.isOpen() {
+  return !getFlag( this.flags, curveFlags_closed );
+}
+
+inline Boolean Curves_data.isRational() {
+  return getFlag( this.flags, curveFlags_rational );
+}
+
+inline Boolean Curves_data.isPeriodic() {
+  return getFlag( this.flags, curveFlags_periodic );
+}
+
+inline Boolean Curves_data.hasExplicitKnots() {
+  return getFlag( this.flags, curveFlags_explicitKnots );
+}
+
+inline Float32 Curves_data.offsetParam( Float32 param ) {
+  return getFlag( this.flags, curveFlags_explicitKnots ) ? param : param - this.domainStart;
+}
+
+inline Curves_data.setExplicitDomainStart!( Float32 param ) {
+  Float32 prevDelta = this.domainEnd - this.domainStart;
+  this.domainStart = param;
+  this.domainEnd = param + prevDelta;
+}
+
+inline UInt32 Curves_data.getCurveNextPointIndex( UInt32 curvePointIndex ) {
+  UInt32 next = curvePointIndex + 1;
+  return next == this.pointCount ? ( this.isClosed() ? 0 : curvePointIndex ) : next;
+}
+
+inline UInt32 Curves_data.getPrevCurvePointIndex( UInt32 curvePointIndex ) {
+  return curvePointIndex ? curvePointIndex - 1 : ( this.isClosed() ? this.pointCount - 1 : curvePointIndex );
+}
+
+inline Float32 Curves_data.getParamFromNormalizedParam( Float32 normalizedParam ) {
+  return this.domainRange * normalizedParam + this.domainStart;
+}
+
+inline Float32 Curves_data.getNormalizedParamFromParam( Float32 param ) {
+  return this.domainInvFactor * ( param - this.domainStart );
+}
+
+inline UInt32 Curves_data.getPointIndex( UInt32 curvePointIndex ) {
+  return curvePointIndex + this.firstPoint;
+}
+
+inline Boolean IsEmptyCurvesSpanRange( Vec2 range ) {
+  return ( range.y - range.x ) < 1e-5f;
+}
+
+//Extra data structure:
+// 1st UInt32 = curve index (back pointer)
+// 2nd UInt32 = extraData count
+
+object Curves;
+
+/// \internal
+/// By not being an Object, the curvesStructure can properly support GPU operations.
+struct CurvesStructure permits Curves {
+  private Curves_data curvesData[];
+  private UInt32ArrayAllocator packedCurvesExtraData;
+  private UInt32 freeCurveIndexCount;
+
+  private UInt32 pointCount;//Mirrors GeometryAttributes.size(), but GeometryAttributes is not GPU friendly
+  private UInt32 unusedPointCount;//Without the reserved point count
+
+  // Cache of the attribute buffers
+  Boolean useDoubles;
+  Boolean smoothLinearCurveTangents;
+  Vec3 positions[];
+  Vec3_d positions_d[];
+  Float32 weights[];//For non-rational curves
+};
+
+/// Curve count. Note: in some cases this might include some removed (unactive) curves that are within the range.
+inline UInt32 CurvesStructure.curveCount() {
+  return this.curvesData.size();
+}
+
+/******************************************************************************
+STRUCTURE CHANGES
+******************************************************************************/
+
+CurvesStructure.copy!( CurvesStructure src ) {
+  this.curvesData.resize( src.curvesData.size() );
+  for( Size i = 0; i < src.curvesData.size(); ++i )
+    this.curvesData[i] = src.curvesData[i];
+
+  this.packedCurvesExtraData.copy( src.packedCurvesExtraData );
+  this.freeCurveIndexCount = src.freeCurveIndexCount;
+  this.pointCount = src.pointCount;
+  this.unusedPointCount = src.unusedPointCount;
+  this.useDoubles = src.useDoubles;
+}
+
+/// Returns the curve index for the added curve
+/// Caller has the responsibility to increase the attributes size based on this.pointCount
+UInt32 CurvesStructure.addCurveIndex!( Boolean recycleUnusedIndices ) {
+  UInt32 curveIndex;
+  if( recycleUnusedIndices && Boolean( this.freeCurveIndexCount ) ) {
+    curveIndex = this.curvesData[this.freeCurveIndexCount].other_freeCurveIndex;
+    this.curvesData[this.freeCurveIndexCount].other_freeCurveIndex = InvalidIndex;
+    --this.freeCurveIndexCount;
+  } else {
+    curveIndex = this.curvesData.size();
+    this.curvesData.resize( curveIndex + 1 );
+    this.curvesData[curveIndex].selfIndex = curveIndex;
+  }
+  return curveIndex;
+}
+
+/// Returns the curve index for the added curve
+/// Caller has the responsibility to increase the attributes size based on this.pointCount
+UInt32 CurvesStructure.initCurve!( UInt32 curveIndex, UInt8 curveType, UInt8 order, Boolean isClosed, UInt32 pointCount ) {
+
+  if( this.curvesData[curveIndex].curveType != curveType_none )
+    this.clearCurve( curveIndex );
+
+  this.curvesData[curveIndex].curveType = curveType;
+  this.curvesData[curveIndex].order = order;
+  if( isClosed )
+    this.curvesData[curveIndex].flags = curveFlags_closed;
+  this.curvesData[curveIndex].firstPoint = this.pointCount;
+  this.curvesData[curveIndex].pointCount = pointCount;
+  this.curvesData[curveIndex].reservedPointCount = pointCount;
+  this.pointCount += pointCount;
+  return curveIndex;
+}
+
+CurvesStructure.setDomain!( io Curves_data curveData, Vec2 domainStartAndEnd ) {
+  curveData.domainStart = domainStartAndEnd.x;
+  curveData.domainEnd = domainStartAndEnd.y;
+
+  Float32 domainRange = domainStartAndEnd.y - domainStartAndEnd.x;
+  curveData.domainRange = domainRange;
+  if( domainRange > 1e-5 )
+    curveData.domainInvFactor = 1.0f / domainRange;
+  else
+    curveData.domainInvFactor = 1.0f;
+}
+
+inline UInt32 CurvesStructure.getExtraDataOffset( Curves_data curveData ) {
+  if( curveData.extraDataOffset == InvalidIndex )
+    return InvalidIndex;
+  return curveData.extraDataOffset + 2;
+}
+
+inline UInt32 CurvesStructure.getExtraDataSize( Curves_data curveData ) {
+  if( curveData.extraDataOffset == InvalidIndex )
+    return 0;
+  return this.packedCurvesExtraData.data[curveData.extraDataOffset + 1] - 2;//header size == 2
+}
+
+inline UInt32 CurvesStructure.getExtraData( Curves_data curveData, UInt32 dataIndex ) {
+  UInt32 offset = this.getExtraDataOffset( curveData ) + dataIndex;
+  return this.packedCurvesExtraData.data[offset];
+}
+
+inline Float32 CurvesStructure.getExtraDataFloat( Curves_data curveData, UInt32 dataIndex ) {
+  return bitcastUIntToFloat( this.getExtraData( curveData, dataIndex ) );
+}
+
+inline CurvesStructure.setExtraData!( io Curves_data curveData, UInt32 dataIndex, UInt32 value ) {
+  UInt32 offset = this.getExtraDataOffset( curveData ) + dataIndex;
+  this.packedCurvesExtraData.data[offset] = value;
+}
+
+inline CurvesStructure.setExtraData!( io Curves_data curveData, UInt32 dataIndex, Float32 value ) {
+  this.setExtraData( curveData, dataIndex, bitcastFloatToUInt(value) );
+}
+
+CurvesStructure.resizeExtraData!( io Curves_data curveData, Size size ) {
+  UInt32 prevSize = this.getExtraDataSize( curveData );
+  if( prevSize != size ) {
+    if( !size ) {
+      // Free
+      UInt32 extraDataOffset = curveData.extraDataOffset;
+      this.packedCurvesExtraData.free( extraDataOffset, prevSize );
+      curveData.extraDataOffset = InvalidIndex;
+    } else {
+      if( !prevSize ) {// Allocate + header
+        curveData.extraDataOffset = this.packedCurvesExtraData.allocate( size+2, 0 );
+        // Set back pointer
+        this.packedCurvesExtraData.data[curveData.extraDataOffset] = curveData.selfIndex;
+      } else
+        curveData.extraDataOffset = this.packedCurvesExtraData.reallocate( curveData.extraDataOffset, prevSize+2, size+2, 0 );
+      // Update stored size (header size == 2)
+      this.packedCurvesExtraData.data[curveData.extraDataOffset + 1] = size + 2;
+    }
+  }
+}
+
+CurvesStructure.clearCurve!( UInt32 curveIndex ) {
+  // Leave empty point spaces behind
+  this.unusedPointCount += this.curvesData[curveIndex].pointCount;
+
+  // Free extra data if any
+  this.resizeExtraData( this.curvesData[curveIndex], 0 );
+
+  // save unrelated fields
+  UInt32 other_freeCurveIndex = this.curvesData[curveIndex].other_freeCurveIndex;
+  this.curvesData[curveIndex] = Curves_data();
+  this.curvesData[curveIndex].selfIndex = curveIndex;
+  this.curvesData[curveIndex].other_freeCurveIndex = other_freeCurveIndex;
+}
+
+CurvesStructure.removeCurve!( UInt32 curveIndex ) {
+
+  this.clearCurve( curveIndex );
+
+  UInt32 curveCount = this.curveCount();
+  UInt32 lastCurveIndex = curveCount - 1;
+
+  if( curveIndex == lastCurveIndex )// last one: just shrink
+    this.curvesData.resize( curveIndex );
+  else
+    this.curvesData[this.freeCurveIndexCount++].other_freeCurveIndex = curveIndex;
+}
+
+CurvesStructure.copyCurve!( CurvesStructure sourceCurves, UInt32 sourceCurveIndex, UInt32 targetCurveIndex ) {
+  // First, allocate points if required.
+  // This allows to recycle points from current curve at targetCurveIndex, if applciable.
+  UInt32 dummy;
+  this.resizePoints( this.curvesData[targetCurveIndex], sourceCurves.curvesData[sourceCurveIndex].pointCount, dummy );
+  Curves_data prevCurveData = this.curvesData[targetCurveIndex];
+
+  this.curvesData[targetCurveIndex] = sourceCurves.curvesData[sourceCurveIndex];
+  this.curvesData[targetCurveIndex].firstPoint = prevCurveData.firstPoint;
+  this.curvesData[targetCurveIndex].pointCount = prevCurveData.pointCount;
+  this.curvesData[targetCurveIndex].reservedPointCount = prevCurveData.reservedPointCount;
+  this.curvesData[targetCurveIndex].extraDataOffset = prevCurveData.extraDataOffset;
+  this.curvesData[targetCurveIndex].selfIndex = prevCurveData.selfIndex;
+  this.curvesData[targetCurveIndex].other_freeCurveIndex = prevCurveData.other_freeCurveIndex;
+
+  // Check if there is external (knot) data to copy
+  UInt32 sourceExtraDataSize = sourceCurves.getExtraDataSize( sourceCurves.curvesData[sourceCurveIndex] );
+  this.resizeExtraData( this.curvesData[targetCurveIndex], sourceExtraDataSize );
+
+  if( sourceExtraDataSize ) {
+    for( Size i = 0; i < sourceExtraDataSize; ++i )
+      this.setExtraData( this.curvesData[targetCurveIndex], i, sourceCurves.getExtraData( sourceCurves.curvesData[sourceCurveIndex], i ) );
+  }
+}
+
+/// Caller has the responsibility to increase the attributes size based on this.pointCount
+/// If prevFirstPointIfMoved != InvalidIndex, related point data (eg: attributes) needs to be copied accordingly.
+CurvesStructure.reservePoints!( io Curves_data curveData, UInt32 reservedPointCount, io UInt32 prevFirstPointIfMoved ) {
+  prevFirstPointIfMoved = InvalidIndex;
+  UInt32 currResPtCount = curveData.reservedPointCount;
+  if( reservedPointCount <= currResPtCount )
+    return;
+
+  if( curveData.firstPoint + currResPtCount == this.pointCount ) {
+    // We are at the end: just increase
+    UInt32 delta = reservedPointCount - currResPtCount;
+    this.pointCount += delta;
+    curveData.reservedPointCount = reservedPointCount;
+    return;
+  }
+
+  // Leave empty point spaces behind
+  this.unusedPointCount += currResPtCount;
+  prevFirstPointIfMoved = curveData.firstPoint;
+  curveData.firstPoint = this.pointCount;
+  curveData.reservedPointCount = reservedPointCount;
+  this.pointCount += reservedPointCount;
+}
+
+/// Returns the curve index for the added curve
+/// Caller has the responsibility to increase the attributes size based on this.pointCount
+/// If prevFirstPointIfMoved != InvalidIndex, related point data (eg: attributes) needs to be copied accordingly.
+CurvesStructure.resizePoints!( io Curves_data curveData, UInt32 pointCount, io UInt32 prevFirstPointIfMoved ) {
+  this.reservePoints( curveData, pointCount, prevFirstPointIfMoved );
+  curveData.pointCount = pointCount;
+}
+
+// Resize curve size to size - 1, makes last point unused
+CurvesStructure.decreasePointCount!( io Curves_data curveData ) {
+  if( curveData.pointCount ) {
+    --curveData.pointCount;
+    --curveData.reservedPointCount;
+    ++this.unusedPointCount;
+  }
+}
+
+// Returns the new renamed curve indices if any
+Size[] CurvesStructure.recompactCurveIndices!() {
+  Size renamed[];
+  if( this.freeCurveIndexCount ) {
+    //cleanup
+    for( Size i = 0; i < this.freeCurveIndexCount; ++i )
+      this.curvesData[i].other_freeCurveIndex = InvalidIndex;
+    this.freeCurveIndexCount = 0;
+
+    // Shuffle last ones
+    UInt32 startIndex, endIndex = this.curvesData.size() - 1;
+    while( startIndex < endIndex ) {
+      // Find next last one
+      if( this.curvesData[endIndex].curveType == curveType_none )
+        --endIndex;
+      else if( this.curvesData[startIndex].curveType != curveType_none )
+        ++startIndex;
+      else if( startIndex != endIndex ) {
+        // Exchange
+        this.curvesData[startIndex] = this.curvesData[endIndex];
+        renamed.push( startIndex );
+
+        // update the back pointer
+        UInt32 extraDataOffset = this.curvesData[startIndex].extraDataOffset;
+        if( extraDataOffset != InvalidIndex ) // update the back pointer
+          this.packedCurvesExtraData.data[extraDataOffset] = startIndex;
+
+        ++startIndex;
+        --endIndex;
+      }
+    }
+    this.curvesData.resize( startIndex );
+  }
+  return renamed;
+}
+
+/******************************************************************************
+SIMPLE ACCESSORS
+******************************************************************************/
+
+inline UInt32 CurvesStructure.getFirstPointIndex( Curves_data curveData ) {
+  return curveData.firstPoint;
+}
+
+inline UInt32 CurvesStructure.getPointCount( Curves_data curveData ) {
+  return curveData.pointCount;
+}
+
+inline UInt32 CurvesStructure.getPointCount( Curves_data curveData, Boolean includeRepeatedPoints ) {
+    return curveData.pointCount + ( includeRepeatedPoints ? curveData.wrappedCVCount : 0 );
+}
+
+inline CurvesStructure.getPointRange( Curves_data curveData, io UInt32 firstPoint, io UInt32 pointsEnd ) {
+  firstPoint = curveData.firstPoint;
+  pointsEnd = firstPoint + curveData.pointCount;
+}
+
+inline CurvesStructure.getReservedPointRange( Curves_data curveData, io UInt32 firstPoint, io UInt32 pointsEnd ) {
+  firstPoint = curveData.firstPoint;
+  pointsEnd = firstPoint + curveData.reservedPointCount;
+}
+
+CurvesStructure.reportPointIndexRangeError( Curves_data curveData, UInt32 curvePointIndex ) {
+  if( Fabric_Guarded && !Fabric_OnGPU )
+    setError( "Curves: point index " + curvePointIndex + " out of range for curve " + curveData.selfIndex + " (pointCount = " + curveData.pointCount + ( curveData.wrappedCVCount ? ("(+ " + curveData.wrappedCVCount + " repeated points) ") : "") + " )" );
+}
+
+inline UInt32 CurvesStructure.getPointIndex_check( Curves_data curveData, UInt32 curvePointIndex ) {
+  // We support wrapped CVs for closed / periodic curves.
+  if( curvePointIndex < curveData.pointCount )
+    return curveData.firstPoint + curvePointIndex;
+
+  if( Fabric_Guarded && !Fabric_OnGPU && curvePointIndex >= ( curveData.pointCount + curveData.wrappedCVCount ) )
+    this.reportPointIndexRangeError( curveData, curvePointIndex );// This part is not inlined
+
+  return curveData.firstPoint + ( curvePointIndex - curveData.pointCount );
+}
+
+inline Vec3 CurvesStructure.getPointPosition( Curves_data curveData, Size curvePointIndex ) {
+  UInt32 pointIndex = this.getPointIndex_check( curveData, curvePointIndex );
+  if( this.useDoubles )
+    return this.positions_d[pointIndex].toVec3();
+  else
+    return this.positions[pointIndex];
+}
+
+inline Vec3 CurvesStructure.getPointPosition_nocheck( Curves_data curveData, Size curvePointIndex ) {
+  UInt32 pointIndex = curveData.getPointIndex( curvePointIndex );
+  if( this.useDoubles )
+      return this.positions_d[pointIndex].toVec3();
+  else
+      return this.positions[pointIndex];
+}
+
+inline Vec4 CurvesStructure.getHomogeneousPointPosition( Curves_data curveData, Size curvePointIndex ) {
+  UInt32 pointIndex = this.getPointIndex_check( curveData, curvePointIndex );
+  Vec3 value;
+  if( this.useDoubles )
+    value = this.positions_d[pointIndex].toVec3();
+  else
+    value = this.positions[pointIndex];
+  if( curveData.isRational() )
+    return Vec4( value.x, value.y, value.z, 1.0f ) * this.weights[pointIndex];
+  else
+    return Vec4( value.x, value.y, value.z, 1.0f );
+}
+
+/// \category point
+inline Float32 CurvesStructure.getRationalWeight( Curves_data curveData, UInt32 curvePointIndex ) {
+  UInt32 pointIndex = this.getPointIndex_check( curveData, curvePointIndex );
+  return curveData.isRational() ? this.weights[pointIndex] : 1.0f;
+}
+
+inline Vec3_d CurvesStructure.getPointPosition_d( Curves_data curveData, Size curvePointIndex ) {
+  UInt32 pointIndex = this.getPointIndex_check( curveData, curvePointIndex );
+  if( this.useDoubles )
+      return this.positions_d[pointIndex];
+  else {
+    Vec3_d vec;
+    vec.set( this.positions[pointIndex] );
+    return vec;
+  }
+}
+
+inline Vec4_d CurvesStructure.getHomogeneousPointPosition_d( Curves_data curveData, Size curvePointIndex ) {
+  UInt32 pointIndex = this.getPointIndex_check( curveData, curvePointIndex );
+  Vec3_d value;
+  if( this.useDoubles )
+    value = this.positions_d[pointIndex];
+  else
+    value.set( this.positions[pointIndex] );
+
+  if( curveData.isRational() )
+    return Vec4_d( value.x, value.y, value.z, 1.0 ) * this.weights[pointIndex];
+  else
+    return Vec4_d( value.x, value.y, value.z, 1.0 );
+}
+
+inline CurvesStructure.setPointPosition!( Curves_data curveData, UInt32 curvePointIndex, Vec3 position ) {
+  UInt32 pointIndex = this.getPointIndex_check( curveData, curvePointIndex );
+  if( this.useDoubles ) {
+    Vec3_d vec;
+    vec.set( position );
+    this.positions_d[pointIndex] = vec;
+  } else
+    this.positions[pointIndex] = position;
+}
+
+inline CurvesStructure.setPointPosition_d!( Curves_data curveData, UInt32 curvePointIndex, Vec3_d position ) {
+  UInt32 pointIndex = this.getPointIndex_check( curveData, curvePointIndex );
+  if( this.useDoubles )
+    this.positions_d[pointIndex] = position;
+  else
+    this.positions[pointIndex] = position.toVec3();
+}
+
+// NOTE: we assume that this will be called with wight != 1.0
+inline CurvesStructure.setRationalWeight!( io Curves_data curveData, UInt32 curvePointIndex, Float32 weight ) {
+  UInt32 pointIndex = this.getPointIndex_check( curveData, curvePointIndex );
+  this.weights[pointIndex] = weight;
+  setFlag( curveData.flags, curveFlags_rational );
+}
+
+inline Boolean CurvesStructure.isClosed( Curves_data curveData ) {
+  return curveData.isClosed();
+}
+
+inline UInt8 CurvesStructure.getCurveType( Curves_data curveData ) {
+  return curveData.curveType;
+}
+
+inline UInt8 CurvesStructure.getOrder( Curves_data curveData ) {
+  return curveData.order;
+}
+
+inline Boolean CurvesStructure.isRemoved( Curves_data curveData ) {
+  return curveData.curveType == curveType_none;
+}
+
+inline Vec2 CurvesStructure.getDomain( Curves_data curveData ) {
+  return Vec2( curveData.domainStart, curveData.domainEnd );
+}

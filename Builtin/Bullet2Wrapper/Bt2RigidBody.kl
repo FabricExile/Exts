@@ -1,0 +1,322 @@
+//
+// Copyright 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+const SInt32 Bt2RigidBody_State_ActiveTag = 1;
+const SInt32 Bt2RigidBody_State_IslandSleeping = 2;
+const SInt32 Bt2RigidBody_State_WantsDeactivation = 3;
+const SInt32 Bt2RigidBody_State_DisableDeactivation = 4;
+const SInt32 Bt2RigidBody_State_DisableSimulation = 5;
+
+/// \dfgPresetOmit
+struct Bt2RigidBody : Bt2Item permits Bt2World, Bt2SoftBody
+{
+  protected btRigidBody body;
+  protected Color color;
+};
+
+Color Bt2RigidBody.getColor()
+{
+  return this.color;
+}
+
+Xfo Bt2RigidBody.getXfo()
+{
+  if(!this.isValid())
+    return Xfo();
+
+  btRigidBody body = this.body;
+  btMotionState ms = body.getMotionState();
+  btTransform transfo;
+  ms.getWorldTransform(transfo);
+  return transfo;
+}
+
+function Bt2RigidBody.setXfo!(Xfo xfo)
+{
+  if(!this.isValid())
+    return;
+  if(this.getMass() > 0.0)
+    return;
+
+  btMotionState ms = this.body.getMotionState();
+  btTransform transfo = xfo;
+  ms.setWorldTransform(transfo);
+}
+
+function Vec3 Bt2RigidBody.getGravity()
+{
+  if(!this.isValid())
+    return Vec3();
+  return this.body.getGravity();
+}
+
+/// \dfgPresetDefault gravity {"x": 0.0, "y": -10.0, "z": 0.0}
+function Bt2RigidBody.setGravity!(Vec3 gravity)
+{
+  if(!this.isValid())
+    return;
+  this.body.setGravity(gravity);
+}
+
+function Vec3 Bt2RigidBody.getLinearVelocity()
+{
+  if(!this.isValid())
+    return Vec3();
+  return this.body.getLinearVelocity();
+}
+
+/// \dfgPresetDefault vel {"x": 0.0, "y": 0.0, "z": 0.0}
+function Bt2RigidBody.setLinearVelocity!(Vec3 vel)
+{
+  if(!this.isValid())
+    return;
+  this.body.setLinearVelocity(vel);
+}
+
+function Vec3 Bt2RigidBody.getAngularVelocity()
+{
+  if(!this.isValid())
+    return Vec3();
+  return this.body.getAngularVelocity();
+}
+
+/// \dfgPresetDefault vel {"x": 0.0, "y": 0.0, "z": 0.0}
+function Bt2RigidBody.setAngularVelocity!(Vec3 vel)
+{
+  if(!this.isValid())
+    return;
+  this.body.setAngularVelocity(vel);
+}
+
+function Float32 Bt2RigidBody.getLinearDamping()
+{
+  if(!this.isValid())
+    return Float32();
+  return this.body.getLinearDamping();
+}
+
+function Float32 Bt2RigidBody.getAngularDamping()
+{
+  if(!this.isValid())
+    return Float32();
+  return this.body.getAngularDamping();
+}
+
+/// \dfgPresetDefault linear 0
+/// \dfgPresetDefault angular 0
+function Bt2RigidBody.setDamping!(Float32 linear, Float32 angular)
+{
+  if(!this.isValid())
+    return;
+  this.body.setDamping(linear, angular);
+}
+
+function Float32 Bt2RigidBody.getMass()
+{
+  if(!this.isValid())
+    return Float32();
+  Float32 m = this.body.getInvMass();
+  if(m != 0.0)
+    return 1.0 / m;
+  return 0;
+}
+
+/// \dfgPresetDefault angular 1.0
+function Bt2RigidBody.setMass!(Float32 mass)
+{
+  if(!this.isValid())
+    return;
+  this.body.setMassProps(mass, this.body.getLocalInertia());
+}
+
+function Bt2Shape Bt2RigidBody.getShape()
+{
+  if(!this.isValid())
+    return Bt2Shape();
+  btCollisionShape shape = this.body.getCollisionShape();
+  if(!shape.cxx_isValid())
+    return Bt2Shape();
+  return this.world.getShape(shape.getUserIndex());
+}
+
+function Bt2Constraint[] Bt2RigidBody.getConstraints()
+{
+  Bt2Constraint result[];
+  if(!this.isValid())
+    return result;
+  btRigidBody body = this.body;
+  SInt32 count = body.getNumConstraintRefs();
+  for(SInt32 i=0;i<count;i++)
+  {
+    btTypedConstraint cns = body.getConstraintRef(i);
+    result.push(this.world.getConstraint(cns.getUserConstraintId()));
+  }
+  return result;
+}
+
+/// \dfgPresetDefault force {"x": 0.0, "y": 5.0, "z": 0.0}
+/// \dfgPresetDefault relPos {"x": -5.0, "y": 0.0, "z": 0.0}
+function Bt2RigidBody.applyForce!(Vec3 force, Vec3 relPos)
+{
+  if(!this.isValid())
+    return;
+  this.body.applyForce(force, relPos);
+}
+
+/// \dfgPresetDefault force {"x": 0.0, "y": 5.0, "z": 0.0}
+function Bt2RigidBody.applyCentralForce!(Vec3 force)
+{
+  if(!this.isValid())
+    return;
+  this.body.applyCentralForce(force);
+}
+
+function Bt2RigidBody.applyTorque!(Vec3 torque)
+{
+  if(!this.isValid())
+    return;
+  this.body.applyTorque(torque);
+}
+
+/// \dfgPresetDefault impulse {"x": 0.0, "y": 5.0, "z": 0.0}
+/// \dfgPresetDefault relPos {"x": -5.0, "y": 0.0, "z": 0.0}
+function Bt2RigidBody.applyImpulse!(Vec3 impulse, Vec3 relPos)
+{
+  if(!this.isValid())
+    return;
+  this.body.applyImpulse(impulse, relPos);
+}
+
+/// \dfgPresetDefault impulse {"x": 0.0, "y": 5.0, "z": 0.0}
+function Bt2RigidBody.applyCentralImpulse!(Vec3 impulse)
+{
+  if(!this.isValid())
+    return;
+  this.body.applyCentralImpulse(impulse);
+}
+
+function Bt2RigidBody.applyTorqueImpulse!(Vec3 impulse)
+{
+  if(!this.isValid())
+    return;
+  this.body.applyTorqueImpulse(impulse);
+}
+
+function SInt32 Bt2RigidBody.getActivationState()
+{
+  if(!this.isValid())
+    return 0;
+  return this.body.getActivationState();
+}
+
+/// \dfgPresetCombo state ("invalid", "active", "sleeping", "wantsDeactivation", "disableDeactivation", "disableSimulation")
+/// \dfgPresetDefault state 1
+function Bt2RigidBody.setActivationState!(SInt32 state)
+{
+  if(!this.isValid())
+    return;
+  if(state >= Bt2RigidBody_State_ActiveTag && state <= Bt2RigidBody_State_DisableSimulation)
+    this.body.setActivationState(state);
+}
+
+/// \dfgPresetCombo state ("invalid", "active", "sleeping", "wantsDeactivation", "disableDeactivation", "disableSimulation")
+/// \dfgPresetDefault state 1
+function Bt2RigidBody.forceActivationState!(SInt32 state)
+{
+  if(!this.isValid())
+    return;
+  if(state >= Bt2RigidBody_State_ActiveTag && state <= Bt2RigidBody_State_DisableSimulation)
+    this.body.forceActivationState(state);
+}
+
+/// \dfgPresetDefault force true
+function Bt2RigidBody.activate!(Boolean force)
+{
+  if(!this.isValid())
+    return;
+  this.body.activate(force);
+}
+
+/// \dfgPresetDefault force true
+function Boolean Bt2RigidBody.isActive()
+{
+  if(!this.isValid())
+    return false;
+  return this.body.isActive();
+}
+
+function Float32 Bt2RigidBody.getDeactivationTime()
+{
+  if(!this.isValid())
+    return 0;
+  return this.body.getDeactivationTime();
+}
+
+/// \dfgPresetDefault time 1.0
+function Bt2RigidBody.setDeactivationTime!(Float32 time)
+{
+  if(!this.isValid())
+    return;
+  this.body.setDeactivationTime(time);
+}
+
+function Float32 Bt2RigidBody.getRestitution()
+{
+  if(!this.isValid())
+    return 0;
+  return this.body.getRestitution();
+}
+
+/// \dfgPresetDefault restitution 0.0
+function Bt2RigidBody.setRestitution!(Float32 restitution)
+{
+  if(!this.isValid())
+    return;
+  this.body.setRestitution(restitution);
+}
+
+function Float32 Bt2RigidBody.getFriction()
+{
+  if(!this.isValid())
+    return 0;
+  return this.body.getFriction();
+}
+
+/// \dfgPresetDefault friction 0.5
+function Bt2RigidBody.setFriction!(Float32 friction)
+{
+  if(!this.isValid())
+    return;
+  this.body.setFriction(friction);
+}
+
+function Float32 Bt2RigidBody.getRollingFriction()
+{
+  if(!this.isValid())
+    return 0;
+  return this.body.getRollingFriction();
+}
+
+/// \dfgPresetDefault friction 0.0
+function Bt2RigidBody.setRollingFriction!(Float32 friction)
+{
+  if(!this.isValid())
+    return;
+  this.body.setRollingFriction(friction);
+}
+
+function Float32 Bt2RigidBody.getSpinningFriction()
+{
+  if(!this.isValid())
+    return 0;
+  return this.body.getSpinningFriction();
+}
+
+/// \dfgPresetDefault friction 0.0
+function Bt2RigidBody.setSpinningFriction!(Float32 friction)
+{
+  if(!this.isValid())
+    return;
+  this.body.setSpinningFriction(friction);
+}

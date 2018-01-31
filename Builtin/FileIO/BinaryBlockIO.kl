@@ -1,0 +1,449 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+
+const SInt32 BinaryBlockIO_None = 0;
+const SInt32 BinaryBlockIO_Read = 1;
+const SInt32 BinaryBlockIO_Write = 2;
+
+/**
+\versionadded 2.0.0
+
+The BinaryBlockIO provides a data structure which can both read and write a binary file using blocks.
+This can be very useful within canvas to read and write data for file caching scenarios.
+
+\seealso BinaryBlockReader, BinaryBlockWriter
+*/
+object BinaryBlockIO {
+  /// \internal
+  String filePath;
+  /// \internal
+  SInt32 mode;
+  /// \internal
+  BinaryBlockReader reader;
+  /// \internal
+  BinaryBlockWriter writer;
+  /// \internal
+  Boolean cacheBooleans[String][];
+  /// \internal
+  SInt32 cacheSInt32s[String][];
+  /// \internal
+  UInt32 cacheUInt32s[String][];
+  /// \internal
+  Float32 cacheFloat32s[String][];
+  /// \internal
+  Vec2 cacheVec2s[String][];
+  /// \internal
+  Vec3 cacheVec3s[String][];
+  /// \internal
+  Vec4 cacheVec4s[String][];
+  /// \internal
+  Quat cacheQuats[String][];
+  /// \internal
+  Xfo cacheXfos[String][];
+  /// \internal
+  Mat33 cacheMat33s[String][];
+  /// \internal
+  Mat44 cacheMat44s[String][];
+  /// \internal
+  Color cacheColors[String][];
+};
+
+/// standard constructor
+function BinaryBlockIO(){
+  this.filePath = "";
+  this.mode = BinaryBlockIO_None;
+  this.reader = null;
+  this.writer = null;
+}
+
+/// standard constructor given a filePath
+function BinaryBlockIO(String filePath){
+  this.filePath = filePath;
+  this.mode = BinaryBlockIO_None;
+  this.reader = null;
+  this.writer = null;
+}
+
+/// clears the internal caches
+/// \internal
+function BinaryBlockIO.clearCaches!() {
+  this.cacheBooleans.clear();
+  this.cacheSInt32s.clear();
+  this.cacheUInt32s.clear();
+  this.cacheFloat32s.clear();
+  this.cacheVec2s.clear();
+  this.cacheVec3s.clear();
+  this.cacheVec4s.clear();
+  this.cacheQuats.clear();
+  this.cacheXfos.clear();
+  this.cacheMat33s.clear();
+  this.cacheMat44s.clear();
+  this.cacheColors.clear();
+}
+
+// sets the filePath to use
+function BinaryBlockIO.setFilePath!(String filePath) {
+  if(this.filePath == filePath)
+    return;
+  this.filePath = filePath;
+  this.mode = BinaryBlockIO_None;
+  this.reader = null;
+  this.writer = null;
+  this.clearCaches();
+}
+
+/// sets the mode of this block BinaryBlockIO
+/// \dfgPresetCombo mode ("None", "Read", "Write")
+function BinaryBlockIO.setMode!(SInt32 mode) {
+  if(this.filePath == "") {
+    this.mode = BinaryBlockIO_None;
+    return;
+  }
+  if(this.mode == mode)
+    return;
+  this.reader = null;
+  this.writer = null;
+  this.mode = mode;
+  this.clearCaches();
+
+  if(this.mode == BinaryBlockIO_Read) {
+    this.reader = BinaryBlockReader(this.filePath);
+  } else if(this.mode == BinaryBlockIO_Write) {
+    this.writer = BinaryBlockWriter(this.filePath);
+    this.writer.setNumBlocks(1024);
+  } else {
+    throw("Unsupported mode for BinaryBlockIO");
+  }
+}
+
+/// closes all readers / writes
+function BinaryBlockIO.close!() {
+  this.setMode(BinaryBlockIO_None);
+}
+
+/// reads an array of Boolean
+function Boolean[] BinaryBlockIO.readBooleanArray!(String block) {
+  Boolean result[];  
+  if(this.mode != BinaryBlockIO_Read || block == "")
+    return result;
+  if(this.cacheBooleans.has(block))
+    return this.cacheBooleans[block];
+  BinaryBlockReader reader = this.reader.beginReadBlock(block);
+  Size arraySize = 0;
+  reader.read(arraySize.data(), arraySize.dataSize());
+  result.resize(arraySize);
+  reader.read(result.data(), result.dataSize());
+  this.cacheBooleans[block] = result;
+  return result;
+}
+
+/// reads an array of Boolean
+function BinaryBlockIO.writeBooleanArray!(String block, Boolean array[]) {
+  if(this.mode != BinaryBlockIO_Write || block == "")
+    return;
+  BinaryBlockWriter writer = this.writer.beginWriteBlock(block);
+  Size arraySize = array.size();
+  writer.write(arraySize.data(), arraySize.dataSize());
+  writer.write(array.data(), array.dataSize());
+  return;
+}
+
+/// reads an array of SInt32
+function SInt32[] BinaryBlockIO.readSInt32Array!(String block) {
+  SInt32 result[];  
+  if(this.mode != BinaryBlockIO_Read || block == "")
+    return result;
+  if(this.cacheSInt32s.has(block))
+    return this.cacheSInt32s[block];
+  BinaryBlockReader reader = this.reader.beginReadBlock(block);
+  Size arraySize = 0;
+  reader.read(arraySize.data(), arraySize.dataSize());
+  result.resize(arraySize);
+  reader.read(result.data(), result.dataSize());
+  this.cacheSInt32s[block] = result;
+  return result;
+}
+
+/// reads an array of SInt32
+function BinaryBlockIO.writeSInt32Array!(String block, SInt32 array[]) {
+  if(this.mode != BinaryBlockIO_Write || block == "")
+    return;
+  BinaryBlockWriter writer = this.writer.beginWriteBlock(block);
+  Size arraySize = array.size();
+  writer.write(arraySize.data(), arraySize.dataSize());
+  writer.write(array.data(), array.dataSize());
+  return;
+}
+
+/// reads an array of UInt32
+function UInt32[] BinaryBlockIO.readUInt32Array!(String block) {
+  UInt32 result[];  
+  if(this.mode != BinaryBlockIO_Read || block == "")
+    return result;
+  if(this.cacheUInt32s.has(block))
+    return this.cacheUInt32s[block];
+  BinaryBlockReader reader = this.reader.beginReadBlock(block);
+  Size arraySize = 0;
+  reader.read(arraySize.data(), arraySize.dataSize());
+  result.resize(arraySize);
+  reader.read(result.data(), result.dataSize());
+  this.cacheUInt32s[block] = result;
+  return result;
+}
+
+/// reads an array of UInt32
+function BinaryBlockIO.writeUInt32Array!(String block, UInt32 array[]) {
+  if(this.mode != BinaryBlockIO_Write || block == "")
+    return;
+  BinaryBlockWriter writer = this.writer.beginWriteBlock(block);
+  Size arraySize = array.size();
+  writer.write(arraySize.data(), arraySize.dataSize());
+  writer.write(array.data(), array.dataSize());
+  return;
+}
+
+/// reads an array of Float32
+function Float32[] BinaryBlockIO.readFloat32Array!(String block) {
+  Float32 result[];  
+  if(this.mode != BinaryBlockIO_Read || block == "")
+    return result;
+  if(this.cacheFloat32s.has(block))
+    return this.cacheFloat32s[block];
+  BinaryBlockReader reader = this.reader.beginReadBlock(block);
+  Size arraySize = 0;
+  reader.read(arraySize.data(), arraySize.dataSize());
+  result.resize(arraySize);
+  reader.read(result.data(), result.dataSize());
+  this.cacheFloat32s[block] = result;
+  return result;
+}
+
+/// reads an array of Float32
+function BinaryBlockIO.writeFloat32Array!(String block, Float32 array[]) {
+  if(this.mode != BinaryBlockIO_Write || block == "")
+    return;
+  BinaryBlockWriter writer = this.writer.beginWriteBlock(block);
+  Size arraySize = array.size();
+  writer.write(arraySize.data(), arraySize.dataSize());
+  writer.write(array.data(), array.dataSize());
+  return;
+}
+
+/// reads an array of Vec2
+function Vec2[] BinaryBlockIO.readVec2Array!(String block) {
+  Vec2 result[];  
+  if(this.mode != BinaryBlockIO_Read || block == "")
+    return result;
+  if(this.cacheVec2s.has(block))
+    return this.cacheVec2s[block];
+  BinaryBlockReader reader = this.reader.beginReadBlock(block);
+  Size arraySize = 0;
+  reader.read(arraySize.data(), arraySize.dataSize());
+  result.resize(arraySize);
+  reader.read(result.data(), result.dataSize());
+  this.cacheVec2s[block] = result;
+  return result;
+}
+
+/// reads an array of Vec2
+function BinaryBlockIO.writeVec2Array!(String block, Vec2 array[]) {
+  if(this.mode != BinaryBlockIO_Write || block == "")
+    return;
+  BinaryBlockWriter writer = this.writer.beginWriteBlock(block);
+  Size arraySize = array.size();
+  writer.write(arraySize.data(), arraySize.dataSize());
+  writer.write(array.data(), array.dataSize());
+  return;
+}
+
+/// reads an array of Vec3
+function Vec3[] BinaryBlockIO.readVec3Array!(String block) {
+  Vec3 result[];  
+  if(this.mode != BinaryBlockIO_Read || block == "")
+    return result;
+  if(this.cacheVec3s.has(block))
+    return this.cacheVec3s[block];
+  BinaryBlockReader reader = this.reader.beginReadBlock(block);
+  Size arraySize = 0;
+  reader.read(arraySize.data(), arraySize.dataSize());
+  result.resize(arraySize);
+  reader.read(result.data(), result.dataSize());
+  this.cacheVec3s[block] = result;
+  return result;
+}
+
+/// reads an array of Vec3
+function BinaryBlockIO.writeVec3Array!(String block, Vec3 array[]) {
+  if(this.mode != BinaryBlockIO_Write || block == "")
+    return;
+  BinaryBlockWriter writer = this.writer.beginWriteBlock(block);
+  Size arraySize = array.size();
+  writer.write(arraySize.data(), arraySize.dataSize());
+  writer.write(array.data(), array.dataSize());
+  return;
+}
+
+/// reads an array of Vec4
+function Vec4[] BinaryBlockIO.readVec4Array!(String block) {
+  Vec4 result[];  
+  if(this.mode != BinaryBlockIO_Read || block == "")
+    return result;
+  if(this.cacheVec4s.has(block))
+    return this.cacheVec4s[block];
+  BinaryBlockReader reader = this.reader.beginReadBlock(block);
+  Size arraySize = 0;
+  reader.read(arraySize.data(), arraySize.dataSize());
+  result.resize(arraySize);
+  reader.read(result.data(), result.dataSize());
+  this.cacheVec4s[block] = result;
+  return result;
+}
+
+/// reads an array of Vec4
+function BinaryBlockIO.writeVec4Array!(String block, Vec4 array[]) {
+  if(this.mode != BinaryBlockIO_Write || block == "")
+    return;
+  BinaryBlockWriter writer = this.writer.beginWriteBlock(block);
+  Size arraySize = array.size();
+  writer.write(arraySize.data(), arraySize.dataSize());
+  writer.write(array.data(), array.dataSize());
+  return;
+}
+
+/// reads an array of Quat
+function Quat[] BinaryBlockIO.readQuatArray!(String block) {
+  Quat result[];  
+  if(this.mode != BinaryBlockIO_Read || block == "")
+    return result;
+  if(this.cacheQuats.has(block))
+    return this.cacheQuats[block];
+  BinaryBlockReader reader = this.reader.beginReadBlock(block);
+  Size arraySize = 0;
+  reader.read(arraySize.data(), arraySize.dataSize());
+  result.resize(arraySize);
+  reader.read(result.data(), result.dataSize());
+  this.cacheQuats[block] = result;
+  return result;
+}
+
+/// reads an array of Quat
+function BinaryBlockIO.writeQuatArray!(String block, Quat array[]) {
+  if(this.mode != BinaryBlockIO_Write || block == "")
+    return;
+  BinaryBlockWriter writer = this.writer.beginWriteBlock(block);
+  Size arraySize = array.size();
+  writer.write(arraySize.data(), arraySize.dataSize());
+  writer.write(array.data(), array.dataSize());
+  return;
+}
+
+/// reads an array of Xfo
+function Xfo[] BinaryBlockIO.readXfoArray!(String block) {
+  Xfo result[];  
+  if(this.mode != BinaryBlockIO_Read || block == "")
+    return result;
+  if(this.cacheXfos.has(block))
+    return this.cacheXfos[block];
+  BinaryBlockReader reader = this.reader.beginReadBlock(block);
+  Size arraySize = 0;
+  reader.read(arraySize.data(), arraySize.dataSize());
+  result.resize(arraySize);
+  reader.read(result.data(), result.dataSize());
+  this.cacheXfos[block] = result;
+  return result;
+}
+
+/// reads an array of Xfo
+function BinaryBlockIO.writeXfoArray!(String block, Xfo array[]) {
+  if(this.mode != BinaryBlockIO_Write || block == "")
+    return;
+  BinaryBlockWriter writer = this.writer.beginWriteBlock(block);
+  Size arraySize = array.size();
+  writer.write(arraySize.data(), arraySize.dataSize());
+  writer.write(array.data(), array.dataSize());
+  return;
+}
+
+/// reads an array of Mat33
+function Mat33[] BinaryBlockIO.readMat33Array!(String block) {
+  Mat33 result[];  
+  if(this.mode != BinaryBlockIO_Read || block == "")
+    return result;
+  if(this.cacheMat33s.has(block))
+    return this.cacheMat33s[block];
+  BinaryBlockReader reader = this.reader.beginReadBlock(block);
+  Size arraySize = 0;
+  reader.read(arraySize.data(), arraySize.dataSize());
+  result.resize(arraySize);
+  reader.read(result.data(), result.dataSize());
+  this.cacheMat33s[block] = result;
+  return result;
+}
+
+/// reads an array of Mat33
+function BinaryBlockIO.writeMat33Array!(String block, Mat33 array[]) {
+  if(this.mode != BinaryBlockIO_Write || block == "")
+    return;
+  BinaryBlockWriter writer = this.writer.beginWriteBlock(block);
+  Size arraySize = array.size();
+  writer.write(arraySize.data(), arraySize.dataSize());
+  writer.write(array.data(), array.dataSize());
+  return;
+}
+
+/// reads an array of Mat44
+function Mat44[] BinaryBlockIO.readMat44Array!(String block) {
+  Mat44 result[];  
+  if(this.mode != BinaryBlockIO_Read || block == "")
+    return result;
+  if(this.cacheMat44s.has(block))
+    return this.cacheMat44s[block];
+  BinaryBlockReader reader = this.reader.beginReadBlock(block);
+  Size arraySize = 0;
+  reader.read(arraySize.data(), arraySize.dataSize());
+  result.resize(arraySize);
+  reader.read(result.data(), result.dataSize());
+  this.cacheMat44s[block] = result;
+  return result;
+}
+
+/// reads an array of Mat44
+function BinaryBlockIO.writeMat44Array!(String block, Mat44 array[]) {
+  if(this.mode != BinaryBlockIO_Write || block == "")
+    return;
+  BinaryBlockWriter writer = this.writer.beginWriteBlock(block);
+  Size arraySize = array.size();
+  writer.write(arraySize.data(), arraySize.dataSize());
+  writer.write(array.data(), array.dataSize());
+  return;
+}
+
+/// reads an array of Color
+function Color[] BinaryBlockIO.readColorArray!(String block) {
+  Color result[];  
+  if(this.mode != BinaryBlockIO_Read || block == "")
+    return result;
+  if(this.cacheColors.has(block))
+    return this.cacheColors[block];
+  BinaryBlockReader reader = this.reader.beginReadBlock(block);
+  Size arraySize = 0;
+  reader.read(arraySize.data(), arraySize.dataSize());
+  result.resize(arraySize);
+  reader.read(result.data(), result.dataSize());
+  this.cacheColors[block] = result;
+  return result;
+}
+
+/// reads an array of Color
+function BinaryBlockIO.writeColorArray!(String block, Color array[]) {
+  if(this.mode != BinaryBlockIO_Write || block == "")
+    return;
+  BinaryBlockWriter writer = this.writer.beginWriteBlock(block);
+  Size arraySize = array.size();
+  writer.write(arraySize.data(), arraySize.dataSize());
+  writer.write(array.data(), array.dataSize());
+  return;
+}

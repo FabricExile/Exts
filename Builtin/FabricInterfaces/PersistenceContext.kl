@@ -1,0 +1,25 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Singletons;
+
+/**
+\versionadded 1.13.0
+The PersistenceContext is passed to objects from Splice when saving or loading a scene file. 
+\dfgPresetOmit
+*/
+object PersistenceContext {
+	/// The name of the host DCC application
+  String hostName;
+  /// The version of the host DCC application.
+  String hostVersion;
+  /// The filename of the currently saved DCC scene file. 
+  String filePath;
+};
+
+function PersistenceContext PersistenceContext.getInstance() {
+  if(!Singleton_has('PersistenceContext'))
+    Singleton_set('PersistenceContext', this);
+  return Singleton_get('PersistenceContext');
+}

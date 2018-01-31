@@ -1,0 +1,299 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/// returns true if two triangles formed by a0, a1, a2 and b0, b1, b2 overlap given a tolerance distance.
+function Boolean checkTriangleOverlap(Vec2 a0, Vec2 a1, Vec2 a2, Vec2 b0, Vec2 b1, Vec2 b2, Scalar tolerance) {
+
+  // optimization step: first collide their bounding boxes
+  Box2 boxA; boxA.merge(a0); boxA.merge(a1); boxA.merge(a2);
+  Box2 boxB; boxB.merge(b0); boxB.merge(b1); boxB.merge(b2);
+  if(!boxA.intersects(boxB))
+    return false;
+
+  // check all six possibilities of a point of A inside B or a point of B inside A
+  if(a0.isInsideTriangle(b0, b1, b2, tolerance))
+    return true;
+  if(a1.isInsideTriangle(b0, b1, b2, tolerance))
+    return true;
+  if(a2.isInsideTriangle(b0, b1, b2, tolerance))
+    return true;
+  if(b0.isInsideTriangle(a0, a1, a2, tolerance))
+    return true;
+  if(b1.isInsideTriangle(a0, a1, a2, tolerance))
+    return true;
+  if(b2.isInsideTriangle(a0, a1, a2, tolerance))
+    return true;
+
+  // check the mid point in case the triangles are 100% identical
+  if(((b0 + b1 + b2) / 3.0).isInsideTriangle(a0, a1, a2, tolerance))
+    return true;
+  if(((a0 + a1 + a2) / 3.0).isInsideTriangle(b0, b1, b2, tolerance))
+    return true;
+
+  Scalar tt = tolerance * tolerance;
+  Vec2 pnt;
+
+  // check if two sides of triangle A intersect with any side of triangle B
+  pnt = checkSegmentIntersection(a0, a1, b0, b1);
+  if(pnt.x != SCALAR_INFINITE && (pnt - a0).lengthSquared() > tt && (pnt - a1).lengthSquared() > tt)
+    return true;
+
+  pnt = checkSegmentIntersection(a1, a2, b0, b1);
+  if(pnt.x != SCALAR_INFINITE && (pnt - a1).lengthSquared() > tt && (pnt - a2).lengthSquared() > tt)
+    return true;
+
+  pnt = checkSegmentIntersection(a0, a2, b0, b1);
+  if(pnt.x != SCALAR_INFINITE && (pnt - a0).lengthSquared() > tt && (pnt - a2).lengthSquared() > tt)
+    return true;
+
+  pnt = checkSegmentIntersection(a0, a1, b1, b2);
+  if(pnt.x != SCALAR_INFINITE && (pnt - a0).lengthSquared() > tt && (pnt - a1).lengthSquared() > tt)
+    return true;
+
+  pnt = checkSegmentIntersection(a1, a2, b1, b2);
+  if(pnt.x != SCALAR_INFINITE && (pnt - a1).lengthSquared() > tt && (pnt - a2).lengthSquared() > tt)
+    return true;
+
+  pnt = checkSegmentIntersection(a0, a2, b1, b2);
+  if(pnt.x != SCALAR_INFINITE && (pnt - a0).lengthSquared() > tt && (pnt - a2).lengthSquared() > tt)
+    return true;
+
+  pnt = checkSegmentIntersection(a0, a1, b0, b2);
+  if(pnt.x != SCALAR_INFINITE && (pnt - a0).lengthSquared() > tt && (pnt - a1).lengthSquared() > tt)
+    return true;
+
+  pnt = checkSegmentIntersection(a1, a2, b0, b2);
+  if(pnt.x != SCALAR_INFINITE && (pnt - a1).lengthSquared() > tt && (pnt - a2).lengthSquared() > tt)
+    return true;
+
+  pnt = checkSegmentIntersection(a0, a2, b0, b2);
+  if(pnt.x != SCALAR_INFINITE && (pnt - a0).lengthSquared() > tt && (pnt - a2).lengthSquared() > tt)
+    return true;
+
+  return false;
+}
+
+/// \internal
+function SInt32 Vec2.leftLower(Vec2 other) {
+  if (this.x < other.x) return -1;
+  if (this.x > other.x) return 1;
+  if (this.y < other.y) return -1;
+  if (this.y > other.y) return 1;
+  return 0;
+}
+
+/// returns -1 if a -> b -> c forms a counter-clockwise turn,
+/// >0 for a clockwise turn, 0 if they are collinear
+/// \internal
+function Scalar Vec2.counterClockwise(Vec2 a, Vec2 b) {
+  Vec2 C = (this - a);
+  Vec2 B = (b - a);
+  return B.x * C.y - B.y * C.x;
+}
+
+/// Returns true if this is collinear to other based on pivot
+/// \internal
+function Boolean Vec2.collinear(Vec2 a, Vec2 b) {
+  return this.counterClockwise(a, b) == 0.0;
+}
+
+/// \internal
+function Boolean Vec2.hasSmallerAngle(Vec2 a, Vec2 b) {
+  if(this.collinear(a, b)) {
+    if((this, a).lengthSquared() <= (b, a).lengthSquared())
+      return true;
+    else
+      return false;
+  }
+  return this.counterClockwise(a, b) < 0.0;
+}
+
+/// \internal
+function Vec2[] getConvexHull_quickSort_leftLower( in Vec2 data[] )
+{
+  Vec2 result[];
+  
+  if( data.size() <= 1 )
+    return data;
+    
+  if( data.size() == 2 )
+  {
+    if( data[0].leftLower(data[1]) < 0 )
+    {
+      result.push( data[0] );
+      result.push( data[1] );
+    }
+    else
+    {
+      result.push( data[1] );
+      result.push( data[0] );
+    }
+  }
+  else
+  {
+    Vec2 pivot = (data[0] + data[data.size()/2] + data[data.size()-1] ) / 3;
+    Vec2 above[];
+    Vec2 below[];
+    for( Size i = 0; i < data.size(); i++ )
+    {
+      if( data[i].leftLower(pivot) < 0 )
+        below.push( data[i] );
+      else
+        above.push( data[i] );
+    }
+
+    if(above.size() == 0 && below.size() != 0)
+      result = below;
+    else if(above.size() != 0 && below.size() == 0)
+      result = above;
+    else
+      result = getConvexHull_quickSort_leftLower( below ) + getConvexHull_quickSort_leftLower( above );
+  }
+  return result;
+}
+
+/// \internal
+function Vec2[] getConvexHull_quickSort_smallerAngle( in Vec2 p0, in Vec2 data[] )
+{
+  Vec2 result[];
+  
+  if( data.size() <= 1 )
+    return data;
+    
+  if( data.size() == 2 )
+  {
+    if( data[0].hasSmallerAngle(p0, data[1]) )
+    {
+      result.push( data[0] );
+      result.push( data[1] );
+    }
+    else
+    {
+      result.push( data[1] );
+      result.push( data[0] );
+    }
+  }
+  else
+  {
+    Vec2 pivot = (data[0] + data[data.size()/2] + data[data.size()-1] ) / 3;
+    Vec2 above[];
+    Vec2 below[];
+    for( Size i = 0; i < data.size(); i++ )
+    {
+      if( data[i].hasSmallerAngle(p0, pivot) )
+        below.push( data[i] );
+      else
+        above.push( data[i] );
+    }
+
+    if(above.size() == 0 && below.size() != 0)
+      result = below;
+    else if(above.size() != 0 && below.size() == 0)
+      result = above;
+    else
+      result = getConvexHull_quickSort_smallerAngle( p0, below ) + getConvexHull_quickSort_smallerAngle( p0, above );
+  }
+  return result;
+}
+
+/// Returns the counter clockwise convex hull for an array of Vec2
+/// This uses the Graham Scan algorithm
+function Vec2[] getConvexHull(Vec2 points[]) {
+
+  if(points.size() < 3)
+    return points;
+
+  Vec2 P[] = getConvexHull_quickSort_leftLower(points);
+
+  // remove duplicates
+  Index hole = 1;
+  for(Index i=1; i<P.size(); i++) {
+    if(!P[hole-1].almostEqual(P[i]))
+      P[hole++] = P[i];
+  }
+  P.resize(hole);
+
+  Vec2 P1[](P.size()-1);
+  for(Index i=1;i<P.size();i++) 
+    P1[i-1] = P[i];
+
+  P.resize(1);
+  P = P + getConvexHull_quickSort_smallerAngle(P[0], P1);
+
+  Vec2 hull[](P.size());
+  hull[0] = P[0];
+  if(P.size() == 1)
+    return hull;
+  hull[1] = P[1];
+
+  Index top = 1;
+  Index i = 2;
+  while(i < P.size()) {
+    if(top > 0 && P[i].counterClockwise(hull[top-1], hull[top]) < 0.0) 
+      top--;
+    else {
+      hull[++top] = P[i++];
+    }
+  }
+
+  hull.resize(top+1);
+  return hull;
+}
+
+/// Returns the smallest surrounding rectangle as 
+/// the center of the rectangle, it's dimensions and a
+/// rotation angle.
+function getMinimumBoundingRectangle(Vec2 points[], out Vec2 center, out Vec2 dimensions, out Scalar rotation) {
+  Vec2 ch[] = getConvexHull(points);
+  if(ch.size() == 0)
+    return;
+
+  Vec2 edges[](ch.size());
+  Vec2 normals[](ch.size());
+  Scalar startAngle = SCALAR_INFINITE;
+  Scalar minArea = SCALAR_INFINITE;
+  Index minIndex = -1;
+  Box2 minBox;
+  for(Size i=0;i<edges.size();i++) {
+    edges[i] = ch[(i+1)%ch.size()] - ch[i];
+    if(edges[i].almostEqual(Vec2(0.0, 0.0)))
+      continue;
+    edges[i] = edges[i].unit();
+    normals[i] = Vec2(-edges[i].y, edges[i].x);
+
+    Box2 box;
+    for(Size j=0;j<ch.size();j++) {
+      Vec2 P = ch[j] - ch[i];
+      box.merge(Vec2(edges[i].dot(P), normals[i].dot(P)));
+    }
+
+    Scalar area = (box.max.x - box.min.x) * (box.max.y - box.min.y);
+    if(area < minArea) {
+      minArea = area;
+      minBox = box;
+      minIndex = i;
+    }
+
+    Scalar angle = Vec2(1.0, 0.0).dot(edges[i]);
+    if(startAngle == SCALAR_INFINITE) {
+      startAngle = angle;
+    } else if(abs(startAngle - angle) > 1) {
+      break;
+    }
+  }
+
+  if(minIndex != -1) {
+    dimensions = minBox.max - minBox.min;
+    Vec2 minCenter = ch[minIndex] + edges[minIndex] * minBox.min.x + normals[minIndex] * minBox.min.y;
+    Vec2 maxCenter = ch[minIndex] + edges[minIndex] * minBox.max.x + normals[minIndex] * minBox.max.y;
+    center = (minCenter + maxCenter) * 0.5;
+    rotation = Vec2(1.0, 0.0).angleTo(edges[minIndex]);
+    if(normals[minIndex].dot(Vec2(1.0, 0.0)) > 0.0)
+      rotation = -rotation;
+  } else {
+    center = ch[0];
+    dimensions = Vec2(0.0, 0.0);
+    rotation = 0.0;
+  }
+}

@@ -1,0 +1,948 @@
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+operator _Convert_SInt32_UInt32<<<i>>>(
+  io UInt32 result[],
+  SInt32 source[]
+) {
+  result[i] = UInt32(source[i]);
+}
+
+operator _Convert_SInt32_Float32<<<i>>>(
+  io Float32 result[],
+  SInt32 source[]
+) {
+  result[i] = Float32(source[i]);
+}
+
+operator _Convert_SInt32_Vec2<<<i>>>(
+  io Vec2 result[],
+  SInt32 source[]
+) {
+  result[i] = Vec2(source[i]);
+}
+
+operator _Convert_SInt32_Vec3<<<i>>>(
+  io Vec3 result[],
+  SInt32 source[]
+) {
+  result[i] = Vec3(source[i]);
+}
+
+operator _Convert_SInt32_Vec4<<<i>>>(
+  io Vec4 result[],
+  SInt32 source[]
+) {
+  result[i] = Vec4(source[i]);
+}
+
+operator _Convert_SInt32_Color<<<i>>>(
+  io Color result[],
+  SInt32 source[]
+) {
+  result[i] = Color(source[i]);
+}
+
+/// \internal
+private function Boolean BaseGeometry.convertIntegerAttribute!(
+  SInt32 mode,
+  IntegerAttribute sourceAttr,
+  io GeometryAttribute targetAttr
+) {
+  if(sourceAttr == null || targetAttr == null)
+    return false;
+
+  SInt32 sourceValues[] = sourceAttr.values;
+
+  switch(mode)
+  {
+    case 0: // Direct Copy
+    {
+      switch(targetAttr.type())
+      {
+        case UInt32Attribute:
+        {
+          UInt32Attribute targetCast = targetAttr;
+          UInt32 targetValues[] = targetCast.values;
+          if(sourceValues.size() < Attribute_Pex_Margin)
+          {
+            for(Index index=0;index<sourceValues.size();index++)
+            {
+              _Convert_SInt32_UInt32(
+                index, targetValues, sourceValues
+              );
+            }
+          }
+          else
+          {
+            _Convert_SInt32_UInt32<<<sourceValues.size()>>>(
+              targetValues, sourceValues
+            );
+          }
+          break;
+        }
+        case ScalarAttribute:
+        {
+          ScalarAttribute targetCast = targetAttr;
+          Float32 targetValues[] = targetCast.values;
+          if(sourceValues.size() < Attribute_Pex_Margin)
+          {
+            for(Index index=0;index<sourceValues.size();index++)
+            {
+              _Convert_SInt32_Float32(
+                index, targetValues, sourceValues
+              );
+            }
+          }
+          else
+          {
+            _Convert_SInt32_Float32<<<sourceValues.size()>>>(
+              targetValues, sourceValues
+            );
+          }
+          break;
+        }
+        case Vec2Attribute:
+        {
+          Vec2Attribute targetCast = targetAttr;
+          Vec2 targetValues[] = targetCast.values;
+          if(sourceValues.size() < Attribute_Pex_Margin)
+          {
+            for(Index index=0;index<sourceValues.size();index++)
+            {
+              _Convert_SInt32_Vec2(
+                index, targetValues, sourceValues
+              );
+            }
+          }
+          else
+          {
+            _Convert_SInt32_Vec2<<<sourceValues.size()>>>(
+              targetValues, sourceValues
+            );
+          }
+          break;
+        }
+        case Vec3Attribute:
+        {
+          Vec3Attribute targetCast = targetAttr;
+          Vec3 targetValues[] = targetCast.values;
+          if(sourceValues.size() < Attribute_Pex_Margin)
+          {
+            for(Index index=0;index<sourceValues.size();index++)
+            {
+              _Convert_SInt32_Vec3(
+                index, targetValues, sourceValues
+              );
+            }
+          }
+          else
+          {
+            _Convert_SInt32_Vec3<<<sourceValues.size()>>>(
+              targetValues, sourceValues
+            );
+          }
+          break;
+        }
+        case Vec4Attribute:
+        {
+          Vec4Attribute targetCast = targetAttr;
+          Vec4 targetValues[] = targetCast.values;
+          if(sourceValues.size() < Attribute_Pex_Margin)
+          {
+            for(Index index=0;index<sourceValues.size();index++)
+            {
+              _Convert_SInt32_Vec4(
+                index, targetValues, sourceValues
+              );
+            }
+          }
+          else
+          {
+            _Convert_SInt32_Vec4<<<sourceValues.size()>>>(
+              targetValues, sourceValues
+            );
+          }
+          break;
+        }
+        case ColorAttribute:
+        {
+          ColorAttribute targetCast = targetAttr;
+          Color targetValues[] = targetCast.values;
+          if(sourceValues.size() < Attribute_Pex_Margin)
+          {
+            for(Index index=0;index<sourceValues.size();index++)
+            {
+              _Convert_SInt32_Color(
+                index, targetValues, sourceValues
+              );
+            }
+          }
+          else
+          {
+            _Convert_SInt32_Color<<<sourceValues.size()>>>(
+              targetValues, sourceValues
+            );
+          }
+          break;
+        }
+
+        default:
+        {
+          report('Error: Convert: Target attribute of type '+targetAttr.type()+' not compatible with '+sourceAttr.type()+'.');
+          return false;
+        }
+      }
+
+      break;
+    }
+  }
+
+
+  targetAttr.incrementVersion();
+  return true;
+}
+
+operator _Convert_UInt32_SInt32<<<i>>>(
+  io SInt32 result[],
+  UInt32 source[]
+) {
+  result[i] = SInt32(source[i]);
+}
+
+operator _Convert_UInt32_Float32<<<i>>>(
+  io Float32 result[],
+  UInt32 source[]
+) {
+  result[i] = Float32(source[i]);
+}
+
+operator _Convert_UInt32_Vec2<<<i>>>(
+  io Vec2 result[],
+  UInt32 source[]
+) {
+  result[i] = Vec2(source[i]);
+}
+
+operator _Convert_UInt32_Vec3<<<i>>>(
+  io Vec3 result[],
+  UInt32 source[]
+) {
+  result[i] = Vec3(source[i]);
+}
+
+operator _Convert_UInt32_Vec4<<<i>>>(
+  io Vec4 result[],
+  UInt32 source[]
+) {
+  result[i] = Vec4(source[i]);
+}
+
+operator _Convert_UInt32_Color<<<i>>>(
+  io Color result[],
+  UInt32 source[]
+) {
+  result[i] = Color(source[i]);
+}
+
+/// \internal
+private function Boolean BaseGeometry.convertUInt32Attribute!(
+  SInt32 mode,
+  UInt32Attribute sourceAttr,
+  io GeometryAttribute targetAttr
+) {
+  if(sourceAttr == null || targetAttr == null)
+    return false;
+
+  UInt32 sourceValues[] = sourceAttr.values;
+
+  switch(mode)
+  {
+    case 0: // Direct Copy
+    {
+      switch(targetAttr.type())
+      {
+        case IntegerAttribute:
+        {
+          IntegerAttribute targetCast = targetAttr;
+          SInt32 targetValues[] = targetCast.values;
+          if(sourceValues.size() < Attribute_Pex_Margin)
+          {
+            for(Index index=0;index<sourceValues.size();index++)
+            {
+              _Convert_UInt32_SInt32(
+                index, targetValues, sourceValues
+              );
+            }
+          }
+          else
+          {
+            _Convert_UInt32_SInt32<<<sourceValues.size()>>>(
+              targetValues, sourceValues
+            );
+          }
+          break;
+        }
+        case ScalarAttribute:
+        {
+          ScalarAttribute targetCast = targetAttr;
+          Float32 targetValues[] = targetCast.values;
+          if(sourceValues.size() < Attribute_Pex_Margin)
+          {
+            for(Index index=0;index<sourceValues.size();index++)
+            {
+              _Convert_UInt32_Float32(
+                index, targetValues, sourceValues
+              );
+            }
+          }
+          else
+          {
+            _Convert_UInt32_Float32<<<sourceValues.size()>>>(
+              targetValues, sourceValues
+            );
+          }
+          break;
+        }
+        case Vec2Attribute:
+        {
+          Vec2Attribute targetCast = targetAttr;
+          Vec2 targetValues[] = targetCast.values;
+          if(sourceValues.size() < Attribute_Pex_Margin)
+          {
+            for(Index index=0;index<sourceValues.size();index++)
+            {
+              _Convert_UInt32_Vec2(
+                index, targetValues, sourceValues
+              );
+            }
+          }
+          else
+          {
+            _Convert_UInt32_Vec2<<<sourceValues.size()>>>(
+              targetValues, sourceValues
+            );
+          }
+          break;
+        }
+        case Vec3Attribute:
+        {
+          Vec3Attribute targetCast = targetAttr;
+          Vec3 targetValues[] = targetCast.values;
+          if(sourceValues.size() < Attribute_Pex_Margin)
+          {
+            for(Index index=0;index<sourceValues.size();index++)
+            {
+              _Convert_UInt32_Vec3(
+                index, targetValues, sourceValues
+              );
+            }
+          }
+          else
+          {
+            _Convert_UInt32_Vec3<<<sourceValues.size()>>>(
+              targetValues, sourceValues
+            );
+          }
+          break;
+        }
+        case Vec4Attribute:
+        {
+          Vec4Attribute targetCast = targetAttr;
+          Vec4 targetValues[] = targetCast.values;
+          if(sourceValues.size() < Attribute_Pex_Margin)
+          {
+            for(Index index=0;index<sourceValues.size();index++)
+            {
+              _Convert_UInt32_Vec4(
+                index, targetValues, sourceValues
+              );
+            }
+          }
+          else
+          {
+            _Convert_UInt32_Vec4<<<sourceValues.size()>>>(
+              targetValues, sourceValues
+            );
+          }
+          break;
+        }
+        case ColorAttribute:
+        {
+          ColorAttribute targetCast = targetAttr;
+          Color targetValues[] = targetCast.values;
+          if(sourceValues.size() < Attribute_Pex_Margin)
+          {
+            for(Index index=0;index<sourceValues.size();index++)
+            {
+              _Convert_UInt32_Color(
+                index, targetValues, sourceValues
+              );
+            }
+          }
+          else
+          {
+            _Convert_UInt32_Color<<<sourceValues.size()>>>(
+              targetValues, sourceValues
+            );
+          }
+          break;
+        }
+
+        default:
+        {
+          report('Error: Convert: Target attribute of type '+targetAttr.type()+' not compatible with '+sourceAttr.type()+'.');
+          return false;
+        }
+      }
+
+      break;
+    }
+  }
+
+
+  targetAttr.incrementVersion();
+  return true;
+}
+
+operator _Convert_Float32_UInt32<<<i>>>(
+  io UInt32 result[],
+  Float32 source[]
+) {
+  result[i] = UInt32(source[i]);
+}
+
+operator _Convert_Float32_SInt32<<<i>>>(
+  io SInt32 result[],
+  Float32 source[]
+) {
+  result[i] = SInt32(source[i]);
+}
+
+operator _Convert_Float32_Vec2<<<i>>>(
+  io Vec2 result[],
+  Float32 source[]
+) {
+  result[i] = Vec2(source[i]);
+}
+
+operator _Convert_Float32_Vec3<<<i>>>(
+  io Vec3 result[],
+  Float32 source[]
+) {
+  result[i] = Vec3(source[i]);
+}
+
+operator _Convert_Float32_Vec4<<<i>>>(
+  io Vec4 result[],
+  Float32 source[]
+) {
+  result[i] = Vec4(source[i]);
+}
+
+operator _Convert_Float32_Color<<<i>>>(
+  io Color result[],
+  Float32 source[]
+) {
+  result[i] = Color(source[i]);
+}
+
+/// \internal
+private function Boolean BaseGeometry.convertScalarAttribute!(
+  SInt32 mode,
+  ScalarAttribute sourceAttr,
+  io GeometryAttribute targetAttr
+) {
+  if(sourceAttr == null || targetAttr == null)
+    return false;
+
+  Float32 sourceValues[] = sourceAttr.values;
+
+  switch(mode)
+  {
+    case 0: // Direct Copy
+    {
+      switch(targetAttr.type())
+      {
+        case UInt32Attribute:
+        {
+          UInt32Attribute targetCast = targetAttr;
+          UInt32 targetValues[] = targetCast.values;
+          if(sourceValues.size() < Attribute_Pex_Margin)
+          {
+            for(Index index=0;index<sourceValues.size();index++)
+            {
+              _Convert_Float32_UInt32(
+                index, targetValues, sourceValues
+              );
+            }
+          }
+          else
+          {
+            _Convert_Float32_UInt32<<<sourceValues.size()>>>(
+              targetValues, sourceValues
+            );
+          }
+          break;
+        }
+        case IntegerAttribute:
+        {
+          IntegerAttribute targetCast = targetAttr;
+          SInt32 targetValues[] = targetCast.values;
+          if(sourceValues.size() < Attribute_Pex_Margin)
+          {
+            for(Index index=0;index<sourceValues.size();index++)
+            {
+              _Convert_Float32_SInt32(
+                index, targetValues, sourceValues
+              );
+            }
+          }
+          else
+          {
+            _Convert_Float32_SInt32<<<sourceValues.size()>>>(
+              targetValues, sourceValues
+            );
+          }
+          break;
+        }
+        case Vec2Attribute:
+        {
+          Vec2Attribute targetCast = targetAttr;
+          Vec2 targetValues[] = targetCast.values;
+          if(sourceValues.size() < Attribute_Pex_Margin)
+          {
+            for(Index index=0;index<sourceValues.size();index++)
+            {
+              _Convert_Float32_Vec2(
+                index, targetValues, sourceValues
+              );
+            }
+          }
+          else
+          {
+            _Convert_Float32_Vec2<<<sourceValues.size()>>>(
+              targetValues, sourceValues
+            );
+          }
+          break;
+        }
+        case Vec3Attribute:
+        {
+          Vec3Attribute targetCast = targetAttr;
+          Vec3 targetValues[] = targetCast.values;
+          if(sourceValues.size() < Attribute_Pex_Margin)
+          {
+            for(Index index=0;index<sourceValues.size();index++)
+            {
+              _Convert_Float32_Vec3(
+                index, targetValues, sourceValues
+              );
+            }
+          }
+          else
+          {
+            _Convert_Float32_Vec3<<<sourceValues.size()>>>(
+              targetValues, sourceValues
+            );
+          }
+          break;
+        }
+        case Vec4Attribute:
+        {
+          Vec4Attribute targetCast = targetAttr;
+          Vec4 targetValues[] = targetCast.values;
+          if(sourceValues.size() < Attribute_Pex_Margin)
+          {
+            for(Index index=0;index<sourceValues.size();index++)
+            {
+              _Convert_Float32_Vec4(
+                index, targetValues, sourceValues
+              );
+            }
+          }
+          else
+          {
+            _Convert_Float32_Vec4<<<sourceValues.size()>>>(
+              targetValues, sourceValues
+            );
+          }
+          break;
+        }
+        case ColorAttribute:
+        {
+          ColorAttribute targetCast = targetAttr;
+          Color targetValues[] = targetCast.values;
+          if(sourceValues.size() < Attribute_Pex_Margin)
+          {
+            for(Index index=0;index<sourceValues.size();index++)
+            {
+              _Convert_Float32_Color(
+                index, targetValues, sourceValues
+              );
+            }
+          }
+          else
+          {
+            _Convert_Float32_Color<<<sourceValues.size()>>>(
+              targetValues, sourceValues
+            );
+          }
+          break;
+        }
+
+        default:
+        {
+          report('Error: Convert: Target attribute of type '+targetAttr.type()+' not compatible with '+sourceAttr.type()+'.');
+          return false;
+        }
+      }
+
+      break;
+    }
+  }
+
+
+  targetAttr.incrementVersion();
+  return true;
+}
+
+operator _Convert_Vec3_Color<<<i>>>(
+  io Color result[],
+  Vec3 source[]
+) {
+  result[i] = Color(source[i]);
+}
+
+/// \internal
+private function Boolean BaseGeometry.convertVec3Attribute!(
+  SInt32 mode,
+  Vec3Attribute sourceAttr,
+  io GeometryAttribute targetAttr
+) {
+  if(sourceAttr == null || targetAttr == null)
+    return false;
+
+  Vec3 sourceValues[] = sourceAttr.values;
+
+  switch(mode)
+  {
+    case 0: // Direct Copy
+    {
+      switch(targetAttr.type())
+      {
+        case ColorAttribute:
+        {
+          ColorAttribute targetCast = targetAttr;
+          Color targetValues[] = targetCast.values;
+          if(sourceValues.size() < Attribute_Pex_Margin)
+          {
+            for(Index index=0;index<sourceValues.size();index++)
+            {
+              _Convert_Vec3_Color(
+                index, targetValues, sourceValues
+              );
+            }
+          }
+          else
+          {
+            _Convert_Vec3_Color<<<sourceValues.size()>>>(
+              targetValues, sourceValues
+            );
+          }
+          break;
+        }
+
+        default:
+        {
+          report('Error: Convert: Target attribute of type '+targetAttr.type()+' not compatible with '+sourceAttr.type()+'.');
+          return false;
+        }
+      }
+
+      break;
+    }
+  }
+
+
+  targetAttr.incrementVersion();
+  return true;
+}
+
+operator _Convert_Vec4_Color<<<i>>>(
+  io Color result[],
+  Vec4 source[]
+) {
+  result[i] = Color(source[i]);
+}
+
+/// \internal
+private function Boolean BaseGeometry.convertVec4Attribute!(
+  SInt32 mode,
+  Vec4Attribute sourceAttr,
+  io GeometryAttribute targetAttr
+) {
+  if(sourceAttr == null || targetAttr == null)
+    return false;
+
+  Vec4 sourceValues[] = sourceAttr.values;
+
+  switch(mode)
+  {
+    case 0: // Direct Copy
+    {
+      switch(targetAttr.type())
+      {
+        case ColorAttribute:
+        {
+          ColorAttribute targetCast = targetAttr;
+          Color targetValues[] = targetCast.values;
+          if(sourceValues.size() < Attribute_Pex_Margin)
+          {
+            for(Index index=0;index<sourceValues.size();index++)
+            {
+              _Convert_Vec4_Color(
+                index, targetValues, sourceValues
+              );
+            }
+          }
+          else
+          {
+            _Convert_Vec4_Color<<<sourceValues.size()>>>(
+              targetValues, sourceValues
+            );
+          }
+          break;
+        }
+
+        default:
+        {
+          report('Error: Convert: Target attribute of type '+targetAttr.type()+' not compatible with '+sourceAttr.type()+'.');
+          return false;
+        }
+      }
+
+      break;
+    }
+  }
+
+
+  targetAttr.incrementVersion();
+  return true;
+}
+
+operator _Convert_Color_Vec3<<<i>>>(
+  io Vec3 result[],
+  Color source[]
+) {
+  result[i] = Vec3(source[i]);
+}
+
+operator _Convert_Color_Vec4<<<i>>>(
+  io Vec4 result[],
+  Color source[]
+) {
+  result[i] = Vec4(source[i]);
+}
+
+/// \internal
+private function Boolean BaseGeometry.convertColorAttribute!(
+  SInt32 mode,
+  ColorAttribute sourceAttr,
+  io GeometryAttribute targetAttr
+) {
+  if(sourceAttr == null || targetAttr == null)
+    return false;
+
+  Color sourceValues[] = sourceAttr.values;
+
+  switch(mode)
+  {
+    case 0: // Direct Copy
+    {
+      switch(targetAttr.type())
+      {
+        case Vec3Attribute:
+        {
+          Vec3Attribute targetCast = targetAttr;
+          Vec3 targetValues[] = targetCast.values;
+          if(sourceValues.size() < Attribute_Pex_Margin)
+          {
+            for(Index index=0;index<sourceValues.size();index++)
+            {
+              _Convert_Color_Vec3(
+                index, targetValues, sourceValues
+              );
+            }
+          }
+          else
+          {
+            _Convert_Color_Vec3<<<sourceValues.size()>>>(
+              targetValues, sourceValues
+            );
+          }
+          break;
+        }
+        case Vec4Attribute:
+        {
+          Vec4Attribute targetCast = targetAttr;
+          Vec4 targetValues[] = targetCast.values;
+          if(sourceValues.size() < Attribute_Pex_Margin)
+          {
+            for(Index index=0;index<sourceValues.size();index++)
+            {
+              _Convert_Color_Vec4(
+                index, targetValues, sourceValues
+              );
+            }
+          }
+          else
+          {
+            _Convert_Color_Vec4<<<sourceValues.size()>>>(
+              targetValues, sourceValues
+            );
+          }
+          break;
+        }
+
+        default:
+        {
+          report('Error: Convert: Target attribute of type '+targetAttr.type()+' not compatible with '+sourceAttr.type()+'.');
+          return false;
+        }
+      }
+
+      break;
+    }
+  }
+
+
+  targetAttr.incrementVersion();
+  return true;
+}
+
+operator _Convert_Quat_Mat33<<<i>>>(
+  io Mat33 result[],
+  Quat source[]
+) {
+  result[i] = Mat33(source[i]);
+}
+
+/// \internal
+private function Boolean BaseGeometry.convertQuatAttribute!(
+  SInt32 mode,
+  QuatAttribute sourceAttr,
+  io GeometryAttribute targetAttr
+) {
+  if(sourceAttr == null || targetAttr == null)
+    return false;
+
+  Quat sourceValues[] = sourceAttr.values;
+
+  switch(mode)
+  {
+    case 0: // Direct Copy
+    {
+      switch(targetAttr.type())
+      {
+        case Mat33Attribute:
+        {
+          Mat33Attribute targetCast = targetAttr;
+          Mat33 targetValues[] = targetCast.values;
+          if(sourceValues.size() < Attribute_Pex_Margin)
+          {
+            for(Index index=0;index<sourceValues.size();index++)
+            {
+              _Convert_Quat_Mat33(
+                index, targetValues, sourceValues
+              );
+            }
+          }
+          else
+          {
+            _Convert_Quat_Mat33<<<sourceValues.size()>>>(
+              targetValues, sourceValues
+            );
+          }
+          break;
+        }
+
+        default:
+        {
+          report('Error: Convert: Target attribute of type '+targetAttr.type()+' not compatible with '+sourceAttr.type()+'.');
+          return false;
+        }
+      }
+
+      break;
+    }
+  }
+
+
+  targetAttr.incrementVersion();
+  return true;
+}
+
+operator _Convert_Mat33_Quat<<<i>>>(
+  io Quat result[],
+  Mat33 source[]
+) {
+  result[i] = Quat(source[i]);
+}
+
+/// \internal
+private function Boolean BaseGeometry.convertMat33Attribute!(
+  SInt32 mode,
+  Mat33Attribute sourceAttr,
+  io GeometryAttribute targetAttr
+) {
+  if(sourceAttr == null || targetAttr == null)
+    return false;
+
+  Mat33 sourceValues[] = sourceAttr.values;
+
+  switch(mode)
+  {
+    case 0: // Direct Copy
+    {
+      switch(targetAttr.type())
+      {
+        case QuatAttribute:
+        {
+          QuatAttribute targetCast = targetAttr;
+          Quat targetValues[] = targetCast.values;
+          if(sourceValues.size() < Attribute_Pex_Margin)
+          {
+            for(Index index=0;index<sourceValues.size();index++)
+            {
+              _Convert_Mat33_Quat(
+                index, targetValues, sourceValues
+              );
+            }
+          }
+          else
+          {
+            _Convert_Mat33_Quat<<<sourceValues.size()>>>(
+              targetValues, sourceValues
+            );
+          }
+          break;
+        }
+
+        default:
+        {
+          report('Error: Convert: Target attribute of type '+targetAttr.type()+' not compatible with '+sourceAttr.type()+'.');
+          return false;
+        }
+      }
+
+      break;
+    }
+  }
+
+
+  targetAttr.incrementVersion();
+  return true;
+}

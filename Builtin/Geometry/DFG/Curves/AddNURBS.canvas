@@ -1,0 +1,80 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/Curves.html",
+    "uiTooltip" : "Adds a NURBS curve, and returns the added Curve.\nIf the curve is closed or periodic, pointPositions exclude repeated end point (implicitly point 0).\nSee Curves for more information about various curve types.\n\nSupported types:\n  this: Curves\n  pointPositions: Vec3[]\n  degree: UInt8\n  curveForm: UInt8\n  result: Curve\n"
+    },
+  "title" : "AddNURBS",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Curves"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "pointPositions",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiRange" : "(1, 7)"
+        },
+      "name" : "degree",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "UInt8" : 3
+        },
+      "execPortType" : "In",
+      "typeSpec" : "UInt8"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiCombo" : "( \"open\", \"closed\", \"periodic\" )"
+        },
+      "name" : "curveForm",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "UInt8"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Curve"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "8EFC953FC8F058EE0F94BDAFCF3A919B",
+  "code" : "require Geometry;
+
+dfgEntry {
+  result = this.addNURBS(pointPositions, degree, curveForm);
+}
+"
+  }

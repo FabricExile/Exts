@@ -1,0 +1,226 @@
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+function UInt32[][] BaseGeometry.getUInt32ArrayAttributeValueArray(
+  GeometryAttribute attr,
+  SInt32 mode,
+  UInt32 indices[],
+  io String type
+) {
+  type = "";
+
+  Size vertexCount;
+  Size faceCount;
+  Size faceCornerTotalCount;
+  Size resultSize;
+  UInt32 idxs[] = indices;
+
+  UInt32 values[][];
+
+  if(!this.getAttributeValueArray_CheckIndex(
+    mode,
+    vertexCount,
+    faceCount,
+    faceCornerTotalCount,
+    resultSize,
+    idxs
+    ))
+    return values;
+
+  UInt32ArrayAttribute cast = attr;
+  if(cast == null)
+    return values;
+
+  type = "UInt32[]";
+  values.resize(resultSize);
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  Index idx;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      for(Size i=0;i<resultSize;i++)
+      {
+        idx = idxs.size() > 0 ? idxs[i] : i;
+        if(idx >= vertexCount)
+          continue;
+        values[i].resize(cast.getCount(idx));
+        for(Size j=0;j<values[i].size();j++)
+          values[i][j] = cast.get(idx, j);
+      }
+      break;
+    }
+    case 2: // per face corner
+    {
+      for(Size i=0;i<resultSize;i++)
+      {
+        values[i].resize(cast.getCount(idx));
+        for(Size j=0;j<values[i].size();j++)
+          values[i][j] = cast.get(idxs[i], j);
+      }
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValueArray mode for UInt32ArrayAttribute.");
+      return values;
+    }
+  }
+
+  return values;
+}
+
+/// \internal
+function SInt32[][] BaseGeometry.getIntegerArrayAttributeValueArray(
+  GeometryAttribute attr,
+  SInt32 mode,
+  UInt32 indices[],
+  io String type
+) {
+  type = "";
+
+  Size vertexCount;
+  Size faceCount;
+  Size faceCornerTotalCount;
+  Size resultSize;
+  UInt32 idxs[] = indices;
+
+  SInt32 values[][];
+
+  if(!this.getAttributeValueArray_CheckIndex(
+    mode,
+    vertexCount,
+    faceCount,
+    faceCornerTotalCount,
+    resultSize,
+    idxs
+    ))
+    return values;
+
+  IntegerArrayAttribute cast = attr;
+  if(cast == null)
+    return values;
+
+  type = "SInt32[]";
+  values.resize(resultSize);
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  Index idx;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      for(Size i=0;i<resultSize;i++)
+      {
+        idx = idxs.size() > 0 ? idxs[i] : i;
+        if(idx >= vertexCount)
+          continue;
+        values[i].resize(cast.getCount(idx));
+        for(Size j=0;j<values[i].size();j++)
+          values[i][j] = cast.get(idx, j);
+      }
+      break;
+    }
+    case 2: // per face corner
+    {
+      for(Size i=0;i<resultSize;i++)
+      {
+        values[i].resize(cast.getCount(idx));
+        for(Size j=0;j<values[i].size();j++)
+          values[i][j] = cast.get(idxs[i], j);
+      }
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValueArray mode for IntegerArrayAttribute.");
+      return values;
+    }
+  }
+
+  return values;
+}
+
+/// \internal
+function Float32[][] BaseGeometry.getScalarArrayAttributeValueArray(
+  GeometryAttribute attr,
+  SInt32 mode,
+  UInt32 indices[],
+  io String type
+) {
+  type = "";
+
+  Size vertexCount;
+  Size faceCount;
+  Size faceCornerTotalCount;
+  Size resultSize;
+  UInt32 idxs[] = indices;
+
+  Float32 values[][];
+
+  if(!this.getAttributeValueArray_CheckIndex(
+    mode,
+    vertexCount,
+    faceCount,
+    faceCornerTotalCount,
+    resultSize,
+    idxs
+    ))
+    return values;
+
+  ScalarArrayAttribute cast = attr;
+  if(cast == null)
+    return values;
+
+  type = "Float32[]";
+  values.resize(resultSize);
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  Index idx;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      for(Size i=0;i<resultSize;i++)
+      {
+        idx = idxs.size() > 0 ? idxs[i] : i;
+        if(idx >= vertexCount)
+          continue;
+        values[i].resize(cast.getCount(idx));
+        for(Size j=0;j<values[i].size();j++)
+          values[i][j] = cast.get(idx, j);
+      }
+      break;
+    }
+    case 2: // per face corner
+    {
+      for(Size i=0;i<resultSize;i++)
+      {
+        values[i].resize(cast.getCount(idx));
+        for(Size j=0;j<values[i].size();j++)
+          values[i][j] = cast.get(idxs[i], j);
+      }
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValueArray mode for ScalarArrayAttribute.");
+      return values;
+    }
+  }
+
+  return values;
+}

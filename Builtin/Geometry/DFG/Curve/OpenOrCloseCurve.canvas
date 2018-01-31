@@ -1,0 +1,44 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/Curve.html",
+    "uiTooltip" : "Opens or closes the curve.\n- For a linear curve, this only results in an added or removed segment between the last and first point.\n- For a Bezier curve:\n- When closing, the last point (end of last piece) is removed so the piece ends with the first point (shared with the 1st piece).\n- When opening, the a last point is added, and it position is copied from the first point. The curve is then topologically\nopen, even if visually it is not open until a different position is assigned to the last point.\n- For a NURBS curve:\n- When closing, the last point is removed so the curve ends with the first point (shared).\n- When opening, the a last point is added, and it position is copied from the first point. The curve is then topologically\nopen, even if visually it is not open until a different position is assigned to the last point.\n\nSupported types:\n  this: Curve\n  open: Boolean\n"
+    },
+  "title" : "OpenOrCloseCurve",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Curve"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "open",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Boolean"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "413143A66981066A13D424527FC16447",
+  "code" : "require Geometry;
+
+dfgEntry {
+  this.openOrCloseCurve(open);
+}
+"
+  }

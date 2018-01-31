@@ -1,0 +1,95 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require InlineDrawing;
+
+
+/**
+\versionadded 1.12.0
+
+The :kl-ref:`PositionAxisGizmoManager` displays an arrow made up of a cylinder 
+and cone as its gizmo geometry and connects it to a PositionAxisGizmoHandler 
+for handling the manipulation
+
+\seealso PositionAxisGizmoHandler, PositionAxisGizmoHandler
+\dfgPresetOmit
+*/
+object PositionAxisGizmoManager {
+
+  PositionAxisGizmoHandler handler;
+  InlineMaterial gizmosMaterial;
+  InlineInstance instance;
+};
+
+/// \internal
+function ~PositionAxisGizmoManager(){
+  // Prune the hierarchy from its parent. This will cause the hierarchy
+  // to be destroyed if no other objects maintain a reference to the nodes
+  // in the hierarchy. 
+  InlineTransform nullTranform = null;
+  if(this.instance != null)
+    this.instance.getTransform().setParent(nullTranform);
+}
+
+function PositionAxisGizmoManager(io InlineTransform parent, Xfo offset, Color color, GizmoManipulationCallback callback){
+
+  InlineDrawing drawing = OGLInlineDrawing_GetInstance();
+  
+  InlineShader gizmoShader = drawing.getShader('gizmos');
+  if(!gizmoShader){
+    gizmoShader = OGLSurfaceGizmoShader('gizmos');
+    drawing.registerShader(gizmoShader);
+  }
+  this.gizmosMaterial = gizmoShader.getOrCreateMaterial("gizmos");
+
+  InlineMeshShape shape = drawing.getShape('PositionAxisGizmo_Shape');
+  if(shape == null){
+    PolygonMesh mesh();
+    Size detail = 24;
+    Scalar coneRadius = 0.1;
+    Scalar coneHeight = 0.4;
+    mesh.addCone(Xfo(Vec3(0.0, 0.8, 0.0)), coneRadius, coneHeight, true, detail, true, false);
+    Scalar cylinderRadius = 0.02;
+    Scalar cylinderHeight = 0.8;
+    mesh.addCylinder(Xfo(Vec3(0.0, 0.4, 0.0)), cylinderRadius, cylinderHeight, true, detail, 1, true, false);
+    mesh.recomputePointNormals( 0.5 );
+
+    shape = InlineMeshShape('PositionAxisGizmo_Shape', mesh);
+    drawing.registerShape(shape);
+  }
+
+  {
+    InlineTransform transform = ConstantScreenSizeTransform('PositionAxisGizmo_Transform', offset);
+    parent.addChild(transform);
+
+    this.instance = InlineInstance('PositionAxisGizmoManager', transform, shape);
+    this.instance.setInstanceUniform(InlineUniform('u_diffuseColor', color));
+
+    this.handler = PositionAxisGizmoHandler(this.instance, Vec3(0.0, 1.0, 0.0), callback);
+  }
+}
+
+
+/// Hide gizmos based on the current manipulation mode.
+/// \internal
+function PositionAxisGizmoManager.hide!(){
+  if(this.instance.hasMaterial(this.gizmosMaterial))
+    this.instance.removeMaterial(this.gizmosMaterial);
+}
+
+/// Show gizmos based on the current manipulation mode.
+/// \internal
+function PositionAxisGizmoManager.show!(){
+  if(!this.instance.hasMaterial(this.gizmosMaterial))
+    this.instance.addMaterial(this.gizmosMaterial);
+}
+
+/// Returns the set of InlineInstances used as gizmos.
+/// \internal
+function InlineInstance[] PositionAxisGizmoManager.getGizmos(){
+  InlineInstance gizmos[];
+  gizmos.push(this.instance);
+  return gizmos;
+}
+

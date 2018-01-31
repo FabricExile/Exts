@@ -1,0 +1,578 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require FabricSynchronization;
+
+object InlineTransformBase;
+
+/**
+\versionadded 1.13.0
+
+The InlineTransform interface is used to describe the required methods for an InlineTransform.
+\note This might go away as soon as the virtual keyword is introduced in KL.
+\dfgPresetOmit
+*/
+interface InlineTransform {
+  /// returns the path, encoding the hierarchy joined by '/'
+  String getPath();
+
+  /// returns the number of local xfo values
+  Size getLocalCount();
+
+  /// returns the number of local xfo values
+  /// \internal
+  Size nonLocking_getLocalCount();
+
+  /// resizes the transform to store n local transform values
+  setLocalCount!(Size n);
+
+  /// returns the number of global xfo values
+  Size getGlobalCount();
+
+  /// returns the number of global xfo values
+  /// \internal
+  Size nonLocking_getGlobalCount();
+
+  /// sets a local xfo value given an index
+  setLocalXfo!(Index index, Xfo xfo);
+
+  /// returns a local xfo value given an index and context
+  Xfo getLocalXfo(Index index);
+
+  /// An internal method that avoids placing a lock while querying the local xfo.
+  /// \internal
+  Xfo nonLocking_getLocalXfo(Index index);
+
+  /// returns all local xfos
+  Xfo[] getAllLocalXfos();
+
+  /// An internal method that avoids placing a lock while querying the local xfos
+  /// \internal
+  Xfo[] nonLocking_getAllLocalXfos();
+
+  /// returns a global xfo value given an index and context
+  /// \internal
+  Xfo getGlobalXfo!(Index index);
+
+  /// An internal method that avoids placing a lock while querying the global xfo.
+  /// \internal
+  Xfo nonLocking_getGlobalXfo!(Index index);
+
+  /// returns all global xfos
+  Xfo[] getAllGlobalXfos!();
+
+  /// An internal method that avoids placing a lock while querying the global xfos
+  /// \internal
+  Xfo[] nonLocking_getAllGlobalXfos!();
+
+  /// set the global transform value. The Transform is responsible for computing local.
+  setGlobalXfo!(Index index, Xfo xfo);
+
+  /// returns true if this transform has a parent
+  Boolean hasParent();
+
+  /// returns the parent of this transform, or null
+  InlineTransform getParent();
+
+  /// sets the parent of this transform
+  /// \dfgPresetOmit
+  setParent!(io InlineTransform parent);
+
+  /// internal method that sets the parent ref.
+  /// \note This method does not modify the parent by removing its child ref.
+  /// \dfgPresetOmit
+  setParentRef!(Ref<InlineTransform> parent);
+
+  /// adds a child to this transform
+  Object addChild!(Object child);
+
+  /// removes a child object to this transform by index
+  removeChild!(Index index);
+
+  /// removes a child to this transform
+  removeChild!(Object child);
+
+  /// returns the number of children of this transform
+  Size getChildCount();
+
+  /// returns a child of this transform given an index
+  Object getChild(Index index);
+
+  /// returns a child of this transform given a name, or null
+  Object getChild(String name);
+
+  /// searches the tree for a child given a path of names. 
+  Object getChildByPath(String path[]);
+
+  /// removes all children from this transform
+  removeAllChildren!();
+
+  /// adds an additional local transform
+  pushLocalXfo!(Xfo xfo);
+
+  /// empties the internal caches of this transform
+  incrementVersion!();
+
+  /// returns the current version of the inline transform
+  UInt32 getVersion();
+
+  /// draws the instance on screen. this is used by the 
+  /// material and should not be called manually.
+  /// \internal
+  Boolean draw!(io DrawContext context, Index index, Size count);
+};
+
+
+/**
+\versionadded 1.12.0
+\dfgPresetOmit
+
+The InlineTransformBase represents a nestable transform without animation. The InlineTransformBase supports nesting of transforms to represent scene hierarchies, and uses caching to ensure avoiding recomputation of hierarchies.
+
+\example
+  // create a couple of transforms parented into a hierarchy
+  InlineTransform transfo1 = InlineTransformBase('parent', Xfo());
+  InlineTransform transfo2 = InlineTransformBase('childA', transfo1, Xfo(Vec3(-5, 0, 0)));
+  InlineTransform transfo3 = InlineTransformBase('childB', transfo2, Xfo(Vec3(5, 0, 0)));
+
+  // add some more transform values
+  transfo3.pushLocalXfo(Xfo(Vec3(5, 5, 0)));
+  transfo3.pushLocalXfo(Xfo(Vec3(5, 10, 0)));
+\endexample
+*/
+object InlineTransformBase : InlineEntityBase, InlineTransform {
+  /// \internal
+  Xfo xfos[];
+  /// \internal
+  Ref<InlineTransform> parentTransform;
+  /// \internal
+  Object children[];
+  /// \internal
+  UInt32 childNameToIndex[String];
+  /// \internal
+  Xfo globalXfos[];
+
+  /// \internal
+  UInt32 version;
+  /// \internal
+  UInt32 cachedVersion;
+
+  /// \internal
+  Object transformAdaptor;
+  /// \internal
+  SimpleLock simpleLock;
+};
+
+/// backwards compatibility
+alias InlineTransformBase StaticInlineTransform;
+
+/// default constructor just taking a name
+/// \dfgPresetOmit
+function InlineTransformBase() {
+  this.init("", Xfo());
+}
+
+/// default constructor just taking a name
+/// \dfgPresetOmit
+function InlineTransformBase(String name) {
+  this.init(name, Xfo());
+}
+
+/// default constructor given name and the first xfo value
+/// \dfgPresetOmit
+function InlineTransformBase(String name, Xfo xfo) {
+  this.init(name, xfo);
+}
+
+/// default constructor taking a parent transform, a name and the first xfo value
+/// \dfgPresetOmit
+function InlineTransformBase(String name, io InlineTransform parent, Xfo xfo) {
+  this.init(name, xfo);
+  this.setParent(parent);
+}
+
+/// initialize the transform using a parent transform, a name and the first xfo value
+/// \internal
+function InlineTransformBase.init!(String name, Xfo xfo) {
+  this.simpleLock = SimpleLock("InlineTransform");
+  this.setName(name);
+  this.xfos.resize(0);
+  this.globalXfos.resize(0);
+  this.xfos.push(xfo); 
+  this.globalXfos.push(xfo);
+  this.children.resize(0);
+  this.childNameToIndex.clear();
+  this.incrementVersion();
+}
+
+function ~InlineTransformBase()
+{
+  for (Index index = 0; index < this.children.size(); ++index) {
+    InlineTransformBase childTransform = this.children[index];
+    if (childTransform) {
+      Ref<InlineTransformBase> nullInlineTransformBase = null;
+      childTransform.setParentRef(nullInlineTransformBase);
+    }
+
+    InlineInstance childInstance = this.children[index];
+    if (childInstance)
+      childInstance.setTransform(null);
+  }
+}
+
+/// returns the path, encoding the hierarchy joined by '/'
+function String InlineTransformBase.getPath() {
+  if(this.hasParent())
+    return InlineTransformBase(this.getParent()).getPath() + '/' + this.getName();
+  return this.getName();
+}
+
+/// returns the number of local xfo values
+inline Size InlineTransformBase.getLocalCount() {
+  AutoLock AL(this.simpleLock);
+  return this.nonLocking_getLocalCount();
+}
+
+/// returns the number of local xfo values
+/// \internal
+inline Size InlineTransformBase.nonLocking_getLocalCount() {
+  return this.xfos.size();
+}
+
+/// resizes the transform to store n local transform values
+function InlineTransformBase.setLocalCount!(Size n) {
+  AutoLock AL(this.simpleLock);
+  this.xfos.resize(n);
+  this.incrementVersion();
+}
+
+/// returns the number of global xfo values
+inline Size InlineTransformBase.getGlobalCount() {
+  AutoLock AL(this.simpleLock);
+  return this.nonLocking_getGlobalCount();
+}
+
+/// returns the number of global xfo values
+/// \internal
+function Size InlineTransformBase.nonLocking_getGlobalCount() {
+  if(this.hasParent())
+    return InlineTransformBase(this.getParent()).nonLocking_getGlobalCount() * this.nonLocking_getLocalCount();
+  return this.nonLocking_getLocalCount();
+}
+
+
+/// sets a local xfo value given an index
+function InlineTransformBase.setLocalXfo!(Index index, Xfo xfo) {
+  AutoLock AL(this.simpleLock);
+  if(index >= this.xfos.size()) {
+    setError("InlineTransformBase: Local xfo index "+index+" out of bounds.");
+    return;
+  }
+  this.xfos[index] = xfo;
+  this.incrementVersion();
+}
+
+/// returns a local xfo value given an index and context
+inline Xfo InlineTransformBase.getLocalXfo(Index index) {
+  AutoLock AL(this.simpleLock);
+  return this.nonLocking_getLocalXfo(index);
+}
+
+/// An internal method that avoids placing a lock while querying the local xfo.
+/// \internal
+inline Xfo InlineTransformBase.nonLocking_getLocalXfo(Index index) {
+  if(index >= this.xfos.size()) {
+    setError("InlineTransformBase: Local xfo index "+index+" out of bounds.");
+    return Xfo();
+  }
+  return this.xfos[index];
+}
+
+/// returns all local xfos
+inline Xfo[] InlineTransformBase.getAllLocalXfos() {
+  AutoLock AL(this.simpleLock);
+  return this.nonLocking_getAllLocalXfos();
+}
+
+/// An internal method that avoids placing a lock while querying the local xfos
+/// \internal
+inline Xfo[] InlineTransformBase.nonLocking_getAllLocalXfos() {
+  return this.xfos;
+}
+
+/// returns a global xfo value given an index and context
+inline Xfo InlineTransformBase.getGlobalXfo!(Index index) {
+  AutoLock AL(this.simpleLock);
+  return this.nonLocking_getGlobalXfo(index);
+}
+
+/// An internal method that avoids placing a lock while querying the global xfo.
+/// \internal
+function Xfo InlineTransformBase.nonLocking_getGlobalXfo!(Index index) {
+  if(this.hasParent()) {
+    Size totalCount = this.nonLocking_getGlobalCount();
+    if(totalCount == 1 && this.cachedVersion == this.version) {
+      return this.globalXfos[index];
+    }
+    if(index >= totalCount) {
+      setError("InlineTransformBase: Global xfo index "+index+" out of bounds.");
+      return Xfo();
+    }
+    Size localCount = this.nonLocking_getLocalCount();
+    Size localIndex = index % localCount;
+    Size parentIndex = (index - localIndex) / localCount;
+    InlineTransformBase parent = this.getParent();
+    Xfo globalXfo = parent.nonLocking_getGlobalXfo(parentIndex) * this.nonLocking_getLocalXfo(localIndex);
+    if(totalCount == 1) {
+      this.cachedVersion = this.version;
+      this.globalXfos[localIndex] = globalXfo;
+    }
+    return globalXfo;
+  }
+  return this.nonLocking_getLocalXfo(index);
+}
+
+/// set the global transform value. The Transform is responsible for computing local.
+function InlineTransformBase.setGlobalXfo!(Index index, Xfo xfo) {
+  AutoLock AL(this.simpleLock);
+  if(this.hasParent()) {
+    Size localCount = this.nonLocking_getLocalCount();
+    Size localIndex = index % localCount;
+    Size parentIndex = (index - localIndex) / localCount;
+    InlineTransformBase parent = this.getParent();
+    Xfo localXfo = parent.getGlobalXfo(parentIndex).inverse() * xfo;
+    this.setLocalXfo(localIndex, localXfo);
+  } else
+    this.setLocalXfo(index, xfo);
+}
+
+/// returns all global xfos
+inline Xfo[] InlineTransformBase.getAllGlobalXfos!() {
+  AutoLock AL(this.simpleLock);
+  return this.nonLocking_getAllGlobalXfos();
+}
+
+/// An internal method that avoids placing a lock while querying the global xfos
+/// \internal
+inline Xfo[] InlineTransformBase.nonLocking_getAllGlobalXfos!() {
+  if(this.hasParent())
+  {
+    Xfo xfos[](this.nonLocking_getGlobalCount());
+    for(Size i=0;i<xfos.size();i++)
+      xfos[i] = this.nonLocking_getGlobalXfo(i);
+    return xfos;
+  }
+  return this.xfos;
+}
+
+/// returns true if this transform has a parent
+inline Boolean InlineTransformBase.hasParent() {
+  return Boolean(this.parentTransform);
+}
+
+/// returns the parent of this transform, or null
+inline InlineTransform InlineTransformBase.getParent() {
+  return this.parentTransform;
+}
+
+/// sets the parent of this transform
+/// \dfgPresetOmit
+inline InlineTransformBase.setParent!(io InlineTransform parent) {
+  if(parent == this.parentTransform)
+    return;
+  if(this.parentTransform) {
+    InlineTransformBase prevParent = this.parentTransform;
+    // Calling 'removeChild' will then call setParentRef to null the current parent pointer
+    prevParent.removeChild(this);
+  }
+  if(parent){
+    // Calling 'addChild' will then call setParentRef to set the current parent pointer
+    parent.addChild(this);
+  }
+  this.incrementVersion();
+}
+
+/// internal method that sets the parent.
+/// \note This method does not modify the parent by removing its child ref.
+/// \internal
+inline InlineTransformBase.setParentRef!(Ref<InlineTransform> parent) {
+  this.parentTransform = parent;
+  this.incrementVersion();
+}
+
+/// adds a child to this transform
+function Object InlineTransformBase.addChild!(Object child) {
+  AutoLock AL(this.simpleLock);
+  String childName;
+  InlineTransformBase childTransform = child;
+  if(childTransform)
+  {
+    childTransform.setParentRef(this);
+    childName = childTransform.getName();
+  }
+  InlineInstance childInstance = child;
+  if(childInstance)
+  {
+    childName = childInstance.getName();
+  }
+  this.childNameToIndex[childName] = this.children.size();
+  this.children.push(child);
+
+  return child;
+}
+
+/// \internal
+function InlineTransformBase.removeChild_locked!(Index index) {
+  String childName;
+
+  InlineTransformBase childTransform = this.children[index];
+  if (childTransform) {
+    Ref<InlineTransformBase> nullInlineTransformBase = null;
+    childTransform.setParentRef(nullInlineTransformBase);
+    childName = childTransform.getName();
+  }
+
+  InlineInstance childInstance = this.children[index];
+  if (childInstance)
+  {
+    childInstance.setTransform(null);
+    childName = childInstance.getName();
+  }
+
+  for(Size j=index; j<this.children.size()-1; j++) {
+    this.children[j] = this.children[j+1];
+  }
+  this.children.resize(this.children.size()-1);
+
+  this.childNameToIndex.delete(childName);
+  for(key in this.childNameToIndex)
+  {
+    if(this.childNameToIndex[key] >= index)
+      this.childNameToIndex[key]--;
+  }
+}
+
+/// removes a child object to this transform by index
+function InlineTransformBase.removeChild!(Index index) {
+  AutoLock AL(this.simpleLock);
+  this.removeChild_locked(index);
+}
+
+/// removes a child to this transform
+function InlineTransformBase.removeChild!(Object child) {
+  AutoLock AL(this.simpleLock);
+  for(Size i=0; i<this.children.size(); i++) {
+    if(child == this.children[i]) {
+      this.removeChild_locked(i);
+      return;
+    }
+  }
+}
+
+/// returns the number of children of this transform
+inline Size InlineTransformBase.getChildCount() {
+  return this.children.size();
+}
+
+/// returns a child of this transform given an index
+function Object InlineTransformBase.getChild(Index index) {
+  if(index >= this.getChildCount()) {
+    setError('Requested child index '+index+' is out of bounds.');
+    return null;
+  }
+  return this.children[index];
+}
+
+/// returns a child of this transform given a name, or null
+function Object InlineTransformBase.getChild(String name) {
+  AutoLock AL(this.simpleLock);
+  Integer index = this.childNameToIndex.get(name, -1);
+  if(index == -1)
+    return null;
+  return this.children[index];
+}
+
+/// searches the tree for a child given a path of names. 
+function Object InlineTransformBase.getChildByPath(String path[]) {
+  if(path.size() == 0)
+    return null;
+  Object child = this.getChild(path[0]);
+  if(path.size() == 1)
+    return child;
+  
+  String newpath[];
+  for(Integer i=1; i<path.size(); i++)
+    newpath.push(path[i]);
+
+  InlineTransformBase childTransform = child;
+  if(childTransform) {
+    return childTransform.getChildByPath(newpath);
+  }
+  return null;
+}
+
+/// removes all children from this transform
+function InlineTransformBase.removeAllChildren!() {
+  AutoLock AL(this.simpleLock);
+  for(Integer i=this.children.size()-1; i>=0; i--) {
+    InlineTransformBase childTransform = this.children[i];
+    if(childTransform) {
+      InlineTransform nullParent = null;
+      childTransform.setParent(nullParent);
+      continue;
+    }
+    InlineInstance instance = this.children[i];
+    if(instance) {
+      InlineTransformBase nullTransfo = null;
+      instance.setTransform(nullTransfo);
+      continue;
+    }
+  }
+  this.children.resize(0);
+  this.childNameToIndex.clear();
+  this.incrementVersion();
+}
+
+/// adds an additional local transform
+function InlineTransformBase.pushLocalXfo!(Xfo xfo) {
+  AutoLock AL(this.simpleLock);
+  this.xfos.push(xfo);
+}
+
+/// empties the internal caches of this transform
+function InlineTransformBase.incrementVersion!() {
+  this.version += 1;
+
+  // Note: increment the children, because thier caches have become
+  // invalid as the compute thier transfroms based on the parent.
+  for(Size i=0; i<this.children.size(); i++) {
+    InlineTransformBase childTransform = this.children[i];
+    if(childTransform)
+      childTransform.incrementVersion();
+  }
+}
+
+/// returns the current version of the inline transform
+UInt32 InlineTransformBase.getVersion() {
+  return this.version;
+}
+
+
+/// draws the instance on screen. this is used by the 
+/// material and should not be called manually.
+/// \internal
+function Boolean InlineTransformBase.draw!(io DrawContext context, Index index, Size count) {
+
+  if(!this.transformAdaptor) {
+    InlineDrawing drawing = context.getMetaData('drawing');
+    this.transformAdaptor = drawing.getTransformAdaptor(this.type());
+  }
+  Ref<InlineTransform> thisTransform = this;
+  InlineTransformAdaptor adaptor = this.transformAdaptor;
+  if(!adaptor || !adaptor.draw(context, thisTransform, index, count))
+    return false;
+
+  return true;
+}
+

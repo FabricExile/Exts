@@ -1,0 +1,95 @@
+//
+// Copyright 2010-2015 Fabric Software Inc. All rights reserved.
+//
+
+/// Simple, reentrant spin lock, which can be bracketed with a LightLockBracket
+struct LightReentrantLock {
+  UInt32 lockVariable;
+  UInt32 lockingThreadIndex;
+  UInt32 bracketCount;
+};
+
+LightReentrantLock() {
+  this.lockingThreadIndex = -1;
+}
+
+inline Boolean LightReentrantLock.locked() {
+  return this.lockVariable == 1;
+}
+
+/// Check if write locked, but forces a memory fetch for more accuracy
+inline Boolean LightReentrantLock.locked_fetch!( ) {
+  return this.lockVariable.atomicGet() == 1;
+}
+
+inline LightReentrantLock.acquire!( ) {
+  UInt32 threadIndex = getThreadIndex();
+
+  if( threadIndex == this.lockingThreadIndex ) {
+    ++this.bracketCount;
+    return;
+  }
+
+  SimpleAcquire( this.lockVariable );
+  this.lockingThreadIndex = threadIndex;
+}
+
+inline Boolean LightReentrantLock.tryAcquire!( ) {
+  UInt32 threadIndex = getThreadIndex();
+
+  if( threadIndex == this.lockingThreadIndex ) {
+    ++this.bracketCount;
+    return true;
+  }
+
+  if( TryAcquire( this.lockVariable ) ) {
+    this.lockingThreadIndex = threadIndex;
+    return true;
+  } else
+    return false;
+}
+
+inline LightReentrantLock.release!( ) {
+
+  if( this.bracketCount ) {
+    --this.bracketCount;
+    return;
+  }
+  this.lockingThreadIndex = -1;
+  this.bracketCount = 0;
+
+  SimpleRelease( this.lockVariable );
+}
+
+/// Bracket for a LightReentrantLock
+struct LightReentrantLockBracket {
+  Data data;
+};
+
+inline LightReentrantLockBracket( io LightReentrantLock lightLock ) {
+  this.data = lightLock.data();
+  lightLock.acquire();
+}
+
+inline ~LightReentrantLockBracket() {
+  this.data->{LightReentrantLock}.release();
+}
+
+/// Bracket for a LightReentrantLock which is only enabled if IsMultithreading() is true
+struct MTLightReentrantLockBracket {
+  Data data;
+  Boolean enabled;
+};
+
+inline MTLightReentrantLockBracket( io LightReentrantLock lightLock ) {
+  this.enabled = IsMultithreading();
+  if( this.enabled ) {
+    this.data = lightLock.data();
+    lightLock.acquire();
+  }
+}
+
+inline ~MTLightReentrantLockBracket() {
+  if( this.enabled )
+    this.data->{LightReentrantLock}.release();
+}

@@ -1,0 +1,109 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+    "uiNodeColor" : "{\n  \"r\" : 132,\n  \"g\" : 106,\n  \"b\" : 97\n  }"
+    },
+  "title" : "getOrCreatePbsTexture",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Execute" : {}
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "importer",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Importer" : null
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Importer"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Ref<ImporterObject>"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "filePath",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String" : ""
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "scale",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec2" : {
+          "x" : 1,
+          "y" : 1
+          }
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec2"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "translation",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec2" : {
+          "x" : 0,
+          "y" : 0
+          }
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec2"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "rotation",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float32" : 0
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float32"
+      }
+    ],
+  "extDeps" : {
+    "AssetPatterns" : "*",
+    "Util" : "*",
+    "FileIO" : "*"
+    },
+  "presetGUID" : "5DBB5760F7CDD9D8DC4E3D1472E688E9",
+  "code" : "dfgEntry {
+  if(importer == null)
+    return;
+  if(filePath == '')
+    return;
+
+  String resolvedFilePath = FilePath(filePath).expandEnvVars().string();
+
+  String path = '/' + dfgNodePath.replace('.', '/') + '/texture';
+  result = importer.getOrCreateObject('Texture', resolvedFilePath, path);
+  ImporterTexture texture(result);
+  if(texture == null)
+    return;
+
+  texture.setProperty('filePath', resolvedFilePath);
+  texture.setProperty('scale', scale);
+  texture.setProperty('translation', translation);
+  texture.setProperty('rotation', rotation);
+}
+"
+  }

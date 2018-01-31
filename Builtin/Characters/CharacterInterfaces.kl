@@ -1,0 +1,79 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+
+/// A Skeleton stores the hierarchy that defines the skeleton. 
+interface ISkeleton {
+  String getName();
+
+  Size getNumBones();
+  Bone getBone(Index index);
+  Xfo getReferencePose(Index index);
+  Xfo getReferenceLocalPose(Index index);
+
+  Integer findBone(String boneName, Index startingPoint);
+  Integer findBone(String boneName);
+  Bone[] getBones();
+
+  Size[] getDeformerIndices();
+  Bone[] getDeformers();
+
+  UInt64 getVersion();
+
+  String getDesc(String indent, Boolean includeBones);
+  String getDesc();
+};
+
+/// A Pose is an array of global space transforms, based on a specific skeleton.
+interface IPose {
+  /// Reset the pose back to the reference pose stored in the skeleton.
+  reset!();
+
+  /// Get the pose of a bone in the skeleton using its index.
+  Xfo getBoneXfo!(Index index);
+  setBoneXfo!(Index index, Xfo xfo);
+
+  UInt64 getVersion();  
+
+  String getDesc(String indent, Boolean includeXfos);
+  String getDesc();
+};
+
+
+/// A Character is made up of a collection of geometries that are deformed by a skeleton and a pose.
+interface ICharacter {
+  String getName();
+
+  // Get the total number of all geometries contained by the character
+  // This may contain geometries that are not rendered, or geometries
+  // that are not polygon meshes
+  Size getNumGeometries();
+
+  // Get the i'th geometry from the character
+  Geometry getGeometry(Index index);
+
+  // Get the i'th geomtery from the character after deformation.
+  // This geometry will be topologically identical to the geometry
+  // returned from getGeometry, although it may not be the same pointer
+  Geometry getDeformedGeometry!(Index index);
+
+  ISkeleton getSkeleton();
+  IPose getPose();
+
+  setGlobalXfo!(Xfo xfo);
+  Xfo getGlobalXfo();
+
+  // Returns the array of skinning matricies
+  Mat44 getBindShapeTransform(Index index);
+  Mat44[] getSkinningMatrices?();
+  
+  UInt64 getVersion();
+
+  LocalBoundingVolume getBoundingVolume?();
+
+  String getDesc(String indent, Boolean includeGeometries);
+  String getDesc();
+};
+

@@ -1,0 +1,232 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// The InlineCamera object is used to send Camera information from the host application to the InlineDrawing system and the Manipulation system. 
+/// \dfgPresetOmit
+object InlineCamera : Camera {
+  /// current world transform
+  /// \versionadded 1.14.0
+  /// \internal
+  Xfo xfo;
+
+  /// vertical field of view
+  /// \internal
+  Scalar fovY;
+
+  /// Aspect ratio, relative to fovY or orthographicFrustumH. Not used if <= 0.
+  /// \internal
+  Scalar filmGateAspectRatio;
+
+  /// near clipping distance
+  Scalar nearDistance;
+
+  /// far clipping distance
+  Scalar farDistance;
+
+  /// the focal distance, used to compute the center point for orbit operations.
+  Scalar focalDistance;
+
+  /// true if this is an orthographic camera, otherwise it's perspective
+  /// \internal
+  Boolean isOrthographic;
+
+  /// The height of the orthographic frustum in world units.
+  Scalar orthographicFrustumH;
+
+  /// A precomputed projection, identity by default
+  Mat44 projection;
+
+  /// The goal linear velocity set by either a callback or a manipulator.
+  /// It is the cameras responsibility to integrate these values in the update method.
+  Vec3 goalLinearVelocity;
+
+  /// The acceleration used to modify the current linear velocity each update.
+  /// It is the cameras responsibility to integrate these values in the update method.
+  Scalar linearVelocityAcceleration;
+
+  /// The current linear velocity computed based on the goalLinearVelocity and linearVelocityAcceleration.
+  /// It is the cameras responsibility to integrate these values in the update method.
+  Vec3 currLinearVelocity;
+
+  /// The goal angular velocity set by either a callback or a manipulator.
+  /// It is the cameras responsibility to integrate these values in the update method.
+  Vec3 goalAngularVelocity;
+  
+  /// The acceleration used to modify the current angular velocity each update.
+  /// It is the cameras responsibility to integrate these values in the update method.
+  Scalar angularVelocityAcceleration;
+
+  /// The current angular velocity computed based on the goalAngularVelocity and angularVelocityAcceleration.
+  /// It is the cameras responsibility to integrate these values in the update method.
+  Vec3 currAngularVelocity;
+};
+
+/// default constructor
+function InlineCamera(){
+  this.projection.setNull();
+  this.linearVelocityAcceleration = 0.2;
+  this.angularVelocityAcceleration = 0.2;
+}
+
+/// standard constructor taking vertical field of view, near and far clipping plane and orthographic flag
+function InlineCamera(Scalar fovY, Scalar nearDistance, Scalar farDistance, Boolean isOrthographic){
+  this.fovY = fovY;
+  this.nearDistance = nearDistance;
+  this.farDistance = farDistance;
+  this.focalDistance = Math_linearInterpolate(nearDistance, farDistance, 0.2);
+  this.isOrthographic = isOrthographic;
+  this.projection.setNull();
+
+  this.linearVelocityAcceleration = 0.2;
+  this.angularVelocityAcceleration = 0.2;
+}
+
+/// Set the current transform of the camera using a position and target values. 
+function InlineCamera.setFromPositionAndTarget!(Vec3 position, Vec3 target){
+  this.xfo.tr = position;
+  this.xfo.ori.setFromDirectionAndUpvector(this.xfo.tr - target, Vec3(0.0, 1.0, 0.0));
+  this.focalDistance = position.distanceTo(target);
+}
+
+/// Set the current transform of the camera using a mat44.
+function InlineCamera.setFromMat44!(Mat44 mat44){
+  this.xfo.setFromMat44(mat44);
+}
+
+/// returns the world matrix of this camera
+function Mat44 InlineCamera.getMat44(){
+  return this.xfo.toMat44();
+}
+
+/// returns the projection matrix of this camera
+function Mat44 InlineCamera.getProjection(){
+  return this.projection;
+}
+
+// Get the axis of this camera
+function InlineCamera.getAxis(io Vec3 xAxis, io Vec3 yAxis, io Vec3 zAxis) {
+  xAxis = this.xfo.ori.getXaxis();
+  yAxis = -1.0*this.xfo.ori.getYaxis();
+  zAxis = xAxis.cross(Vec3(0.0,1.0,0.0)).unit();
+}
+
+/// returns the vertical field of view in radians
+function Scalar InlineCamera.getFovY(){
+  return this.fovY;
+}
+
+/// sets the vertical field of view in radians
+function InlineCamera.setFovY!(Scalar fovY){
+  this.fovY = fovY;
+}
+
+/// returns the film gate aspect ratio (horizontal / vertical), or 0 if undefined.
+/// If set, the filmGateDisplayStyle will define how it is drawn.
+function Scalar InlineCamera.getFilmGateAspectRatio() {
+  return this.filmGateAspectRatio;
+}
+
+/// returns true if the film gate aspect ratio is set.
+function Boolean InlineCamera.hasFilmGateAspectRatio() {
+  return this.filmGateAspectRatio > 0;
+}
+
+/// Sets the film gate aspect ratio (horizontal / vertical), or 0 if undefined.
+/// If set, the filmGateDisplayStyle will define how it is drawn.
+function InlineCamera.setFilmGateAspectRatio!( Scalar filmGateAspectRatio ) {
+  this.filmGateAspectRatio = filmGateAspectRatio;
+}
+
+/// returns the near plane distance
+Scalar InlineCamera.getNearDistance(){
+  return this.nearDistance;
+}
+
+/// sets the near plane distance
+function InlineCamera.setNearDistance!(Scalar nearDistance){
+  this.nearDistance = nearDistance;
+}
+
+/// returns the far plane distance
+Scalar InlineCamera.getFarDistance(){
+  return this.farDistance;
+}
+
+/// sets the far plane distance
+function InlineCamera.setFarDistance!(Scalar farDistance){
+  this.farDistance = farDistance;
+}
+
+/// returns the focal distance
+Scalar InlineCamera.getFocalDistance(){
+  return this.focalDistance;
+}
+
+/// sets the focal distance
+function InlineCamera.setFocalDistance!(Scalar focalDistance){
+  this.focalDistance = focalDistance;
+}
+
+/// returns true if this camera is orthographic
+function Boolean InlineCamera.isOrthographic(){
+  return this.isOrthographic;
+}
+
+/// returns true if this camera is orthographic
+function InlineCamera.setOrthographic!(Boolean ortho){
+  this.isOrthographic = ortho;
+}
+
+/// returns the orthographic frustrum height
+function Scalar InlineCamera.getOrthographicFrustumHeight(){
+  return this.orthographicFrustumH;
+}
+
+/// sets the orthographic frustrum height
+function InlineCamera.setOrthographicFrustumHeight!(Scalar height){
+  this.orthographicFrustumH = height;
+}
+
+/// Updates the cameras position using velocity values set by either callbacks or custom manipulators. 
+/// Integrates the velicty to compute the new position of the camera. 
+function InlineCamera.update!() {
+
+  this.currLinearVelocity = this.currLinearVelocity.linearInterpolate(this.goalLinearVelocity, this.linearVelocityAcceleration);
+  this.currAngularVelocity = this.currAngularVelocity.linearInterpolate(this.goalAngularVelocity, this.angularVelocityAcceleration);
+
+  Vec3 linearDelta();
+  Vec3 xAxis, yAxis, zAxis;
+  this.getAxis(xAxis, yAxis, zAxis);
+
+  linearDelta += this.currLinearVelocity.x * xAxis;
+  linearDelta += this.currLinearVelocity.y * -1.0*yAxis;
+  linearDelta += this.currLinearVelocity.z * zAxis;
+  this.xfo.tr += linearDelta;
+
+  Quat angularDelta;
+  angularDelta.setFromAxisAndAngle(Vec3(0.0, 1.0, 0.0), this.currAngularVelocity.x);
+  this.xfo.ori = angularDelta * this.xfo.ori;
+  angularDelta.setFromAxisAndAngle(Vec3(1.0, 0.0, 0.0), this.currAngularVelocity.y);
+  this.xfo.ori = this.xfo.ori * angularDelta;
+}
+
+/// Gets the goal linear velocity
+function Vec3 InlineCamera.getGoalLinearVelocity() {
+  return this.goalLinearVelocity;
+}
+
+/// Sets the goal linear velocity
+function InlineCamera.setGoalLinearVelocity!(Vec3 velocity) {
+  this.goalLinearVelocity = velocity;
+}
+
+/// Gets the goal angular velocity
+function Vec3 InlineCamera.getGoalAngularVelocity() {
+  return this.goalAngularVelocity;
+}
+
+/// Sets the goal angular velocity
+function InlineCamera.setGoalAngularVelocity!(Vec3 velocity) {
+  this.goalAngularVelocity = velocity;
+}

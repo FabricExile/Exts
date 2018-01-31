@@ -1,0 +1,124 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 2.0
+  
+  :kl-ref:`LegacyBaseSliderTool` is a based class for Slider tool.
+  
+  \seealso :kl-ref:`Tool`, :kl-ref:`SliderTarget`, :kl-ref:`LegacyBaseTool`
+
+  \dfgPresetOmit
+*/
+interface SliderTool {
+  /// Computes the slider's new value while manipulating it.
+  /// \params value The new value.
+  valueChanged!(Float32 value);
+};
+
+object LegacyBaseSliderTool : LegacyBaseTool, SliderTool {
+  /// Slider value.
+  protected Float32 value;
+  /// Translation axis, vertical or horizontal.
+  protected Boolean isVertical;
+  /// Normalized mouse position.
+  private Vec3 mouseNormalizedPos;
+  /// Translation speed factor.
+  private Float32 translationSpeedFactor;
+};
+
+/// Initializes a LegacyBaseSliderTool, by default independent.
+/// \param target Tool target.
+/// \param translationSpeedFactor Speed factor.
+/// \param isVertical If true, vertical orientation.
+/// \param enableKey Key to enable to tool.
+/// \param exclusivity Handler exclusivity.
+/// \param isOwnedByDispatcher If true, the handler is owned by the dispatcher.
+protected LegacyBaseSliderTool.init!(
+  SliderTarget target,
+  Float32 translationSpeedFactor,
+  Boolean isVertical,
+  Key enableKey,
+  LegacyHandlerExclusivity exclusivity,
+  Boolean isOwnedByDisatcher) 
+{
+  this.parent.init(
+    target, 
+    enableKey, 
+    exclusivity, 
+    true,
+    false,
+    isOwnedByDisatcher);
+  this.setOrientation(isVertical);
+  this.translationSpeedFactor = translationSpeedFactor;
+}
+
+/// Sets the slider's orientation.
+/// \param isVertical If true, vertical orientation.
+LegacyBaseSliderTool.setOrientation!(Boolean isVertical) {
+  this.isVertical = isVertical;
+}
+
+/// Gets the slider's orientation.
+Boolean LegacyBaseSliderTool.getOrientation() {
+  return  this.isVertical;
+}
+
+/// Implementation of :kl-ref:`Tool`.
+/// To override.
+protected LegacyBaseSliderTool.updateFromTarget!() {
+  if(this.enabled)
+  {
+    Boolean isValid;
+    Ref<LegacyToolTarget> target = this.getTarget();
+    if(target.isValid()) 
+    {
+      Ref<SliderTarget> srtTarget = target;
+      Float32 value = srtTarget.getValue();
+      this.value = value;
+      this.valueChanged(0.0f);
+    }
+  }
+}
+
+/// Implementation of :kl-ref:`SliderTool`.
+/// To override.
+protected LegacyBaseSliderTool.valueChanged!(Float32 delta) {
+  this.value += delta;
+  this.value = (this.value > 1.0f) ? 1.0f : (this.value < -1.0f) ? -1.0f : this.value;  
+  Ref<SliderTarget> target = this.getTarget();
+  target.valueChanged(this.value); 
+}
+
+/// Implementation of :kl-ref:`Tool`.
+protected LegacyBaseSliderTool.press!(io MouseEvent mouseEvent) {
+  if(!this.performing)
+  {
+    this.mouseNormalizedPos = mouseEvent.getNormalizedCoords();
+    this.parent.press(mouseEvent);
+  }
+}
+
+/// Implementation of :kl-ref:`Tool`.
+protected LegacyBaseSliderTool.move!(io MouseEvent mouseEvent) {
+  if(this.performing)
+  {
+    Vec3 mouseNormalizedPos = mouseEvent.getNormalizedCoords();
+    Vec3 translationAxis = this.isVertical ? Vec3(0.0f, 1.0f, 0.0f) : Vec3(1.0f, 0.0f, 0.0f);
+    Float32 delta = (mouseNormalizedPos - this.mouseNormalizedPos).dot(translationAxis);
+    this.valueChanged(delta*this.translationSpeedFactor);
+    this.mouseNormalizedPos = mouseNormalizedPos;
+    this.parent.move(mouseEvent);
+  }
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyBaseSliderTool.onEvent!(io Event event) {
+ 
+  MouseEvent mouseEvent = event;
+  if(Boolean(mouseEvent) && mouseEvent.button == MouseButton_RightButton)
+    return;
+  
+  this.parent.onEvent(event);
+}

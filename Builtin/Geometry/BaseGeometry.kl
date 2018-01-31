@@ -1,0 +1,318 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require FabricStatistics;
+require FabricSynchronization;
+
+/**
+  BaseGeometry is a base class for geometry types such as PolygonMesh which regroups common functionality,
+  such as the GeometryAttribute container or base support for statistics.
+  Note that although the BaseGeometry contains the attribute container, attribute values management is Geometry specific.
+\dfgTypeColor Color(51, 1, 106)
+*/
+
+object BaseGeometry : StatisticSourceWithAutoRegisterMember, ThreadsafeMetaDataOwner, Versioned{
+  ///Container for all attributes.
+  GeometryAttributes attributes;
+
+  ///Name that will be printed in descriptions.
+  String debugName;
+
+  ///Version of the geometry structure itself, excluding the GeometryAttributes content.
+  UInt32 structureVersion;
+
+  ///If positions are on the GPU: if true, the bounding volume is computed, else an infinite bbox is returned.
+  Boolean computeGPUBoundingVolume;
+
+  ///Container for holding various user data (Geometry specific), such as the BoundingBox cache data, or raycast acceleration structures and data (Octree).
+  ThreadsafeMetaDataContainer metaData;
+
+  /// \internal Statistics auto-register
+  StatisticsAutoRegisterMember autoStats;
+};
+
+/// \internal Initialize the various members. Register the GeometryAttributes as a sub-member for statistics purpose.
+function BaseGeometry._init!( String debugName ) {
+  this.debugName = debugName;
+  this.attributes = GeometryAttributes();
+  this.attributes.getOrCreatePositions();
+  this.metaData = ThreadsafeMetaDataContainer();
+  this.computeGPUBoundingVolume = false;
+
+  if(FabricStatisticsEnabled()) {
+    //KL gets confused when constructing with an interface, so we do it in 2 steps
+    this.autoStats = StatisticsAutoRegisterMember();
+    this.autoStats._init(this);
+    AddStatisticsChild(this.autoStats, this.attributes.autoStats);
+  }
+}
+
+/// \internal Replace our attributes container with another one; needs respect geometry's constraints.
+function BaseGeometry.attachAttributes!( io GeometryAttributes attributes ) {
+  this.attributes = attributes;
+  if( !this.attributes.positionsAttribute )
+    this.attributes.getOrCreatePositions();
+  AddStatisticsChild(this.autoStats, this.attributes.autoStats);
+}
+
+/// Implementation of ThreadsafeMetaDataOwner
+Ref<ThreadsafeMetaDataContainer> BaseGeometry.getMetaDataContainer() {
+  return this.metaData;
+}
+
+/// \internal Returns the base statistics for this geometry.
+function StatisticRecord[] BaseGeometry.getStatistics?() {
+  StatisticRecord stats[];
+  stats.push( StatisticRecord( Statistic_Name, this.debugName ) );
+  stats.push( StatisticRecord( Statistic_Category, "Geometry" ) );
+  return stats;
+}
+
+/// Resets the content, including the attributes, but increments geometry's version.
+function BaseGeometry.clear!() {
+  ++this.structureVersion;
+  this.attributes.clear();
+  this.attributes.getOrCreatePositions();
+}
+
+/// \internal Data required for caching the bounding volume and updating it in a thread-safe manner.
+object _BasicGeometryBoundingVolumeCache {
+  LocalBoundingVolume bbox;
+
+  UInt32 prevPosAttrVersion;
+  Ref<GeometryAttribute> prevPosAttr;
+  SimpleLock simpleLock;
+};
+
+
+operator BaseGeometry_gpuComputeBVol<<<batchIndex>>>(UInt32 batchSize, Vec3 input[], io Box3 bbox[32]) {
+  Box3 result;
+  UInt32 index = batchSize*batchIndex;
+  UInt32 count = input.size();
+  for( Size i = 0; i < batchSize; ++i ) {
+    if( index < count )
+      bbox[batchIndex] += input[index];
+    ++index;
+  }
+}
+
+operator BaseGeometry_gpuComputeBVol_d<<<batchIndex>>>( UInt32 batchSize, Vec3_d input[], io Box3 bbox[32] ) {
+  Box3 result;
+  UInt32 index = batchSize*batchIndex;
+  UInt32 count = input.size();
+  for( Size i = 0; i < batchSize; ++i ) {
+    if( index < count ) {
+      Vec3_d v_d = input[index];
+      bbox[batchIndex] += Vec3( Float32( v_d.x ), Float32( v_d.x ), Float32( v_d.x ) );
+    }
+    ++index;
+  }
+}
+
+/// Returns the bounding volume of the geometry, as computed from the positions attribute.
+/// This function will cache the bounding box given a specific version of the positions attribute,
+/// and will update it lazily, in a thread-safe fashion. The internal cache is stored in the
+/// BaseGeometry.metaData container.
+function LocalBoundingVolume BaseGeometry.getBoundingVolume() {
+  if( !this.attributes || !this.attributes.positionsAttribute ) {
+    LocalBoundingVolume bbox;
+    bbox.bBoxInit();
+    return bbox;
+  }
+
+  Ref<_BasicGeometryBoundingVolumeCache> boundingVolumeCache = null;
+  {
+    //Get from meta-data; add if not present
+    Ref<ThreadsafeMetaDataContainer> mutableMetaData = this.metaData;//Make non-const
+    AutoLock AL(mutableMetaData.simpleLock);
+    boundingVolumeCache = mutableMetaData.lockedGet("boundingBox");
+    if( !boundingVolumeCache ) {
+      _BasicGeometryBoundingVolumeCache newBoundingVolumeCache = _BasicGeometryBoundingVolumeCache();
+      newBoundingVolumeCache.simpleLock = SimpleLock("_BasicGeometryBoundingVolumeCache");
+      mutableMetaData.lockedSet("boundingBox", newBoundingVolumeCache);
+      boundingVolumeCache = newBoundingVolumeCache;
+    }
+  }
+  AutoLock AL(boundingVolumeCache.simpleLock);
+
+  //Update if required
+  if( synchronizeVersion( this.attributes.positionsAttribute.getVersion(), boundingVolumeCache.prevPosAttrVersion ) || this.attributes.positionsAttribute != boundingVolumeCache.prevPosAttr ) {
+    boundingVolumeCache.prevPosAttr = this.attributes.positionsAttribute;
+
+    if( this.attributes.positionsAttribute.getElementsMemType() ) {
+      if( this.computeGPUBoundingVolume ) {
+        // GPU handling
+        // Commenting out because having errors...
+        UInt32 count = this.attributes.positionsAttribute.size();
+        UInt32 batchSize = ( count + 31 ) / 32;
+        Box3 bbox[32];
+
+        Ref<Vec3Attribute> posAttr = this.attributes.positionsAttribute;
+        if( posAttr ) {
+          BaseGeometry_gpuComputeBVol<<<32@true>>>( batchSize, posAttr.values, bbox );
+        } else {
+          Ref<Vec3_dAttribute> posAttrD = this.attributes.positionsAttribute;
+          if( posAttrD )
+            BaseGeometry_gpuComputeBVol_d<<<32@true>>>( batchSize, posAttrD.values, bbox );
+        }
+        Box3 result = bbox[0];
+        for( Size i = 1; i < 32; ++i )
+          result += bbox[i];
+        boundingVolumeCache.bbox.bBoxInit( result.min, result.max );
+      } else {
+        // Set as infinite bbox
+        Box3 result;
+        result.setInfinite();
+        boundingVolumeCache.bbox.bBoxInit( result.min, result.max );
+      }
+    } else {
+      boundingVolumeCache.bbox.bBoxInit();
+      for( UInt32 i = 0; i < this.attributes.size(); ++i )
+        boundingVolumeCache.bbox.bBoxAdd( this.attributes.getPosition( i ) );
+    }
+  }
+  return boundingVolumeCache.bbox;
+}
+
+/// \internal Versioned implementation.
+inline UInt32 BaseGeometry.getVersion() {
+  return this.structureVersion + this.attributes.keysVersion + this.attributes.attributesValueVersion;
+}
+
+/// \internal Versioned implementation.
+inline BaseGeometry.initVersion!( UInt32 version ) {
+  this.structureVersion = version;
+}
+
+/// \internal Versioned implementation.
+inline BaseGeometry.incrementVersion!() {
+  ++this.structureVersion;
+}
+
+/// \internal Versioned implementation.
+inline UInt32 BaseGeometry.getValueVersion() {
+  return this.structureVersion + this.attributes.keysVersion + this.attributes.attributesValueVersion;
+}
+
+/// \internal Versioned implementation.
+inline BaseGeometry.initValueVersion!( UInt32 version ) {
+  //This is not really supported...
+ this.attributes.attributesValueVersion = version;
+}
+
+/// \internal Versioned implementation.
+inline BaseGeometry.incrementValueVersion!() {
+  ++this.attributes.attributesValueVersion;
+}
+
+/// \internal Versioned implementation.
+inline UInt32 BaseGeometry.getStructureVersion() {
+  return this.structureVersion + this.attributes.keysVersion;
+}
+
+/// \internal Versioned implementation.
+inline BaseGeometry.initStructureVersion!( UInt32 version ) {
+  this.structureVersion = version;
+}
+
+/// \internal Versioned implementation.
+inline BaseGeometry.incrementStructureVersion!() {
+  ++this.structureVersion;
+}
+
+/// Transforms a position (float or double) and optionally a normals with a given transform
+operator Transform <<<index>>>(
+  Mat44 posTransform, Mat44_d posTransform_d, Mat33 normaTransform, 
+  io Ref<Vec3Attribute> vec3PosAttr, io Ref<Vec3_dAttribute> vec3PosAttr_d, io Ref<Vec3Attribute> normAttr ) {
+
+  if( vec3PosAttr )
+    vec3PosAttr.values[index] = posTransform * vec3PosAttr.values[index];
+
+  if( vec3PosAttr_d )
+    vec3PosAttr_d.values[index] = posTransform_d * vec3PosAttr_d.values[index];
+
+  if( normAttr )
+    normAttr.values[index] = ( normaTransform * normAttr.values[index] ).unit_safe();
+}
+
+BaseGeometry.applyTransform!( Mat44 transform ) {
+  if( transform == Mat44() )
+    return;//Identity is likely (particularly in Canvas graphs)
+
+  // Make it work for both Float32 and Float64 components
+  Ref<Vec3Attribute> vec3PosAttr = this.attributes.positionsAttribute;
+  Ref<Vec3_dAttribute> vec3PosAttr_d = this.attributes.positionsAttribute;
+  Ref<Vec3Attribute> normAttr = this.attributes.normalsAttribute;
+
+  // Inverse transpose for normals to avoir scaling artifacts
+  Mat33 normTransform = transform.upperLeft().inverse().transpose();
+
+  // Double precision matrix for doubles positions (don't decrease positions' precision!)
+  Mat44_d transform_d( 
+          transform.row0.x, transform.row0.y, transform.row0.z, transform.row0.t,
+          transform.row1.x, transform.row1.y, transform.row1.z, transform.row1.t,
+          transform.row2.x, transform.row2.y, transform.row2.z, transform.row2.t,
+          transform.row3.x, transform.row3.y, transform.row3.z, transform.row3.t
+          );
+
+  // Have a minimum treshold to initiate multithreading computations, which as a startup overhead
+  Size minCountToStartMT = 1024;
+  Size count = this.attributes.size();
+
+  if( count < minCountToStartMT ) {
+    for( Size i = 0; i < count; ++i )
+      Transform( i, transform, transform_d, normTransform, vec3PosAttr, vec3PosAttr_d, normAttr );
+  } else
+    Transform <<<count>>>( transform, transform_d, normTransform, vec3PosAttr, vec3PosAttr_d, normAttr );
+
+  if( vec3PosAttr )
+    vec3PosAttr.incrementVersion();
+
+  if( vec3PosAttr_d )
+    vec3PosAttr_d.incrementVersion();
+
+  if( normAttr )
+    normAttr.incrementVersion();
+}
+
+BaseGeometry.applyTransform!( Xfo transform ) {
+  if( transform == Xfo() )
+    return;//Identity is likely (particularly in Canvas graphs)
+
+  this.applyTransform( transform.toMat44() );
+}
+
+Size BaseGeometry.pointCount() {
+  return this.attributes.size();
+}
+
+Vec3 BaseGeometry.getPosition( Size point ) {
+  return this.attributes.getPosition( point );
+}
+
+BaseGeometry.setPosition!( Size point, Vec3 position ) {
+  this.attributes.setPosition( point, position );
+}
+
+Vec3[] BaseGeometry.getAllPointPositions() {
+  Vec3 result[];
+  Ref<Vec3Attribute> positions = this.attributes.positionsAttribute;
+  if (!positions)
+    return result;
+  result = positions.values.clone();
+  return result;
+}
+
+BaseGeometry.setAllPointPositions!(Vec3 positions[]) {
+  Size size = positions.size();
+
+  if(size > this.pointCount())
+    size = this.pointCount();
+  
+  for(Size i=0;i<size;i++)
+    this.setPosition(i, positions[i]);
+
+  Ref<Vec3Attribute> vec3PosAttr = this.attributes.positionsAttribute;
+  vec3PosAttr.incrementVersion();
+}

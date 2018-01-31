@@ -1,0 +1,146 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Alembic;
+require Geometry;
+
+interface AlembicObjectReader; // forward decl
+
+/**
+  AlembicGeometryAttributesReader is used to read a GeometryAttributes from the alembic file. 
+  You usually don't have to interact with this object, but use the AlembicPolyMeshReader or AlembicCurvesReader, for example
+  \seealso AlembicPolyMeshReader, AlembicCurvesReader
+  \dfgPresetOmit
+*/
+object AlembicGeometryAttributesReader permits AlembicObjectReader {
+  /// \internal
+  private AlembicICompoundProperty _rootCompound;
+  /// \internal
+  private AlembicGeometryParamReader _paramReaders[String];
+  /// \internal
+  protected Ref<AlembicArchiveReader> archive;
+};
+
+/// release all alembic handles and all internal pointers
+function AlembicGeometryAttributesReader.reset!() {
+  this._paramReaders.clear();
+}
+
+/// \internal
+/// Store a new AlembicGeometryParamReader for a custom attribute.
+private function AlembicGeometryAttributesReader.addParamReader!(AlembicGeometryParamReader reader) {
+  this._paramReaders[reader.getName()] = reader;
+}
+
+/// Constructor based on the AlembicICompoundProperty
+function AlembicGeometryAttributesReader(AlembicICompoundProperty compound) {
+  this._rootCompound = compound;
+  this.createCompoundAttributesReaders(this._rootCompound);
+}
+
+/// Constructor based on the AlembicICompoundProperty from an archive
+function AlembicGeometryAttributesReader(AlembicArchiveReader archive, AlembicICompoundProperty compound) {
+  this.archive = archive;
+  this._rootCompound = compound;
+  this.createCompoundAttributesReaders( this._rootCompound );
+}
+
+/// Returns the root compound for the geometry attributes reader.
+function AlembicICompoundProperty AlembicGeometryAttributesReader.getRootCompound() {
+  return this._rootCompound;
+}
+
+/// \internal
+/// Parses the alembic compound structure creating geometry attributes based on the found data.
+private function AlembicGeometryAttributesReader.createCompoundAttributesReaders!( AlembicICompoundProperty compound ) {
+  
+  if(!compound.valid())
+    return;
+  
+  for(Size i=0;i<compound.getNumProperties();i++) {
+    AlembicPropertyHeader ph = compound.getPropertyHeader(i);
+    String propname = ph.getName();
+
+    // TO FIX: it is very costly to create many Object just to find the attribute type!
+    if(AlembicIFloat32GeomParam().matches(ph))
+      this.addParamReader(AlembicGeometryParamReader(this.archive, AlembicIFloat32GeomParam(compound, propname)));
+    else if(AlembicIUInt32GeomParam().matches(ph))
+      this.addParamReader(AlembicGeometryParamReader(this.archive, AlembicIUInt32GeomParam(compound, propname)));
+    else if(AlembicISInt32GeomParam().matches(ph))
+      this.addParamReader(AlembicGeometryParamReader(this.archive, AlembicISInt32GeomParam(compound, propname)));
+    else if(AlembicIVec2VfGeomParam().matches(ph))
+      this.addParamReader(AlembicGeometryParamReader(this.archive, AlembicIVec2VfGeomParam(compound, propname)));
+    else if(AlembicIVec3VfGeomParam().matches(ph))
+      this.addParamReader(AlembicGeometryParamReader(this.archive, AlembicIVec3VfGeomParam(compound, propname)));
+    else if(AlembicIVec3NfGeomParam().matches(ph))
+      this.addParamReader(AlembicGeometryParamReader(this.archive, AlembicIVec3NfGeomParam(compound, propname)));
+    else if(AlembicIQuatfGeomParam().matches(ph))
+      this.addParamReader(AlembicGeometryParamReader(this.archive, AlembicIQuatfGeomParam(compound, propname)));
+    else if(AlembicIColorfGeomParam().matches(ph))
+      this.addParamReader(AlembicGeometryParamReader(this.archive, AlembicIColorfGeomParam(compound, propname)));
+    else
+      report('AlembicGeometryAttributesReader: Property "' + propname + '" not supported.');
+  }
+}
+
+/// reads a sample at a given time. this will properly interpolate between samples.
+/// the result is stored in the provided GeometryAttributes.
+/// Returns false if no attribute has been read (because the time didn't change)
+/// \dfgPresetOmit
+function Boolean AlembicGeometryAttributesReader.readSample!(Float64 time, io GeometryAttributes attributes) {
+  if(!attributes)
+    attributes = GeometryAttributes();
+
+  Boolean noneRead = true;
+  for(name, readerRef in this._paramReaders) 
+  {
+    AlembicGeometryParamReader reader = readerRef;
+    Boolean wasRead = reader.readSample(time, attributes);
+    if( wasRead )
+      noneRead = false;
+  }
+
+  return !noneRead;
+}
+
+/// reads a curve geometry sample at a given time. this will properly interpolate between samples.
+/// \param curveCount Curve count, used as a hint to find if a parameter is per curve
+/// \param pointToCurve Curve index per GeometryAttributes point
+/// \param optionalPointToIndex Alembic geometry param index per GeometryAttributes point (none if empty)
+/// Returns false if no attribute has been read (because the time didn't change)
+/// \dfgPresetOmit
+function Boolean AlembicGeometryAttributesReader.readCurveSample!( Float64 time, UInt32 curveCount, UInt32 pointToCurve<>, UInt32 optionalPointToIndex<>, io GeometryAttributes attributes ) {
+  if( !attributes )
+    attributes = GeometryAttributes();
+
+  Boolean noneRead = true;
+  for( name, readerRef in this._paramReaders ) {
+    AlembicGeometryParamReader reader = readerRef;
+    Boolean wasRead = reader.readCurveSample( time, curveCount, pointToCurve, optionalPointToIndex, attributes );
+    if( wasRead )
+      noneRead = false;
+  }
+
+  return !noneRead;
+}
+
+/// reads a sample at a given time. this will properly interpolate between samples.
+/// the result is stored in the provided PolygonMesh.
+/// Returns false if no attribute has been read (because the time didn't change)
+/// \dfgPresetOmit
+function Boolean AlembicGeometryAttributesReader.readSample!(Float64 time, io PolygonMesh mesh, Boolean keepSameAttributeIndices) {
+  if(!mesh)
+    mesh = PolygonMesh();
+
+  Boolean noneRead = true;
+  for(name, readerRef in this._paramReaders) 
+  {
+    AlembicGeometryParamReader reader = readerRef;
+    Boolean wasRead = reader.readSample(time, mesh, keepSameAttributeIndices);
+    if( wasRead )
+      noneRead = false;
+  }
+
+  return !noneRead;
+}

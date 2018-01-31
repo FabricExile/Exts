@@ -1,0 +1,97 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Color.html",
+    "uiTooltip" : "Converts HSV to color representation (hue is in radians).\n\n Supported by Color"
+    },
+  "title" : "SetFromHSV[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 0,\n  \"b\" : 0\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Color[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "hue",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "saturation",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "value",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "EEB2F20883B4BBADC5E268DFE9B11F7C",
+  "code" : "require Math;
+
+operator Math_Color_setFromHSV_task<<<index>>>(
+  io Color[] this
+, in Scalar[] hue
+, in Scalar[] saturation
+, in Scalar[] value
+) {
+  this[index < this.size() ? index : this.size() - 1].setFromHSV(hue[index < hue.size() ? index : hue.size() - 1], saturation[index < saturation.size() ? index : saturation.size() - 1], value[index < value.size() ? index : value.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( hue.size() == 0) return;
+  if( saturation.size() == 0) return;
+  if( value.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < hue.size()) task_size = hue.size();
+  if(task_size < saturation.size()) task_size = saturation.size();
+  if(task_size < value.size()) task_size = value.size();
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Color_setFromHSV_task(index, this, hue, saturation, value);
+    }
+  } else {
+    Math_Color_setFromHSV_task<<<task_size>>>(this, hue, saturation, value);
+  }
+}
+"
+  }

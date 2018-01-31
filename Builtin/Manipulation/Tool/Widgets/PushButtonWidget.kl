@@ -1,0 +1,110 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+  const String PushButtonWidget_onUnconfirmedClick = "PushButtonUnconfirmedClick";
+  const String PushButtonWidget_onTrigger = "PushButtonTrigger";
+  const String PushButtonWidget_onReleased = "PushButtonReleased";
+
+  /// The PushButtonWidget is a 2D HUD widget (which can be textured) that triggers 
+  /// a ToolEvent (PushButtonWidget_onTrigger).
+  ///
+  /// See :ref:`TPG.2Dwidgets` for an overview of available 2D tool widgets and examples.
+  object PushButtonWidget : IconWidget{
+    RTVal pushedColor;
+    Key assignedKey;
+  };
+
+  PushButtonWidget( Vec2 pixelSize, Image2D texture, Image2D highlightTexture, Image2D pushedTexture ) {
+    this.construct( pixelSize, RTVal( texture ), RTVal( highlightTexture ), RTVal( pushedTexture ) );
+  }
+
+  PushButtonWidget( Vec2 pixelSize, Color color, Color highlightColor, Color pushedColor ) {
+    this.construct( pixelSize, RTVal( color ), RTVal( highlightColor ), RTVal( pushedColor ) );
+  }
+
+  PushButtonWidget.construct!( Vec2 pixelSize, RTVal color, RTVal highlightColor, RTVal pushedColor ) {
+    this.parent.construct( pixelSize, color, highlightColor );
+
+    // When clicking on the bar, toggle the value
+    MouseClickRaycastInteraction clickInter();
+    this.iconShape.attachComponent( clickInter );
+    clickInter.addListener( this, false, MouseClickRaycastInteraction_UnconfirmedClick, PushButtonWidget_onUnconfirmedClick );
+    clickInter.addListener( this, false, MouseClickRaycastInteraction_SuccessEvent, PushButtonWidget_onTrigger );
+    clickInter.addListener( this, false, MouseClickRaycastInteraction_MouseReleaseEvent, PushButtonWidget_onReleased );
+
+    this.setColors( color, highlightColor, pushedColor );
+  }
+
+  PushButtonWidget.setColors!( RTVal color, RTVal highlightColor, RTVal pushedColor ) {
+    this.parent.setColors( color, highlightColor );
+    this.pushedColor = pushedColor;
+  }
+
+  /// Assigns a key that will toggle (check/uncheck).
+  /// 0 == no assigned key.
+  PushButtonWidget.assignKey!( Key key ) {
+    if( key != this.assignedKey ) {
+      if( !this.assignedKey )
+        this.registerToRawEvents( true );
+      this.assignedKey = key;
+    }
+  }
+
+  /// \internal
+  PushButtonWidget.updateColors!( Boolean clicked ) {
+    if( clicked ) {
+      this.iconShape.setColor( this.color );
+      this.highlightAction.setColor( this.pushedColor );// push only if under cursor
+    } else {
+      this.iconShape.setColor( this.color );
+      this.highlightAction.setColor( this.highlightColor );
+    }
+  }
+
+  /// \internal
+  PushButtonWidget.onRawEvent!( io Event event ) {
+    if( !this.isActive() )
+      return;
+
+    // TODO: use keymap global settings for QWER
+    Ref<KeyEvent> key = event;
+    if( Boolean( key ) && key.eventType == Event_KeyPress && key.key == this.assignedKey )
+      this.sendEventToListeners( PushButtonWidget_onTrigger );
+  }
+
+  /// \internal
+  PushButtonWidget.onEvent!( ToolEvent event, ToolEventUserID userID ) {
+
+    if( event.name == PushButtonWidget_onUnconfirmedClick ) {
+      this.updateColors( true );
+      this.sendEventToListeners( PushButtonWidget_onUnconfirmedClick );
+    } else if( event.name == PushButtonWidget_onReleased )
+      this.updateColors( false );
+    else if( event.name == PushButtonWidget_onTrigger )
+      this.sendEventToListeners( PushButtonWidget_onTrigger );
+    else
+      this.parent.onEvent( event, userID );
+  }
+
+  PushButtonWidget CreateDefaultHelpPushButton() {
+    PushButtonWidget pushButton( Vec2( 40 ),
+                             ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/Help.png" ),
+                             ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/HelpHighlight.png" ),
+                             ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/HelpCheckedHighlight.png" ) );
+    pushButton.setToolTip( "Show help" );
+    return pushButton;
+  }
+
+  PushButtonWidget CreateDefaultResetPushButton() {
+    PushButtonWidget pushButton( Vec2( 40 ),
+                             ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/Reset.png" ),
+                             ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/ResetHighlight.png" ),
+                             ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/ResetCheckedHighlight.png" ) );
+    pushButton.setToolTip( "Reset" );
+    return pushButton;
+  }
+
+
+}// namespace Tool

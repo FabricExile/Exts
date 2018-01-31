@@ -1,0 +1,37 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /**
+    The PathValueTool allows a tool to work directly on an external
+    value (eg: Canvas port default) instead of requiring a Canvas
+    node to create it. A limitation is that the tool must then
+    read/write a single target KL value.
+    The association between PathValueTool and KL target types
+    must also be registered like the following:
+
+\rst
+.. code-block:: kl
+
+// Extension initialization callback
+namespace MyExtensionName {
+  operator ExtDidLoad() {
+    Ref<Tool::ToolsManager> toolManager = Tool::GetToolsManager();
+    ...
+    toolManager.registerPathValueTool( MyTool, KLType );
+  }
+}
+\endrst
+
+   See :ref:`TPG.command_tool_type` for more information and examples.
+
+  */
+  interface PathValueTool {
+    setTargetPath!( String path );
+    String getTargetPath();
+    valueChanged!( RTVal val );
+  };
+
+}// namespace Tool

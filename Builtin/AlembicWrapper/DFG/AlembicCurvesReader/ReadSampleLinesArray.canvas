@@ -1,0 +1,75 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "reads a sample at a given time. this will properly interpolate between samples.\nthe result is stored in the provided Lines geometry.\n\nSupported types:\n  this: AlembicCurvesReader\n  time: Float64\n  lines: Lines\n"
+    },
+  "title" : "ReadSample[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicCurvesReader[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "time",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float64[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float64[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "lines",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Lines[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "FFB4DFA4289412DDF2F5DFA0DF057322",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicCurvesReader_readSample_task<<<index>>>(
+  io AlembicCurvesReader[] this
+, in Float64[] time
+, io Lines[] lines
+) {
+  this[index < this.size() ? index : this.size() - 1].readSample(time[index < time.size() ? index : time.size() - 1], lines[index < lines.size() ? index : lines.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( time.size() == 0) return;
+  if( lines.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < time.size()) task_size = time.size();
+  lines.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      AlembicWrapper_AlembicCurvesReader_readSample_task(index, this, time, lines);
+    }
+  } else {
+    AlembicWrapper_AlembicCurvesReader_readSample_task<<<task_size>>>(this, time, lines);
+  }
+}
+"
+  }

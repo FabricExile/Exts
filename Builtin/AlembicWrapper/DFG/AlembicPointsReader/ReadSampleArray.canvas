@@ -1,0 +1,75 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "reads a sample at a given time. this will properly interpolate between samples.\nthe result is stored in the provided GeometryAttributes.\n\nSupported types:\n  this: AlembicPointsReader\n  time: Float64\n  attributes: GeometryAttributes\n"
+    },
+  "title" : "ReadSample[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicPointsReader[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "time",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float64[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float64[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "attributes",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "GeometryAttributes[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "7BD10EDF451B296A8ACD0C4D9FD63251",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicPointsReader_readSample_task<<<index>>>(
+  io AlembicPointsReader[] this
+, in Float64[] time
+, io GeometryAttributes[] attributes
+) {
+  this[index < this.size() ? index : this.size() - 1].readSample(time[index < time.size() ? index : time.size() - 1], attributes[index < attributes.size() ? index : attributes.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( time.size() == 0) return;
+  if( attributes.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < time.size()) task_size = time.size();
+  attributes.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      AlembicWrapper_AlembicPointsReader_readSample_task(index, this, time, attributes);
+    }
+  } else {
+    AlembicWrapper_AlembicPointsReader_readSample_task<<<task_size>>>(this, time, attributes);
+  }
+}
+"
+  }

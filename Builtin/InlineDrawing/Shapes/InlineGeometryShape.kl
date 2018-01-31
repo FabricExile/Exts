@@ -1,0 +1,40 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+\versionadded 2.4.0
+
+The InlineGeometryShape inherits from the InlineShape object. 
+It defines a base class for any geometry-base shape.
+ 
+\dfgPresetOmit
+*/
+object InlineGeometryShape : InlineShapeBase {
+  /// \internal
+  InlineShapeAdaptor adaptor;
+};
+
+/// default constructor, taking a name and a Lines
+protected InlineGeometryShape.init!(String name, Geometry geo) {
+  this.name = name;
+  this.geo = geo;
+}
+
+/// draws the instance on screen. this is used by the 
+/// material and should not be called manually.
+/// \internal
+function Boolean InlineGeometryShape.draw!(io DrawContext context) {
+
+  if(!this.adaptor) {
+    InlineDrawing drawing = context.getMetaData('drawing');
+    this.adaptor = drawing.getShapeAdaptor(this.type());
+  }
+
+  context.setMetaData('shape', Object(this));
+  Ref<InlineShape> thisShape = this;
+  if(!this.adaptor || !this.adaptor.draw(context, thisShape))
+    return false;
+
+  return true;
+}

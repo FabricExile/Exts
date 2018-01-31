@@ -1,0 +1,116 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/SpatialQueryable.html",
+    "uiTooltip" : "A shortcut to :kl-ref:`SpatialQuery.getClosest`, without the need to call\n:kl-ref:`SpatialQueryable.beginSpatialQuery` and :kl-ref:`SpatialQueryable.endSpatialQuery`.\nSee :kl-ref:`SpatialQuery.getClosest` for more details.\n\n Supported by SpatialQueryable,Points,Lines,PolygonMesh"
+    },
+  "title" : "GetClosest[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "$TYPE$[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "position",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "scaling",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "maxUnscaledDistance",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "GeometryLocation[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "128F39FC6EBF78D3570C0ED756BC917D",
+  "code" : "require Geometry;
+
+operator Geometry_SpatialQueryable_getClosest_task<<<index>>>(
+  io GeometryLocation[] result
+, in $TYPE$[] this
+, in Vec3[] position
+, in Vec3[] scaling
+, in Scalar[] maxUnscaledDistance
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].getClosest(position[index < position.size() ? index : position.size() - 1], scaling[index < scaling.size() ? index : scaling.size() - 1], maxUnscaledDistance[index < maxUnscaledDistance.size() ? index : maxUnscaledDistance.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( position.size() == 0) return;
+  if( scaling.size() == 0) return;
+  if( maxUnscaledDistance.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < position.size()) task_size = position.size();
+  if(task_size < scaling.size()) task_size = scaling.size();
+  if(task_size < maxUnscaledDistance.size()) task_size = maxUnscaledDistance.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Geometry_SpatialQueryable_getClosest_task(index, result, this, position, scaling, maxUnscaledDistance);
+    }
+  } else {
+    Geometry_SpatialQueryable_getClosest_task<<<task_size>>>(result, this, position, scaling, maxUnscaledDistance);
+  }
+}
+"
+  }

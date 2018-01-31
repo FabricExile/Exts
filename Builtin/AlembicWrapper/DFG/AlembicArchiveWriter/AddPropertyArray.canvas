@@ -1,0 +1,142 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "Supported types:\n  this: AlembicArchiveWriter\n  path: String\n  key: String\n  propertyType: AlembicPropertyType\n  pod: AlembicPOD\n  extent: UInt32\n  timeSampling: SInt32\n  result: AlembicPropertyWriter\n"
+    },
+  "title" : "AddProperty[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicArchiveWriter[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "path",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String[]" : [
+          ""
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "key",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String[]" : [
+          ""
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "propertyType",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "AlembicPropertyType[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "AlembicPropertyType[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "pod",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "AlembicPOD[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "AlembicPOD[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "extent",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "UInt32[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "UInt32[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "timeSampling",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "SInt32[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "SInt32[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "AlembicPropertyWriter[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "3456005F7EE98133E2CD85D855E5D0B2",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicArchiveWriter_addProperty_task<<<index>>>(
+  io AlembicPropertyWriter[] result
+, io AlembicArchiveWriter[] this
+, in String[] path
+, in String[] key
+, in AlembicPropertyType[] propertyType
+, in AlembicPOD[] pod
+, in UInt32[] extent
+, in SInt32[] timeSampling
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].addProperty(path[index < path.size() ? index : path.size() - 1], key[index < key.size() ? index : key.size() - 1], propertyType[index < propertyType.size() ? index : propertyType.size() - 1], pod[index < pod.size() ? index : pod.size() - 1], extent[index < extent.size() ? index : extent.size() - 1], timeSampling[index < timeSampling.size() ? index : timeSampling.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( path.size() == 0) return;
+  if( key.size() == 0) return;
+  if( propertyType.size() == 0) return;
+  if( pod.size() == 0) return;
+  if( extent.size() == 0) return;
+  if( timeSampling.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < path.size()) task_size = path.size();
+  if(task_size < key.size()) task_size = key.size();
+  if(task_size < propertyType.size()) task_size = propertyType.size();
+  if(task_size < pod.size()) task_size = pod.size();
+  if(task_size < extent.size()) task_size = extent.size();
+  if(task_size < timeSampling.size()) task_size = timeSampling.size();
+  result.resize(task_size);
+  for(Size index = 0; index < task_size; index++) {
+    AlembicWrapper_AlembicArchiveWriter_addProperty_task(index, result, this, path, key, propertyType, pod, extent, timeSampling);
+  }
+}
+"
+  }

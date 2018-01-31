@@ -1,0 +1,181 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Text;
+
+/**
+\versionadded 2.4.0
+
+The InlineGeometryAttributeTextShape inherits from the InlineBaseTextShape object. 
+It provides a shape type to draw geometry attributes as text with TextGL. 
+
+\seealso :kl-ref:`InlineBaseTextShape`.
+
+\dfgPresetOmit
+*/
+object InlineGeometryAttributeTextShape : InlineBaseTextShape {
+  /// \internal
+  /// Reference to the geometry Xfo, to update the drawing.
+  private Xfo xfo;
+  /// \internal
+  /// If true and the attributes are the points position, 
+  /// compute the global geometry points position to draw them as text.
+  private Boolean computeGlobalPosition;
+  /// \internal
+  /// Reference to the text color Xfo, to update the drawing.
+  private Color textColor;
+  /// \internal
+  /// Reference to the geometry attribute version, to update the drawing.
+  private UInt32 attributesVersion;
+  /// \internal
+  /// Reference to the number of decimals of floating numbers, to update the drawing.
+  private UInt32 decimalCount;
+  /// \internal
+  /// Reference to the minimum of the range (attributes), to update the drawing.
+  private UInt32 rangeMinIndex;
+  /// \internal
+  /// Reference to the maximum of the range (attributes), to update the drawing.
+  private SInt32 rangeMaxIndex;
+  /// \internal
+  /// Reference to the resolution, to update the drawing.
+  private Float32 resolution;
+};
+
+/// Constructs a InlineGeometryAttributeTextShape.
+/// \param name The name of the InlineShape
+/// \param atlas A reference to an AtlasGL
+function InlineGeometryAttributeTextShape(String name, Ref<AtlasGL> atlas) {
+  this.parent.init(name, atlas);
+}
+
+/// \internal
+/// Computes the global geometry points position and sets the text.
+operator InlineGeometryAttributeTextShape_setTextFromGlobalPosition_task<<<i>>>(
+  UInt32 offset,
+  UInt32 step,
+  Mat44 mat,
+  Color color,
+  UInt32 decimalCount,
+  Vec3Attribute posAttr,
+  io OGLText oglText) 
+{
+  Index index = offset + i*step;
+  Vec3 pos = mat*posAttr.values[index];
+  String str = truncateDecimalsPrint(pos, decimalCount); 
+  oglText.insertText(i, str, color, posAttr.values[index]);
+}
+
+/// \internal
+/// Sets the text from the geometry attributes.
+operator InlineGeometryAttributeTextShape_setTextFromAttribute_task<<<i>>>(
+  UInt32 offset,
+  UInt32 step,
+  Color color,
+  UInt32 decimalCount,
+  Vec3Attribute posAttr,
+  GeometryAttribute inputAttr,
+  io OGLText oglText) 
+{
+  Index index = offset + i*step;
+  String str = inputAttr.truncateDecimalsPrint(index, decimalCount); 
+  oglText.insertText(i, str, color, posAttr.values[index]);
+}
+
+/// Sets the text from the geometry attributes. 
+/// \param atlas A reference to an AtlasGL
+/// \param maxCharacterCount Maximum of characters per string
+/// \param decimalCount Number of decimals (of Float32 or Float64 values)
+/// \param positionAttr Positions, to place the text
+/// \param inputAttr Attributes to extract the text from
+/// \param rangeMinIndex Minimum range of the attributes
+/// \param rangeMaxIndex Maximum range of the attributes
+/// \param resolution Pourcent of attributes to set the text from, between 0 and 100
+/// \param computeGlobalPosition If true and the attributes are the points position, draw the global geometry points position.
+/// \param xfo Geometry Xfo, to place the text
+/// \param color Text color
+function InlineGeometryAttributeTextShape.setTextFromAttribute!(
+  Ref<AtlasGL> atlas,
+  UInt32 maxCharacterCount,
+  UInt32 decimalCount,
+  Vec3Attribute positionAttr, 
+  GeometryAttribute inputAttr,
+  UInt32 rangeMinIndex,
+  SInt32 rangeMaxIndex,
+  Float32 resolution, 
+  Boolean computeGlobalPosition, 
+  Xfo xfo, 
+  Color color) 
+{
+  Boolean xfoChanged = this.xfo != xfo;
+  Boolean colorChanged = this.textColor != color;
+  Boolean decimalCountChanged = this.decimalCount != decimalCount;
+  Boolean allocationChanged = inputAttr.size() != this.oglText.getElementCount() || maxCharacterCount != this.oglText.getMaxVerticesCount();
+  Boolean computeGlobalPositionChanged = this.computeGlobalPosition != computeGlobalPosition;
+  Boolean attributeVersionChanged = this.attributesVersion != inputAttr.getVersion();
+  Boolean atlasChanged = !this.oglText.getAtlas().equal(atlas);
+  Boolean resolutionChanged = resolution != this.resolution;
+  Boolean rangesChanged = rangeMinIndex != this.rangeMinIndex || rangeMaxIndex != this.rangeMaxIndex;
+
+  this.rangeMaxIndex = rangeMaxIndex;
+  if(this.rangeMaxIndex < 0 || this.rangeMaxIndex > inputAttr.size())
+    this.rangeMaxIndex = inputAttr.size();
+  else
+    this.rangeMaxIndex = rangeMaxIndex;
+ 
+  this.rangeMinIndex = rangeMinIndex;
+  if(this.rangeMaxIndex < this.rangeMinIndex)
+    this.rangeMaxIndex = this.rangeMinIndex;
+
+  UInt32 newSize, offset;
+  this.resolution = resolution;
+  if(this.resolution > 0)
+  {
+    offset = ceil(100.0/Math_min(100.0, this.resolution));
+    newSize = (this.rangeMaxIndex - this.rangeMinIndex)/offset;
+  }
+
+  if(xfoChanged) this.xfo = xfo;
+  if(computeGlobalPositionChanged) this.computeGlobalPosition = computeGlobalPosition;
+  if(colorChanged) this.textColor = color;
+  if(decimalCountChanged) this.decimalCount = decimalCount;
+  if(rangesChanged || resolutionChanged || allocationChanged) this.oglText.allocAndSetVerticesSize(newSize, maxCharacterCount);
+  if(attributeVersionChanged) this.attributesVersion = inputAttr.getVersion();
+  if(atlasChanged) this.oglText.setAtlas(atlas);
+
+  if( xfoChanged || 
+      decimalCountChanged || 
+      computeGlobalPositionChanged || 
+      colorChanged || 
+      allocationChanged || 
+      attributeVersionChanged || 
+      atlasChanged || 
+      rangesChanged || 
+      resolutionChanged)
+  {   
+    Mat44 mat = xfo.toMat44();
+    this.oglText.setState(FreeTypeGL_FROZEN);
+        
+    if(computeGlobalPosition && inputAttr.getName() == "positions")
+      InlineGeometryAttributeTextShape_setTextFromGlobalPosition_task<<<newSize>>>(
+        rangeMinIndex,
+        offset,
+        mat, 
+        color, 
+        decimalCount,
+        positionAttr, 
+        this.oglText);
+
+    else
+      InlineGeometryAttributeTextShape_setTextFromAttribute_task<<<newSize>>>(
+        rangeMinIndex,
+        offset,
+        color, 
+        decimalCount,
+        positionAttr, 
+        inputAttr,
+        this.oglText);
+
+    this.oglText.setState(FreeTypeGL_DIRTY);
+  }
+}

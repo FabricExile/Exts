@@ -1,0 +1,162 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+    "uiNodeColor" : "{\n  \"r\" : 132,\n  \"g\" : 106,\n  \"b\" : 97\n  }"
+    },
+  "title" : "getOrCreateCamera",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Execute" : {}
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "importer",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Importer" : null
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Importer"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Ref<ImporterObject>"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "name",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String" : "camera"
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "transform",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Xfo" : {
+          "ori" : {
+            "v" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              },
+            "w" : 1
+            },
+          "tr" : {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            },
+          "sc" : {
+            "x" : 1,
+            "y" : 1,
+            "z" : 1
+            }
+          }
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Xfo"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "focalLength",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float32" : 35
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "fovY",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float32" : 53
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "fStop",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float32" : 3.599999904632568
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "focusDistance",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float32" : 200
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "near",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float32" : 0.1000000014901161
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float32"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "far",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float32" : 1000
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float32"
+      }
+    ],
+  "extDeps" : {
+    "AssetPatterns" : "*",
+    "Util" : "*"
+    },
+  "presetGUID" : "68B644DB85552B22C2C961AF2879CAA6",
+  "code" : "dfgEntry {
+  if(importer == null)
+    return;
+  if(name == '')
+    return;
+
+  String path = '/' + dfgNodePath.replace('.', '/') + '/' + name;
+  result = importer.getOrCreateObject('Camera', path, '/'+name);
+  ImporterCamera camera(result);
+  if(camera == null)
+    return;
+    
+  camera.setLocalTransform(transform.toMat44());
+  camera.setProperty('focalLength', focalLength);
+  camera.setProperty('fovY', fovY);
+  camera.setProperty('fStop', fStop);
+  camera.setProperty('focusDistance', focusDistance);
+  camera.setProperty('near', near);
+  camera.setProperty('far', far);
+}
+"
+  }

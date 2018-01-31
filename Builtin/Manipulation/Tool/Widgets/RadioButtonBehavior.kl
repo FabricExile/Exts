@@ -1,0 +1,70 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  const String RadioButtonBehavior_onItemChanged = "radioItemChanged";
+
+  /// \internal
+  interface RadioButtonBehavior_virtuals {
+    onItemChanged!( );
+  };
+
+  /// Manages a group of :kl-ref:`Tool::CheckBoxWidget` so that they are mutually exclusive;
+  /// checking one will uncheck the others.
+  ///
+  /// See :ref:`TPG.2Dwidgets` for an overview of available 2D tool widgets and examples.
+  object RadioButtonBehavior : EventListenerComponent, RadioButtonBehavior_virtuals{
+    CheckBoxWidget checkBoxes[];
+    Size selectedItem;
+  };
+
+  RadioButtonBehavior() {
+    this.selectedItem = InvalidIndex;
+  }
+
+  /// Adds a checkBox to the mutually exclusive group, and returns its group index.
+  Size RadioButtonBehavior.addCheckBox!( Ref<CheckBoxWidget> checkBox ) {
+    Size index = this.checkBoxes.size();
+    this.checkBoxes.push( checkBox );
+    this.checkBoxes[index].setChecked( false );
+    this.checkBoxes[index].disableUncheckClick = true;
+    this.checkBoxes[index].addListener( this, false, CheckBoxWidget_onChecked, "onItemChecked", ToolEventUserID( index ) );
+    this.checkBoxes[index].addListener( this, false, CheckBoxWidget_onUnchecked, "onItemUnchecked", ToolEventUserID( index ) );
+
+    return index;
+  }
+
+  /// Returns the selected item index, or InvalidIndex if none.
+  Size RadioButtonBehavior.getSelectedItem() {
+    return this.selectedItem;
+  }
+
+  RadioButtonBehavior.setSelectedItem!( Size index ) {
+    if( index < this.checkBoxes.size() )
+      this.checkBoxes[index].setChecked( true );
+  }
+
+  RadioButtonBehavior.onEvent!( ToolEvent event, ToolEventUserID userID ) {
+    if( event.name == "onItemChecked" ) {
+      if( this.selectedItem != userID.ID ) {
+        this.selectedItem = userID.ID;
+        // uncheck others
+        for( Size i = 0; i < this.checkBoxes.size(); ++i ) {
+          if( i != userID.ID )
+            this.checkBoxes[i].setChecked( false );
+        }
+        this.onItemChanged();
+        this.sendEventToListeners( RadioButtonBehavior_onItemChanged );
+      }
+    } else if( event.name == "onItemUnchecked" ) {
+      if( this.selectedItem == userID.ID )
+        this.checkBoxes[userID.ID].setChecked( true );// Don't allow it to uncheck
+    }
+  }
+
+  /// To be overriden
+  RadioButtonBehavior.onItemChanged!( ) {}
+
+}// namespace Tool

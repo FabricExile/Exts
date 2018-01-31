@@ -1,0 +1,60 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Util;
+
+/// The UInt32ArrayNoFree can be used to manage an array of
+/// UInt32 which won't deallocate when shrinking, unless UInt32ArrayNoFree.reset
+/// is called. The actual size of the internal array might be greater than the used size.
+struct UInt32ArrayNoFree {
+  /// The managed UInt32 array (only the beginning of the array might be used)
+  UInt32 data[];
+  /// \internal
+  Size used;
+};
+
+/// returns the size of this array
+inline Size UInt32ArrayNoFree.size() {
+  return this.used;
+}
+
+/// resizes the array to a given number. never shrinks
+/// the array, sticks with a previous size if newSize is smaller.
+function UInt32ArrayNoFree.resize!( Size newSize ) {
+  if( newSize > this.data.size() )
+    this.data.resize(newSize);
+  this.used = newSize;
+}
+
+/// pushes an element to the end of the array
+inline UInt32ArrayNoFree.push!( UInt32 value ) {
+  if( this.used == this.data.size() )
+    this.data.resize(this.used+1);
+  this.data[ this.used++ ] = value;
+}
+
+inline Boolean UInt32ArrayNoFree.pop!( io UInt32 value ) {
+  if( this.used ) {
+    --this.used;
+    value = this.data[this.used];
+    return true;
+  } else
+    return false;
+}
+
+/// resets the array, and forces it to be deallocated.
+function UInt32ArrayNoFree.reset!() {
+  this.data.resize(0);
+  this.used = 0;
+}
+
+/// returns element at index
+inline UInt32 UInt32ArrayNoFree.get( Size index ) {
+  return this.data[index];
+}
+
+/// sets element at index
+inline UInt32ArrayNoFree.set!( Size index, UInt32 value ) {
+  this.data[index] = value;
+}

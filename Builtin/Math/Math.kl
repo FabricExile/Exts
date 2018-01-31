@@ -1,0 +1,594 @@
+
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+// Set to "true" if you want dumpstack() to be called when a math warning
+// is issued
+const Boolean DebugMathWarnings = false;
+
+/// \dfgPresetColor Color(99, 129, 92)
+const Float32 PI = 3.141592653589793;
+/// \dfgPresetColor Color(99, 129, 92)
+const Float32 TWO_PI = PI * 2.0;
+/// \dfgPresetColor Color(99, 129, 92)
+const Float32 HALF_PI = PI * 0.5;
+/// \dfgPresetColor Color(99, 129, 92)
+const Float32 QUARTER_PI = PI * 0.25;
+/// \dfgPresetColor Color(99, 129, 92)
+const Float32 DEG_TO_RAD = 0.017453292519943295;
+/// \dfgPresetColor Color(99, 129, 92)
+const Float32 RAD_TO_DEG = 57.29577951308232;
+/// The smallest value that can safely be used as a divisor on a Float32 value
+/// \dfgPresetColor Color(99, 129, 92)
+const Float32 DIVIDEPRECISION = 10e-20;
+/// The smallest value that can safely be used as a divisor on a Float64 value
+/// \dfgPresetColor Color(99, 129, 92)
+const Float32 DIVIDEDOUBLEPRECISION = 10e-200;
+/// A small value used to provide fuzzy comparisons of Float32 values. 
+/// \dfgPresetColor Color(99, 129, 92)
+const Float32 PRECISION = 10e-6;
+/// A small value used to provide fuzzy comparisons of Float64 values. 
+/// \dfgPresetColor Color(99, 129, 92)
+const Float32 DOUBLEPRECISION = 10e-13;
+/// A large Float32 positive value. Used as a maximum value boundary
+/// \dfgPresetColor Color(99, 129, 92)
+const Float32 BIGSCALAR_POSITIVE = 10e6;
+/// A large Float32 negative value. Used as a minimum value boundary
+/// \dfgPresetColor Color(99, 129, 92)
+const Float32 BIGSCALAR_NEGATIVE = -10e6;
+/// Obselete; use SCALAR_INFINITE
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgPresetOmit
+const Float32 SCALARINFINITE = 1e100;
+/// A value representing an infinite value. Compiler will convert this to +Inf
+/// \dfgPresetColor Color(99, 129, 92)
+const Float32 SCALAR_INFINITE = 1e100;
+/// A value representing Nan
+/// \dfgPresetColor Color(99, 129, 92)
+const Float32 SCALAR_NAN = 0.0f/0.0f;
+/// euler's number
+const Float32 E = 2.718281828459045235360287471352662497757247093;
+
+/// Returns the fractional component of the Float32 value. 
+/// \dfgPresetColor Color(99, 129, 92)
+function Float32 fract( Float32 val ) {
+  return val - floor(val);
+}
+
+/// Returns the fractional component of the Float64 value. 
+/// \dfgPresetColor Color(99, 129, 92)
+function Float64 fract( Float64 val ) {
+  return val - floor(val);
+}
+
+/// Converts radians to degrees
+/// \dfgPresetColor Color(99, 129, 92)
+inline Scalar Math_radToDeg(in Scalar val){
+  return val * RAD_TO_DEG;
+}
+
+/// Converts degrees to radians
+/// \dfgPresetColor Color(99, 129, 92)
+inline Scalar Math_degToRad(in Scalar val){
+  return val * DEG_TO_RAD;
+}
+
+/// Clamps a scalar value by min and max
+/// \dfgPresetColor Color(99, 129, 92)
+inline Scalar Math_clamp(in Scalar val, in Scalar minval, in Scalar maxval){
+  return (val < minval ? minval : (val > maxval ? maxval : val));
+}
+
+/// Clamps a scalar value by min and max
+/// \dfgPresetColor Color(99, 129, 92)
+inline Scalar Scalar.clamp(in Scalar min, in Scalar max){
+  return (this < min ? min : (this > max ? max : this));
+}
+
+/// Clamps a Float64 value by min and max
+/// \dfgPresetColor Color(99, 129, 92)
+inline Float64 Math_clamp(in Float64 val, in Float64 minval, in Float64 maxval){
+  return (val < minval ? minval : (val > maxval ? maxval : val));
+}
+
+/// Clamps a Float64 value by min and max
+/// \dfgPresetColor Color(99, 129, 92)
+inline Float64 Float64.clamp(in Float64 min, in Float64 max){
+  return (this < min ? min : (this > max ? max : this));
+}
+
+/// Clamps a UInt32 value by min and max
+/// \dfgPresetColor Color(99, 129, 92)
+inline UInt32 UInt32.clamp(in UInt32 min, in UInt32 max){
+  return (this < min ? min : (this > max ? max : this));
+}
+
+
+/// Linearly interpolates a scalar value with another based on a blend (0.0 to 1.0)
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgPresetRange t (0.0, 1.0)
+inline Scalar Math_linearInterpolate(in Scalar val1, in Scalar val2, in Scalar t){
+  return val1 + ((val2 - val1) * t);
+}
+
+/// Linearly interpolates a Float64 value with another based on a blend (0.0 to 1.0)
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgPresetRange t (0.0, 1.0)
+inline Float64 Math_linearInterpolate(in Float64 val1, in Float64 val2, in Float64 t){
+  return val1 + ((val2 - val1) * t);
+}
+
+/// Linearly interpolates a scalar value with another based on a blend (0.0 to 1.0)
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgPresetRange t (0.0, 1.0)
+inline Float32 Float32.linearInterpolate(in Float32 other, in Scalar t){
+  return this + ((other - this) * t);
+}
+
+/// Linearly interpolates a Float64 value with another based on a blend (0.0 to 1.0)
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgPresetRange t (0.0, 1.0)
+inline Float64 Float64.linearInterpolate(in Float64 other, in Scalar t){
+  return this + ((other - this) * Float64(t));
+}
+
+/// Linearly interpolates a SInt64 value with another based on a blend (0.0 to 1.0)
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgPresetRange t (0.0, 1.0)
+inline SInt64 SInt64.linearInterpolate(in SInt64 other, in Scalar t){
+  return this + SInt64(Scalar(other - this) * t);
+}
+
+/// Linearly interpolates a SInt32 value with another based on a blend (0.0 to 1.0)
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgPresetRange t (0.0, 1.0)
+inline SInt32 SInt32.linearInterpolate(in SInt32 other, in Scalar t){
+  return this + SInt32(Scalar(other - this) * t);
+}
+
+/// Linearly interpolates a UInt64 value with another based on a blend (0.0 to 1.0)
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgPresetRange t (0.0, 1.0)
+inline UInt64 UInt64.linearInterpolate(in UInt64 other, in Scalar t){
+  return this + UInt64(Scalar(other - this) * t);
+}
+
+/// Linearly interpolates a UInt32 value with another based on a blend (0.0 to 1.0)
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgPresetRange t (0.0, 1.0)
+inline UInt32 UInt32.linearInterpolate(in UInt32 other, in Scalar t){
+  return this + UInt32(Scalar(other - this) * t);
+}
+
+/// Linearly interpolates a UInt16 value with another based on a blend (0.0 to 1.0)
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgPresetRange t (0.0, 1.0)
+inline UInt16 UInt16.linearInterpolate(in UInt16 other, in Scalar t){
+  return this + UInt16(Scalar(other - this) * t);
+}
+
+/// Linearly interpolates a UInt8 value with another based on a blend (0.0 to 1.0)
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgPresetRange t (0.0, 1.0)
+inline UInt8 UInt8.linearInterpolate(in UInt8 other, in Scalar t){
+  return this + UInt8(Scalar(other - this) * t);
+}
+
+/// \internal
+/// Smooth Hermite interpolation of a Scalar between 0 and 1 when edge0 < x < edge1.
+inline Scalar Math_smoothstep(in Scalar edge0, in Scalar edge1, in Scalar x){
+  if (almostEqual(edge0, edge1))
+    return (x <= edge0) ? 0.0 : 1.0;
+  Scalar t = Math_clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
+  Scalar result = t * t * (3.0 - 2.0 * t);
+  return result;
+}
+
+/// \internal
+/// Smooth Hermite interpolation of a Float64 between 0 and 1 when edge0 < x < edge1.
+inline Float64 Math_smoothstep(in Float64 edge0, in Float64 edge1, in Float64 x){
+  if (almostEqual(edge0, edge1))
+    return (x <= edge0) ? 0.0 : 1.0;
+  Float64 t = Math_clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
+  Float64 result = t * t * (3.0 - 2.0 * t);
+  return result;
+}
+
+/// Returns the maximum of two scalar values
+/// \dfgPresetColor Color(99, 129, 92)
+inline Scalar Math_max(in Scalar val1, in Scalar val2){
+  return val1 < val2 ? val2 : val1;
+}
+
+/// Returns the maximum of two Float64 values
+/// \dfgPresetColor Color(99, 129, 92)
+inline Float64 Math_max(in Float64 val1, in Float64 val2){
+  return val1 < val2 ? val2 : val1;
+}
+
+/// Returns the minimum of two scalar values
+/// \dfgPresetColor Color(99, 129, 92)
+inline Scalar Math_min(in Scalar val1, in Scalar val2){
+  return val1 > val2 ? val2 : val1;
+}
+
+/// Returns the minimum of two Float64 values
+/// \dfgPresetColor Color(99, 129, 92)
+inline Float64 Math_min(in Float64 val1, in Float64 val2){
+  return val1 > val2 ? val2 : val1;
+}
+
+/// Returns the law of cosine result
+/// \dfgPresetColor Color(99, 129, 92)
+inline Float32 Math_lawOfCosine(Float32 a, Float32 b, Float32 c)
+{
+  return acos((a * a + c * c - b * b) / (2 * a * c));
+}
+
+/// Reports a mathematical warning and a call stack for the warning.
+/// \dfgPresetColor Color(99, 129, 92)
+inline Math_reportWarning(in String desc){
+  report("Math.Warning: " + desc);
+  if ( DebugMathWarnings )
+    dumpstack();
+}
+
+/// Returns true if a divisor is outside the safe range of Float32 divisor values
+/// \dfgPresetColor Color(99, 129, 92)
+inline Boolean Math_badDivisor(in Float32 s){
+  return s < DIVIDEPRECISION && s > -DIVIDEPRECISION;
+}
+
+/// Returns true if a divisor is outside the safe range of Float64 divisor values
+/// \dfgPresetColor Color(99, 129, 92)
+inline Boolean Math_badDivisor(in Float64 s){
+  return s < DIVIDEDOUBLEPRECISION && s > -DIVIDEDOUBLEPRECISION;
+}
+
+/// Reports a Float32 bad divisor warning message
+/// \dfgPresetColor Color(99, 129, 92)
+inline Math_reportBadDivisor(in Float32 s, in String contextDesc){
+  Math_reportWarning( contextDesc + ": bad divisor: " + s );
+}
+
+/// Reports a Float64 bad divisor warning message
+/// \dfgPresetColor Color(99, 129, 92)
+inline Math_reportBadDivisor(in Float64 s, in String contextDesc){
+  Math_reportWarning( contextDesc + ": bad divisor: " + s );
+}
+
+/// Returns true if the provided Scalar value zero is within the Float32 precision range.
+/// \dfgPresetColor Color(99, 129, 92)
+inline Boolean isZero(Float64 x) {
+  return (x > - PRECISION && x < PRECISION);
+}
+
+/// Returns the cube root of the given value. 
+/// \dfgPresetColor Color(99, 129, 92)
+inline Float64 cbrt(Float64 v) {
+  return pow(v, 1.0 / 3.0);
+}
+
+///  Returns true two floats are almost equal
+inline Boolean almostEqual(Float32 a, Float32 b)
+{
+  return abs(a-b) < PRECISION;
+}
+
+///  Returns true two floats are almost equal
+inline Boolean almostEqual(Float64 a, Float64 b)
+{
+  return abs(a-b) < PRECISION;
+}
+
+/// Returns true if this float is almost equal to another one
+inline Boolean Float32.almostEqual(Float32 that)
+{
+  return abs(this-that) < PRECISION;
+}
+
+/// Returns true if this float is almost equal to another one
+inline Boolean Float64.almostEqual(Float64 that)
+{
+  return abs(this-that) < PRECISION;
+}
+
+//////////////////////////////////////
+// Rendering related helper functions.
+
+/// computes the aspect ratio based on two field
+/// of view angles in radians
+/// \dfgPresetColor Color(99, 129, 92)
+inline Scalar Math_aspectFromFov(Scalar fovX, Scalar fovY) {
+  return tan(fovX * 0.5) / tan(0.5 * fovY);
+}
+
+/// computes the vertical field of view angle in radians
+/// given a horizontal field of view in radians and an aspect
+/// \dfgPresetColor Color(99, 129, 92)
+inline Scalar Math_fovXtoY(Scalar fovX, Scalar aspect) {
+  return atan( tan(fovX * 0.5) / aspect ) * 2.0;
+}
+
+/// computes the horizontal field of view angle in radians
+/// given a vertical field of view in radians and an aspect
+/// \dfgPresetColor Color(99, 129, 92)
+inline Scalar Math_fovYtoX(Scalar fovY, Scalar aspect) {
+  return atan( tan(fovY * 0.5) * aspect ) * 2.0;
+}
+
+
+// Copyright  (C) 1997-2001 Ken Turkowski. <turk@computer.org>
+//
+// All rights reserved.
+//
+// Warranty Information
+//  Even though I have reviewed this software, I make no warranty
+//  or representation, either express or implied, with respect to this
+//  software, its quality, accuracy, merchantability, or fitness for a
+//  particular purpose.  As a result, this software is provided "as is,"
+//  and you, its user, are assuming the entire risk as to its quality
+//  and accuracy.
+//
+// This code may be used and freely distributed as long as it includes
+// this copyright notice and the above warranty information.
+//
+//******************************************************************************
+
+/// Finds the roots of a quadratic equation.
+///
+/// \param coeff The 3 coeffients to the quadratic equation.
+/// \param re The roots of the quadratic equation
+///      return(2): 2 real roots
+///      return(1): 1 real, Scalar root
+///      return(0): 2 complex roots
+///
+/// \note The imaginary component may be NULL if not desired.
+/// \dfgPresetColor Color(99, 129, 92)
+function Integer findQuadraticRoots(
+  Float64 coeff[3],
+  out Float64 re[2]
+){
+  Float64 a = coeff[2];    // Quadratic coefficient 
+  Float64 b = coeff[1];    // Linear coefficient 
+  Float64 c = coeff[0];    // Constant coefficient
+
+  if( abs( a ) < 0.001 ){
+    // If the quadratic coefficient(a) is close to 0.0 then this equation
+    // converges to becomes linear
+    re[0] = -c/b;
+    return 1;
+  }
+
+  Float64 d = b * b - (4.0 * a * c);
+  // Two real, distinct roots 
+  if (d > 0.0) {
+    Float64 q;
+    d = sqrt(d);
+    q = (-b + ((b < 0.0) ? -d : d)) * 0.5;
+    re[0] = q / a;
+    re[1] = c / q;
+    return 2;
+  }
+  
+  // One real Scalar root 
+  else if (d == 0.0) {
+    re[0] = re[1] = -b / (2.0 * a);
+    return 1;
+  }
+  // Two complex conjugate roots 
+  return 0;
+}
+
+// Copyright  (C) 1997-2001 Ken Turkowski. <turk@computer.org>
+//
+// All rights reserved.
+//
+// Warranty Information
+//  Even though I have reviewed this software, I make no warranty
+//  or representation, either express or implied, with respect to this
+//  software, its quality, accuracy, merchantability, or fitness for a
+//  particular purpose.  As a result, this software is provided "as is,"
+//  and you, its user, are assuming the entire risk as to its quality
+//  and accuracy.
+//
+// This code may be used and freely distributed as long as it includes
+// this copyright notice and the above warranty information.
+//
+//******************************************************************************
+
+/// Finds the roots of a cubic equation equation.
+/// Solves: coeff[3] * x^3 + coeff[2] * x^2 + coeff[1] * x + coeff[0] = 0
+///
+/// \param coeff The 4 coeffients to the cubic equation.
+/// \param re The roots of the cubic equation
+///
+///  returns:
+///      3 - 3 real roots
+///      1 - 1 real root (2 complex conjugate)
+///
+/// \dfgPresetColor Color(99, 129, 92)
+function Integer findCubicRoots(
+  in Float64 coeff[4],
+  out Float64 roots[3]
+){
+
+
+  // Note on this fuzziness value. The root finding becomes highly unstable as the
+  // equations converge from cubic to quadratic to linear. By using fairly course
+  // fuzzy values, the function gets downgraded quickly, therby increacing stability. 
+  if( abs( coeff[3] ) < 0.001 ){
+    // If the cubic coefficient(A) is 0.0 then this equation becomes a quadratic
+    Float64 quadraticCoeff[3];
+    quadraticCoeff[0] = coeff[0];
+    quadraticCoeff[1] = coeff[1];
+    quadraticCoeff[2] = coeff[2];
+    Float64 quadraticroots[2];
+    Integer result = findQuadraticRoots( quadraticCoeff, quadraticroots );
+    roots[0] = quadraticroots[0];
+    roots[1] = quadraticroots[1];
+    return result;
+  }
+
+  Float64 a1 = coeff[2] / coeff[3];
+  Float64 a2 = coeff[1] / coeff[3];
+  Float64 a3 = coeff[0] / coeff[3];
+  
+  Float64 Q = (a1 * a1 - 3.0 * a2) / 9.0;
+  Float64 R = (2.0 * a1 * a1 * a1 - 9.0 * a1 * a2 + 27.0 * a3) / 54.0;
+  Float64 Qcubed = Q * Q * Q;
+  Float64 d = Qcubed - R * R;
+  
+  if (Q == 0.0) {
+    // No roots: [phtaylor 22/03/2013] this issue was highlighted by the Alembic exporter. 
+    // This fix needs to be validated by Peter. 
+    return 0;
+  }
+  if (d >= 0.0) {
+    // Three real roots 
+    Float64 theta = acos( R / sqrt( Qcubed ));
+    Float64 sqrtQ = sqrt( Q );
+    roots[0] =  -2.0 * sqrtQ * cos( theta             / 3.0) - a1 / 3.0;
+    roots[1] =  -2.0 * sqrtQ * cos((theta + 2.0 * PI) / 3.0) - a1 / 3.0;
+    roots[2] =  -2.0 * sqrtQ * cos((theta + 4.0 * PI) / 3.0) - a1 / 3.0;
+    return 3;
+  }
+
+  // One real root 
+  Float64 e = pow( sqrt( -d ) + abs( R ), 1.0 / 3.0);
+  if (R > 0.0){
+    e = -e;
+  }
+  roots[0] = (e + Q / e) - a1 / 3.0;
+  return 1;
+}
+
+/// the hyperbolic of sin for Float32
+Float32 sinh(Float32 x) {
+  return (1.0 - pow(E, -2.0 * x)) / (2.0 * pow(E, -x));
+}
+
+/// the hyperbolic of cos for Float32
+Float32 cosh(Float32 x) {
+  return (1.0 + pow(E, -2.0 * x)) / (2.0 * pow(E, -x));
+}
+
+/// the hyperbolic of tangent for Float32
+Float32 tanh(Float32 x) {
+  return (1.0 - pow(E, -2.0 * x)) / (1.0 + pow(E, -2.0 * x));
+}
+
+/// the hyperbolic of cotangent for Float32
+Float32 coth(Float32 x) {
+  return (1.0 + pow(E, -2.0 * x)) / (1.0 - pow(E, -2.0 * x));
+}
+
+/// the hyperbolic secant for Float32
+Float32 sech(Float32 x) {
+  return (2.0 * pow(E, -x)) / (1.0 + pow(E, -2.0 * x));
+}
+
+/// the hyperbolic secant for Float32
+Float32 csch(Float32 x) {
+  return (2.0 * pow(E, -x)) / (1.0 - pow(E, -2.0 * x));
+}
+
+/// the hyperbolic of sin for Float64
+Float64 sinh(Float64 x) {
+  return (1.0 - pow(E, -2.0 * x)) / (2.0 * pow(E, -x));
+}
+
+/// the hyperbolic of cos for Float64
+Float64 cosh(Float64 x) {
+  return (1.0 + pow(E, -2.0 * x)) / (2.0 * pow(E, -x));
+}
+
+/// the hyperbolic of tangent for Float64
+Float64 tanh(Float64 x) {
+  return (1.0 - pow(E, -2.0 * x)) / (1.0 + pow(E, -2.0 * x));
+}
+
+/// the hyperbolic of cotangent for Float64
+Float64 coth(Float64 x) {
+  return (1.0 + pow(E, -2.0 * x)) / (1.0 - pow(E, -2.0 * x));
+}
+
+/// the hyperbolic secant for Float64
+Float64 sech(Float64 x) {
+  return (2.0 * pow(E, -x)) / (1.0 + pow(E, -2.0 * x));
+}
+
+/// the hyperbolic secant for Float64
+Float64 csch(Float64 x) {
+  return (2.0 * pow(E, -x)) / (1.0 - pow(E, -2.0 * x));
+}
+
+SInt32 SInt32.sign()
+{
+  if(this < 0) return -1;
+  if(this > 0) return 1;
+  return 0;
+}
+
+SInt32 SInt64.sign()
+{
+  if(this < 0) return -1;
+  if(this > 0) return 1;
+  return 0;
+}
+
+SInt32 Float32.sign()
+{
+  if(this < 0) return -1;
+  if(this > 0) return 1;
+  return 0;
+}
+
+SInt32 Float64.sign()
+{
+  if(this < 0) return -1;
+  if(this > 0) return 1;
+  return 0;
+}
+
+SInt32 SInt32.signNoZero()
+{
+  if(this < 0) return -1;
+  return 1;
+}
+
+SInt32 SInt64.signNoZero()
+{
+  if(this < 0) return -1;
+  return 1;
+}
+
+SInt32 Float32.signNoZero()
+{
+  if(this < 0) return -1;
+  return 1;
+}
+
+SInt32 Float64.signNoZero()
+{
+  if(this < 0) return -1;
+  return 1;
+}
+
+/// Construct a Float32 from the vector ``vec``
+inline Float32(Vec vec) {
+  this.set(vec);
+}
+
+/// Sets from Vec.
+inline Float32.set!(Vec vec) {
+  this = vec.get(0);
+}
+
+/// Converts to Vec.
+inline Vec Float32.toVec() {
+  Vec result(1);
+  result.set(0, this);
+  return result;
+}

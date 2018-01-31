@@ -1,0 +1,69 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  The Regex object wraps the boost::regex library.
+  It provides basic access to functionality such as search, match and replace.
+
+  http://www.boost.org/doc/libs/1_55_0/libs/regex/doc/html/index.html
+
+\dfgTypeColor Color(134, 55, 41)
+*/
+object Regex {
+  Data handle;
+};
+
+/// The sets the regex pattern by a string.
+/// \note You need to have a fully escaped string.
+function Boolean Regex.set!(String e) = "Regex_set";
+
+/**
+  Returns a series of search matches within the string.
+  This is based on boost::regex_search
+
+  http://www.boost.org/doc/libs/1_55_0/libs/regex/doc/html/boost_regex/ref/regex_search.html
+  \example
+  String s = 'one house, two houses.';
+  Regex r = Regex('[a-z]*');
+  report(r.search(s));
+  \endexample
+*/
+function String[] Regex.search(String s) = "Regex_search";
+
+/**
+  Matches a string using the regex pattern.
+  This is based on boost::regex_match
+
+  http://www.boost.org/doc/libs/1_55_0/libs/regex/doc/html/boost_regex/ref/regex_match.html
+  \example
+  String s = 'one house, two houses.';
+  Regex r = Regex('h[a-z]*');
+  report(r.search(s));
+  \endexample
+*/
+function String[] Regex.match(String s) = "Regex_match";
+
+/**
+  Replaces elements within a string within another one based on the regex pattern.
+  This is based on boost::regex_replace
+
+  http://www.boost.org/doc/libs/1_55_0/libs/regex/doc/html/boost_regex/ref/regex_replace.html
+  \example
+  String s = 'one house, two houses.';
+  Regex r = Regex('(h[a-z]*)');
+  report(r.replace(s, 'ocean'));
+  \endexample
+*/
+function String Regex.replace(String s, String r) = "Regex_replace";
+
+/// default constructor based on a pattern provided as String.
+function Regex(String format)
+{
+  this.set(format);
+}
+
+/// default destructor
+/// \internal
+function ~Regex() = "Regex_destructor";
+

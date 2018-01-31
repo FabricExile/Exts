@@ -1,0 +1,215 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+
+/******************************************************************************
+LINEAR CURVES
+******************************************************************************/
+
+CurvesStructure.unitUniform_getSpanParam( Curves_data curveData, Float32 param, io UInt32 spanIndex, io Float32 spanParam ) {
+  Float32 offsetParam = param - curveData.domainStart;
+  Float32 spanStart = floor( offsetParam );
+  spanIndex = UInt32( spanStart );
+  spanParam = offsetParam - spanStart;
+
+  if( spanIndex >= curveData.spanCount ) {
+    if( curveData.spanCount ) {
+      spanIndex = curveData.spanCount - 1;
+      spanParam = 1.0;
+    } else {
+      spanIndex = 0;
+      spanParam = 0.0;
+    }
+  }
+}
+
+CurvesStructure.linear_getWeights( Curves_data curveData, Float32 spanParam, io Float32 pointWeights<> ) {
+  pointWeights[0] = 1.0f - spanParam;
+  pointWeights[1] = spanParam;
+}
+
+inline UInt32[2] CurvesStructure.linear_getPoints( Curves_data curveData, UInt32 spanIndex ) {
+
+  UInt32 actualSpanIndex = ( curveData.isOpen() && spanIndex == curveData.spanCount && spanIndex > 0 ) ? spanIndex - 1 : spanIndex;
+
+  UInt32 pointIndices[2];
+  pointIndices[0] = curveData.firstPoint + actualSpanIndex;
+  pointIndices[1] = curveData.firstPoint + curveData.getCurveNextPointIndex( actualSpanIndex );
+  return pointIndices;
+}
+
+CurvesStructure.linear_getPointsAndWeights( Curves_data curveData, UInt32 spanIndex, Float32 spanParam, io UInt32 count, io UInt32 pointIndices<>, io Float32 pointWeights<> ) {
+  UInt32 actualSpanIndex;
+  Float32 actualSpanParam;
+
+  if( curveData.isOpen() && spanIndex == curveData.spanCount && spanIndex > 0 ) {
+    actualSpanIndex = spanIndex-1;
+    actualSpanParam = 1.0;
+  } else {
+    actualSpanIndex = spanIndex;
+    actualSpanParam = spanParam;
+  }
+
+  count = 2;
+  pointWeights[0] = 1.0f - actualSpanParam;
+  pointWeights[1] = actualSpanParam;
+  pointIndices[0] = curveData.firstPoint + actualSpanIndex;
+  pointIndices[1] = curveData.firstPoint + curveData.getCurveNextPointIndex( actualSpanIndex );
+}
+
+CurvesStructure.linear_getPoints( Curves_data curveData, UInt32 spanIndex, io UInt32 count, io UInt32 pointIndices<> ) {
+  count = 2;
+  UInt32 pts[2] = this.linear_getPoints( curveData, spanIndex );
+  pointIndices[0] = pts[0];
+  pointIndices[1] = pts[1];
+}
+
+CurvesStructure.linear_getPointsAndWeights( Curves_data curveData, UInt32 spanIndex, Float32 spanParam, io UInt32 count, io UInt32 pointIndices<>, io Float32 pointWeights<>, io Float32 derivativePointWeights<> ) {
+  if( this.smoothLinearCurveTangents ) {
+    // For derivative, we use 3 points to have the same pseudo-rounded behavior as calls to getTangent etc
+    Float32 weight;
+    UInt32 seg1Pts[2], seg2Pts[2];
+    this.linear_getWeightedHalfSegmentPts( curveData, spanIndex, spanParam, weight, seg1Pts, seg2Pts );
+
+    // Find the current segment for the weights
+    count = 3;
+    pointIndices[0] = seg1Pts[0];
+    pointIndices[1] = seg1Pts[1];
+    pointIndices[2] = seg2Pts[1];
+
+    if( seg1Pts[0] == curveData.firstPoint + spanIndex ) {
+      pointWeights[0] = 1.0f - spanParam;
+      pointWeights[1] = spanParam;
+      pointWeights[2] = 0;
+    } else {
+      pointWeights[0] = 0;
+      pointWeights[1] = 1.0f - spanParam;
+      pointWeights[2] = spanParam;
+    }
+
+    if( seg1Pts[0] == seg2Pts[0] ) {
+      // Start or end of open curve; derivative is 0
+      derivativePointWeights[0] = 0;
+      derivativePointWeights[1] = 0;
+      derivativePointWeights[2] = 0;
+    } else {
+      // Translate half segment weights in point weights, so we have the same behavior as in linear_getDerivativeAtParam
+      // segment1Vec = 0.5*(b - a)
+      // segment2Vec = 0.5*(c - b)
+      // result = (1-weight)*segment1Vec + weight*segment2Vec
+      //        = (1-weight)*0.5*(b - a) + weight*0.5*(c - b)
+      Float32 w1 = ( 1.0f - weight ) * 0.5;
+      Float32 w2 = weight * 0.5;
+      derivativePointWeights[0] = -w1;//a
+      derivativePointWeights[1] = w1 - w2;//b
+      derivativePointWeights[2] = w2;//c
+    }
+  } else {
+    this.linear_getPointsAndWeights( curveData, spanIndex, spanParam, count, pointIndices, pointWeights );
+    derivativePointWeights[0] = -1.0f;
+    derivativePointWeights[1] = 1.0f;
+  }
+}
+
+CurvesStructure.linear_getWeights( Curves_data curveData, UInt32 spanIndex, Float32 spanParam, io Float32 pointWeights<>, io Float32 derivativePointWeights<> ) {
+  UInt32 pointIndices[3];
+  UInt32 pointIndicesArr<> = pointIndices;
+  UInt32 count;
+  this.linear_getPointsAndWeights( curveData, spanIndex, spanParam, count, pointIndicesArr, pointWeights, derivativePointWeights );
+}
+
+/// \internal
+CurvesStructure.linear_getWeightedHalfSegmentPts( Curves_data curveData, UInt32 spanIndex, Float32 spanParam, io Float32 weight, io UInt32 seg1Pts[2], io UInt32 seg2Pts[2] ) {
+  if( !curveData.pointCount ) {
+    weight = 0;
+    return;
+  }
+  if( spanParam < 0.5f ) {
+    seg1Pts[0] = curveData.getPrevCurvePointIndex( spanIndex );
+    seg1Pts[1] = seg1Pts[0] == spanIndex ? spanIndex + 1 : spanIndex;//Beginning of an open curve
+    seg2Pts[0] = spanIndex;
+    seg2Pts[1] = curveData.getCurveNextPointIndex( spanIndex );// Should always work (spanIndex < pointCount)
+    weight = 0.5f + spanParam;
+  } else {
+    seg1Pts[0] = spanIndex;
+    seg1Pts[1] = curveData.getCurveNextPointIndex( spanIndex );// Should always work (spanIndex < pointCount)
+    seg2Pts[0] = seg1Pts[1];
+    seg2Pts[1] = curveData.getCurveNextPointIndex( seg2Pts[0] );
+    if( seg2Pts[0] == seg2Pts[1] )
+      seg2Pts = seg1Pts;//End of an open curve
+    weight = spanParam - 0.5f;
+  }
+}
+
+/// \internal
+CurvesStructure.linear_getWeightedHalfSegmentVecs( Curves_data curveData, Float32 param, io Float32 weight, io Vec3 segment1Vec, io Vec3 segment2Vec ) {
+  UInt32 spanIndex;
+  Float32 spanParam;
+  this.unitUniform_getSpanParam( curveData, param, spanIndex, spanParam );
+  UInt32 seg1Pts[2], seg2Pts[2];
+  this.linear_getWeightedHalfSegmentPts( curveData, spanIndex, spanParam, weight, seg1Pts, seg2Pts );
+
+  if( this.useDoubles ) {
+    segment1Vec = ( this.positions_d[curveData.getPointIndex( seg1Pts[1] )] - this.positions_d[curveData.getPointIndex( seg1Pts[0] )] ).toVec3();
+    segment2Vec = ( this.positions_d[curveData.getPointIndex( seg2Pts[1] )] - this.positions_d[curveData.getPointIndex( seg2Pts[0] )] ).toVec3();
+  } else {
+    segment1Vec = this.positions[curveData.getPointIndex( seg1Pts[1] )] - this.positions[curveData.getPointIndex( seg1Pts[0] )];
+    segment2Vec = this.positions[curveData.getPointIndex( seg2Pts[1] )] - this.positions[curveData.getPointIndex( seg2Pts[0] )];
+  }
+  //report( "SEG PTS " + seg1Pts + " " + seg2Pts + " SEG VEC " + segment1Vec + " " + segment2Vec );
+}
+
+
+// For the linear curve: make the derivative artificially smooth (could be a preference...)
+// Make the derivative "as is" in the center of segments, and linearly interpolate between segment centers.
+Vec3 CurvesStructure.linear_getDerivativeAtParam( Curves_data curveData, Float32 param ) {
+  if( this.smoothLinearCurveTangents ) {
+    Float32 weight;
+    Vec3 segment1Vec, segment2Vec;
+    this.linear_getWeightedHalfSegmentVecs( curveData, param, weight, segment1Vec, segment2Vec );
+    return segment1Vec * ( 1.0f - weight ) + segment2Vec * weight;
+  } else {
+    UInt32 pointIndices[2] = this.linear_getPoints( curveData, UInt32( param ) );
+    if( this.useDoubles )
+      return ( this.positions_d[pointIndices[1]] - this.positions_d[pointIndices[0]] ).toVec3();
+    else
+      return this.positions[pointIndices[1]] - this.positions[pointIndices[0]];
+  }
+}
+
+// For the linear curve: make the derivative artificially smooth (could be a preference...)
+// Make the derivative "as is" in the center of segments, and linearly interpolate between segment centers.
+CurvesStructure.linear_getDerivativesAtParam( Curves_data curveData, Float32 param, io Vec3 dU, io Vec3 dUU ) {
+  if( this.smoothLinearCurveTangents ) {
+    Float32 weight;
+    Vec3 segment1Vec, segment2Vec;
+    this.linear_getWeightedHalfSegmentVecs( curveData, param, weight, segment1Vec, segment2Vec );
+    dU = segment1Vec * ( 1.0f - weight ) + segment2Vec * weight;
+    dUU = segment2Vec - segment1Vec;
+  } else {
+    dU = this.linear_getDerivativeAtParam( curveData, param );
+    dUU = Vec3();
+  }
+}
+
+CurvesStructure.linear_openOrCloseCurve_reservedPoints!( io Curves_data curveData, Boolean open ) {
+  // Simple flag & domain range change
+  if( open )
+    clearFlag( curveData.flags, curveFlags_closed );
+  else
+    setFlag( curveData.flags, curveFlags_closed );
+  this.linear_updateDomainAndSpanCountFromPoints( curveData );
+}
+
+CurvesStructure.linear_updateDomainAndSpanCountFromPoints!( io Curves_data curveData ) {
+  if( curveData.isClosed() ) {
+    curveData.spanCount = curveData.pointCount;
+    curveData.wrappedCVCount = 1;
+  } else {
+    curveData.spanCount = curveData.pointCount ? curveData.pointCount - 1 : 0;
+    curveData.wrappedCVCount = 0;
+  }
+  this.setDomain( curveData, Vec2( curveData.domainStart, curveData.spanCount - curveData.domainStart ) );
+}
+

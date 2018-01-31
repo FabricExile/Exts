@@ -1,0 +1,221 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+require FileIO;
+
+alias UInt8 DFGPortType;
+const DFGPortType DFGPortType_In = 0;
+const DFGPortType DFGPortType_IO = 1;
+const DFGPortType DFGPortType_Out = 2;
+const DFGPortType DFGPortType_Invalid = 3;
+
+alias UInt8 DFGNodeType;
+const DFGNodeType DFGNodeType_Function = 0;
+const DFGNodeType DFGNodeType_Graph = 1;
+const DFGNodeType DFGNodeType_Inst = 2;
+const DFGNodeType DFGNodeType_Invalid = 3;
+
+object DFGBindingWrapper {
+  private String filePath;
+  private String resolvedFilePath;
+  private DFGBinding binding;
+  private UInt32 indices[String];
+  private String names[];
+  private String dataTypes[];
+  private DFGPortType portTypes[];
+};
+
+/// Constructor.
+/// The input string 'filepath' can be a filepath or a JSON string. 
+/// \dfgPresetCacheRule Always
+function DFGBindingWrapper(String filePath) {
+
+  String json = "";
+  this.filePath = "";
+  this.resolvedFilePath = "";
+
+  if (filePath.find("\"objectType\" : \"Graph\"") >= 0)
+  {
+    json = filePath;
+  }
+  else
+  {
+    FilePath path(filePath);
+    path = path.expandEnvVars();
+    if(path.exists())
+    {
+      this.filePath = filePath;
+      this.resolvedFilePath = path.string();
+      json = TextReader(this.resolvedFilePath).readAll();
+    }
+  }
+
+  if(json == "")
+    return;
+
+  this.init(json);
+}
+
+private function DFGBindingWrapper.init!(String json) {
+  this.binding = DFGBinding(json);
+  if(this.binding.hasErrors()) {
+    report('DFGBindingWrapper: errors: '+this.binding.getErrors());
+    this.binding = DFGBinding();
+    return;
+  }
+
+  this.names.resize(this.binding.getArgCount());
+  this.dataTypes.resize(this.binding.getArgCount());
+  this.portTypes.resize(this.binding.getArgCount());
+  for(Size i=0;i<this.binding.getArgCount();i++)
+  {
+    this.names[i] = this.binding.getArgName(i);
+    this.dataTypes[i] = this.binding.getArgValue(i).type();
+    this.portTypes[i] = this.binding.getArgPortType(i);
+    this.indices[this.names[i]] = i;
+  }
+}
+
+function Boolean DFGBindingWrapper.isValid() {
+  if(this == null)
+    return false;
+  return !(!this.binding);
+}
+
+DFGBinding DFGBindingWrapper.getDFGBinding() {
+  return this.binding;
+}
+
+function String DFGBindingWrapper.getFilePath() {
+  if(!this.isValid())
+    return "";
+  return this.resolvedFilePath;
+}
+
+function String DFGBindingWrapper.getErrors() {
+  if(!this.isValid())
+    return '';
+  if(!this.binding.hasErrors())
+    return '';
+  return this.binding.getErrors();
+}
+
+function UInt32 DFGBindingWrapper.getArgCount() {
+  if(!this.isValid())
+    return 0;
+  return this.indices.size();
+}
+
+function Boolean DFGBindingWrapper.hasArg( String name ) {
+  if(!this.isValid())
+    return false;
+  return this.indices.has(name);
+}
+
+function String DFGBindingWrapper.getArgName( Index index ) {
+  if(!this.isValid())
+    return "";
+  if( index <= this.names.size() )
+    return this.names[index];
+  return "";
+}
+
+function String DFGBindingWrapper.getArgDataType( String name ) {
+  if(!this.hasArg(name))
+    return "";
+  return this.dataTypes[this.indices[name]];
+}
+
+function DFGPortType DFGBindingWrapper.getArgPortType( String name ) {
+  if(!this.hasArg(name))
+    return DFGPortType_Invalid;
+  return this.portTypes[this.indices[name]];
+}
+
+function RTVal DFGBindingWrapper.getArgValue( String name ) {
+  if(!this.hasArg(name)) {
+    return RTVal();
+  }
+  return this.binding.getArgValue(name);
+}
+
+function String[] DFGBindingWrapper.getAllArgNames() {
+  String result[];
+  if(!this.isValid())
+    return result;
+  return this.names;
+}
+
+function String[] DFGBindingWrapper.getAllArgDataTypes() {
+  String result[];
+  if(!this.isValid())
+    return result;;
+  return this.dataTypes;
+}
+
+function DFGPortType[] DFGBindingWrapper.getAllArgPortTypes() {
+  DFGPortType result[];
+  if(!this.isValid())
+    return result;;
+  return this.portTypes;
+}
+
+function Boolean DFGBindingWrapper.setArgValue!( String name, RTVal value ) {
+  if(!this.hasArg(name)) {
+    return false;
+  }
+  this.binding.setArgValue(name, value);
+  return true;
+}
+
+function Boolean DFGBindingWrapper.setArgValuesFromDict!( RTVal args[String] ) {
+  if(!this.isValid())
+    return false;
+  for(name in args) {
+    if(!this.hasArg(name))
+      continue;
+    this.binding.setArgValue(name, args[name]);
+  }
+  return true;
+}
+
+function Boolean DFGBindingWrapper.execute!( io String errors ) {
+  if(!this.isValid())
+    return false;
+  this.binding.execute();
+  if(this.binding.hasErrors()) {
+    errors = this.binding.getErrors();
+    report('DFGBindingWrapper: errors: '+errors);
+    return false;
+  }
+  return true;
+}
+
+function Boolean DFGBindingWrapper.execute!() {
+  if(!this.isValid())
+    return false;
+  this.binding.execute();
+  return !this.binding.hasErrors();
+}
+
+function Boolean DFGBindingWrapper.executeWithArgs!( RTVal inputs[String], out RTVal outputs[String], out String errors ) {
+  if(!this.isValid())
+    return false;
+  this.setArgValuesFromDict(inputs);
+  this.binding.execute();
+
+  if(this.binding.hasErrors()) {
+    errors = this.binding.getErrors();
+    report('DFGBindingWrapper: errors: '+errors);
+    return false;
+  }
+
+  for(Size i=0;i<this.portTypes.size();i++) {
+    if(this.portTypes[i] == DFGPortType_In)
+      continue;
+    outputs[this.names[i]] = this.getArgValue(this.names[i]);
+  }
+
+  return true;
+}

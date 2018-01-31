@@ -1,0 +1,235 @@
+{
+  "objectType" : "Graph",
+  "title" : "CurrentDrawContext",
+  "cacheRule" : "never",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "context",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "DrawContext"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "params",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "RTVal[String]"
+      }
+    ],
+  "extDeps" : {},
+  "presetGUID" : "FAC1FDA564A75D5B36585BDFB44D1A01",
+  "nodes" : [
+    {
+      "objectType" : "Inst",
+      "metadata" : {
+        "uiGraphPos" : "{\"x\": 615, \"y\": 245}"
+        },
+      "name" : "DrawContext",
+      "ports" : [
+        {
+          "objectType" : "InstPort",
+          "name" : "exec",
+          "nodePortType" : "IO"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "result",
+          "nodePortType" : "Out"
+          }
+        ],
+      "executable" : "Fabric.Exts.InlineDrawing.DrawContext.DrawContext",
+      "presetGUID" : "C4C88D22D1CDCC376068154248FA2BB0"
+      },
+    {
+      "objectType" : "Inst",
+      "metadata" : {
+        "uiGraphPos" : "{\"x\": 780, \"y\": 237}"
+        },
+      "name" : "GetInstance",
+      "ports" : [
+        {
+          "objectType" : "InstPort",
+          "name" : "exec",
+          "nodePortType" : "IO"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "this",
+          "nodePortType" : "In"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "result",
+          "nodePortType" : "Out"
+          }
+        ],
+      "executable" : "Fabric.Exts.InlineDrawing.DrawContext.GetInstance",
+      "presetGUID" : "E91B1A6A5D3BF5CF7439CF98D5D4D64C"
+      },
+    {
+      "objectType" : "Inst",
+      "metadata" : {
+        "uiGraphPos" : "{\"x\": 1061, \"y\": 339}"
+        },
+      "name" : "GetCurrentViewportParams",
+      "ports" : [
+        {
+          "objectType" : "InstPort",
+          "name" : "exec",
+          "nodePortType" : "IO"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "this",
+          "nodePortType" : "IO"
+          },
+        {
+          "objectType" : "InstPort",
+          "name" : "result",
+          "nodePortType" : "Out"
+          }
+        ],
+      "executable" : "Fabric.Exts.InlineDrawing.DrawContext.GetCurrentViewportParams",
+      "presetGUID" : "4572FEFEA6BAB25B8C3E71AB2036C07B"
+      }
+    ],
+  "connections" : {
+    "DrawContext.result" : [
+      "GetInstance.this"
+      ],
+    "GetInstance.result" : [
+      "GetCurrentViewportParams.this",
+      "context"
+      ],
+    "GetCurrentViewportParams.result" : [
+      "params"
+      ]
+    },
+  "requiredPresets" : {
+    "Fabric.Exts.InlineDrawing.DrawContext.DrawContext" : {
+      "objectType" : "Func",
+      "metadata" : {
+        "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/InlineDrawing/DrawContext.html",
+        "uiTooltip" : "standard constructor\n\n Supported by DrawContext"
+        },
+      "title" : "DrawContext",
+      "ports" : [
+        {
+          "objectType" : "ExecPort",
+          "name" : "exec",
+          "nodePortType" : "IO",
+          "execPortType" : "IO",
+          "typeSpec" : "Execute"
+          },
+        {
+          "objectType" : "ExecPort",
+          "name" : "result",
+          "nodePortType" : "In",
+          "execPortType" : "Out",
+          "typeSpec" : "DrawContext"
+          }
+        ],
+      "extDeps" : {
+        "InlineDrawing" : "*"
+        },
+      "presetGUID" : "C4C88D22D1CDCC376068154248FA2BB0",
+      "code" : "require InlineDrawing;
+
+dfgEntry {
+  result = DrawContext();
+}
+"
+      },
+    "Fabric.Exts.InlineDrawing.DrawContext.GetInstance" : {
+      "objectType" : "Func",
+      "metadata" : {
+        "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/InlineDrawing/DrawContext.html",
+        "uiTooltip" : "Get the DrawContext singleton, but through a method\n\n Supported by DrawContext"
+        },
+      "title" : "GetInstance",
+      "ports" : [
+        {
+          "objectType" : "ExecPort",
+          "name" : "exec",
+          "nodePortType" : "IO",
+          "execPortType" : "IO",
+          "typeSpec" : "Execute"
+          },
+        {
+          "objectType" : "ExecPort",
+          "name" : "this",
+          "nodePortType" : "Out",
+          "execPortType" : "In",
+          "typeSpec" : "DrawContext"
+          },
+        {
+          "objectType" : "ExecPort",
+          "name" : "result",
+          "nodePortType" : "In",
+          "execPortType" : "Out",
+          "typeSpec" : "DrawContext"
+          }
+        ],
+      "extDeps" : {
+        "InlineDrawing" : "*"
+        },
+      "presetGUID" : "E91B1A6A5D3BF5CF7439CF98D5D4D64C",
+      "code" : "require InlineDrawing;
+
+dfgEntry {
+ if(this) result = this.getInstance();
+}
+"
+      },
+    "Fabric.Exts.InlineDrawing.DrawContext.GetCurrentViewportParams" : {
+      "objectType" : "Func",
+      "metadata" : {
+        "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/InlineDrawing/DrawContext.html",
+        "uiTooltip" : "get the current viewport's parameters\n\n Supported by DrawContext"
+        },
+      "title" : "GetCurrentViewportParams",
+      "ports" : [
+        {
+          "objectType" : "ExecPort",
+          "name" : "exec",
+          "nodePortType" : "IO",
+          "execPortType" : "IO",
+          "typeSpec" : "Execute"
+          },
+        {
+          "objectType" : "ExecPort",
+          "name" : "this",
+          "nodePortType" : "IO",
+          "execPortType" : "IO",
+          "typeSpec" : "DrawContext"
+          },
+        {
+          "objectType" : "ExecPort",
+          "name" : "result",
+          "nodePortType" : "In",
+          "execPortType" : "Out",
+          "typeSpec" : "RTVal[String]"
+          }
+        ],
+      "extDeps" : {
+        "InlineDrawing" : "*"
+        },
+      "presetGUID" : "4572FEFEA6BAB25B8C3E71AB2036C07B",
+      "code" : "require InlineDrawing;
+
+dfgEntry {
+ if(this) result = this.getCurrentViewportParams();
+}
+"
+      }
+    }
+  }

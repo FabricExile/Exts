@@ -1,0 +1,71 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/// A BinPack2DSize describes the size inside of a BinPack2DRegion
+struct BinPack2DSize {
+  SInt32 w;
+  SInt32 h;
+};
+
+/// default constructor from width and height
+function BinPack2DSize(SInt32 w, SInt32 h) {
+  this.w = w;
+  this.h = h;
+}
+
+/// \internal
+function Boolean == (BinPack2DSize a, BinPack2DSize b) {
+  return a.w == b.w && a.h == b.h;
+}
+
+/// \internal
+function Boolean < (BinPack2DSize a, BinPack2DSize b) {
+  return a.Area() < b.Area();
+}
+
+/// \internal
+function Boolean > (BinPack2DSize a, BinPack2DSize b) {
+  return a.Area() > b.Area();
+}
+
+/// \internal
+function BinPack2DSize + (BinPack2DSize a, BinPack2DSize b) {
+  return BinPack2DSize(a.w + b.w, a.h + b.h);
+}
+
+/// \internal
+function BinPack2DSize / (BinPack2DSize a, SInt32 b) {
+  return BinPack2DSize(a.w / b, a.h / b);
+}
+
+/// \internal
+function Boolean BinPack2DSize.qs_less(BinPack2DSize that) {
+  return this < that;
+}
+
+/// returns true if this size has no space
+function Boolean BinPack2DSize.IsEmpty() {
+  return this.w * this.h == 0;
+}
+
+/// returns true if this size can contain another one
+function Boolean BinPack2DSize.Contains(BinPack2DSize that) {
+  if(this.IsEmpty())
+    return false;
+
+  return (
+    ( this.w >= that.w) && 
+    ( this.h >= that.h)
+    );
+}
+
+/// returns this size as a rotated version
+function BinPack2DSize BinPack2DSize.Rotated() {
+  return BinPack2DSize(this.h, this.w);
+}
+
+/// computes the area of this size
+function SInt32 BinPack2DSize.Area() {
+  return this.w * this.h;
+}

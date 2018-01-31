@@ -1,0 +1,297 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+require Singletons;
+require FabricSynchronization;
+require FabricOGL;
+/**
+\versionadded 1.12.0
+
+The OGLInlineDrawing inherits InlineDrawing object for OpenGL direct rendering. 
+
+\example
+  InlineDrawing drawing = OGLInlineDrawing_GetInstance();
+  
+  // create a shape    
+  PolygonMesh myMesh = PolygonMesh();    
+  InlineShape shape = InlineMeshShape('myMesh', myMesh);
+  drawing.registerShape(shape);
+  
+  // create a shader
+  InlineShader shader = OGLInlineShader(
+    "myFlatShader",
+    "
+      #version 120 // My shader uses GLSL 1.20
+  
+      uniform mat4 u_viewMatrix;
+      uniform mat4 u_projection;
+      uniform mat4 u_modelMatrix;
+      
+      attribute vec4 positions;
+  
+      void main(){
+        gl_Position = u_projection * (u_viewMatrix * (u_modelMatrix * positions));
+      }
+    ", "
+      #version 120 // My shader uses GLSL 1.20
+      
+      uniform vec4 u_materialColor;
+      uniform float u_time;
+      
+      void main(){
+        gl_FragColor = u_materialColor * u_time;
+      }
+    ");
+  
+  shader.defineUniform(InlineUniform("u_viewMatrix", Mat44()));
+  shader.defineUniform(InlineUniform("u_projection", Mat44()));
+  shader.defineUniform(InlineUniform("u_modelMatrix", Mat44()));
+  shader.defineUniform(InlineUniform("u_materialColor", Color(1.0, 0.0, 0.0)));
+  shader.defineUniform(InlineUniform("u_time", 0.0));
+  shader.defineAttribute('positions', "Vec3");
+  
+  // add the shader to the drawing
+  drawing.registerShader(shader);
+  
+  // create a material
+  InlineMaterial red = shader.getOrCreateMaterial('red');
+  red.setUniform('u_materialColor', Color(1.0, 0.0, 0.0));
+  
+  // create an instance and add it to the red material
+  InlineInstance instance = InlineInstance('redMesh', drawing.getRoot(), shape);
+  instance.addMaterial(red);
+\endexample
+\dfgPresetOmit
+*/
+object OGLInlineDrawing : InlineDrawingBase {
+  Integer prevProgramValues[];
+  Integer prevCullFace[];
+  Integer prevCullFaceEnable[];
+  Integer prevDepthMask[];
+  Integer prevDepthEnable[];
+  Integer prevDeptFunc[];
+};
+
+/// Get the OGLInlineDrawing singleton, or construct 
+/// it if it didn't already exist.
+/// \dfgPresetOmit
+function OGLInlineDrawing OGLInlineDrawing_GetInstance() {
+  // check if we can get the singleton
+  return GetOrCreateSingleton( 'InlineDrawing', OGLInlineDrawing, true /*removeOnNewScene*/ ); 
+}
+
+/// Get the OGLInlineDrawing singleton, but through a method
+function OGLInlineDrawing OGLInlineDrawing.getInstance() {
+  return OGLInlineDrawing_GetInstance();
+}
+
+/// Get the OGLInlineDrawing singleton, but through a method
+function OGLInlineDrawing OGLInlineDrawing.getNewInstance() {
+  OGLInlineDrawing prevDrawing = Singleton_get( 'InlineDrawing' );
+  if( prevDrawing )
+    prevDrawing.clearAll();
+
+  Singleton_remove('InlineDrawing');
+  return OGLInlineDrawing_GetInstance();
+}
+
+/// default constructor
+function OGLInlineDrawing() {
+  // Avoid calling the init method if this default constructor is being invoked 
+  // during the construction of a derived object.
+  if(InlineDrawing(this).type() == OGLInlineDrawing)
+    this.init('InlineDrawing');
+}
+
+/// default constructor given a name
+function OGLInlineDrawing(String name) {
+  this.init(name);
+}
+
+/// initialize the transform using a name
+/// \internal
+function OGLInlineDrawing.init!(String name) {
+  this.setName(name);
+  this.simpleLock = SimpleLock(name);
+  this.root = InlineTransformBase(name, Xfo());
+
+  // all standard transform adaptors
+  this.registerTransformAdaptor(OGLTransformAdaptor());
+  this.registerTransformAdaptor(OGLConstantScreenSizeTransformAdaptor());
+
+  // all standard shape adaptors
+  this.registerShapeAdaptor(OGLPointsShapeAdaptor());
+  this.registerShapeAdaptor(OGLLinesShapeAdaptor());
+  this.registerShapeAdaptor(OGLCurvesShapeAdaptor());
+  this.registerShapeAdaptor(OGLMeshShapeAdaptor());
+  this.registerShapeAdaptor(OGLDebugShapeAdaptor());
+  this.registerShapeAdaptor(OGLTextShapeAdaptor());
+
+  // all standard texture adaptors
+  this.registerTextureAdaptor(OGLColorTextureAdaptor());
+  this.registerTextureAdaptor(OGLMatrixArrayTextureAdaptor());
+
+  // previous OpenGL state to pop after drawing
+  this.prevProgramValues.resize(1);
+  this.prevCullFace.resize(1);
+  this.prevCullFaceEnable.resize(1);
+  this.prevDepthMask.resize(1);
+  this.prevDepthEnable.resize(1);
+  this.prevDeptFunc.resize(1);
+}
+
+//////////////////////////////////////////
+// Drawing
+/// draws the content of the drawing on the screen.
+/// this is called automatically by the DCC integrations and should
+/// not be called manually.
+/// \internal
+function Boolean OGLInlineDrawing.draw!(io DrawContext context) {
+  
+  if(!cpglHaveContext()){
+    setError("ERROR: OGLInlineDrawing.draw. OpenGL context not bound");
+    return false;
+  }
+
+  context.setMetaData('drawing', this);
+
+  Boolean result = true;
+
+  glGetIntegerv(GL_CURRENT_PROGRAM, this.prevProgramValues);
+  glGetIntegerv(GL_CULL_FACE, this.prevCullFaceEnable);
+  if(this.prevCullFaceEnable[0] != GL_FALSE)
+    glGetIntegerv(GL_CULL_FACE_MODE, this.prevCullFace);
+  glGetIntegerv(GL_DEPTH_TEST, this.prevDepthEnable);
+  glGetIntegerv(GL_DEPTH_FUNC, this.prevDeptFunc);
+  glGetIntegerv(GL_DEPTH_WRITEMASK, this.prevDepthMask);
+ 
+  glPushAttrib(GL_ALL_ATTRIB_BITS);
+  glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
+  glMatrixMode(GL_MODELVIEW);
+  glPushMatrix();
+
+  // FE-5869
+  // Fix normals direction when rendering from maya.
+  glDepthMask( GL_TRUE );
+  glEnable( GL_DEPTH_TEST );
+  glDepthFunc( GL_LESS );
+  
+  context.projectionMat = context.viewport.getProjectionMat();
+  context.viewMat = context.viewport.getViewMat();
+  context.invViewMat = context.viewMat.upperLeft();
+
+  for(Size i=0; i<this.shaders.size(); i++) {
+    // Push/pop the state info so that each shader can modify the state
+    // without effecting other shaders. 
+    glPushAttrib(GL_ALL_ATTRIB_BITS);
+    result = this.shaders[i].draw(context);
+    glPopAttrib();
+    if(!result)
+    {
+      report("WARNING: Error running shader:" + this.shaders[i].getName());
+    }
+  }
+
+  glPopMatrix();
+  glPopClientAttrib();
+  glPopAttrib();
+  if(this.prevCullFaceEnable[0] == GL_FALSE)
+    glDisable( GL_CULL_FACE);
+  else {
+    glEnable( GL_CULL_FACE);
+    glCullFace( this.prevCullFace[0]);
+  }
+
+  glDepthMask( this.prevDepthMask[0]);
+  if(this.prevDepthEnable[0] == GL_FALSE)
+    glDisable( GL_DEPTH_TEST);
+  else {
+    glEnable( GL_DEPTH_TEST);
+    glDepthFunc( this.prevDeptFunc[0]);
+  }
+  glUseProgram(this.prevProgramValues[0]);
+
+  return result;
+}
+
+function InlineInstance OGLInlineDrawing.setupSceneGrid!(String name, Scalar xSize, Scalar zSize, Size xCount, Size zCount, Color color) {
+  InlineInstance instance = this.getRoot().getChild(name);
+  if(instance)
+    return instance;
+
+  Lines lines = Lines();
+  lines.addGrid(Xfo(), xSize, 0.0, zSize, xCount, 1, zCount);
+
+  InlineLinesShape shape(name, lines);
+  this.registerShape(shape);
+
+  InlineShader shader = this.registerShader(OGLFlatShader);
+  InlineMaterial mat = shader.getOrCreateMaterial(name);
+  mat.setUniform('u_color', color);
+
+  instance = SimpleInlineInstance(name, this.getRoot(), shape, mat);
+  return instance;
+}
+
+/// draws an overlay using 2D rendering
+function OGLInlineDrawing.drawOverlay!(io DrawContext context, SInt32 x, SInt32 y, SInt32 width, SInt32 height, String filePath, Boolean transparent) {
+
+  InlineFileBasedTexture texture = this.getTexture(filePath);
+  if(texture == null)
+    texture = this.registerTexture(InlineFileBasedTexture(filePath));
+
+  OGLTexture2DAdaptorMetaData metaData = texture.getMetaData('overlayMetaData');
+  if(metaData == null) {
+    metaData = OGLTexture2DAdaptorMetaData();
+    texture.setMetaData('overlayMetaData', metaData);
+  }
+
+  glPushAttrib(GL_ALL_ATTRIB_BITS);
+  glPushMatrix();
+  glMatrixMode(GL_PROJECTION);
+  glLoadIdentity();
+  glMatrixMode(GL_MODELVIEW);
+  glLoadIdentity();
+
+  SInt32 viewportData[];
+  viewportData.resize(4);
+  glGetIntegerv( GL_VIEWPORT, viewportData );
+
+  glDisable(GL_DEPTH_TEST);
+  glDisable(GL_LIGHTING);
+  glEnable(GL_TEXTURE_2D);
+  if(transparent) {
+    glEnable (GL_BLEND);
+    glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  }
+
+  OGLColorTextureAdaptor adaptor();
+  adaptor.draw(context, texture, metaData, false);
+
+  Float32 l = x < 0 ? viewportData[2] + x : x;
+  Float32 r = l + Float32(width);
+  Float32 t = y < 0 ? viewportData[3] + y : y;
+  Float32 b = t + Float32(height);
+  l = 2.0 * Float32(l - viewportData[0]) / Float32(viewportData[2] - viewportData[0]) - 1.0;
+  r = 2.0 * Float32(r - viewportData[0]) / Float32(viewportData[2] - viewportData[0]) - 1.0;
+  t = 2.0 * Float32(t - viewportData[1]) / Float32(viewportData[3] - viewportData[1]) - 1.0;
+  b = 2.0 * Float32(b - viewportData[1]) / Float32(viewportData[3] - viewportData[1]) - 1.0;
+
+  Float32 nearDistance = Float32(context.getCurrentViewportParams()['nearDistance']);
+  glBegin(GL_QUADS);
+  glColor3d(1,1,1);
+  glTexCoord2f (0.0, 1.0);
+  glVertex3f(l,t,-nearDistance * 2.0);
+  glTexCoord2f (1.0, 1.0);
+  glVertex3f(r,t,-nearDistance * 2.0);
+  glTexCoord2f (1.0, 0.0);
+  glVertex3f(r,b,-nearDistance * 2.0);
+  glTexCoord2f (0.0, 0.0);
+  glVertex3f(l,b,-nearDistance * 2.0);
+  glEnd();
+
+  glPopMatrix();
+  glPopAttrib();
+}

@@ -1,0 +1,61 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+
+/**
+  \versionadded 2.0.1
+
+  :kl-ref:`Tool` interface defines the base framework to implement tools.
+  
+  A Tool is a special :kl-ref:`LegacyEventHandler` that handles events to be manipulated and change objects/properties in the scene.
+  Each tool owns a target, wich references the objects to manipulates and the properties to edit/change.
+  In the case of an SRT tool, the target represents the current selected objects's transforms.
+
+  \seealso :kl-ref:`LegacyToolTarget`, :kl-ref:`LegacyToolDispatcher`, :kl-ref:`ToolConstant`.
+
+  \dfgPresetOmit
+*/
+interface LegacyToolTarget;
+
+interface LegacyTool {
+
+  /// Sets the tool target.
+  /// \param target The target.
+  setTarget!( LegacyToolTarget target);
+
+  /// Returns a reference to the target.
+  Ref<LegacyToolTarget> getTarget();
+
+  /// Shows the tool.
+  show!();
+
+  /// Hides the tool.
+  hide!();
+
+  /// Activates the tool, or a specific axis.
+  /// This method is called when the user click or pass on the tool in the scene.
+  /// It can be used to highlight the gizmo for example. 
+  activate!();
+
+  /// Deactivates the tool.
+  /// The tool can peform cleanpup if needed.
+  deActivate!();
+
+  /// Updates the tool from it's target.
+  /// Called when the selection changed.
+  updateFromTarget!();
+
+  /// Begins the tool manipulation.
+  /// Used to select the tool (or a specific axis) that we want to drag.
+  /// \param mouseEvent The event.
+  press!(io MouseEvent mouseEvent);
+
+  /// Performs the tool manipulation.
+  /// \param mouseEvent The event.
+  move!(io MouseEvent mouseEvent);
+
+  /// Ends the tool manipulation.
+  /// \param mouseEvent The event.
+  release!(io MouseEvent mouseEvent);
+};

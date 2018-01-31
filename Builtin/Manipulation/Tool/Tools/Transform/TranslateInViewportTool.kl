@@ -1,0 +1,80 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// This tool allows to translate a :kl-ref:`Tool::TransformTarget` along
+  /// a viewport-aligned plane (keeps distance to camera) by clicking on a 
+  /// 3D gizmo. The tool creates a :kl-ref:`TranslateDragInteraction` 
+  /// to map mouse moves to transform changes.
+  ///
+  /// While this tool is used as a sub-tool of the :kl-ref:`TranslateTool`,
+  /// it can also be created independently.
+  object TranslateInViewport : XfoTargetAlignedGizmo{
+    CameraFacingModifier cameraFacingModifier;
+    TranslateDragInteraction translateInteraction;
+  };
+
+  TranslateInViewport( TransformTarget target, Color gizmoColor, Color highlightColor ) {
+    DrawElements elts();
+    elts.setPen( gizmoColor, 1 );
+    elts.drawPoint( Vec3() );
+    elts.drawSquare( Xfo(), 0.2, 0.2 );
+    GeometricShape gizmoShape();
+    gizmoShape.setGeometry( elts );
+
+    this.construct( target, highlightColor, gizmoShape, Vec3( 0, 1, 0 ), Vec3( 1, 0, 0 ) );
+
+    // set the whole rectangle as a click area
+    GeometricShape raycastShape();
+    DrawElements raycastElts();
+    raycastElts.drawTrianglesPlane( Xfo( Vec3( 0, 0.01, 0 ) ), 0.21, 0.21 );
+    raycastShape.setGeometry( raycastElts );
+    raycastShape.setRaycastVisibleOnly(true);
+    this.addChild( "clickArea", raycastShape );
+
+    Ref<MouseClickDragRaycastInteraction> interaction = this.translateInteraction.getInteraction();
+    interaction.addRaycastShape( raycastShape, true );
+    this.fixHighlightArea();
+  }
+
+  TranslateInViewport( TransformTarget target, Color highlightColor, Ref<BaseTool> gizmoShape, Vec3 gizmoNormal, Vec3 gizmoUpVector ) {
+    this.construct( target, highlightColor, gizmoShape, gizmoNormal, gizmoUpVector );
+  }
+
+  TranslateInViewport.construct!( TransformTarget target, Color highlightColor, Ref<BaseTool> gizmoShape, Vec3 gizmoNormal, Vec3 gizmoUpVector ) {
+
+    // Add a drag interaction to the shape
+    MouseClickDragRaycastInteraction clickAndDragInteraction();
+    this.translateInteraction = TranslateDragInteraction( clickAndDragInteraction, target );
+    this.attachComponent( this.translateInteraction );
+
+    this.parent.construct( target, highlightColor, gizmoShape, this.translateInteraction );
+    this.alignModifier.setAlignType( true, false, false, true );
+
+    // Align with viewport
+    this.cameraFacingModifier = CameraFacingModifier( gizmoNormal, gizmoUpVector );
+    this.addDrawModifier( this.cameraFacingModifier, false );
+  }
+
+  /// \internal
+  TranslateInViewport.fixHighlightArea!() {
+    // Check for shape's HighlightUnderMouse and add clickArea to target shape
+    Component highlightComps[] = this.getShape().getComponentsByType( HighlightUnderMouse );
+    if( highlightComps.size() == 1 ) {
+      Ref<Object> clickArea1 = this.getChild( "clickArea" );
+      Ref<RaycastTargetShape> clickArea = this.getChild( "clickArea" );
+      if( clickArea ) {
+        Ref<HighlightUnderMouse> highlight = highlightComps[0];
+        highlight.addHighlightAreaShape( clickArea );
+      }
+    }
+  }
+
+  TranslateInViewport.onEnterState!( String newState, Boolean mainState ) {
+    this.parent.onEnterState( newState, mainState );
+    this.fixHighlightArea();
+  }
+
+}// namespace Tool

@@ -1,0 +1,71 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "returns a AlembicPointsReader wrapper for the AlembicIPoints object at a given path\n\nSupported types:\n  this: AlembicArchiveReader\n  path: String\n  result: AlembicPointsReader\n"
+    },
+  "title" : "GetPoints[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicArchiveReader[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "path",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String[]" : [
+          ""
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "AlembicPointsReader[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "0E8166FDA5A736948697401721EB4B80",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicArchiveReader_getPoints_task<<<index>>>(
+  io AlembicPointsReader[] result
+, io AlembicArchiveReader[] this
+, in String[] path
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].getPoints(path[index < path.size() ? index : path.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( path.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < path.size()) task_size = path.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      AlembicWrapper_AlembicArchiveReader_getPoints_task(index, result, this, path);
+    }
+  } else {
+    AlembicWrapper_AlembicArchiveReader_getPoints_task<<<task_size>>>(result, this, path);
+  }
+}
+"
+  }

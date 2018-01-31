@@ -1,0 +1,656 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math, FabricStatistics;
+object GeometryAttributes;
+
+const String PositionsAttributeName = "positions";
+const String NormalsAttributeName = "normals";
+
+/**
+  \brief Interface required on an attribute in order to be contained in a GeometryAttributes container.
+
+  The GeometryAttribute interface contains the methods required by the GeometryAttributes container for 
+  managing the attribute values. By abstracting the attribute content, Geometry types can resize, duplicate or 
+  compare values without having a specific knowledge of the various attribute types. For example, this allows
+  the PolygonMesh to manage attribute sharing, and it allows the :kl-ref:`GetAttributeAtLocation` helper function to
+  interpolate surface attribute values.
+
+  While various type implementations are provided, such as Vec3Attribute and ColorAttribute, this interface
+  allows to add other custom attribute types to a GeometryAttributes container.
+
+  The GeometryAttribute requires specific data to be stored along the attribute values, such as a name, version and
+  containerIndex.
+
+  \note The attribute version has to be incremented after any modification(s) to the attribute values. See :ref:`attributeversioning` for more information.
+
+*/
+interface GeometryAttribute {
+  /// Returns the size of the attribute array.
+  Size size();
+
+  /// Resizes the attribute array.
+  resize!( Size count );
+
+  /// Returns a raw pointer to contiguous attribute data, if applicable, and an uninitialized Data otherwise.
+  Data data();
+
+  /// Checks the attribute data consistency.
+  /// \versionadded 2.4.0
+  Boolean checkConsistency();
+
+  // Get memory location id. CPU = 0, GPU = 1, VBO_backed_GPU = 4;
+  UInt32 getElementsMemType();
+
+  // Moves the contents of the Attribute to the GPU for use in GPU operators. 
+  convertToGPU!();
+
+  // Moves the contents of the Attribute to the CPU for use in GPU operators. 
+  convertToCPU!();
+
+  /// Return true if two values are logically equal.
+  Boolean equalValues( Size index1, Size index2 );
+
+  /// Replaces the value located at targetIndex with the value located at sourceIndex
+  copyValue!( Size sourceIndex, Size targetIndex );
+
+  /// Replaces the value located at targetIndex with source attribute's value located at sourceIndex.
+  /// The source attribute will be of the same type.
+  copyValue!( Ref<Object> sourceAttr, Size sourceIndex, Size targetIndex );
+
+  /// Sets the whole content of the attribute from the other attribute.
+  /// The other attribute will be of the same type.
+  copyFrom!( Ref<Object> otherAttr );
+
+  /** Sets the value located at targetIndex as a linear combination of other values.
+      \param source The attribute for source values
+      \param sourceIndices The array of source indices, relatively to the source attribute.
+      \param sourceWeights The array of source weights, which need to correspond to each sourceIndices. Normally the sum of the weights should be 1.0.
+      \param targetIndex The target value index.
+  */
+  linearCombine!( Ref<Object> sourceAttr, LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights, Size targetIndex );
+
+  /// If all attribute values can be expressed as a constant Scalar array, returns the constant number of elements, 0 otherwise.
+  /// \seealso GeometryAttribute.setFromScalar
+  Size getScalarValueSize();
+
+  /// If applicable, sets an attribute value from an array of Scalars. This array must have a size of :kl-ref:`GeometryAttribute.getScalarValueSize` .
+  setFromScalar!( Size index, LocalL16ScalarArray value );
+
+  /// Returns the name of the attribute.
+  String getName();
+
+  ///Returns the attribute values version. See :ref:`attributeversioning` for more information.
+  UInt32 getVersion();
+
+  /// \brief Increment attribute values' version.
+  /// This must be called after value(s) have been modified. For
+  /// better performance, it can be called only after all changes are finished.
+  /// See :ref:`attributeversioning` for more information.
+  incrementVersion!();
+
+  /// \internal Returns GeometryAttributes's private container index that was stored with GeometryAttribute.addContainer.
+  /// This index allows for a faster lookup of the attribute in GeometryAttributes' attribute list.
+  Size getContainerIndex( Ref<GeometryAttributes> attributeContainer );
+
+  /// \internal
+  /// Returns true if this container is the main owner container.
+  /// The main owner container is the only one allowed to changed the size of a shared attribute.
+  /// There can only be one main owner.
+  Boolean isMainOwnerContainer( Ref<GeometryAttributes> attributeContainer );
+
+  /// \internal
+  /// Returns true if this container is shared by multiple containers.
+  Boolean sharedByMultipleContainers();
+
+  /// \internal Stores an index, and usage is private to GeometryAttributes.
+  /// This index allows for a faster lookup of the attribute in GeometryAttributes' attribute list.
+  /// \mainOwner The main owner container is the only one allowed to changed the size of a shared attribute. There can only be one main owner.
+  addContainer!( Ref<GeometryAttributes> attributeContainer, Size containerIndex, Boolean mainOwner );
+
+  /// \internal
+  /// Removes the attribute from the container.
+  removeContainer!( Ref<GeometryAttributes> attributeContainer );
+
+  /// \internal Returns the statistics owner for the GeometryAttribute.
+  Ref<StatisticSource> getStatisticsSource();
+
+  /// Returns a description of the value
+  String valueDesc( Size index );
+
+  /// Returns a numerically stable description of the value
+  String unitTestPrint( Size index );
+
+  /// Returns a description of the value, keeping the first n decimals (Float32 or Float64 based values).
+  String truncateDecimalsPrint( Size index, UInt32 n );
+
+  /// Returns a description of the attribute, including all values.
+  /// \param useUnitTestPrint If true, returns a numerically stable version which is unit test output friendly.
+  String getDesc?(Boolean useUnitTestPrint);
+
+  /// Returns a description of the attribute, including all values.
+  String getDesc?();
+};
+
+/// \internal This allows the geometry to know if the GeometryAttributes container was directly modified.
+/// In particular, the PolygonMesh needs to know if some attributes were added or removed.
+/// The GeometryAttributes owner needs to register with GeometryAttributes.registerOwner
+interface GeometryAttributesOwnerCallbacks {
+
+  /// Called if the attribute arrays are resized
+  resizing!();
+
+  /// Called if an attribute is added to the GeometryAttributes
+  attributeAdded!( UInt32 containerIndex );
+
+  /// Called if an attribute is removed from the GeometryAttributes
+  attributeRemoved!( UInt32 containerIndex );
+};
+
+/// \internal Internal structure used by GeometryAttributes
+struct GeometryAttributeInternalData {
+  Ref<GeometryAttribute> attr;
+  Size index;
+};
+
+/**
+  The GeometryAttributes object is a generic container that contains a named set of GeometryAttribute. Each GeometryAttribute is 
+  an array containing values of a specific type. For example, the "positions" attribute is typically a Vec3Attribute containing Vec3 elements.
+
+  \note Attributes needs to be uniquely identified by a name. The GeometryAttributes cannot contain multiple attributes with the same name, even if the type differs.
+
+  All Geometry types, such as the PolygonMesh, contain a GeometryAttributes container which can be retrieved using the :kl-ref:`Geometry.getAttributes`
+  interface method. However, it is the geometry that controls the order and meaning of the attribute elements within the GeometryAttribute array. 
+  For example, the PolygonMesh maintains information about how the values are shared.
+
+  \rst
+
+.. _attributeversioning:
+
+Attribute versioning
+--------------------
+
+In order to allow for optimal performance and multithreading, attributes contain a version number (UInt32) which has to be explicitly incremented after 
+value modifications. However, if the size of the attribute array changes, the version will be automatically incremented. Attribute clients, such as
+InlineDrawing, can then detect value changes efficiently in order to update their state.
+
+.. note::
+  This versioning strategy favors performance over simplicity. Another choice could have been to automatically increase the version 
+  when detecting a value difference. Another could have been to let the clients compare values to their last state using a copy or 
+  a hash of the values. However, these would have caused performance overhead that could be relatively important in some situations.
+
+Similarly, the `GeometryAttributes.keysVersion`  member defines a version for the set of attributes, which will get 
+incremented only if attributes get added or removed from the container, but not upon attribute resize or value changes.
+
+  \endrst
+
+  \example
+    require Geometry;
+
+    function reportAttributes( Geometry geom ) {
+      // Get the attributes container from the geometry
+      Ref<GeometryAttributes> attributes = geom.getAttributes();
+      report('Number of attributes: ' + attributes.attributeCount());
+      report('Number of elements: ' + attributes.size());
+
+      // Iterate over the attributes
+      GeometryAttributesIterator iter = attributes.getAttributesIterator();
+      Ref<GeometryAttribute> attribute = null;
+      while( attribute = iter.getNext() )
+  	    report( 'Attribute ' + attribute.getName() + ' of type ' + attribute.type() );
+    }
+
+    operator entry() {
+      PolygonMesh p();
+      p.addSphere(  Xfo(), 1.0, 3, true, true );
+      reportAttributes(p);
+    }
+
+  \endexample
+
+
+\dfgTypeColor Color(51, 1, 106)
+*/
+object GeometryAttributes : StatisticSourceWithAutoRegisterMember {
+
+  /// \internal attribute array value count
+  Size elementCount;
+
+  /// \internal
+  GeometryAttribute attributes[];
+
+  /// \internal
+  IndexPool attributesIndexPool;
+
+  /// \internal
+  GeometryAttributeInternalData nameToAttr[String];
+
+  /// Version of the attribute set. This is incremented only if attributes are added or removed, 
+  /// and not if values are changed or values array is resized.
+  UInt32 keysVersion;
+  UInt32 attributesValueVersion;
+
+  /// \internal Optional: will communicate attribute content changes to the owner
+  Ref<GeometryAttributesOwnerCallbacks> owner;
+
+  /// Fast access to the positions attribute, if it exists. Note: might be Vec3Attribute or Vec3_dAttribute depending on the precision.
+  Ref<GeometryAttribute> positionsAttribute;
+
+  /// \internal Caching of positions type, hoping it helps performance..
+  Type positionsAttributeType;
+
+  /// Fast access to normals attribute, if it exists.
+  Ref<GeometryAttribute> normalsAttribute;
+
+  /// \internal Statistics auto-register helper
+  StatisticsAutoRegisterMember autoStats;
+
+  /// Name to be used by descriptions
+  String debugName;
+};
+
+function GeometryAttributes() {
+  if(FabricStatisticsEnabled())
+    this.autoStats = StatisticsAutoRegisterMember(this);
+  this.debugName = "GeometryAttributes";
+}
+
+~GeometryAttributes() {
+  for( Size i = 0; i < this.attributes.size(); ++i ) {
+    if( this.attributes[i] ) {
+      this.attributes[i].removeContainer( this );
+    }
+  }
+}
+
+/// \internal Sets the attributes owner which is interested to receive change callbacks (see GeometryAttributesOwnerCallbacks).
+function GeometryAttributes.registerOwner!( Ref<GeometryAttributesOwnerCallbacks> owner ) {
+  this.owner = owner;
+}
+
+inline GeometryAttributes.incrementAttributesValueVersion!() {
+  ++this.attributesValueVersion;
+}
+
+/// Removes all attributes, and resets attribute value array sizes to 0.
+function GeometryAttributes.clear!() {
+  ++this.keysVersion;
+  ++this.attributesValueVersion;
+  this.elementCount = 0;
+  this.attributes.resize(0);
+  this.attributesIndexPool.reset();
+  GeometryAttributeInternalData emptyDict[String];
+  this.nameToAttr = emptyDict;
+  GeometryAttribute nullAttribute = null;
+  this.positionsAttribute = nullAttribute;
+  this.positionsAttributeType = nullAttribute.type();
+  this.normalsAttribute = nullAttribute;
+  //Remove this one for now since it causes issues with the old Python SceneGraph
+  //if( this.owner )
+  //  this.owner.resizing();
+}
+
+/// Copies from another attribute container. This will increment `GeometryAttributes.keysVersion` only if the attribute set differs.
+/// \note This can be more efficient than using .clone(), since it will reuse the same attribute buffer memory when possible.
+function GeometryAttributes.copy!( Ref<GeometryAttributes> other ) {
+  if( other ) {
+    //Do an 'incremental' clone: keep the same memory buffers if possible.
+    String toRemove[];
+    for(name in this.nameToAttr) {
+      if( !other.has(name) )
+        toRemove.push(name);
+    }
+    for( Size i = 0; i < toRemove.size(); ++i )
+      this.removeAttribute(toRemove[i]);
+
+    this.resize( other.size() );
+    for (name, attrRef in other.nameToAttr) {
+      Ref<GeometryAttribute> myAttr = this.getAttribute( name );
+      if( Boolean(myAttr) && attrRef.attr.type() == myAttr.type() ) {
+        if( attrRef.attr !== myAttr )// might be shared
+          myAttr.copyFrom( attrRef.attr );
+      } else {
+        if( myAttr ) // Different type: first remove it
+          this.removeAttribute( myAttr );
+        GeometryAttribute sourceAttr = attrRef.attr;//IMPORTANT: a Ref<>.clone() is a noop; we need to clone from a non-Ref
+        GeometryAttribute sourceAttrClone = sourceAttr.clone();
+        this.attachNewAttribute( sourceAttrClone );
+      }
+    }
+  } else
+    this.clear();
+}
+
+/// \dfgPresetCreate
+GeometryAttributes.cloneMembersTo( io GeometryAttributes that ) {
+  //The difference with default clone() is that new.parent.autoStat will point to 'new' (from constructor)
+  that.copy(this);
+}
+
+/// Returns the size of the attribute value array for any contained GeometryAttribute (they all have the same size).
+/// \note This is different from the number of attribute (attribute set size), which is :kl-ref:`GeometryAttributes.attributeCount`
+inline Size GeometryAttributes.size(){
+  return this.elementCount;
+}
+
+/// Returns the number of attributes (size of the attribute set).
+/// \note This is different from the size of the attribute value array, which is :kl-ref:`GeometryAttributes.size`
+/// \versionadded 1.13.0
+inline Size GeometryAttributes.attributeCount(){
+  return this.nameToAttr.size();
+}
+
+/// For each contained attribute, sets the attribute value located at sourceIndex from the value located at targetIndex.
+inline GeometryAttributes.copyValue( Size sourceIndex, Size targetIndex ) {
+  for( Size i = 0; i < this.attributes.size(); ++i ) {
+    Ref<GeometryAttribute> attr = this.attributes[i];
+    if( attr )
+      attr.copyValue( sourceIndex, targetIndex );
+  }
+}
+
+/// For each contained attribute, sets the attribute value located at sourceIndex from the value located at targetIndex.
+/// \param createMissingSourceAttributes If a source attribute doesn't exist on this container, create it.
+inline GeometryAttributes.copyValues!( Ref<GeometryAttributes> sourceAttributes, Size sourceIndex, Size count, Size targetIndex, Boolean createMissingSourceAttributes ) {
+
+  Boolean sameSource = this === sourceAttributes;
+  Boolean create = !sameSource && createMissingSourceAttributes;
+
+  for( Size i = 0; i < sourceAttributes.attributeCount(); ++i ) {
+    Ref<GeometryAttribute> sourceAttr = sourceAttributes.attributes[i];
+    if( sourceAttr ) {
+      Ref<GeometryAttribute> targetAttr = sourceAttr;
+      if( !sameSource ) {
+        // Try to avoid the search if indices match
+        targetAttr = null;
+        String name = sourceAttr.getName();
+        if( i < this.attributeCount() && this.attributes[i].getName() == name )
+          targetAttr = this.attributes[i];
+        else
+          targetAttr = this.getAttribute( name );
+        if( targetAttr ) {
+          if( targetAttr.type() != sourceAttr.type() )
+            continue;//We should log a debug warning?
+        } else if( createMissingSourceAttributes ) {
+          targetAttr = sourceAttr.type().createNew();
+          Ref<BaseAttribute> baseTargetAttr = targetAttr;
+          baseTargetAttr._attachToContainer( name, this );
+        }
+      }
+      if( targetAttr ) {
+        for( Size j = 0; j < count; ++j )
+          targetAttr.copyValue( sourceAttr, sourceIndex + j, targetIndex + j );
+      }
+    }
+  }
+}
+
+/** For each contained attribute, sets the value located at targetIndex as a linear combination of source values.
+    \param sourceIndices The array of source indices
+    \param sourceWeights The array of source weights, which need to correspond to each sourceIndices. Normally the sum of the weights should be 1.0
+    \param targetIndex The target value index
+*/
+inline GeometryAttributes.linearCombine( LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights, Size targetIndex ) {
+  for( Size i = 0; i < this.attributes.size(); ++i ) {
+    Ref<GeometryAttribute> attr = this.attributes[i];
+    if( attr ) {
+      Ref<Object> attrObj = null;//TODO: remove when KL bug is fixed
+      attrObj = attr;
+      attr.linearCombine( attrObj, sourceIndices, sourceWeights, targetIndex );
+    }
+  }
+}
+
+/// Returns a contained attribute from its name, or 'null' if not found.
+inline Ref<GeometryAttribute> GeometryAttributes.getAttribute(String name) {
+  if( this.nameToAttr.has(name) ) //TODO: use the new 'get' dict method
+    return this.nameToAttr[name].attr;
+  else {
+    Ref<GeometryAttribute> nullAttr = null;
+    return nullAttr;
+  }
+}
+
+/// \internal Checks if an attribute is owned by this container
+inline Boolean GeometryAttributes.hasAttribute( Ref<GeometryAttribute> attribute ) {
+  if( !attribute )
+    return false;
+  Size index = attribute.getContainerIndex( this );
+  if( index >= this.attributes.size() )
+    return false;
+  return this.attributes[index] === attribute;
+}
+
+/// Returns a contained attribute of a specific type from its name, or 'null' if not found or another type.
+inline Ref<GeometryAttribute> GeometryAttributes.getAttribute(String name, Type expectedAttributeType) {
+  Ref<GeometryAttribute> attr = this.getAttribute(name);
+  if( attr.type() != expectedAttributeType ) {
+    Ref<GeometryAttribute> nullAttr = null;
+    return nullAttr;
+  }
+
+  return attr;
+}
+
+/// Returns true if an attribute of a given name exists.
+inline Boolean GeometryAttributes.has?(String name) {
+  return this.nameToAttr.has(name);
+}
+
+/// Returns true if it an attribute of a given name and type exists.
+inline Boolean GeometryAttributes.has?(String name, Type attributeType) {
+  if( !this.nameToAttr.has(name) )
+    return false;
+  return this.nameToAttr[name].attr.type() == attributeType;
+}
+
+/// \internal
+function GeometryAttributes.attachAttribute!(Ref<GeometryAttribute> attribute, Boolean mainOwner) {
+  Ref<GeometryAttribute> inputAttribute = attribute;//Resolve KL 'const' ambiguity
+  String name = inputAttribute.getName();
+  if( this.nameToAttr.has(name) )
+    throw("GeometryAttributes.attachNewAttribute: attribute "+name+" already exists");
+
+  UInt32 index;
+  if( this.attributesIndexPool.getFreeIndex( index ) )
+    this.attributes.resize( this.attributesIndexPool.getIndexEnd() );
+
+  ++this.keysVersion;
+  ++this.attributesValueVersion;
+
+  this.attributes[index] = inputAttribute;
+  GeometryAttributeInternalData attributeRef;
+  attributeRef.attr = inputAttribute;
+  attributeRef.index = index;
+  this.nameToAttr[name] = attributeRef;
+
+  inputAttribute.addContainer( this, index, mainOwner );
+
+  //Make sure it's incremented when we clear attributes and add them back
+  //Stupid and inefficient loop, but I prefer not to add yet another method (setVersion)
+  while( inputAttribute.getVersion() < this.keysVersion )
+    inputAttribute.incrementVersion();
+
+  if( !attribute.isMainOwnerContainer( this ) && inputAttribute.size() != this.elementCount )
+    setError( "GeometryAttributes.attachAttribute: not the main owner of a shared attribute, cannot resize it" );
+  else
+    inputAttribute.resize(this.elementCount);
+
+  if(FabricStatisticsEnabled()) {
+    Ref<StatisticSource> attrSource = inputAttribute.getStatisticsSource();
+    AddStatisticsChild(this.autoStats, attrSource);
+  }
+
+  if( name == PositionsAttributeName ) {
+    this.positionsAttribute = inputAttribute;
+    this.positionsAttributeType = inputAttribute.type();
+  }
+  else if( name == NormalsAttributeName )
+    this.normalsAttribute = inputAttribute;
+
+  if( this.owner )
+    this.owner.attributeAdded(index);
+}
+
+/// Attaches an un-owned attribute. The GeometryAttributes becomes the owner of this attribute.
+/// \note For common attribute types, the `GeometryAttributes.getOrCreate[Type]Attribute` helpers should be used instead.
+/// \note An error will be thrown if another attribute has the same name.
+inline GeometryAttributes.attachNewAttribute!( Ref<GeometryAttribute> attribute ) {
+  this.attachAttribute( attribute, true );
+}
+
+/// Attaches an attribute which has already an owner Geometry and will be shared.
+/// The main owner GeometryAttributes is the only one allowed to changed the size of a shared attribute.
+/// There can only be one main owner. Note that the shared attribute cannot have a different name
+/// since its name is unique for all GeometryAttributes that share it.
+///
+/// Important: for complex types such as PolygonMesh, this feature should not be avoided as it can lead
+/// to various issues due to the fact that attribute alignment (sharing) is a function of all attributes per PolygonMesh.
+/// Attribute sharing mapping would need to always match between the source and the target PolygonMesh.
+/// \dfgPresetOmit
+inline GeometryAttributes.attachSharedAttribute!( Ref<GeometryAttribute> attribute ) {
+  this.attachAttribute( attribute, false );
+}
+
+/// Removes the attribute that has this name.
+function GeometryAttributes.removeAttribute!(String name) {
+  if( this.nameToAttr.has(name) ) {//TODO: use the new 'get' dict method
+    Size index = this.nameToAttr[name].index;
+    this.attributesIndexPool.unusedIndex( index );
+
+    Ref<GeometryAttribute> nullGeomAttr = null;
+    if( this.attributes[index] == this.positionsAttribute ) {
+      this.positionsAttribute = nullGeomAttr;
+      this.positionsAttributeType = nullGeomAttr.type();
+    } if( this.attributes[index] == this.normalsAttribute )
+      this.normalsAttribute = nullGeomAttr;
+
+    this.attributes[index].removeContainer( this );
+    this.attributes[index] = nullGeomAttr;//Release the memory
+    this.nameToAttr.delete(name);
+    ++this.keysVersion;
+    ++this.attributesValueVersion;
+
+    if( this.owner )
+      this.owner.attributeRemoved(index);
+  }
+}
+
+/// Resizes the value array of all contained attributes.
+/// \note If this GeometryAttributes is owned by a Geometry, only the Geometry should call this method.
+/// \seealso GeometryAttributes.getAttributeListDesc
+function GeometryAttributes.resize!( Size newCount ) {
+  if( this.elementCount != newCount ) {
+    this.elementCount = newCount;
+    for( Size i = 0; i < this.attributes.size(); ++i ) {
+      Ref<GeometryAttribute> attr = this.attributes[i];
+      if( attr ) {
+        if( !attr.isMainOwnerContainer( this ) && attr.size() != newCount )
+          setError( "GeometryAttributes.resize: not the main owner of a shared attribute, cannot resize it" );
+        else
+          attr.resize( newCount );
+      }
+    }
+    if( this.owner )
+      this.owner.resizing();
+  }
+}
+
+/// Returns an attribute of a given name and type if it exists, else it creates and returns it.
+Ref<GeometryAttribute> GeometryAttributes.getOrCreateAttribute!( String name, Type attributeType ) {
+  Ref<GeometryAttribute> existingAttr = this.getAttribute( name );
+  if( Boolean( existingAttr ) ) {
+    if( existingAttr.type() != attributeType )
+      setError( "GeometryAttributes.getOrCreateAttribute: attribute '" + name + "' already exists with a different type: " + existingAttr.type() );
+    return existingAttr;
+  }
+
+  BaseAttribute attr = attributeType.createNew();
+  if( !attr ) {
+    setError( "GeometryAttributes.getOrCreateAttribute: type '" + attributeType + "' is not a BaseAttribute" );
+    return attr;
+  }
+
+  attr._attachToContainer( name, this );
+  return attr;
+}
+
+/// Returns a string description of all contained attribute values.
+/// \param useUnitTestPrint If true, returns a numerically stable version which is unit test output friendly.
+/// \seealso GeometryAttributes.getAttributeListDesc
+function String GeometryAttributes.getDesc?( Boolean useUnitTestPrint) {
+  String desc;
+  desc += "Attributes: nb elements = "+ this.size()+'\n';
+  for( UInt32 i = 0; i < this.size(); ++i ) {
+    String str = "  " + i + ": ";
+    for( UInt32 j = 0; j < this.attributes.size(); ++j ) {
+      if( this.attributes[j] ){
+        if(useUnitTestPrint)
+          str += this.attributes[j].getName() + "=" + this.attributes[j].unitTestPrint(i) + " ";
+        else
+          str += this.attributes[j].getName() + "=" + this.attributes[j].valueDesc(i) + " ";
+      }
+    }
+    desc += str +'\n';
+  }
+  return desc;
+}
+
+/// Returns a string description of all contained attribute values.
+function String GeometryAttributes.getDesc?() {
+  return this.getDesc(false);
+}
+
+/// Returns the list of contained attributes, without the values.
+/// \seealso GeometryAttributes.getDesc
+function String GeometryAttributes.getAttributeListDesc?() {
+  String desc;
+  desc += "Attributes: nb elements = "+ this.size()+'\n';
+  for (name, attrRef in this.nameToAttr)
+    desc += "  "+attrRef.attr.type()+" "+name+'\n';
+  return desc;
+}
+
+/// \internal Implementation of StatisticSource interface's 'getStatistics()'.
+function StatisticRecord[] GeometryAttributes.getStatistics() {
+  StatisticRecord stats[];
+  stats.push( StatisticRecord( Statistic_Name, this.debugName ) );
+  stats.push( StatisticRecord( Statistic_Category, "Geometry" ) );
+  stats.push( StatisticRecord( "Size", this.size() ) );
+
+  //Memory usage: approximate, until KL can do it for us
+  Size memoryUsage = this.attributes.size()*16 + this.attributesIndexPool.getMemUsage() + this.nameToAttr.size() * 40;
+  stats.push( StatisticRecord( Statistic_MemoryUsage, memoryUsage ) );
+  return stats;
+}
+
+/// An iterator for enumerating attributes contained in a GeometryAttributes .
+/// \seealso GeometryAttributes.getAttributesIterator
+struct GeometryAttributesIterator {
+  /// \internal
+  Ref<GeometryAttributes> attributes;
+
+  /// \internal
+  Size index;
+};
+
+/// Returns an iterator for enumerating attributes part of the GeometryAttributes.
+/// \note The enumeration order is unspecified.
+inline GeometryAttributesIterator GeometryAttributes.getAttributesIterator() {
+  GeometryAttributesIterator iter;
+  iter.attributes = this;
+  iter.index = 0;
+  return iter;
+}
+
+/// Returns a next attribute contained in the GeometryAttributes, or null when finished.
+/// \note A change of the attribute set (attributes are added or removed) will cause undefined behaviors.
+/// \seealso GeometryAttributes.getAttributesIterator
+inline Ref<GeometryAttribute> GeometryAttributesIterator.getNext!() {
+  while( this.index < this.attributes.attributes.size() ) {
+    if( this.attributes.attributes[this.index] )
+      return this.attributes.attributes[this.index++];
+  }
+  return null;
+}

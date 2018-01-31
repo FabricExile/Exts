@@ -1,0 +1,272 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+namespace AnimX
+{
+  struct Tbezier {};
+
+  private Tbezier.bezierToPower(
+      Float64 a1, Float64 b1, Float64 c1, Float64 d1,
+      io Float64 a2, io Float64 b2, io Float64 c2, io Float64 d2)
+  {
+      Float64 a = b1 - a1;
+      Float64 b = c1 - b1;
+      Float64 c = d1 - c1;
+      Float64 d = b - a;
+      a2 = c - b - d;
+      b2 = d + d + d;
+      c2 = a + a + a;
+      d2 = a1;
+  }
+
+  private Tbezier.checkMonotonic(io Float64 x1, io Float64 x2, Boolean keepFirst)
+  {
+    // We want a control vector of [ 0 x1 (1-x2) 1 ] since this provides
+    // more symmetry. (This yields better equations and constrains x1 and x2
+    // to be positive.)
+    //
+    x2 = 1.0 - x2;
+
+    // x1 and x2 must always be positive
+    if (x1 < 0.0)
+      x1 = 0.0;
+    if (x2 < 0.0)
+      x2 = 0.0;
+
+    // If x1 or x2 are greater than 1.0, then they must be inside the
+    // ellipse (x1^2 + x2^2 - 2(x1 +x2) + x1*x2 + 1).
+    // x1 and x2 are invalid if x1^2 + x2^2 - 2(x1 +x2) + x1*x2 + 1 > 0.0
+    //
+    //
+    if (x1 > 1.0 || x2 > 1.0)
+    {
+      Float64	d = x1 * (x1 - 2.0 + x2) + x2 * (x2 - 2.0) + 1.0;
+
+      if (d + kDblEpsilon > 0.0)
+      {
+        if (keepFirst)
+        {
+          this.constrainInsideBounds(x1, x2);
+        }
+        else
+        {
+          this.constrainInsideBounds(x2, x1);
+        }
+      }
+    }
+
+    // we change the control vector back to [ 0 x1 x2 1 ]
+    //
+    x2 = 1.0 - x2;
+  }
+
+  private Tbezier.constrainInsideBounds(io Float64 x1, io Float64 x2)
+  {
+    // (x1^2 + x2^2 - 2(x1 +x2) + x1*x2 + 1)
+    //   = x2^2 + (x1 - 2)*x1 + (x1^2 - 2*x1 + 1)
+    // Therefore, we solve for x2.
+
+    Float64 b, c;
+    if (x1 + kDblEpsilon < kFourThirds)
+    {
+      b = x1 - 2.0;
+      c = x1 - 1.0;
+      Float64	discr = sqrt(b * b - 4 * c * c);
+      Float64	root = (-b + discr) * 0.5;
+      if (x2 + kDblEpsilon > root)
+      {
+        x2 = root - kDblEpsilon;
+      }
+      else {
+        root = (-b - discr) * 0.5;
+        if (x2 < root + kDblEpsilon)
+          x2 = root + kDblEpsilon;
+      }
+    }
+    else {
+      x1 = kFourThirds - kDblEpsilon;
+      x2 = kOneThird - kDblEpsilon;
+    }
+  }
+
+  private SInt32 Tbezier.quadraticRoots(Float64 aIn, Float64 bIn, Float64 cIn, io Float64 r1, io Float64 r2)
+  {
+    Float64 a = aIn;
+    Float64 b = bIn;
+    Float64 c = cIn;
+
+    UInt32 numRoots = 0;
+    if (a == 0.0)
+    {
+      if (b != 0.0)
+      {
+        numRoots = 1;
+        r1 = -c / b;
+      }
+    }
+    else {
+      Float64 discriminant = b * b - 4 * a * c;
+      if (discriminant < 0.0)
+      {
+        // Ignore the roots.. Actually, this case should not arise at all
+        // if the curve is monotonically increasing..
+        //
+        //			r1 = r2 = 0.0;
+      }
+      else {
+        a *= 2;
+        if (discriminant == 0.0)
+        {
+          numRoots = 1;
+          r1 = -b / a;
+        }
+        else {
+          numRoots = 2;
+          discriminant = sqrt(discriminant);
+          r1 = (-b - discriminant) / a;
+          r2 = (-b + discriminant) / a;
+        }
+      }
+    }
+    return numRoots;
+  }
+
+  Float64 Tbezier.evaluate(Float64 startXIn, Float64 startYIn, Float64 x1In, Float64 y1In, Float64 x2In, Float64 y2In, Float64 endXIn, Float64 endYIn, Float64 timeIn)
+  {
+    Float64 startX = startXIn;
+    Float64 startY = startYIn;
+    Float64 x1 = x1In;
+    Float64 y1 = y1In;
+    Float64 x2 = x2In;
+    Float64 y2 = y2In;
+    Float64 endX = endXIn;
+    Float64 endY = endYIn;
+    Float64 time = timeIn;
+
+    Float64 rangeX = endX - startX;
+    if (rangeX == 0.0) {
+      return 0.0;
+    }
+    Float64	dx1 = x1 - startX;
+    Float64	dx2 = x2 - startX;
+
+    // normalize X control values
+    //
+    Float64	nX1 = dx1 / rangeX;
+    Float64	nX2 = dx2 / rangeX;
+
+    // if all 4 CVs equally spaced, polynomial will be linear
+    Boolean fLinear = true;
+    Boolean keepFirst = true;
+
+    if (equivalent(nX1, kOneThird, 1e-6) && equivalent(nX2, kTwoThirds, 1e-6)) {
+      fLinear = true;
+    }
+    else {
+      fLinear = false;
+    }
+
+    // save the orig normalized control values
+    //
+    Float64 oldX1 = nX1;
+    Float64 oldX2 = nX2;
+
+    // check the inside control values yield a monotonic function.
+    // if they don't correct them with preference given to one of them.
+    //
+    // Most of the time we are monotonic, so do some simple checks first
+    //
+    if (nX1 < 0.0) nX1 = 0.0;
+    if (nX2 > 1.0) nX2 = 1.0;
+    if ((nX1 > 1.0) || (nX2 < 0.0)) {
+      this.checkMonotonic(nX1, nX2, keepFirst);
+    }
+
+    // compute the new control points
+    //
+    if (nX1 != oldX1)
+    {
+      x1 = startX + nX1 * rangeX;
+      if (!equivalent(oldX1, 0.0)) {
+        y1 = startY + (y1 - startY) * nX1 / oldX1;
+      }
+    }
+    if (nX2 != oldX2)
+    {
+      x2 = startX + nX2 * rangeX;
+      if (!equivalent(oldX2, 1.0)) {
+        y2 = endY - (endY - y2) * (1.0 - nX2) / (1.0 - oldX2);
+      }
+    }
+
+    // save the control points
+    //
+    Float64 fX1 = startX;
+    Float64 fY1 = startY;
+    Float64 fY2 = y1;
+    Float64 fY3 = y2;
+    Float64 fX4 = endX;
+    Float64 fY4 = endY;
+
+    Float64 fPolyX[4];
+    Float64 fPolyY[4];
+
+    // convert Tbezier basis to power basis
+    //
+    this.bezierToPower(0.0, nX1, nX2, 1.0,
+      fPolyX[3], fPolyX[2], fPolyX[1], fPolyX[0]);
+
+    this.bezierToPower(fY1, fY2, fY3, fY4,
+      fPolyY[3], fPolyY[2], fPolyY[1], fPolyY[0]);
+
+    Float64 t;
+    Float64	s;
+
+    if (equivalent(time, fX1))
+    {
+      s = 0.0;
+    }
+    else if (equivalent(time, fX4))
+    {
+      s = 1.0;
+    }
+    else
+    {
+      s = (time - fX1) / (fX4 - fX1);
+    }
+
+    // if linear, t=s
+    if (fLinear)
+    {
+      t = s;
+    }
+    else
+    {
+      // temporarily make X(t) = X(t) - s
+      //
+      Float64 poly[4];
+      poly[3] = fPolyX[3];
+      poly[2] = fPolyX[2];
+      poly[1] = fPolyX[1];
+      poly[0] = fPolyX[0] - s;
+
+      // find the roots of the polynomial.  We are looking for only one
+      // in the interval [0, 1]
+      //
+      Float64	roots[5];
+      Float64 rootsExt<> = roots;
+      SInt32 numRoots = polyZeroes(poly, 3, 0.0, true, 1.0, true, rootsExt);
+      if (numRoots == 1)
+      {
+        t = roots[0];
+      }
+      else {
+        t = 0.0;
+      }
+    }
+
+
+    return (t * (t * (t * fPolyY[3] + fPolyY[2]) + fPolyY[1]) + fPolyY[0]);
+  }
+}

@@ -1,0 +1,118 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  Specialized GeometryAttribute containing one Vec4 per element.
+  Values can be accessed with the Vec4Attribute.values array member, but its usage might be restricted by the owner Geometry.
+*/
+object Vec4Attribute : BaseAttribute {
+  /// Values array container
+  Vec4 values[];
+};
+
+function StatisticRecord[] Vec4Attribute.getStatistics() {
+  StatisticRecord stats[] = this.parent.getStatistics();
+  stats.push( StatisticRecord( Statistic_MemoryUsage, this.values.size()*4*4 ) );
+  return stats;
+}
+
+/// \dfgPresetOmit
+Vec4Attribute.cloneMembersTo(io Vec4Attribute that) {
+  //The difference with default clone() is that that.parent.autoStat will point to 'that' (from constructor)
+  this.parent.cloneMembersTo(that);//Copies all but the values
+  that.copyFrom(this);
+}
+
+inline Vec4Attribute.resize!(Size count) {
+  this.parent.resize(count);
+  this.values.resize(count);
+}
+
+inline Boolean Vec4Attribute.checkConsistency() {
+  if( this.size() != this.values.size() )
+    return false;
+  return this.parent.checkConsistency();
+}
+
+inline Data Vec4Attribute.data() {
+  return this.values.data();
+}
+
+inline UInt32 Vec4Attribute.getElementsMemType( ) {
+  return this.values.getElementsMemType();
+}
+
+inline Vec4Attribute.convertToGPU!( ) {
+  this.values.convertToGPU();
+  this.incrementVersion();
+}
+
+inline Vec4Attribute.convertToCPU!( ) {
+  this.values.convertToCPU();
+  this.incrementVersion();
+}
+
+inline Vec4Attribute.copyValue!( Size sourceIndex, Size targetIndex ) {
+  this.values[targetIndex] = this.values[sourceIndex];
+}
+
+inline Vec4Attribute.copyValue!( Ref<Object> sourceAttr, Size sourceIndex, Size targetIndex ) {
+  Ref<Vec4Attribute> source = sourceAttr;
+  this.values[targetIndex] = source.values[sourceIndex];
+}
+
+inline Vec4Attribute.copyFrom!( Ref<Object> otherAttr ) {
+  this.parent.copyFrom( otherAttr );
+  Ref<Vec4Attribute> other = otherAttr;
+  other.values.copyTo(this.values);
+}
+
+/** Returns a linear combination of source values.
+    \param sourceIndices The array of source indices
+    \param sourceWeights The array of source weights, which need to correspond to each sourceIndices. Normally the sum of the weights should be 1.0
+*/
+inline Vec4 Vec4Attribute.getLinearCombination( LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights ) {
+  Vec4 result;
+  for( Size i = 0; i < sourceIndices.size(); ++i )
+    result += this.values[sourceIndices.get(i)]*sourceWeights.get(i);
+  return result;
+}
+
+inline Vec4Attribute.linearCombine!( Ref<Object> sourceAttr, LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights, Size targetIndex ) {
+  Ref<Vec4Attribute> source = sourceAttr;
+  this.values[targetIndex] = source.getLinearCombination( sourceIndices, sourceWeights );
+}
+
+inline Vec4Attribute.setFromScalar!( Size index, LocalL16ScalarArray value ) {
+  this.values[index].x = value.get(0);
+  this.values[index].y = value.get(1);
+  this.values[index].z = value.get(2);
+  this.values[index].t = value.get(3);
+}
+
+inline Size Vec4Attribute.getScalarValueSize() {
+  return 4;
+}
+
+inline Boolean Vec4Attribute.equalValues( Size index1, Size index2 ) {
+  return this.values[index1].equal( this.values[index2] );
+}
+
+function String Vec4Attribute.valueDesc( Size index ) {
+  return String(this.values[index]);
+}
+
+require Util;
+function String Vec4Attribute.unitTestPrint( Size index ) {
+  return unitTestPrint(this.values[index]);
+}
+
+function String Vec4Attribute.truncateDecimalsPrint( Size index, UInt32 n ) {
+  return truncateDecimalsPrint(this.values[index], n);
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+function Ref<Vec4Attribute> GeometryAttributes.getOrCreateVec4Attribute!( String name ) {
+  return this.getOrCreateAttribute( name, Vec4Attribute );
+}

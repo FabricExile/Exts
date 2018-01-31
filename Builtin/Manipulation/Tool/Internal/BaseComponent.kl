@@ -1,0 +1,171 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// Supports base component behavior: attaching to a parent, having a name and path.
+  /// Also, it supports event propagation to parent (EventListener).
+  /// See :ref:`TPG.hierarchy-properties` for more information about tool hierarchy and components.
+  object BaseComponent : BaseWeakPointerable, Component, EventListener{
+    Ref<Object> owner;
+    Ref<Component> owner_component;
+    String name;
+    private Boolean eventPropagationBlocked;// If true, events are not propagated
+    private Boolean invalidated;
+
+    Boolean childComponents[Component];//So we can propagate "parentHierarchyChanged" notifications.
+  };
+
+  BaseComponent() {
+    this.name = this.type();// type name by default
+  }
+
+  BaseComponent.setParent!( Ref<Object> owner ) {
+    if( owner !== this.owner ) {
+      Object keepAlive = this;//Be careful not being destroyed while detached
+      if( this.owner_component ) {
+        if( StructureDebugTrace )
+          report( "removeComponent: " + this.getPath() );
+
+        this.owner_component.componentRemoved( this );
+      }
+
+      this.owner = owner;
+      this.owner_component = owner;
+
+      if( this.owner_component )
+        this.owner_component.componentAdded( this );
+
+      this.parentHierarchyChanged();
+
+      if( StructureDebugTrace && Boolean( owner ) )
+        report( "addedComponent: " + this.getPath() );
+    }
+  }
+
+  /// \internal
+  /// To be overriden.
+  BaseComponent.parentHierarchyChanged!( ) {
+    for( k in this.childComponents ) {
+      Ref<Component> child = k;
+      child.parentHierarchyChanged();
+    }
+  }
+
+  /// \internal
+  /// To be overriden.
+  BaseComponent.componentAdded!( Ref<Component> child ) {
+    if( child )
+      this.childComponents[child] = true;
+  }
+
+  /// \internal
+  /// To be overriden.
+  BaseComponent.componentRemoved!( Ref<Component> child ) {
+    if( child ) {
+      if( this.childComponents.has( child ) )
+        this.childComponents.delete( child );
+    }
+  }
+
+  Ref<Object> BaseComponent.getParent() {
+    return this.owner;
+  }
+
+  String BaseComponent.getName() {
+    return this.name;
+  }
+
+  BaseComponent.setName!( String name ) {
+    this.name = name;
+  }
+
+  String BaseComponent.getPath() {
+    if( this.owner_component )
+      return this.owner_component.getPath() + "." + this.name;
+    else
+      return this.name;
+  }
+
+  /// \internal
+  /// Non-virtual version that can be safely called from the destructor
+  /// This can be removed once KL is fixed to not call specialized methods in destructors
+  BaseComponent.invalidateInternal!( ) {
+    if( !this.invalidated ) {
+      this.parent.invalidate();//First make sure our week pointer container is null to avoid any circular refs
+
+      // Invalidate children first
+      for( k in this.childComponents ) {
+        Ref<Component> child = k;
+        child.invalidate();
+      }
+
+      this.invalidated = true;
+      if( StructureDebugTrace )
+        report( "Invalidate: " + GetComponentName( this ) );
+
+      this.childComponents.clear();
+      this.setParent( null );
+
+      ToolChanged();
+    }
+  }
+
+  BaseComponent.invalidate!( ) {
+    this.invalidateInternal();
+  }
+
+  ~BaseComponent() {
+    this.invalidateInternal();
+  }
+
+  /// Send an event to our parent, and will recurse to parents until handled
+  BaseComponent.sendEventToParentRecursively( EventName name, String tag, Ref<Object> customData ) {
+    ToolEvent event;
+    event.sender = this;
+    event.name = name;
+    event.tag = tag;
+    event.customData = customData;
+    event.propagationType = EventPropagationType_parent;
+    this.propagateEvent( event, ToolEventUserID(), true );
+  }
+  /// Send an event to our parent, and will recurse to parents until handled
+  inline BaseComponent.sendEventToParentRecursively( EventName name, String tag ) { this.sendEventToParentRecursively( name, tag, null ); }
+  /// Send an event to our parent, and will recurse to parents until handled
+  inline BaseComponent.sendEventToParentRecursively( EventName name ) { this.sendEventToParentRecursively( name, String(), null ); }
+
+  /// Sends the event to our parent if propagationType == EventPropagationType_parent.
+  BaseComponent.propagateEvent( ToolEvent event, ToolEventUserID userID ) {
+    this.propagateEvent( event, userID, false );
+  }
+
+  /// If enabled, events won't be automatically propagated to parents
+  BaseComponent.blockEventPropagation!( Boolean enable ) {
+    this.eventPropagationBlocked = enable;
+  }
+
+  /// Sends the event to our parent if propagationType == EventPropagationType_parent.
+  /// \internal
+  BaseComponent.propagateEvent( ToolEvent event, ToolEventUserID userID, Boolean force ) {
+    if( ( !this.eventPropagationBlocked || force ) && event.propagationType == EventPropagationType_parent ) {
+      Ref<EventListener> parentListener = GetParentEventListener( this );
+      if( parentListener ) {
+        if( ShouldTraceEvent( event ) ) {
+          report( "Send event to parent: " + DescribeEvent( event )
+                  + ": from " + this.getPath() + " to " + GetComponentName( parentListener )
+                  + " " + DescribeUserIDIfAny( userID ) );
+        }
+        parentListener.onEvent( event, userID );
+      }
+    }
+  }
+
+  /// By default, calls propagateEvent.
+  BaseComponent.onEvent!( ToolEvent event, ToolEventUserID userID ) {
+    this.propagateEvent( event, userID );
+  }
+
+  /// EventListener implementation: to be overriden.
+  BaseComponent.eventSourceDestroying!( Ref<EventSource> eventSource, ToolEventUserID userID ) {}
+}// namespace Tool

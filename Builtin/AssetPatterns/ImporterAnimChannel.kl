@@ -1,0 +1,397 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+struct ImporterAnimChannel
+{
+  Ref<ImporterObject> subject;
+  String property;
+  String subProperty;
+  String valueType;
+  Vec2 range;
+  Float32 step;
+  Float32 values[];
+};
+
+function ImporterAnimChannel(Ref<ImporterObject> subject, String property,  String subProperty, ImporterContext ctxt)
+{
+  this.subject = subject;
+  this.property = property;
+  this.subProperty = subProperty;
+
+  this.range = Vec2(SCALAR_INFINITE, -SCALAR_INFINITE);
+  this.step = 0.0;
+  this.computeRange(this.subject, ctxt);
+
+  if(this.property == 'globalTransform')
+  {
+    Boolean isConstant = true;
+    Ref<ImporterObject> subjectParent = this.subject;
+    while(subjectParent != null)
+    {
+      if(isConstant)
+        isConstant = subjectParent.isPropertyConstant('localTransform');
+      this.computeRange(subjectParent, ctxt);
+      subjectParent = subjectParent.getParent();
+    }
+
+    if(isConstant)
+    {
+      this.range.y = this.range.x;
+      this.step = 0.0;
+    }
+  }
+
+  this.resample(this.range, this.step, ctxt);
+}
+
+private function ImporterAnimChannel.computeRange!(Ref<ImporterObject> subject, ImporterContext ctxt)
+{
+  Vec2 newRange = subject.getTimeRange(ctxt);
+  if(newRange.x < this.range.x)
+    this.range.x = newRange.x;
+  if(newRange.y > this.range.y)
+    this.range.y = newRange.y;
+
+  if(this.step == 0.0)
+  {
+    UInt32 numSamples = subject.getTimeSamples(ctxt).size();
+    if(numSamples > 1)
+    {
+      this.step = (newRange.y - newRange.x) / Float32(numSamples-1);
+    }
+  }
+}
+
+function String ImporterAnimChannel.getName()
+{
+  if(this.subProperty)
+    return this.property+'.'+this.subProperty;
+  return this.property;
+}
+
+function ImporterAnimChannel.resample!(Vec2 range, Float32 step, ImporterContext inCtxt)
+{
+  ImporterContext ctxt = inCtxt;
+
+  this.range = range;
+  this.step = step;
+
+  this.values.resize(0);
+
+  Boolean globalTransform = false;
+  String propertyName = this.property;
+  if(this.property == 'globalTransform') {
+    propertyName = 'localTransform';
+    globalTransform = true;
+  }
+
+  if(!this.subject)
+    return;
+  if(!this.subject.hasProperty(propertyName)) {
+    report('ImporterAnimChannel: subject does not contain property '+this.property);
+    return;
+  }
+
+  String propertyType = this.subject.getPropertyType(propertyName);
+
+  Scalar scalarValues[];
+  Vec2 vec2Values[];
+  Vec3 vec3Values[];
+  Quat quatValues[];
+  Xfo xfoValues[];
+  Mat44 mat44Values[];
+  Color colorValues[];
+
+  for(Float32 t = this.range.x; t <= this.range.y + this.step * 0.5; t += this.step)
+  {
+    ctxt.time = t;
+
+    this.subject.updateProperty(propertyName, ctxt);
+
+    if(propertyType == 'Scalar' || propertyType == 'Float32')
+    {
+      this.valueType = 'Float32';
+      scalarValues.push(this.subject.getScalarProperty(propertyName));
+    }
+    else if(propertyType == 'Integer' || propertyType == 'SInt32')
+    {
+      this.valueType = 'Float32';
+      scalarValues.push(Float32(this.subject.getIntegerProperty(propertyName)));
+    }
+    else if(propertyType == 'Vec2')
+    {
+      this.valueType = 'Vec2';
+      vec2Values.push(this.subject.getVec2Property(propertyName));
+    }
+    else if(propertyType == 'Vec3')
+    {
+      this.valueType = 'Vec3';
+      vec3Values.push(this.subject.getVec3Property(propertyName));
+    }
+    else if(propertyType == 'Quat')
+    {
+      this.valueType = 'Quat';
+      quatValues.push(this.subject.getQuatProperty(propertyName));
+    }
+    else if(propertyType == 'Xfo')
+    {
+      Xfo value = this.subject.getXfoProperty(propertyName);
+      if(this.subProperty == 'tr')
+      {
+        this.valueType = 'Vec3';
+        vec3Values.push(value.tr);
+      }
+      else if(this.subProperty == 'ori')
+      {
+        this.valueType = 'Quat';
+        quatValues.push(value.ori);
+      }
+      else if(this.subProperty == 'sc')
+      {
+        this.valueType = 'Vec3';
+        vec3Values.push(value.sc);
+      }
+      else if(this.subProperty == 'sh')
+      {
+        this.valueType = 'Vec3';
+        vec3Values.push(value.sh);
+      }
+      else
+      {
+        this.valueType = 'Xfo';
+        xfoValues.push(value);
+      }
+    }
+    else if(propertyType == 'Mat44')
+    {
+      Mat44 m;
+      if(globalTransform)
+      {
+        ImporterTransform transform(this.subject);
+        if(transform)
+        {
+          m = transform.getGlobalTransform(ctxt);
+        }
+        else
+        {
+          m = this.subject.getMat44Property(propertyName);
+        }
+      }
+      else
+      {
+        m = this.subject.getMat44Property(propertyName);
+      }
+
+      Xfo value = m;
+      if(this.subProperty == 'tr')
+      {
+        this.valueType = 'Vec3';
+        vec3Values.push(value.tr);
+      }
+      else if(this.subProperty == 'ori')
+      {
+        this.valueType = 'Quat';
+        quatValues.push(value.ori);
+      }
+      else if(this.subProperty == 'sc')
+      {
+        this.valueType = 'Vec3';
+        vec3Values.push(value.sc);
+      }
+      else if(this.subProperty == 'sh')
+      {
+        this.valueType = 'Vec3';
+        vec3Values.push(value.sh);
+      }
+      else
+      {
+        this.valueType = 'Mat44';
+        mat44Values.push(m);
+      }
+    }
+    else if(propertyType == 'Color')
+    {
+      this.valueType = 'Color';
+      colorValues.push(this.subject.getColorProperty(propertyName));
+    }
+
+    // exit early if this is a non-animated property
+    if(this.subject.isPropertyConstant(propertyName) && !globalTransform)
+    {
+      this.range.y = this.range.x;
+      this.step = 0.0;
+      break;
+    }
+  }
+
+  // resample to 1 value if there's no change
+  if(scalarValues.size() > 0)
+  {
+    Scalar first = scalarValues[0];
+    Boolean hasDelta = false;
+    for(Size i=1;i<scalarValues.size();i++)
+    {
+      if(scalarValues[i] != first)
+      {
+        hasDelta = true;
+        break;
+      }
+    }
+    if(!hasDelta)
+    {
+      scalarValues.resize(1);
+      this.range.y = this.range.x;
+      this.step = 0.0;
+    }
+
+    Float32 extValues<>(scalarValues.data(), scalarValues.size() * UInt32(first.dataSize() / this.step.dataSize()));
+    this.values.resize(extValues.size());
+    for(Size i=0;i<extValues.size();i++)
+      this.values[i] = extValues[i];
+  }
+  else if(vec2Values.size() > 0)
+  {
+    Vec2 first = vec2Values[0];
+    Boolean hasDelta = false;
+    for(Size i=1;i<vec2Values.size();i++)
+    {
+      if(vec2Values[i] != first)
+      {
+        hasDelta = true;
+        break;
+      }
+    }
+    if(!hasDelta)
+    {
+      vec2Values.resize(1);
+      this.range.y = this.range.x;
+      this.step = 0.0;
+    }
+
+    Float32 extValues<>(vec2Values.data(), vec2Values.size() * UInt32(first.dataSize() / this.step.dataSize()));
+    this.values.resize(extValues.size());
+    for(Size i=0;i<extValues.size();i++)
+      this.values[i] = extValues[i];
+  }
+  else if(vec3Values.size() > 0)
+  {
+    Vec3 first = vec3Values[0];
+    Boolean hasDelta = false;
+    for(Size i=1;i<vec3Values.size();i++)
+    {
+      if(vec3Values[i] != first)
+      {
+        hasDelta = true;
+        break;
+      }
+    }
+    if(!hasDelta)
+    {
+      vec3Values.resize(1);
+      this.range.y = this.range.x;
+      this.step = 0.0;
+    }
+
+    Float32 extValues<>(vec3Values.data(), vec3Values.size() * UInt32(first.dataSize() / this.step.dataSize()));
+    this.values.resize(extValues.size());
+    for(Size i=0;i<extValues.size();i++)
+      this.values[i] = extValues[i];
+  }
+  else if(quatValues.size() > 0)
+  {
+    Quat first = quatValues[0];
+    Boolean hasDelta = false;
+    for(Size i=1;i<quatValues.size();i++)
+    {
+      if(quatValues[i] != first)
+      {
+        hasDelta = true;
+        break;
+      }
+    }
+    if(!hasDelta)
+    {
+      quatValues.resize(1);
+      this.range.y = this.range.x;
+      this.step = 0.0;
+    }
+
+    Float32 extValues<>(quatValues.data(), quatValues.size() * UInt32(first.dataSize() / this.step.dataSize()));
+    this.values.resize(extValues.size());
+    for(Size i=0;i<extValues.size();i++)
+      this.values[i] = extValues[i];
+  }
+  else if(xfoValues.size() > 0)
+  {
+    Xfo first = xfoValues[0];
+    Boolean hasDelta = false;
+    for(Size i=1;i<xfoValues.size();i++)
+    {
+      if(xfoValues[i] != first)
+      {
+        hasDelta = true;
+        break;
+      }
+    }
+    if(!hasDelta)
+    {
+      xfoValues.resize(1);
+      this.range.y = this.range.x;
+      this.step = 0.0;
+    }
+
+    Float32 extValues<>(xfoValues.data(), xfoValues.size() * UInt32(first.dataSize() / this.step.dataSize()));
+    this.values.resize(extValues.size());
+    for(Size i=0;i<extValues.size();i++)
+      this.values[i] = extValues[i];
+  }
+  else if(mat44Values.size() > 0)
+  {
+    Mat44 first = mat44Values[0];
+    Boolean hasDelta = false;
+    for(Size i=1;i<mat44Values.size();i++)
+    {
+      if(mat44Values[i] != first)
+      {
+        hasDelta = true;
+        break;
+      }
+    }
+    if(!hasDelta)
+    {
+      mat44Values.resize(1);
+      this.range.y = this.range.x;
+      this.step = 0.0;
+    }
+
+    Float32 extValues<>(mat44Values.data(), mat44Values.size() * UInt32(first.dataSize() / this.step.dataSize()));
+    this.values.resize(extValues.size());
+    for(Size i=0;i<extValues.size();i++)
+      this.values[i] = extValues[i];
+  }
+  else if(colorValues.size() > 0)
+  {
+    Color first = colorValues[0];
+    Boolean hasDelta = false;
+    for(Size i=1;i<colorValues.size();i++)
+    {
+      if(colorValues[i] != first)
+      {
+        hasDelta = true;
+        break;
+      }
+    }
+    if(!hasDelta)
+    {
+      colorValues.resize(1);
+      this.range.y = this.range.x;
+      this.step = 0.0;
+    }
+
+    Float32 extValues<>(colorValues.data(), colorValues.size() * UInt32(first.dataSize() / this.step.dataSize()));
+    this.values.resize(extValues.size());
+    for(Size i=0;i<extValues.size();i++)
+      this.values[i] = extValues[i];
+  }
+}

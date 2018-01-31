@@ -1,0 +1,54 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/AlembicWrapper/AlembicArchiveReader.html",
+    "uiTooltip" : "returns the time range of this file as a Vec2. With parse true it will parse the archive\nto compute the range (slower), else it will use an heuristic\n\n Supported by AlembicArchiveReader"
+    },
+  "title" : "GetTimeRange",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "AlembicArchiveReader"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "parse",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Boolean" : true
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Boolean"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Vec2"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "2EDED56E6014E9959C7916554898C57A",
+  "code" : "require AlembicWrapper;
+
+dfgEntry {
+  result = this.getTimeRange( parse );
+}
+"
+  }

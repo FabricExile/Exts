@@ -1,0 +1,76 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+    "uiNodeColor" : "{\n  \"r\" : 132,\n  \"g\" : 106,\n  \"b\" : 97\n  }",
+    "uiTooltip" : "Returns a KeyframeTrack property value. If the key is set to \"custom\" the custom port is used instead."
+    },
+  "title" : "keyframeTrackProperty",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Execute" : {}
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "ImporterObject" : null
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Ref<ImporterObject>"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiCombo" : "(\"track\", \"custom\")"
+        },
+      "name" : "key",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String" : "track"
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "custom",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String" : ""
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "KeyframeTrack"
+      }
+    ],
+  "extDeps" : {
+    "AssetPatterns" : "*"
+    },
+  "presetGUID" : "9C06A75770AAD35C511CF9F61195612B",
+  "code" : "dfgEntry {
+  String k = key;
+  if(k == 'custom')
+    k = custom;
+  if(!this.hasProperty(k))
+    return;
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty(k, this.defaultContext);
+  result = mutableThis.getKeyframeTrackProperty(k);
+}
+"
+  }

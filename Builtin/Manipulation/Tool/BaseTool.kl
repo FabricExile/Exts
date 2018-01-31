@@ -1,0 +1,1674 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  object BaseTool;
+
+  /**
+    A ToolDrawModifier is an active component that is being executed before rendering a BaseTool
+    (see :kl-ref:`Tool::BaseTool.addDrawModifier` ). It is called per viewport, and can set viewport-specific property values.
+
+    Typically, ToolDrawModifier will update the transform properties, such as TransformProperty
+    and RenderTransformProperty. It can also set other ones, such as ColorProperty or TransparencyProperty.
+
+    The BaseTool has a default ToolDrawModifier which will compose a Tool's transform with its parent,
+    and then compute the final viewport-specific RenderTransformProperty by taking into account the active
+    viewport, the TransformProperty and the TransformSpaceProperty (world, pixel or normalized viewport
+    coordinates space).
+
+    See :ref:`TPG.tooldrawmodifier` for more information about draw modifiers.
+
+    \seealso BaseTool
+  */
+  interface ToolDrawModifier {
+    String getName();
+    initialize!( Ref<BaseTool> ownerTool );
+    updateDrawData!( io DrawContext context, Ref<Object> target );
+    invalidate!( Ref<BaseTool> ownerTool );
+  };
+
+  /// \internal
+  interface BaseTool_virtuals {
+    /// Called to update retained draw data (transform properties, shapes...)
+    selfUpdateDrawData!( io DrawContext context, io Boolean drawChildren );
+
+    /// Called after self and children draw data has been updated
+    postUpdateDrawData!( io DrawContext context );
+
+    /// Callback where the tool can do direct OGL rendering for the given viewport, after all passes
+    postDraw!( DrawContext context, String drawPass, io Boolean drawChildren );
+
+    /// Called when a state gets activated. Multiple states can be active at the same time.
+    /// But only one mainState can be active at a same time.
+    onEnterState!(String state, Boolean mainState);
+
+    /// Called when a state is no longer active. Multiple states can be active at the same time.
+    /// But only one mainState can be active at a same time.
+    onLeaveState!(String state, Boolean mainState);
+
+
+    /// A new child state was entered.
+    /// If false is returned, the event will not be propagated to parents
+    Boolean onEnterChildState!(Ref<Object> child, String state);
+
+    /// A new child state was left.
+    /// If false is returned, the event will not be propagated to parents
+    Boolean onLeaveChildState!(Ref<Object> child, String state);
+
+    /// Called when the tools becomes active
+    activating!();
+
+    /// Called when the tools will no longer be active
+    deactivating!();
+  };
+
+  /// \internal
+  struct SecondaryStateData {
+    String name;
+    UInt32 refcount;
+  };
+
+  /**
+  The BaseTool is the base building block of the Tool framework, and can be specialized to build a tool, or part of it.
+  See :ref:`TPG.index` for a global overview of the tool framework and examples.
+
+  The BaseTool supports multiple facilities and systems, but most of these are optional services, to be used if it helps
+  to simplify the tool implementation.
+
+  A BaseTool supports the following features:
+
+  - it can be part of a hierarchy, by having a parent BaseTool and/or children BaseTool (HierarchyNode interface support). \
+    As such, the BaseTool and its chidren tool or components have a unique path which can help for debugging purposes.
+
+  - it can hold properties (PropertyContainer interface support). These can be propagated through the BaseTool hierarchy.\
+    Various properties are pre-defined and used, for example, by the rendering engine (MaterialProperty, FontSizeProperty, ColorProperty...).\
+    By default, property values are those inherited by the parent, if any, otherwise those defined in ToolSharedData's defaultProperties.\
+    Properties can also be temporarily overriden by components such as SetPropertyAction (override property stack).\
+    For viewport specific properties, property inheritance order is: viewport specific properties, then "this" tool properties (not viewport specific), \
+    then parent viewport specific properties, then parent tool properties (not viewport specific)..., ToolSharedData's defaultProperties. \
+    For tool properties (not viewport specific), property inheritance order is: "this" tool properties, \
+    parent tool properties, ..., ToolSharedData's defaultProperties.
+
+  - it has a special active state. Although the meaning of being active can be customized, generally being active means that \
+  it can react to UI events. By default, the visibility is linked to the active state, however this can be controlled with \
+  :kl-ref:`Tool::BaseTool.setHideAllIfNotActive` . Also, by default, the active state is propagated to children. Upon change of \
+  the active state, the following methods are called, and can be specialized: :kl-ref:`Tool::BaseTool.activating` , \
+  :kl-ref:`Tool::BaseTool.deactivating` .
+
+  - drawing can be defined and controlled in various ways; see the "drawing" section below.
+
+  - it can listen and send tool events (ToolEvent), which allows to communicate between BaseTool objects, by implementing the \
+  EventListener and EventSource interfaces. An example of event usage is to connect to the event triggered by a push button children widget.\
+  Events are identified by a name String, and include other data such as user ID data. \
+  Received events are handled by specializing the :kl-ref:`Tool::BaseTool.onEvent` method. \
+  Depending on the options, events can also be propagated to parents or children. 
+
+  - it can listen to raw events (sent from the app / Qt). This is enabled by calling :kl-ref:`Tool::BaseTool.registerToRawEvents`, \
+  in which case specializing method :kl-ref:`Tool::BaseTool.onRawEvent` will allow to handle these.
+
+  - it can have a main state (:kl-ref:`Tool::BaseTool.setMainState`) and secondary states (:kl-ref:`Tool::BaseTool.addState`, \
+  kl-ref:`Tool::BaseTool.removeState`). These states can simplify tool logic and component management by calling events\
+  and specialized methods upon change (:kl-ref:`Tool::BaseTool.onEnterState`, :kl-ref:`Tool::BaseTool.onLeaveState`) and by\
+  allowing to link the lifetime of state-specific components to that state (:kl-ref:`Tool::BaseTool.attachStateSpecificComponent`, \
+  :kl-ref:`Tool::BaseTool.attachStateSpecificChildComponent`, :kl-ref:`Tool::BaseTool.attachAndDoStateSpecificAction`, :kl-ref:`Tool::BaseTool.attachAndDoStateSpecificChildAction`).
+
+  - it can attach additional components that might not be tools, such as a MouseClickDragInteraction. These can be
+  attached permanently (:kl-ref:`Tool::BaseTool.attachComponent`) or their scope/lifetime can be linked with a \
+  specific state (:kl-ref:`Tool::BaseTool.attachStateSpecificComponent`). A BaseTool can also link to a specific state\
+  components that are attached to children (:kl-ref:`Tool::BaseTool.attachStateSpecificChildComponent`).
+
+  Drawing
+  ------------------------
+
+  The drawing of a BaseTool is quite flexible. The drawing and drawing preparation is done
+  in the context of a specific viewport, which is usually accessible in a DrawContext argument.
+
+  At draw time, these are the involved steps:
+
+  - before the actual draw, there is a traversal of the tool hierarchy that is done for \
+  updating viewport-specific properties. The entry method is updateDraw :kl-ref:`Tool::BaseTool.updateDrawData`.
+
+  - the :kl-ref:`Tool::BaseTool.updateDrawData` method then gets the viewport-specific property container\
+  and calls the method :kl-ref:`Tool::BaseTool.selfUpdateDrawData`, where property values can be updated\
+  given the current viewport (eg: viewport transform, transparency). It is also possible to\
+  set properties on the chidren tools.
+
+  - if some ToolDrawModifier has been attached (:kl-ref:`Tool::BaseTool.addDrawModifier`), these are then \
+  called in order to do additional property value modifications, usually the transform properties. Some \
+  ToolDrawModifier also sets the transform of the children BaseTool (eg: layout of an icon shelf / toolbar).
+
+  - then, :kl-ref:`Tool::BaseTool.updateDrawData` is called for children tools.
+
+  - for each drawing pass, it is also possible to do additional custom drawing that can include direct OpenGL \
+  calls, by specializing the :kl-ref:`Tool::BaseTool.postDraw` method. This method is then called recursively on the children tools.
+
+  Transform
+  ------------------------
+
+  The transform of a BaseTool is controlled by defining some transform properties that are later used
+  by the render engine and its shaders. The transforms can be defined in world (3D) space, or in 
+  screen space (pixel coordinates or normalized viewport coordinates); the space is defined by
+  the transformSpace property (:kl-ref:`Tool::BaseTool.getTransformSpace`).
+
+  By default, the local transform property of the tool (:kl-ref:`Tool::BaseTool.setLocalTransform`)
+  is composited with its parent tool. This relation is maintained by a default ToolDrawModifier, but
+  it can be disabled with :kl-ref:`Tool::BaseTool.constraintTransformToParent` in which case the localTransform 
+  is used directly.
+
+  Some helper methods, such as :kl-ref:`Tool::BaseTool.setPixelCoordinatesTransform` and
+  :kl-ref:`Tool::BaseTool.setNormalizedViewportTransform`, allow to specify exact screen
+  coordinates for BaseTool shapes.
+  
+  It is possible to write your own ToolDrawModifier. In such case, it is useful to know
+  the property convention that is being used:
+
+  - The setRenderTransform property is the only transform that is actually being used
+  by the render engine, and basically contains the full OpenGL transform of the shape
+  (including the projection transform). It is computed by the ToolDrawModifier by
+  taking into account the contextual viewport.
+
+  - The localTransform property (:kl-ref:`Tool::BaseTool.setLocalTransform`) contains a transform
+  that is not viewport-specific and can be composed with the parent transform by the default
+  ToolDrawModifier, in the active space (:kl-ref:`Tool::BaseTool.getTransformSpace`).
+
+  - The transform property (:kl-ref:`Tool::BaseTool.setTransform`) contains the transform that will
+  be used to create the render transform, and can be defined in world, pixel and normalized
+  viewport coordinate space.
+
+  \seealso ToolDrawModifier
+
+  */
+  object BaseTool : BaseWeakPointerable, BaseTool_virtuals, HierarchyNode, Component, PropertyContainer, OverridablePropertyContainer, ToolDrawModifier, EventListener, EventSource, Activable, RawEventHandler{
+
+    private BaseHierarchyNode hierarchyNode;
+    private BaseOverridablePropertyContainer propertyContainer;
+
+    private BaseEventSource eventSource;
+    private Boolean eventParentPropagationBlocked;// If true, events are not propagated
+    private Boolean eventChildrenPropagationBlocked;// If true, events are not propagated
+
+    private ViewportPropertyContainerData perViewportUIDPropertyContainers[UInt32];
+
+    private Ref<ToolSharedData> sharedData;
+
+    private FewObjectsStableList drawModifiers;
+    private FewObjectsStableList components;
+
+    private PerStateComponents perStateComponents;
+    private String mainState;
+    private SecondaryStateData secondaryStates[];
+
+    private Boolean registeredAsDrawnTool;// Don't draw independently
+
+    private Boolean registeredToRawEvents;
+
+    private Boolean hideAllIfNotActive;
+
+    protected Boolean isDestroying;// patch for KL wrong destructor VTables
+    private Boolean wasActive;
+  };
+
+  object TransformModifier;
+
+  /// Default contructor.
+  ///
+  /// By default, a tool with no parent is drawn unless it is set as not visible
+  /// or deactivated (see :kl-ref:`Tool::BaseTool.setHideAllIfNotActive`).
+  ///
+  /// Also, tools with no parent inherit from the default property values defined
+  /// in ToolSharedData's defaultProperties.
+  ///
+  /// By default, a tool has a modifier that will compose its transform based on
+  /// parent's transform (if it has a parent) and the local transform.
+  /// This can be disabled by calling :kl-ref:`Tool::BaseTool.constraintTransformToParent`
+  BaseTool() {
+    this.sharedData = GetToolSharedData();
+    this.drawModifiers = FewObjectsStableList();
+    this.components = FewObjectsStableList();
+    BaseHierarchyNode hierarchyNode();
+    hierarchyNode.setContainer( this );
+    this.hierarchyNode = hierarchyNode;
+    this.setName( this.type() );//By default: name by type
+    this.hideAllIfNotActive = true;
+
+    this.propertyContainer = BaseOverridablePropertyContainer();
+    this.propertyContainer.addParentContainer( this.sharedData.defaultProperties, true );
+    this.propertyContainer.setParent( this );
+
+    // All tools should have a local transform
+    this.setLocalTransform( Xfo() );
+
+    this.constraintTransformToParent( true );
+
+    this.updateDrawingState();
+  }
+
+  /// Helper for getting the tool manager singleton
+  inline Ref<ToolsManager> BaseTool.getManager() {
+    return this.sharedData.manager;
+  }
+
+  /// Direct accessors for common properties
+  inline Boolean BaseTool.isActive() { return this.sharedData.manager.toolsActivated() && IsActive( this ); }
+
+  /// Deactivates the tool.
+  BaseTool.deactivate!( ) {
+    // The "active" property is different, as we want that parent's value to win unless we are explicitly false.
+    // So, setting it to "true" just removes any override.
+    Ref<PropertyContainer> thisPC = this;
+    SetActive( thisPC, false );
+
+    this.refreshActiveStatus();
+  }
+
+  /// Activates the tool, unless the parent is deactivated. Note that the ToolsManager can override this local value to force deactivation.
+  BaseTool.activate!( ) {
+
+    // The "active" property is different, as we want that parent's value to win unless we are explicitly false.
+    // So, setting it to "true" just removes any override.
+    if( this.hasLocalProperty( ActiveProperty ) )
+      this.removeProperty( ActiveProperty );
+
+    this.refreshActiveStatus();
+  }
+
+  /// Called when the tools becomes active
+  BaseTool.activating!( ) {
+    // To be overriden
+  }
+
+  /// Called when the tools will no longer be active
+  BaseTool.deactivating!( ) {
+    // To be overriden
+  }
+
+  inline BaseTool.setActive!( Boolean active ) {
+    if( active )
+      this.activate();
+    else
+      this.deactivate();
+  }
+
+  /// Returns true if the tool was "forced hidden".
+  /// This is an app-level control, and in this case, the parent can
+  /// override the local value (cause hidden = true).
+  Boolean BaseTool.forcedHidden() {
+    Ref<BaseTool> parent = this.getParent();
+    if( Boolean( parent ) && parent.forcedHidden() )
+      return true;
+    return this.hideAllIfNotActive && !this.isActive();
+  }
+
+  /// If true, deactivating this tool (eg: toggle manipulation) will also hide it.
+  /// This is the usual behavior for tools, but not for
+  /// on-screen information or debug drawing. A tool can also have
+  /// parts that are hidden and others that are not.
+  Boolean BaseTool.setHideAllIfNotActive!( Boolean hideAll ) {
+    return this.hideAllIfNotActive = hideAll;
+  }
+
+  /// If registered, low-level UI events will be forwarded to the :kl-ref:`Tool::BaseTool.onRawEvent` method, which can then be overriden.
+  /// This behavior is off by default (for scalability reasons).
+  /// \note The event will be sent only if the tool is active.
+  BaseTool.registerToRawEvents!( Boolean register, Size priority ) {
+    if( register ) {
+      if( !this.registeredToRawEvents ) {
+        this.registeredToRawEvents = true;
+        this.sharedData.manager.addEventHandler( this, priority );
+      }
+    } else if( this.registeredToRawEvents ) {
+      this.sharedData.manager.removeEventHandler( this );
+      this.registeredToRawEvents = false;
+    }
+  }
+
+  /// If registered, low-level UI events will be forwarded to the :kl-ref:`Tool::BaseTool.onRawEvent` method, which can then be overriden.
+  /// This behavior is off by default (for scalability reasons).
+  /// \note The event will be sent only if the tool is active.
+  inline BaseTool.registerToRawEvents!( Boolean register ) {
+    this.registerToRawEvents( register, ToolsManagerEventPriority_normal );
+  }
+
+  /// To be overriden if this tool registered to raw events with :kl-ref:`Tool::BaseTool.registerToRawEvents`.
+  BaseTool.onRawEvent!( io Event event ) {}
+
+  //******************************************************************************
+  //**
+  //** HierarchyNode interface
+  //**
+  //******************************************************************************
+
+  /// Support for interface HierarchyNode
+  inline String BaseTool.getName() { return this.hierarchyNode.getName(); }
+
+  /// Support for interface HierarchyNode
+  inline BaseTool.setName!( String name ) { this.hierarchyNode.setName( name ); }
+
+  /// Support for interface HierarchyNode
+  inline String BaseTool.getPath() { return this.hierarchyNode.getPath(); }
+
+  /// Support for interface HierarchyNode
+  inline Ref<Object> BaseTool.getParent() { return this.hierarchyNode.getParent(); }
+
+  /// Support for interface HierarchyNode
+  inline Size BaseTool.childCount() { return this.hierarchyNode.childCount(); }
+
+  /// Support for interface HierarchyNode
+  inline Ref<Object> BaseTool.getChild( String subPath ) { return this.hierarchyNode.getChild( subPath ); }
+
+  /// Support for interface HierarchyNode
+  inline Ref<Object> BaseTool.getChild( Index i ) { return this.hierarchyNode.getChild( i ); }
+
+  /// Support for interface HierarchyNode
+  inline String BaseTool.getChildName( Ref<Object> child ) { return this.hierarchyNode.getChildName( child ); }
+
+  /// Support for interface HierarchyNode
+  inline String BaseTool.getChildName( Index i ) { return this.hierarchyNode.getChildName( i ); }
+
+  /// Support for interface HierarchyNode. Returns the child for convenience.
+  inline Ref<Object> BaseTool.addChild!( String name, Ref<Object> child ) { this.hierarchyNode.addChild( name, child ); return child; }
+
+  /// Support for interface HierarchyNode
+  inline BaseTool.removeChild!( String name ) { this.hierarchyNode.removeChild( name ); }
+
+  /// Support for interface HierarchyNode
+  BaseTool.parentHierarchyChanged!() {
+    // update viewport contextual properties hierarchy
+    Ref<BaseTool> parent = this.getParent();
+    for( viewportUID in this.perViewportUIDPropertyContainers ) {
+      Ref<PropertyContainer> parentViewportProps = this.sharedData.defaultProperties;
+      if( parent ) // Maybe force the creation of parent's viewport specific props
+        parentViewportProps = parent.getOrCreateContextualProperties( viewportUID, this.perViewportUIDPropertyContainers[viewportUID].viewportName );
+      this.perViewportUIDPropertyContainers[viewportUID].toolPropertiesForViewport.parentViewportProperties = parentViewportProps;
+    }
+    this.hierarchyNode.parentHierarchyChanged();
+  }
+
+  /// Support for interface HierarchyNode
+  BaseTool.setParent!( Ref<Object> parent_ ) {
+
+    Ref<PropertyContainer> parentPropertyContainer = parent_;
+    Ref<PropertyContainer> prevParentPropertyContainer = this.getParent();
+
+    if( !prevParentPropertyContainer && Boolean( parentPropertyContainer ) ) {
+      // Parent: don't inherit from default (parent has defaults already)
+      this.propertyContainer.removeParentContainer( this.sharedData.defaultProperties );
+      this.propertyContainer.addParentContainer( parentPropertyContainer, true );
+    }
+    if( Boolean( prevParentPropertyContainer ) && !parentPropertyContainer ) {
+      // No parent: inherit from default
+      this.propertyContainer.removeParentContainer( prevParentPropertyContainer );
+      this.propertyContainer.addParentContainer( this.sharedData.defaultProperties, true );
+    }
+    this.hierarchyNode.setParent( parent_ );
+    this.updateDrawingState();
+    this.refreshActiveStatus();
+  }
+
+  //******************************************************************************
+  //**
+  //** PropertyContainer interface & viewport-specific properties
+  //**
+  //******************************************************************************
+
+  /// Support for interface PropertyContainer
+  Boolean BaseTool.hasProperty( String name ) { return this.propertyContainer.hasProperty( name ); }
+
+  /// Support for interface PropertyContainer
+  RTVal BaseTool.getProperty( String name ) { return this.propertyContainer.getProperty( name ); }
+
+  /// Support for interface PropertyContainer
+  Boolean BaseTool.hasPropagatedProperty( String name ) { return this.propertyContainer.hasPropagatedProperty( name ); }
+
+  /// Support for interface PropertyContainer
+  RTVal BaseTool.getPropagatedProperty( String name ) { return this.propertyContainer.getPropagatedProperty( name ); }
+
+  /// Support for interface PropertyContainer
+  BaseTool.setPropertyAsLocalOnly!( String name, Boolean localOnly ) { this.propertyContainer.setPropertyAsLocalOnly( name, localOnly ); }
+
+  /// Support for interface PropertyContainer
+  Boolean BaseTool.isPropertyLocalOnly( String name ) { return this.propertyContainer.isPropertyLocalOnly( name ); }
+
+  /// vPropertyContainer
+  Boolean BaseTool.hasInheritedProperty( String name ) { return this.propertyContainer.hasInheritedProperty( name ); }
+
+  /// Support for interface PropertyContainer
+  RTVal BaseTool.getInheritedProperty( String name ) { return this.propertyContainer.getInheritedProperty( name ); }
+
+  /// Support for interface PropertyContainer
+  Boolean BaseTool.hasLocalProperty( String name ) { return this.propertyContainer.hasLocalProperty( name ); }
+
+  /// Support for interface PropertyContainer
+  BaseTool.setProperty!( String name, RTVal value ) { this.propertyContainer.setProperty( name, value ); }
+
+  /// Support for interface OverridablePropertyContainer
+  PropertyOverride BaseTool.createPropertyOverride!( String name, RTVal value, Boolean localOnly ) {
+    return this.propertyContainer.createPropertyOverride( name, value, localOnly );
+  }
+
+  /// Support for interface PropertyContainer
+  BaseTool.removeProperty!( String name ) { this.propertyContainer.removeProperty( name ); }
+
+  /// Support for interface PropertyContainer
+  Size BaseTool.localPropertyCount() { return this.propertyContainer.localPropertyCount(); }
+
+  /// Support for interface PropertyContainer
+  String BaseTool.getLocalPropertyName( Size index ) { return this.propertyContainer.getLocalPropertyName( index ); }
+
+  /// Returns a property container that represents viewport-specific properties.
+  /// Note that this containers inherits other properties in the folowing order:
+  ///
+  /// - viewport specific properties
+  ///
+  /// - "this" tool properties (not viewport specific)
+  ///
+  /// - parent viewport specific properties
+  ///
+  /// - parent tool properties (not viewport specific)
+  ///
+  /// - ... default property values (ToolSharedData's defaultProperties)
+  ///
+  Ref<PropertyContainer> BaseTool.getContextualProperties( DrawContext context ) {
+    if( context.viewport ) {
+      UInt32 viewportUID = context.viewport.uid();
+      if( !this.perViewportUIDPropertyContainers.has( viewportUID ) )// optimize; avoid getting viewport name if not required
+        return this.getOrCreateContextualProperties( context.viewport.uid(), context.viewport.getName() );
+      else
+        return this.perViewportUIDPropertyContainers[viewportUID].propertyContainer;
+    }
+    return this;
+  }
+
+  //******************************************************************************
+  //**
+  //** EventSource and EventListener interfaces + event sending methods
+  //**
+  //******************************************************************************
+
+  /// This method can be specialized to handle received events.
+  /// Specialized methos should call the this base method to propagate
+  /// to children or parent events (depending on event options).
+  BaseTool.onEvent!( ToolEvent event, ToolEventUserID userID ) {
+    if( this.processStateEvent( event, userID ) )
+      return;// Propagation must be stopped (?)
+
+    this.propagateEvent( event, userID );
+  }
+
+  /// Support for interface EventSource
+  /// \note If "owned", not only the this object will create an owner reference, but it will consider the owned listener as its child if it is a Component (setParent, invalidate).
+  BaseTool.addListener!( Ref<EventListener> listener, Boolean owned ) { this.createEventSourceIfNotDone(); this.eventSource.addListener( listener, owned ); }
+
+  /// Support for interface EventSource
+  /// \note If "owned", not only the this object will create an owner reference, but it will consider the owned listener as its child if it is a Component (setParent, invalidate).
+  BaseTool.addListener!( Ref<EventListener> listener, Boolean owned, String sourceEvent ) { this.createEventSourceIfNotDone(); this.eventSource.addListener( listener, owned, sourceEvent ); }
+
+  /// Support for interface EventSource
+  /// \note If "owned", not only the this object will create an owner reference, but it will consider the owned listener as its child if it is a Component (setParent, invalidate).
+  BaseTool.addListener!( Ref<EventListener> listener, Boolean owned, String sourceEvent, String mappedListenerEvent ) { this.createEventSourceIfNotDone(); this.eventSource.addListener( listener, owned, sourceEvent, mappedListenerEvent ); }
+
+  /// Support for interface EventSource
+  /// \note If "owned", not only the this object will create an owner reference, but it will consider the owned listener as its child if it is a Component (setParent, invalidate).
+  BaseTool.addListener!( Ref<EventListener> listener, Boolean owned, String sourceEvent, String mappedListenerEvent, ToolEventUserID userID ) { this.createEventSourceIfNotDone(); this.eventSource.addListener( listener, owned, sourceEvent, mappedListenerEvent, userID ); }
+
+  /// Support for interface EventSource
+  BaseTool.removeListener!( Ref<EventListener> listener, String sourceEvent, ToolEventUserID userID ) { if( this.eventSource )this.eventSource.removeListener( listener, sourceEvent, userID ); }
+
+  /// Support for interface EventSource
+  BaseTool.removeListener!( Ref<EventListener> listener, String sourceEvent ) { if( this.eventSource )this.eventSource.removeListener( listener, sourceEvent ); }
+
+  /// Support for interface EventSource
+  BaseTool.removeListener!( Ref<EventListener> listener ) { if( this.eventSource )this.eventSource.removeListener( listener ); }
+
+  /// Send an event, but only to registered listeners (not to parent or children)
+  BaseTool.sendEventToListeners( EventName name, String tag, Ref<Object> customData ) { if( this.eventSource )this.eventSource.sendEvent( name, EventPropagationType_none, tag, customData ); }
+
+  /// Send an event, but only to registered listeners (not to parent or children)
+  BaseTool.sendEventToListeners( EventName name, String tag ) { if( this.eventSource )this.eventSource.sendEvent( name, EventPropagationType_none, tag ); }
+
+  /// Send an event, but only to registered listeners (not to parent or children)
+  BaseTool.sendEventToListeners( EventName name ) { if( this.eventSource )this.eventSource.sendEvent( name, EventPropagationType_none ); }
+
+
+  /// Send an event to this tool only
+  BaseTool.sendEventToSelf( EventName name, String tag, Ref<Object> customData ) {
+    ToolEvent event;
+    event.sender = this;
+    event.name = name;
+    event.tag = tag;
+    event.customData = customData;
+    event.propagationType = EventPropagationType_none;
+
+    Ref<BaseTool> mutableThis = this;
+    mutableThis.onEvent( event, ToolEventUserID() );
+  }
+
+  /// Send an event to this tool only
+  inline BaseTool.sendEventToSelf( EventName name, String tag ) {
+    this.sendEventToSelf( name, tag, null );
+  }
+
+  /// Send an event to this tool only
+  inline BaseTool.sendEventToSelf( EventName name ) {
+    this.sendEventToSelf( name, String(), null );
+  }
+
+  /// Send an event to our parent, and will recurse to parents until handled
+  inline BaseTool.sendEventToParentRecursively( EventName name, String tag, Ref<Object> customData ) {
+    this.sendEventToParentRecursivelyInternal( name, tag, customData, false );
+  }
+
+  /// Send an event to our parent, and will recurse to parents until handled
+  inline BaseTool.sendEventToParentRecursively( EventName name, String tag ) { this.sendEventToParentRecursively( name, tag, null ); }
+
+  /// Send an event to our parent, and will recurse to parents until handled
+  inline BaseTool.sendEventToParentRecursively( EventName name ) { this.sendEventToParentRecursively( name, String(), null ); }
+
+  /// Send an event to our parent, and will recurse to parents until handled
+  inline BaseTool.sendEventToSelfAndParentRecursively( EventName name, String tag, Ref<Object> customData ) {
+    this.sendEventToParentRecursivelyInternal( name, tag, customData, true );
+  }
+
+  /// Send an event to our parent, and will recurse to parents until handled
+  inline BaseTool.sendEventToSelfAndParentRecursively( EventName name, String tag ) { this.sendEventToSelfAndParentRecursively( name, tag, null ); }
+
+  /// Send an event to our parent, and will recurse to parents until handled
+  inline BaseTool.sendEventToSelfAndParentRecursively( EventName name ) { this.sendEventToSelfAndParentRecursively( name, String(), null ); }
+
+  /// Send an event to a child, optionally recursively
+  BaseTool.sendEventToChild( String childRelativePath, Boolean recurseToChildren, EventName name, String tag, Ref<Object> customData ) {
+    if( !childRelativePath ) {
+      report( "BaseTool.sendEventToChild: error: no childRelativePath" );
+      return;
+    }
+
+    Ref<EventListener> childListener = this.getChild( childRelativePath );
+    if( !childListener ) {
+      report( "BaseTool.sendEventToChild: warning: child " + childRelativePath + " not found or is not a EventListener" );
+      return;
+    }
+
+    ToolEvent event;
+    event.sender = this;
+    event.name = name;
+    event.tag = tag;
+    event.customData = customData;
+    event.propagationType = recurseToChildren ? EventPropagationType_children : EventPropagationType_none;
+
+    if( ShouldTraceEvent(event) ) {
+      report( "Send event to child: " + DescribeEvent( event )
+        + ": from " + this.getPath() + " to " + this.getPath() + "/" + childRelativePath );
+    }
+    childListener.onEvent( event, ToolEventUserID() );
+  }
+
+  /// Send an event to our children, and will recurse
+  BaseTool.sendEventToChildrenRecursively( EventName name, String tag, Ref<Object> customData ) {
+    ToolEvent event;
+    event.sender = this;
+    event.name = name;
+    event.tag = tag;
+    event.customData = customData;
+    event.propagationType = EventPropagationType_children;
+    this.propagateEvent( event, ToolEventUserID(), true );
+  }
+
+  /// Send an event to our parent, and will recurse
+  inline BaseTool.sendEventToChildrenRecursively( EventName name, String tag ) { this.sendEventToChildrenRecursively( name, tag, null ); }
+
+  /// Send an event to our parent, and will recurse
+  inline BaseTool.sendEventToChildrenRecursively( EventName name ) { this.sendEventToChildrenRecursively( name, String(), null ); }
+
+  /// If enabled, events won't be automatically propagated to parent
+  BaseTool.blockEventParentPropagation!( Boolean enable ) {
+    this.eventParentPropagationBlocked = enable;
+  }
+
+  /// If enabled, events won't be automatically propagated to children
+  BaseTool.blockEventChildrenPropagation!( Boolean enable ) {
+    this.eventChildrenPropagationBlocked = enable;
+  }
+
+  /// EventListener implementation: to be overriden.
+  BaseTool.eventSourceDestroying!( Ref<EventSource> eventSource, ToolEventUserID userID ) {}
+
+  /// Send an event to a child, optionally recursively
+  inline BaseTool.sendEventToChild( String childRelativePath, Boolean recurseToChildren, EventName name, String tag ) { this.sendEventToChild( childRelativePath, recurseToChildren, name, tag, null ); }
+
+  /// Send an event to a child, optionally recursively
+  inline BaseTool.sendEventToChild( String childRelativePath, Boolean recurseToChildren, EventName name ) { this.sendEventToChild( childRelativePath, recurseToChildren, name, String(), null ); }
+
+
+  //******************************************************************************
+  //**
+  //** State methods
+  //**
+  //******************************************************************************
+
+  inline String BaseTool.getMainState() {
+    return this.mainState;
+  }
+
+  inline String[] BaseTool.getSecondaryStates() {
+    String states[];
+    states.resize( this.secondaryStates.size() );
+    for( Size i = 0; i < this.secondaryStates.size(); ++i )
+      states[i] = this.secondaryStates[i].name;
+
+    return states;
+  }
+
+  Boolean BaseTool.hasState( String state ) {
+    if( state == this.mainState )
+      return true;
+
+    for( Size i = 0; i < this.secondaryStates.size(); ++i ) {
+      if( state == this.secondaryStates[i].name )
+        return true;
+    }
+    return false;
+  }
+
+  /// Will call onEnterState/onLeaveState if it is a new state.
+  /// The state will only be changed if onStateChange() then returns true.
+  /// Returns false if the state change was rejected.
+  BaseTool.setMainState!(String state) {
+    if( state == this.mainState )
+      return;
+
+    for( Size i = 0; i < this.secondaryStates.size(); ++i ) {
+      if( this.secondaryStates[i].name == state ) {
+        setError( this.getPath() + ": BaseTool.setMainState: error: provided state is already a secondary state: " + state );
+        return;
+      }
+    }
+
+    // Tentatively set "this.mainState " so that calls such as addStateSpecificComponent() work.
+
+    if( StateDebugTrace )
+      report( "MainStateChange: " + this.getPath() 
+      + " from " + (this.mainState ? this.mainState : "(none)")
+      + " to " + (state ? state : "(none)" ) );
+
+    this.onLeaveState( this.mainState, true);
+    this.removeStateSpecificComponents( this.mainState );
+    this.sendEventToListeners( Event_LeftState, this.mainState );
+    this.sendEventToSelfAndParentRecursively( Event_LeftState, this.mainState );
+
+    this.mainState = state;
+
+    this.onEnterState( this.mainState, true);
+    this.sendEventToListeners( Event_EnteredState, this.mainState );
+    this.sendEventToSelfAndParentRecursively( Event_EnteredState, this.mainState );
+  }
+
+  /// Add a secondary state (should not be the main state).
+  /// That state's span is independant from the mainState, and will remain active until removeState() is called.
+  /// That state can have its own state specific components (attachStateSpecificComponent() / attachStateSpecificChildComponent()).
+  BaseTool.addState!(String state) {
+    if( state == this.mainState ) {
+      setError( this.getPath() + ": BaseTool.addState: error: provided state is already the mainState: " + state );
+      return;
+    }
+
+    for( Size i = 0; i < this.secondaryStates.size(); ++i ) {
+      if( this.secondaryStates[i].name == state ) {
+        ++this.secondaryStates[i].refcount;
+        return;// Already active
+      }
+    }
+
+    if( StateDebugTrace )
+      report( "AddState " + state + " to " + this.getPath() );
+
+    SecondaryStateData stateData;
+    stateData.name = state;
+    stateData.refcount = 1;
+    this.secondaryStates.push( stateData );
+
+    this.onEnterState( state, false );
+    this.sendEventToListeners( Event_EnteredState, state );
+    this.sendEventToSelfAndParentRecursively( Event_EnteredState, state );
+  }
+
+  /// Removes a secondary state (should not be the main state) created by addState().
+  /// Attached state specific components will be removed (attachStateSpecificComponent() / attachStateSpecificChildComponent()).
+  BaseTool.removeState!( String state ) {
+    if( state == this.mainState ) {
+      setError( this.getPath() + ": BaseTool.removeState: error: provided state is already the mainState: " + state );
+      return;
+    }
+    Boolean found;
+    for( Size i = 0; i < this.secondaryStates.size(); ++i ) {
+      if( this.secondaryStates[i].name == state ) {
+        if( this.secondaryStates[i].refcount > 1 ) {
+          --this.secondaryStates[i].refcount;
+          return;
+        }
+        Size last = this.secondaryStates.size() - 1;
+        this.secondaryStates[i] = this.secondaryStates[last];
+        this.secondaryStates.resize( last );
+        found = true;
+        break;
+      }
+    }
+    if( !found )
+      return;//Ignore sliently (unbalanced - should not happen still)
+
+    if( StateDebugTrace )
+      report( "RemoveState " + state + " to " + this.getPath() );
+
+    this.onLeaveState( state, false );
+    this.removeStateSpecificComponents( state );
+    this.sendEventToListeners( Event_LeftState, state );
+    this.sendEventToSelfAndParentRecursively( Event_LeftState, state );
+  }
+
+
+  /// Called when a state gets activated. Multiple states can be active at the same time.
+  /// But only one mainState can be active at a same time.
+  BaseTool.onEnterState!(String state, Boolean mainState) {}
+
+  /// Called when a state is no longer active. Multiple states can be active at the same time.
+  /// But only one mainState can be active at a same time.
+  BaseTool.onLeaveState!(String state, Boolean mainState) {}
+
+  /// A new child state was entered.
+  /// If false is returned, the event will not be propagated to parents
+  Boolean BaseTool.onEnterChildState!(Ref<Object> child, String state) {
+    // To be overriden
+    return true;
+  }
+
+  /// A new child state was left.
+  /// If false is returned, the event will not be propagated to parents
+  Boolean BaseTool.onLeaveChildState!(Ref<Object> child, String state) {
+    // To be overriden
+    return true;
+  }
+
+  //******************************************************************************
+  //**
+  //** Common properties accessors (helpers)
+  //**
+  //******************************************************************************
+
+  /// Direct accessors for common properties
+  inline Boolean BaseTool.wasInvalidated() { return WasInvalidated( this ); }
+
+  /// Direct accessors for common properties
+  /// \note The Exclusive property is currently ignored by the framework
+  inline Boolean BaseTool.isExclusive() { return IsExclusive( this ); }
+  /// Direct accessors for common properties
+  /// \note The Exclusive property is currently ignored by the framework
+  inline BaseTool.setExclusive!( Boolean exclusive ) { Ref<PropertyContainer> thisPC = this; SetExclusive( thisPC, exclusive ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  Boolean BaseTool.isVisible( DrawContext context ) {
+    // There are some conditions that override visibility
+    // If forced hidden, return false even if visible == true
+    if( this.forcedHidden() )
+      return false;
+
+    if( !IsVisible( this.getContextualProperties( context ) ) )
+      return false;
+
+    // If there are specific viewports, check if current viewport is among the list
+    if( context.viewport ) {
+      String specificViewports<> = this.getSpecificViewports();
+      if( specificViewports ) {
+        for( Size i = 0; i < specificViewports.size(); ++i ) {
+          if( specificViewports[i] == ActiveViewport && context.viewport.uid() == this.getManager().lastActiveViewportUID ) {
+            return true;
+          } if( specificViewports[i] == context.viewport.getName() )
+            return true;
+        }
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Direct accessors for common properties.
+  inline Boolean BaseTool.isVisible() { return this.isVisible( DrawContext() ); }
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline BaseTool.setVisible!(Boolean visible, DrawContext context) {
+    Ref<PropertyContainer> thisPC = this.getContextualProperties( context );
+    SetVisible( thisPC, visible );
+  }
+  /// Direct accessors for common properties.
+  inline BaseTool.setVisible!( Boolean visible ) {
+    this.setVisible( visible, DrawContext() );
+  }
+
+  /// If a "visible" local value (override) exists, remove it
+  /// If context has a viewport, will use the viewport specific properties.
+  inline BaseTool.resetVisible!( DrawContext context ) {
+    Ref<PropertyContainer> thisPC = this.getContextualProperties( context );
+    if( thisPC.hasLocalProperty( VisibleProperty ) )
+      thisPC.removeProperty( VisibleProperty );
+  }
+  /// Direct accessors for common properties.
+  inline BaseTool.resetVisible!() { this.resetVisible( DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline Xfo BaseTool.getLocalTransform( DrawContext context ) { return GetLocalTransform( this.getContextualProperties( context ) ); }
+
+  /// Direct accessors for common properties.
+  inline Xfo BaseTool.getLocalTransform() { return this.getLocalTransform( DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline BaseTool.setLocalTransform!( Xfo xfo, DrawContext context ) { Ref<PropertyContainer> thisPC = this.getContextualProperties( context ); SetLocalTransform( thisPC, xfo ); }
+
+  /// Direct accessors for common properties.
+  inline BaseTool.setLocalTransform!( Xfo xfo ) { this.setLocalTransform( xfo, DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline BaseTool.setLocalTransform!( Mat44 xfo, DrawContext context ) { Ref<PropertyContainer> thisPC = this.getContextualProperties( context ); SetLocalTransform( thisPC, xfo ); }
+
+  /// Direct accessors for common properties.
+  inline BaseTool.setLocalTransform!( Mat44 xfo ) { this.setLocalTransform( xfo, DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline Mat44 BaseTool.getTransform( DrawContext context ) { return GetTransform( this.getContextualProperties( context ) ); }
+
+  /// Direct accessors for common properties.
+  inline Mat44 BaseTool.getTransform() { return this.getTransform( DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline BaseTool.setTransform!( Xfo xfo, DrawContext context ) { Ref<PropertyContainer> thisPC = this.getContextualProperties( context ); SetTransform( thisPC, xfo ); }
+
+  /// Direct accessors for common properties.
+  inline BaseTool.setTransform!( Xfo xfo ) { this.setTransform( xfo, DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline BaseTool.setTransform!( Mat44 xfo, DrawContext context ) { Ref<PropertyContainer> thisPC = this.getContextualProperties( context ); SetTransform( thisPC, xfo ); }
+
+  /// Direct accessors for common properties.
+  inline BaseTool.setTransform!( Mat44 xfo ) { this.setTransform( xfo, DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline String BaseTool.getTransformSpace( DrawContext context ) { return GetTransformSpace( this.getContextualProperties( context ) ); }
+
+  /// Direct accessors for common properties.
+  inline String BaseTool.getTransformSpace() { return this.getTransformSpace( DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline BaseTool.setTransformSpace!( String space, DrawContext context ) { Ref<PropertyContainer> thisPC = this.getContextualProperties( context ); SetTransformSpace( thisPC, space ); }
+
+  /// Direct accessors for common properties.
+  inline BaseTool.setTransformSpace!( String space ) { this.setTransformSpace( space, DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline Mat44 BaseTool.getRenderTransform( DrawContext context ) { return GetRenderTransform( this.getContextualProperties( context ) ); }
+
+  /// Direct accessors for common properties.
+  inline Mat44 BaseTool.getRenderTransform() { return this.getRenderTransform( DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline BaseTool.setRenderTransform!( Mat44 renderTransform, DrawContext context ) { Ref<PropertyContainer> thisPC = this.getContextualProperties( context ); SetRenderTransform( thisPC, renderTransform ); }
+
+  /// Direct accessors for common properties.
+  inline BaseTool.setRenderTransform!( Mat44 renderTransform ) { this.setRenderTransform( renderTransform, DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline Color BaseTool.getColor( DrawContext context ) { return GetColor( this.getContextualProperties( context ) ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline Image2D BaseTool.getColorTexture( DrawContext context ) { return GetColorTexture( this.getContextualProperties( context ) ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline Boolean BaseTool.isColorTexture( DrawContext context ) { return IsColorTexture( this.getContextualProperties( context ) ); }
+
+  /// Direct accessors for common properties.
+  inline Color BaseTool.getColor() { return this.getColor( DrawContext() ); }
+
+  /// Direct accessors for common properties.
+  inline Image2D BaseTool.getColorTexture() { return this.getColorTexture( DrawContext() ); }
+
+  /// Direct accessors for common properties.
+  inline Boolean BaseTool.isColorTexture() { return this.isColorTexture( DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline BaseTool.setColor!( RTVal color, DrawContext context ) { Ref<PropertyContainer> thisPC = this.getContextualProperties( context ); SetColor( thisPC, color ); }
+
+  /// Direct accessors for common properties.
+  inline BaseTool.setColor!( RTVal color ) { this.setColor( color, DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline BaseTool.setColor!( Color color, DrawContext context ) { Ref<PropertyContainer> thisPC = this.getContextualProperties( context ); SetColor( thisPC, color ); }
+
+  /// Direct accessors for common properties.
+  inline BaseTool.setColor!( Color color ) { this.setColor( color, DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline BaseTool.setColor!( Image2D colorTexture, DrawContext context ) { Ref<PropertyContainer> thisPC = this.getContextualProperties( context ); SetColor( thisPC, colorTexture ); }
+
+  /// Direct accessors for common properties.
+  inline BaseTool.setColor!( Image2D colorTexture ) { this.setColor( colorTexture, DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline BaseTool.setColor!( GeometryAttribute colors, DrawContext context ) { Ref<PropertyContainer> thisPC = this.getContextualProperties( context ); SetColor( thisPC, colors ); }
+
+  /// Direct accessors for common properties.
+  inline BaseTool.setColor!( GeometryAttribute colors ) { this.setColor( colors, DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline Float32 BaseTool.getTransparency( DrawContext context ) { return GetTransparency( this.getContextualProperties( context ) ); }
+
+  /// Direct accessors for common properties.
+  inline Float32 BaseTool.getTransparency() { return this.getTransparency( DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline BaseTool.setTransparency!( Float32 transparency, DrawContext context ) { Ref<PropertyContainer> thisPC = this.getContextualProperties( context ); SetTransparency( thisPC, transparency ); }
+
+  /// Direct accessors for common properties.
+  inline BaseTool.setTransparency!( Float32 transparency ) { this.setTransparency( transparency, DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline Ref<Object> BaseTool.getMaterial( DrawContext context ) { return GetMaterial( this.getContextualProperties( context ) ); }
+
+  /// Direct accessors for common properties.
+  inline Ref<Object> BaseTool.getMaterial() { return this.getMaterial( DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline BaseTool.setMaterial!( Ref<Object> material, DrawContext context ) { Ref<PropertyContainer> thisPC = this.getContextualProperties( context ); SetMaterial( thisPC, material ); }
+
+  /// Direct accessors for common properties.
+  inline BaseTool.setMaterial!( Ref<Object> material ) { this.setMaterial( material, DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline String<> BaseTool.getSpecificViewports() { return GetSpecificViewports( this ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline BaseTool.setSpecificViewports!( String specificViewportNames[] ) { Ref<PropertyContainer> thisPC = this; SetSpecificViewports( thisPC, specificViewportNames ); }
+
+  /// If true, this tool (and its children) will only be drawn for the active viewport
+  BaseTool.setVisibleToActiveViewportOnly!( Boolean enable ) {
+    if( enable ) {
+      String specificViewportNames[];
+      specificViewportNames.push( ActiveViewport );
+      this.setSpecificViewports( specificViewportNames );
+      this.getManager().enableActiveViewportOnlyTools();
+   } else {
+      if( this.hasLocalProperty( SpecificViewportsProperty ) ) {
+        String activeVP<> = this.getSpecificViewports();
+        if( activeVP.size() > 0 && activeVP[0] == ActiveViewport )
+          this.removeProperty( SpecificViewportsProperty );
+      }
+    }
+  }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline String BaseTool.getRenderPass( DrawContext context ) { return GetRenderPass( this.getContextualProperties( context ) ); }
+
+  /// Direct accessors for common properties.
+  inline String BaseTool.getRenderPass() { return this.getRenderPass( DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline BaseTool.setRenderPass!( String renderPass, DrawContext context ) { Ref<PropertyContainer> thisPC = this.getContextualProperties( context ); SetRenderPass( thisPC, renderPass ); }
+
+  /// Direct accessors for common properties.
+  inline BaseTool.setRenderPass!( String renderPass ) { this.setRenderPass( renderPass, DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline Size BaseTool.getFontSize( DrawContext context ) { return GetFontSize( this.getContextualProperties( context ) ); }
+
+  /// Direct accessors for common properties.
+  inline Size BaseTool.getFontSize() { return this.getFontSize( DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline BaseTool.setFontSize!( Size fontSize, DrawContext context ) { Ref<PropertyContainer> thisPC = this.getContextualProperties( context ); SetFontSize( thisPC, fontSize ); }
+
+  /// Direct accessors for common properties.
+  inline BaseTool.setFontSize!( Size fontSize ) { this.setFontSize( fontSize, DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline String BaseTool.getFont( DrawContext context ) { return GetFont( this.getContextualProperties( context ) ); }
+
+  /// Direct accessors for common properties.
+  inline String BaseTool.getFont() { return this.getFont( DrawContext() ); }
+
+  /// Direct accessors for common properties. If context has a viewport, will use the viewport specific properties.
+  inline BaseTool.setFont!( String font, DrawContext context ) { Ref<PropertyContainer> thisPC = this.getContextualProperties( context ); SetFont( thisPC, font ); }
+
+  /// Direct accessors for common properties.
+  inline BaseTool.setFont!( String font ) { this.setFont( font, DrawContext() ); }
+
+  //******************************************************************************
+  //**
+  //** Transform helper methods
+  //**
+  //******************************************************************************
+
+  /// Sets a constraint to parent's transform. This is enabled by default.
+  /// Note that if the parent is in WorldSpace, and this tool is not,
+  /// the constraint doesn't apply.
+  BaseTool.constraintTransformToParent!( Boolean constraint ) {
+
+    ToolDrawModifier modif[] = this.getDrawModifiersByType( TransformModifier );
+    if( constraint && !modif ) {
+      // Add a parent transform modifier
+      modif.push( TransformModifier( true ) );
+      this.addDrawModifier( modif[0], true );
+    }
+
+    for( Size i = 0; i < modif.size(); ++i ) {
+      Ref<TransformModifier> transformModif = modif[i];
+      transformModif.composeWithParent = constraint;
+    }
+  }
+
+  /// Sets a transform rectangle as a normalized viewport transform.
+  /// The transform will map X=[-1,1], Y=[-1,1] to the specified region.
+  /// If context has a viewport, will use the viewport specific properties.
+  /// \note This should not be used for 3D tools which should be drawn in world space.
+  BaseTool.setNormalizedViewportTransform!( Vec2 upperLeftCorner, Vec2 lowerRightCorner, Boolean constraintToParent, DrawContext context ) {
+
+    this.setTransformSpace( NormalizedViewportSpace, context );
+    this.constraintTransformToParent( constraintToParent );
+
+    Xfo xfo;
+    xfo.sc = Vec3( ( lowerRightCorner.x - upperLeftCorner.x )*0.5f, ( upperLeftCorner.y - lowerRightCorner.y )*0.5f, 1 );
+    xfo.tr = Vec3( lowerRightCorner.x + upperLeftCorner.x, upperLeftCorner.y + lowerRightCorner.y, -2 ) * 0.5f;
+    this.setLocalTransform( xfo, context );
+  }
+
+  /// Sets a transform rectangle as a normalized viewport transform.
+  /// The transform will map X=[-1,1], Y=[-1,1] to the specified pixel region.
+  /// If context has a viewport, will use the viewport specific properties.
+  /// \param upperLeftCorner Upper left pixel coordinate (min x and min y values)
+  /// \param lowerRightCorner Lower right pixel coordinate (max x and max y values)
+  /// \note This should not be used for 3D tools which should be drawn in world space.
+  BaseTool.setPixelCoordinatesTransform!( Vec2 upperLeftCorner, Vec2 lowerRightCorner, DrawContext context ) {
+
+    ValidatePixelSpaceRectangle( upperLeftCorner, lowerRightCorner );
+
+    // The pixel space transforms [0,1] to the pixel rectangle range [upperLeft, lowerRight]
+    this.setTransformSpace( PixelCoordinatesSpace, context );
+    this.constraintTransformToParent( false );
+
+    Vec2 size( lowerRightCorner.x - upperLeftCorner.x, lowerRightCorner.y - upperLeftCorner.y );
+
+    Xfo xfo;
+    xfo.sc = Vec3( size.x, size.y, 1 );
+    xfo.tr = Vec3( upperLeftCorner.x, upperLeftCorner.y, 0 );
+    this.setLocalTransform( xfo, context );
+  }
+
+  BaseTool.getScreenSpaceRectangle( DrawContext context, io Vec2 upperLeft, io Vec2 lowerRight ) {
+    DrawContext subContext = context;
+    subContext.contextualProperties = this.getContextualProperties( context );
+    GetScreenSpaceRectangle( subContext, upperLeft, lowerRight );
+  }
+
+  //******************************************************************************
+  //**
+  //** Attached ToolDrawModifier and components
+  //** : can be linked to a state (state specific)
+  //**
+  //******************************************************************************
+
+  /// Adds a ToolDrawModifier to the draw modifier stack. A draw modifier
+  /// is executed before drawing in a specific viewport in order to compute
+  /// viewport-specific property values.
+  /// \note The modifier will be owned by this tool
+  BaseTool.addDrawModifier!( Ref<ToolDrawModifier> modifier, Boolean pushFront ) {
+    if( !this.drawModifiers.has( modifier ) ) {
+      if( StructureDebugTrace )
+        report( "addDrawModifier: " + this.getPath() + "." + modifier.getName() );
+
+      if( pushFront )
+        this.drawModifiers.pushFront( modifier );
+      else
+        this.drawModifiers.pushBack( modifier );
+      Ref<ToolDrawModifier> mutableModifier = modifier;
+      mutableModifier.initialize( this );
+    }
+  }
+
+  /// Removes a draw modifier.
+  BaseTool.removeDrawModifier!( Ref<ToolDrawModifier> modifier ) {
+    if( !modifier )
+      return;
+
+    if( StructureDebugTrace )
+      report( "removeDrawModifier: " + this.getPath() + "." + modifier.getName() );
+    Ref<ToolDrawModifier> mutableModifier = modifier;
+    mutableModifier.invalidate( this );
+    this.drawModifiers.remove( mutableModifier );
+  }
+
+  /// Returns draw modifiers supporting a fiven type (isA).
+  ToolDrawModifier[] BaseTool.getDrawModifiersByType!( Type modifierType ) {
+    ToolDrawModifier modifiers[];
+    FewObjectsStableListIterator it( this.drawModifiers );
+    Ref<ToolDrawModifier> modif = null;
+    while( modif = it.next() ) {
+      if( modif.type().isA( modifierType ) )
+        modifiers.push( modif );
+    }
+    return modifiers;
+  }
+
+  /// Attaches a state-specific draw modifier.
+  /// The lifetime (scope) to the draw modifier is linked to the provided state.
+  /// That state must be an active state on this tool.
+  /// Once the tool leaves that state, the draw modifier is removed.
+  BaseTool.addStateSpecificDrawModifier!( String state, Ref<ToolDrawModifier> drawModifier, Boolean pushFront ) {
+    this.createPerStateComponentsIfNotDone();
+    this.perStateComponents.addStateSpecificDrawModifier( state, drawModifier, pushFront, this );
+  }
+
+  /// Attaches a state-specific draw modifier to a children component.
+  /// The lifetime (scope) to the draw modifier is linked to the provided state.
+  /// That state must be an active state on this tool (not on the children).
+  /// Once the tool leaves that state, the draw modifier is removed.
+  BaseTool.addStateSpecificChildDrawModifier!( String state, Ref<ToolDrawModifier> drawModifier, String childRelativePath, Boolean pushFront ) {
+    Ref<BaseTool> child = this.getChild( childRelativePath );
+    if( !child ) {
+      report( "BaseTool.addStateSpecificChildDrawModifier: warning: child " + childRelativePath + " not found" );
+      return;
+    }
+    this.createPerStateComponentsIfNotDone();
+    this.perStateComponents.addStateSpecificDrawModifier( state, drawModifier, pushFront, child );
+  }
+
+  /// Attaches a component to this tool. The attached component will be owned by this tool
+  /// (the tool will be its parent).
+  /// Returns the component for convenience.
+  /// \note The component will be owned by this tool (this tool will be its parent)
+  Ref<Component> BaseTool.attachComponent!( Ref<Component> component ) {
+    if( !this.components.has( component ) ) {
+      this.components.pushBack( component );
+      Ref<Component> mutableComponent = component;
+      mutableComponent.setParent( this );
+    }
+    return component;
+  }
+
+  /// Detaches an owned component.
+  BaseTool.removeComponent!( Ref<Component> component ) {
+    if( !component )
+      return;
+
+    if( !this.components.has( component ) ) {
+      setError( "BaseTool.removeComponent: " + this.getPath() + ": component to remove not found" );
+      return;
+    }
+
+    Ref<Component> mutableComponent = component;
+    mutableComponent.setParent( null );// This might cause the removal of the component, so don't throw an error if no longer in the list
+    this.components.remove( component, false );
+  }
+
+  /// Returns draw modifiers supporting a fiven type (isA).
+  Component[] BaseTool.getComponentsByType!( Type componentType ) {
+    Component components[];
+    FewObjectsStableListIterator it( this.components );
+    Ref<Component> comp = null;
+    while( comp = it.next() ) {
+      if( comp.type().isA( componentType ) )
+        components.push( comp );
+    }
+    return components;
+  }
+
+  /// Attaches a state-specific component.
+  /// The lifetime (scope) to the component is linked to the provided state.
+  /// That state must be an active state on this tool.
+  /// Once the tool leaves that state, the component is removed and invalidated.
+  /// Returns the component for convenience.
+  Ref<Component> BaseTool.attachStateSpecificComponent!(String state, Ref<Component> component ) {
+    this.createPerStateComponentsIfNotDone();
+    if( !this.hasState( state ) )// Attaching to an unactive state is usually an error (eg: could be a child state)
+      setError( "BaseTool.attachStateSpecificComponent: " + this.getPath() + ": attaching to a non-active state: " + state );
+
+    this.perStateComponents.addStateSpecificComponent( state, component, this );
+    return component;
+  }
+
+
+  /// Attaches a state-specific action component, and executes it immediately.
+  /// In some cases, the action component can have an option to undo its changes
+  /// when invalidated, which is, when the tool leaves that state.
+  /// The lifetime (scope) to the action component is linked to the provided state.
+  /// That state must be an active state on this tool.
+  /// Once the tool leaves that state, the component is removed and invalidated.
+  /// Returns the action for convenience.
+  Ref<BaseAction> BaseTool.attachAndDoStateSpecificAction!( String state, Ref<BaseAction> actionComponent ) {
+    this.attachStateSpecificComponent( state, actionComponent );
+    Ref<BaseAction> mutableAction = actionComponent;
+    mutableAction.doAction();
+    return actionComponent;
+  }
+
+  BaseTool.attachStateSpecificChildComponent!(String state, Ref<Component> component, String childRelativePath ) {
+    Ref<BaseTool> child = this.getChild( childRelativePath );
+    if( !child ) {
+      report( "BaseTool.addStateSpecificChildComponent: warning: child " + childRelativePath + " not found" );
+      return;
+    }
+    if( !this.hasState( state ) )// Attaching to an unactive state is usually an error (eg: could be a child state)
+      setError( "BaseTool.attachStateSpecificChildComponent: " + this.getPath() + ": attaching to a non-active state: " + state );
+
+    this.createPerStateComponentsIfNotDone();
+    this.perStateComponents.addStateSpecificComponent( state, component, child );
+  }
+
+  /// Attaches a state-specific component to a child.
+  /// The lifetime (scope) to the component is linked to the provided state.
+  /// That state must be an active state on this tool (not on the child).
+  /// Once the tool leaves that state, the component is removed and invalidated.
+  /// Returns the action for convenience.
+  Ref<BaseAction> BaseTool.attachAndDoStateSpecificChildAction!( String state, Ref<BaseAction> actionComponent, String childRelativePath ) {
+    this.attachStateSpecificChildComponent( state, actionComponent, childRelativePath );
+    Ref<BaseAction> mutableAction = actionComponent;
+    mutableAction.doAction();
+    return actionComponent;
+  }
+
+  /// Removes an attached component.
+  BaseTool.removeStateSpecificComponents!( String stateName ) {
+    if( this.perStateComponents )
+      this.perStateComponents.removeStateComponents( stateName );
+  }
+
+  /// Adds a component that will be automatically removed and invalidated when the tool becomes inactive.
+  BaseTool.addActiveSpecificComponent!( Ref<Component> component ) {
+    if( !this.isActive() ) {
+      setError( "BaseTool.addActiveSpecificComponent: " + this.getPath() + ": can only be called when active" );
+      return;
+    }
+
+    this.createPerStateComponentsIfNotDone();
+    this.perStateComponents.addStateSpecificComponent( "_active_", component, this );
+  }
+
+  //******************************************************************************
+  //**
+  //** Drawing
+  //**
+  //******************************************************************************
+
+  /// Called to update retained draw data (transform properties, shapes...)
+  /// To be overriden for specialized draw of this tool.
+  BaseTool.selfUpdateDrawData!( io DrawContext context, io Boolean drawChildren ) {
+    drawChildren = true;
+  }
+
+  /// Called after self and children draw data has been updated
+  /// To be overriden for specialized draw of this tool.
+  BaseTool.postUpdateDrawData!(io DrawContext context) {
+  }
+
+  /// Callback where the tool can do direct OGL rendering for the given viewport
+  /// To be overriden for specialized draw of this tool.
+  BaseTool.postDraw!( DrawContext context, String drawPass, io Boolean drawChildren ) {
+    drawChildren = true;
+  }
+
+  //************************************************************************************************************
+  //**
+  //** INTERNAL METHODS (methods that are not meant to be called directly)
+  //**
+  //************************************************************************************************************
+
+  /// \internal
+  ~BaseTool() {
+    this.isDestroying = true;
+    this.invalidateInternal();
+  }
+
+  /// \internal
+  BaseTool.invalidate!( ) {
+    this.invalidateInternal();
+  }
+
+  /// \internal
+  /// Optimization: create only if we have listeners
+  BaseTool.createEventSourceIfNotDone() {
+    if( !this.eventSource ) {
+      Ref<BaseTool> mutableThis = this;
+      mutableThis.eventSource = BaseEventSource();
+      mutableThis.eventSource.setContainer( this );
+    }
+  }
+
+  /// \internal
+  /// Optimization: create only if we have per state components
+  BaseTool.createPerStateComponentsIfNotDone() {
+    if( !this.perStateComponents ) {
+      Ref<BaseTool> mutableThis = this;
+      mutableThis.perStateComponents = PerStateComponents();
+    }
+  }
+
+  /// Propagates event based on its propagation type (children or parent).
+  /// Event not being handled will be propagated as such.
+  /// \internal
+  BaseTool.propagateEvent( ToolEvent event, ToolEventUserID userID ) {
+    this.propagateEvent( event, userID, false );
+  }
+
+  /// \internal
+  /// Support for interface Component
+  inline BaseTool.componentAdded!( Ref<Component> child ) {}
+
+  /// \internal
+  /// Support for interface Component
+  inline BaseTool.componentRemoved!( Ref<Component> child ) {
+    // Might be one of our components or draw modifiers; remove it if it's the case to keep the list synchronized
+    this.drawModifiers.remove_nothrow( child );
+    this.components.remove_nothrow( child );
+  }
+
+  /// \internal
+  BaseTool.updateDrawingState!( ) {
+    Boolean shouldDrawAsRoot = !this.getParent() && !this.wasInvalidated();
+    if( shouldDrawAsRoot ) {
+      if( !this.registeredAsDrawnTool ) {
+        // Note: the manager might deactivate us
+        this.sharedData.manager.addDrawnTool( this );
+        this.registeredAsDrawnTool = true;
+      }
+    } else {
+      if( this.registeredAsDrawnTool ) {
+        // We now have a parent; activate so we actually inherit parent's activation value
+        this.sharedData.manager.removeDrawnTool( this );
+        this.registeredAsDrawnTool = false;
+      }
+    }
+  }
+
+  /// \internal
+  BaseTool.refreshActiveStatus!( ) {
+    // Late activation; we can't call this at construction time since the specilized class doesn't exist (we'd need a post-construct)
+    if( this.wasActive != this.isActive() ) {
+      this.wasActive = this.isActive();
+      if( this.wasActive ) {
+        // Activate attached components
+        FewObjectsStableListIterator it( this.components );
+        Ref<Activable> comp = null;
+        while( comp = it.next() ) {
+          if( comp )
+            comp.activate();
+        }
+        this.activating();
+      } else {
+        this.deactivating();
+        if( this.perStateComponents )
+          this.perStateComponents.removeStateComponents( "_active_" );
+
+        // Deactivate attached components
+        FewObjectsStableListIterator it( this.components );
+        Ref<Activable> comp = null;
+        while( comp = it.next() ) {
+          if( comp )
+            comp.deactivate();
+        }
+      }
+      // Recurse to children
+      for( Size i = 0; i < this.childCount(); ++i ) {
+        Ref<BaseTool> child = this.getChild( i );
+        if( child )
+          child.refreshActiveStatus();
+      }
+    }
+  }
+
+  /// \internal
+  BaseTool.sendEventToParentRecursivelyInternal( EventName name, String tag, Ref<Object> customData, Boolean sendToSelf ) {
+    ToolEvent event;
+    event.sender = this;
+    event.name = name;
+    event.tag = tag;
+    event.customData = customData;
+
+    if( sendToSelf ) {
+      // Don't set parent propagation else it could be sent to parents twice
+      event.propagationType = EventPropagationType_none;
+      Ref<BaseTool> mutableThis = this;
+      mutableThis.onEvent( event, ToolEventUserID() );
+    }
+    event.propagationType = EventPropagationType_parent;
+
+    this.propagateEvent( event, ToolEventUserID(), true );
+  }
+
+  /// \internal
+  BaseTool.propagateEvent( ToolEvent event, ToolEventUserID userID, Boolean force ) {
+    if( ( force || !this.eventParentPropagationBlocked ) && event.propagationType == EventPropagationType_parent ) {
+      Ref<EventListener> parentListener = GetParentEventListener( this );
+      if( parentListener ) {
+        if( ShouldTraceEvent( event ) ) {
+          report( "Send event to parent: " + DescribeEvent( event )
+                  + ": from " + this.getPath() + " to " + GetComponentName( parentListener )
+                  + " " + DescribeUserIDIfAny( userID ) );
+        }
+        parentListener.onEvent( event, userID );
+      }
+    } else if( ( force || !this.eventChildrenPropagationBlocked ) && event.propagationType == EventPropagationType_children ) {
+      Size childCount = this.childCount();
+      for( Size i = 0; i < childCount; ++i ) {
+        Ref<EventListener> childListener = this.getChild( i );
+        if( childListener ) {
+          if( ShouldTraceEvent( event ) ) {
+            report( "Send event to child: " + DescribeEvent( event )
+                    + ": from " + this.getPath() + " to " + this.getChildName( i )
+                    + " " + DescribeUserIDIfAny( userID ) );
+          }
+          childListener.onEvent( event, userID );
+        }
+      }
+    }
+  }
+
+  /// \internal
+  /// Will call setMainState() or enterState() or leaveState() if it is a state action event.
+  /// If true is returned, state change was accepted; propagation should be stopped.
+  Boolean BaseTool.processStateEvent!( ToolEvent event, ToolEventUserID userID ) {
+    if( event.name == Event_ChangeMainState ) {
+      this.setMainState( event.tag );
+      return true;
+    }
+
+    if( event.name == Event_AddState ) {
+      this.addState( event.tag );
+      return true;
+    }
+
+    if( event.name == Event_RemoveState ) {
+      this.removeState( event.tag );
+      return true;
+    }
+
+    Ref<EventSource> thisSender = this;
+    if( event.name == Event_EnteredState && thisSender !== event.sender )
+      return this.onEnterChildState( event.sender, event.tag );
+
+    if( event.name == Event_LeftState && thisSender !== event.sender )
+      return this.onLeaveChildState( event.sender, event.tag );
+
+    return false;
+  }
+
+  /// \internal
+  BaseTool.deactivatedByManager!( ) {
+    this.refreshActiveStatus();
+  }
+
+  /// \internal
+  BaseTool.activatedByManager!( ) {
+    this.refreshActiveStatus();
+  }
+
+  /// \internal Support for interface ToolDrawModifier
+  private BaseTool.initialize!( Ref<BaseTool> ownerTool ) {
+    // Do nothing here; this won't be called
+  }
+
+  /// \note For specialized drawing of the tool, selfDraw() should be overriden, not draw().
+  /// \internal
+  BaseTool.updateDrawData!( io DrawContext context, Ref<Object> target ) {
+
+    this.refreshActiveStatus();
+
+    DrawContext localContext = context;
+    localContext.contextualProperties = this.getContextualProperties( context );
+
+    // When newly forced hidden, we need to redraw once to hide tools.
+    // Then we can quit directly to avoid overhead while being hidden.
+    Boolean forcedHidden = this.forcedHidden();
+    if( !updateValue( forcedHidden, this.perViewportUIDPropertyContainers[context.viewport.uid()].wasForcedHiddenInLastDraw ) ) {
+      if( forcedHidden )
+        return; // Was hidden on last draw, can skip
+    }
+
+    if( DrawDebugTrace )
+      report( "Draw " + this.getPath() + " viewport= " + context.viewport.getName() );
+
+    FewObjectsStableListIterator it( this.drawModifiers );
+    Ref<ToolDrawModifier> modifier = null;
+    while( modifier = it.next() )
+      modifier.updateDrawData( localContext, this );
+
+    Boolean drawChildren = true;
+    this.selfUpdateDrawData( localContext, drawChildren );
+
+    if( drawChildren ) {
+
+      Size childCount = this.childCount();
+      for( Size i = 0; i < childCount; ++i ) {
+        Ref<BaseTool> child = this.getChild( i );
+        if( child )
+          child.updateDrawData( localContext, child );
+      }
+    }
+    this.postUpdateDrawData( localContext );
+  }
+
+  /// \note For specialized drawing of the tool, selfDraw() should be overriden, not draw().
+  /// \internal
+  BaseTool.postDrawInternal!( DrawContext context, String drawPass ) {
+
+    DrawContext localContext = context;
+    localContext.contextualProperties = this.getContextualProperties( context );
+
+    if( DrawDebugTrace )
+      report( "PostDraw " + this.getPath() + " viewport= " + context.viewport.getName() + " pass=" + drawPass );
+
+    Boolean drawChildren = true;
+    this.postDraw( localContext, drawPass, drawChildren );
+
+    if( drawChildren ) {
+
+      Size childCount = this.childCount();
+      for( Size i = 0; i < childCount; ++i ) {
+        Ref<BaseTool> child = this.getChild( i );
+        if( child )
+          child.postDrawInternal( localContext, drawPass );
+      }
+    }
+  }
+
+  /// \internal
+  Ref<PropertyContainer> BaseTool.getOrCreateContextualProperties( UInt32 viewportUID, String viewportName ) {
+      Ref<BaseTool> mutableThis = this;
+
+    // Create a viewport specific container (closure) if not there
+    // The property inheritance for vewport specific properties is the following:
+    // - tool[viewport] properties
+    // - tool local properties
+    // - parentTool[viewport] properties
+    // - parentTool local properties
+    // ...
+    // - shared default properties
+    //
+    if( !mutableThis.perViewportUIDPropertyContainers.has( viewportUID ) ) {
+      mutableThis.perViewportUIDPropertyContainers[viewportUID].viewportName = viewportName;
+      mutableThis.perViewportUIDPropertyContainers[viewportUID].propertyContainer = BaseOverridablePropertyContainer();
+      mutableThis.perViewportUIDPropertyContainers[viewportUID].propertyContainer.setName( "properties[" + viewportName + "]" );
+      mutableThis.perViewportUIDPropertyContainers[viewportUID].propertyContainer.setParent( mutableThis );
+
+      mutableThis.perViewportUIDPropertyContainers[viewportUID].toolPropertiesForViewport = ToolPropertiesForViewport();
+      mutableThis.perViewportUIDPropertyContainers[viewportUID].toolPropertiesForViewport.setName( "propertiesForChildren[" + viewportName + "]" );
+      mutableThis.perViewportUIDPropertyContainers[viewportUID].toolPropertiesForViewport.setParent( mutableThis );
+
+      mutableThis.perViewportUIDPropertyContainers[viewportUID].toolPropertiesForViewport.localToolProperties = mutableThis.propertyContainer;
+      mutableThis.perViewportUIDPropertyContainers[viewportUID].toolPropertiesForViewport.parentViewportProperties = this.sharedData.defaultProperties;// If there is a parent, this will be replaced
+
+      Ref<BaseTool> parent = mutableThis.getParent();
+      if( parent ) {
+        // Force creation of parent's viewport specific props
+        Ref<PropertyContainer> parentViewportProps = parent.getOrCreateContextualProperties( viewportUID, viewportName );
+        if( parentViewportProps )
+          mutableThis.perViewportUIDPropertyContainers[viewportUID].toolPropertiesForViewport.parentViewportProperties = parentViewportProps;
+      }
+      mutableThis.perViewportUIDPropertyContainers[viewportUID].propertyContainer.addParentContainer( mutableThis.perViewportUIDPropertyContainers[viewportUID].toolPropertiesForViewport, false );
+    }
+    return mutableThis.perViewportUIDPropertyContainers[viewportUID].propertyContainer;
+  }
+
+  /// \internal
+  /// Non-virtual version that can be safely called from the destructor
+  /// This can be removed once KL is fixed to not call specialized methods in destructors
+  BaseTool.invalidateInternal!( ) {
+
+    if( this.wasInvalidated() )
+      return;
+
+    ToolChanged();
+
+    // NOTE: this can cause our destruction!
+    Object keepAlive = this;
+
+    this.parent.invalidate();//First make sure our week pointer container is null to avoid any circular refs
+
+    this.registerToRawEvents( false );
+
+    if( StructureDebugTrace )
+      report( "Invalidate: " + this.getPath() );
+
+    // Ideally, to be safe, should use reverse iteration direction
+    FewObjectsStableListIterator it( this.drawModifiers );
+    Ref<ToolDrawModifier> modifier = null;
+    while( modifier = it.next() )
+      modifier.invalidate( this );
+
+    FewObjectsStableListIterator it2( this.components );
+    Ref<Component> component = null;
+    while( component = it2.next() )
+      component.invalidate();
+
+    Size childCount = this.childCount();
+    for( Size i = 0; i < childCount; ++i ) {
+      Ref<BaseTool> child = this.getChild( i );
+      if( child )
+        child.invalidate( child );
+    }
+
+    Ref<PropertyContainer> thisPC = this;
+    SetInvalidated( thisPC, true );
+    this.setVisible( false );
+    this.deactivate();
+    this.hideAllIfNotActive = true;
+
+    Ref<BaseHierarchyNode> hierarchyNode = this.hierarchyNode;
+    if( hierarchyNode )
+      hierarchyNode.invalidate();
+
+    if( this.eventSource )
+      this.eventSource.invalidate();
+
+    this.updateDrawingState();
+  }
+
+  /// \internal ToolDrawModifier
+  BaseTool.invalidate!( Ref<BaseTool> ownerTool ) {
+    this.invalidateInternal();
+  }
+
+}// namespace Tool

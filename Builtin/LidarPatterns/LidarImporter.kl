@@ -1,0 +1,143 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+require AssetPatterns;
+require LibLas;
+require FileIO;
+require Util;
+
+// \dfgPresetOmit
+object LidarImporter : BaseImporter, ImporterCallback {
+  String filePath;
+  Boolean useOffsetAndScale;
+  Boolean centerBounds;
+  Float32 scale;
+  Boolean zUp;
+  LibLasReader libLasReader;
+};
+
+/// \dfgPresetOmit
+function LidarImporter.cloneMembersTo(io LidarImporter other) {
+  this.parent.cloneMembersTo(other);
+  other.filePath = this.filePath;
+  other.useOffsetAndScale = this.useOffsetAndScale;
+  other.centerBounds = this.centerBounds;
+  other.scale = this.scale;
+  other.zUp = this.zUp;
+  other.libLasReader = LibLasReader(this.filePath);
+}
+
+// \dfgPresetOmit
+function LidarImporter(String filePath, Boolean useOffsetAndScale, Boolean centerBounds, Float32 scale, Boolean zUp) {
+
+  FilePath path = filePath;
+  path = path.expandEnvVars();
+  if(!path.exists()) {
+    if(filePath)
+      report("LidarImporter: filePath '"+filePath+"' does not exist.");
+    return;
+  }
+
+  this.filePath = path.string();
+  this.useOffsetAndScale = useOffsetAndScale;
+  this.centerBounds = centerBounds;
+  this.scale = scale;
+  this.zUp = zUp;
+
+  // todo: if the extension is not las or laz we might want to use
+  // a different kind of reader
+  this.libLasReader = LibLasReader(this.filePath);
+
+  Ref<ImporterShape> cast = this.getOrCreateObject('Shape', 'points', '/points');
+  cast.setGeometryType(ImporterShape_Points);
+  cast.callback = this;
+}
+
+// \dfgPresetOmit
+function Boolean LidarImporter.updateProperty!(ImporterContext context, io Ref<ImporterObject> subject, String prop) {
+
+  if(subject.id != 'points')
+    return false;
+
+  if(prop == 'localTransform')
+  {
+    Xfo xfo;
+    if(this.useOffsetAndScale)
+    {
+      Vec3_d sc = this.libLasReader.GetScale();
+      Vec3_d tr = this.libLasReader.GetOffset();
+      xfo.sc = Vec3(Float32(sc.x), Float32(sc.y), Float32(sc.z));
+      xfo.tr = Vec3(Float32(tr.x), Float32(tr.y), Float32(tr.z));
+    }
+
+    xfo.sc = Vec3(this.scale);
+
+    if(this.centerBounds)
+    {
+      Box3 bounds = this.getBounds();
+      xfo.tr = -(bounds.center() * this.scale);
+    }
+    if(this.zUp)
+    {
+      Xfo offset;
+      offset.ori.setFromAxisAndAngle(Vec3(1.0, 0.0, 0.0), -HALF_PI);      
+      xfo = offset * xfo;
+    }
+
+    subject.setProperty(prop, xfo.toMat44());
+  } else if(prop == 'bounds') {
+    Box3 bounds = this.getBounds();
+    subject.setProperty(prop, bounds);
+  } else if(prop == 'geometry') {
+    Points points = subject.getGeometryProperty(prop);
+    if(!points)
+    {
+      points = Points(subject.getPath());
+    }
+
+    Size count = this.libLasReader.GetPointRecordsCount();
+    points.resize(count);
+    GeometryAttributes attributes = points.getAttributes();
+
+    SInt32 dataFormat = this.libLasReader.GetDataFormatId();
+    if(dataFormat == 2 /* pos + color */ || dataFormat == 3 /* pos, time + color */)
+    {
+      Vec3Attribute posAttr = attributes.positionsAttribute;
+      ColorAttribute colorAttr = attributes.getOrCreateColorAttribute('vertexColors');
+      Vec3_d pos[](count);
+      Color color[] = colorAttr.values;
+      this.libLasReader.GetPointPosColorData(pos.data(), pos.dataSize(), color.data(), color.dataSize());
+      for(Size i=0;i<count;i++)
+      {
+        posAttr.values[i] = Vec3(Float32(pos[i].x), Float32(pos[i].y), Float32(pos[i].z));
+      }
+    }
+    else
+    {
+      Vec3Attribute posAttr = attributes.positionsAttribute;
+      Vec3_d pos[](count);
+      this.libLasReader.GetPointPosData(pos.data(), pos.dataSize());
+      for(Size i=0;i<count;i++)
+      {
+        posAttr.values[i] = Vec3(Float32(pos[i].x), Float32(pos[i].y), Float32(pos[i].z));
+      }
+    }
+
+    subject.setProperty(prop, points);
+  } else {
+    return false;
+  }
+
+  return true;
+}
+
+private Box3 LidarImporter.getBounds()
+{
+  Vec3_d min = this.libLasReader.GetMin();
+  Vec3_d max = this.libLasReader.GetMax();
+  Box3 bounds;
+  bounds.min = Vec3(Float32(min.x), Float32(min.y), Float32(min.z));
+  bounds.max = Vec3(Float32(max.x), Float32(max.y), Float32(max.z));
+  return bounds;  
+}

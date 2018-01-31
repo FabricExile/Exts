@@ -1,0 +1,108 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /**
+  \versionadded 2.6.0
+
+  The SetColorAction is an example of specialization of SetPropertyAction
+  which will set a color to the owner BaseTool, and can restore
+  the previous scaling upon destruction( ~SetColorAction ). The color
+  can be a Color, an Image (texture) or a VectexAttribute (user has to ensure it matches the shape).
+
+  The action's do and undo can be linked to a BaseTool state and simplify tool's logic and data management (see :kl-ref:`Tool::BaseTool.attachAndDoStateSpecificAction` ).
+  The action can also be triggered (do + undo) by connected events; see :kl-ref:`Tool::BaseAction.connectToDo` and :kl-ref:`Tool::BaseAction.connectToUndo` .
+
+  The overriding of the property by the action is robust, since a special stack tracks overrides and maintains the right
+  order and values even if the overrides are removed in a different order.
+
+  See :ref:`TPG.state-actions` for more details and examples related to states and actions.
+
+  \endrst
+
+  */
+  object SetColorAction : SetPropertyAction{
+  };
+
+  SetColorAction() {
+    this.setPropertyName( ColorProperty );
+  }
+
+  SetColorAction( RTVal value, Boolean restorePrevValueOnDestroy ) {
+    this.restorePrevValueOnDestroy( restorePrevValueOnDestroy );
+    this.setProperty( ColorProperty, value );
+  }
+
+  SetColorAction( Color color, Boolean restorePrevValueOnDestroy ) {
+    this.setPropertyName( ColorProperty );
+    this.setColor( color );
+    this.restorePrevValueOnDestroy( restorePrevValueOnDestroy );
+  }
+
+  SetColorAction( Image2D colorTexture, Boolean restorePrevValueOnDestroy ) {
+    this.setPropertyName( ColorProperty );
+    this.setColor( colorTexture );
+    this.restorePrevValueOnDestroy( restorePrevValueOnDestroy );
+  }
+
+  SetColorAction( String propertyName, RTVal value, Boolean restorePrevValueOnDestroy ) {
+    this.restorePrevValueOnDestroy( restorePrevValueOnDestroy );
+    this.setProperty( propertyName, value );
+  }
+
+  /// Connects and attaches to the eventSource.
+  SetColorAction( Ref<EventSource> eventSource, EventName sourceEventName, Color color, Boolean restorePrevValueOnDestroy ) {
+    this.restorePrevValueOnDestroy( restorePrevValueOnDestroy );
+    this.connectAndAttach( eventSource, sourceEventName, color );
+  }
+
+  /// Connects and attaches to the eventSource.
+  SetColorAction( Ref<EventSource> eventSource, EventName sourceEventName, Image2D colorTexture, Boolean restorePrevValueOnDestroy ) {
+    this.restorePrevValueOnDestroy( restorePrevValueOnDestroy );
+    this.connectAndAttach( eventSource, sourceEventName, colorTexture );
+  }
+
+  /// Connects and attaches to the eventSource.
+  SetColorAction( Ref<EventSource> eventSource, EventName sourceEventName, RTVal color, Boolean restorePrevValueOnDestroy ) {
+    this.restorePrevValueOnDestroy( restorePrevValueOnDestroy );
+    this.connectAndAttach( eventSource, sourceEventName, color );
+  }
+
+  SetColorAction.setColor!( RTVal color ) {
+    this.setValue( color );
+  }
+
+  SetColorAction.setColor!( Color color ) {
+    this.setValue( RTVal( color ) );
+  }
+
+  SetColorAction.setColor!( Image2D colorTexture ) {
+    this.setValue( RTVal( colorTexture ) );
+  }
+
+  Color SetColorAction.getColor() {
+    if( this.value.type() )
+      return Color( this.value );
+    return Color();
+  }
+
+  Image2D SetColorAction.getColorTexture() {
+    if( this.value.type().isA( Image2D ) )
+      return this.value;
+    return null;
+  }
+
+  SetColorAction.connectAndAttach!( Ref<EventSource> eventSource, EventName sourceEventName, Color color ) {
+    this.connectAndAttach( eventSource, sourceEventName, ColorProperty, RTVal( color ) );
+  }
+
+  SetColorAction.connectAndAttach!( Ref<EventSource> eventSource, EventName sourceEventName, Image2D colorTexture ) {
+    this.connectAndAttach( eventSource, sourceEventName, ColorProperty, RTVal( colorTexture ) );
+  }
+
+  SetColorAction.connectAndAttach!( Ref<EventSource> eventSource, EventName sourceEventName, RTVal color ) {
+    this.connectAndAttach( eventSource, sourceEventName, ColorProperty, color );
+  }
+}// namespace Tool

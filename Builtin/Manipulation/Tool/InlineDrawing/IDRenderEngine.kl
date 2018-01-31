@@ -1,0 +1,381 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+require Adaptors;
+
+namespace Tool {
+  namespace InlineDrawingRender {
+    const String RenderEngineInlineDrawingTarget = "WRenderEngineID";
+    const String InlineDrawingRectangleShapeName = "_RectangleShape";
+
+    /// \internal
+    interface IDRenderEngineMaterial {
+      Ref<InlineMaterial> getIDMaterial( io Ref<InlineDrawing> inlineDrawing, DrawContext context, Ref<InlineShape> contextualShape );
+    };
+
+    /// \internal
+    interface IDRenderEngineInstance {
+      Ref<InlineInstance> update!( io Ref<InlineDrawing> inlineDrawing, Boolean visible, Ref<Object> sourceInstance, DrawContext context, Ref<IDRenderEngineMaterial> IDMaterial );
+      Ref<SelectionDrawableItem> getUpdatedSelectionDrawableItem!( io Ref<InlineDrawing> inlineDrawing, Ref<Object> sourceInstance, DrawContext context, Ref<IDRenderEngineMaterial> IDMaterial );
+    };
+
+    /// \internal
+    struct IDRenderEngineMaterialData {
+      IDRenderEngineMaterial adaptor;
+      UInt32 refCount;
+    };
+
+    /// \internal
+    struct IDRenderEngineInstanceData {
+      IDRenderEngineInstance adaptor;
+      Ref<BaseTool> sourceInstance;
+      UInt32 lastMaterialUID;
+    };
+
+    object EnableSelectionMaterialToID;
+
+    /// The IDRenderEngine object implements the RenderEngine interface by
+    /// creating InlineDrawing instances. This allows the Tool to be separated from
+    /// InlineDrawing, hence allowing to eventually map to other rendering back-ends like RTR2.
+    object IDRenderEngine : RenderEngine, ViewportCallback, InlineDrawingCallback, AppEventCallback{
+      Ref<InlineDrawing> inlineDrawing;
+
+      IDRenderEngineMaterialData materialUIDToData[UInt32];
+
+      IDRenderEngineInstanceData instanceData[];
+      IndexPool freeInstanceDataIndices;
+
+      UInt32 updateIteration;
+      UInt32 baseHandleID;//To ignore old ones that are destructed later
+
+      Ref<RenderEngineDrawCallback> drawCallbacks[];
+      Ref<RenderEngineDrawCallback> postDrawCallbacks[];
+
+      EnableSelectionMaterial enableSelectionMaterial;
+
+      Ref<InlineInstance> instanceDrawListPerPass[][];
+      OGLHostState glStateBackup;
+    };
+
+    IDRenderEngine() {
+      this.enableSelectionMaterial = EnableSelectionMaterial();
+      this.glStateBackup = OGLHostState();
+      RegisterToAppEvent( AppEvent_postNewScene, this );
+    }
+
+    IDRenderEngine.setInlineDrawing!( Ref<InlineDrawing> inlineDrawing ) {
+      if( inlineDrawing != this.inlineDrawing ) {
+        // Don't unregister callback since ID might be destroyed already
+        this.inlineDrawing = inlineDrawing;
+        this.inlineDrawing.registerCallback( this );
+      }
+    }
+
+    ~IDRenderEngine() {
+      UnregisterFromAppEvent( AppEvent_postNewScene, this );
+      if( this.inlineDrawing )
+        this.inlineDrawing.deregisterCallback( this );
+    }
+
+    // Returns a handle for the added instance
+    UInt32 IDRenderEngine.addInstance!( Ref<BaseTool> instance ) {
+
+      UInt32 index;
+      if( this.freeInstanceDataIndices.getFreeIndex( index ) )
+        this.instanceData.resize( this.freeInstanceDataIndices.getIndexEnd() );
+
+      this.instanceData[index].sourceInstance = instance;
+      this.instanceData[index].adaptor = CreateAdaptor( instance.type(), RenderEngineInlineDrawingTarget );
+
+      return index + this.baseHandleID;
+    }
+
+    IDRenderEngine.updateInstance!( UInt32 instanceHandle, DrawContext context, Boolean visible, Boolean canSelect, Ref<Object> material ) {
+      if( instanceHandle < this.baseHandleID ) {
+        setError( "IDRenderEngine.updateInstance: calling on an obselete instanceHandle" );
+        return;
+      }
+      Size actualHandle = instanceHandle - this.baseHandleID;
+
+      Boolean selectOnly = !visible && canSelect;
+      Ref<Object> actualMaterial = material;
+      if( selectOnly )
+        actualMaterial = this.enableSelectionMaterial;
+
+      Ref<IDRenderEngineMaterial> IDMaterial = null;
+      Boolean draw = visible || selectOnly;
+
+      if( draw ) {
+        // Check if the material changed
+        UInt32 materialUID = actualMaterial.uid();
+        if( this.instanceData[actualHandle].lastMaterialUID != materialUID ) {
+          if( this.instanceData[actualHandle].lastMaterialUID ) {
+            // Unregister previous material, if any, and unused
+            if( --this.materialUIDToData[this.instanceData[actualHandle].lastMaterialUID].refCount == 0 )
+              this.materialUIDToData.delete( this.instanceData[actualHandle].lastMaterialUID );
+          }
+          if( materialUID ) {
+            if( !this.materialUIDToData.has( materialUID ) ) {
+              IDRenderEngineMaterialData materialData;
+              materialData.adaptor = CreateAdaptor( actualMaterial.type(), RenderEngineInlineDrawingTarget );
+              this.materialUIDToData[materialUID] = materialData;
+            }
+            ++this.materialUIDToData[materialUID].refCount;
+          }
+          this.instanceData[actualHandle].lastMaterialUID = materialUID;
+        }
+        IDMaterial = this.materialUIDToData[materialUID].adaptor;
+      }
+
+      // Then update instance
+      Ref<InlineInstance> inst = this.instanceData[actualHandle].adaptor.update( this.inlineDrawing, draw, this.instanceData[actualHandle].sourceInstance, context, IDMaterial );
+      if( inst ) {
+        Size passIndex = GetPassIndex( this.instanceData[actualHandle].sourceInstance.getRenderPass( context ) );
+        if( passIndex >= this.instanceDrawListPerPass.size() )
+          this.instanceDrawListPerPass.resize( passIndex + 1 );
+
+        this.instanceDrawListPerPass[passIndex].push( inst );
+      }
+    }
+
+    IDRenderEngine.removeInstance!( UInt32 instanceHandle ) {
+      if( instanceHandle < this.baseHandleID )
+        return;//Silently ignore
+
+      Size actualHandle = instanceHandle - this.baseHandleID;
+
+      if( !this.instanceData[actualHandle].adaptor )
+        setError( "IDRenderEngine.removeInstance: removing a non-existant instance with instanceHandle=" + instanceHandle );
+
+      if( this.instanceData[actualHandle].lastMaterialUID ) {
+        // Unregister previous material, if any, and unused
+        if( --this.materialUIDToData[this.instanceData[actualHandle].lastMaterialUID].refCount == 0 )
+          this.materialUIDToData.delete( this.instanceData[actualHandle].lastMaterialUID );
+      }
+
+      // At least hide, in case there's a leak
+      DrawContext context;
+      context.renderEngine = this;
+      this.instanceData[actualHandle].adaptor.update( this.inlineDrawing, false, null, context, null );
+
+      this.instanceData[actualHandle] = IDRenderEngineInstanceData();
+      this.freeInstanceDataIndices.unusedIndex( actualHandle );
+    }
+
+    Ref<SelectionDrawableItem> IDRenderEngine.getSelectionDrawableItem( UInt32 instanceHandle, DrawContext context ) {
+
+      if( instanceHandle < this.baseHandleID ) {
+        setError( "IDRenderEngine.getSelectionDrawableItem: calling on an obselete instanceHandle" );
+        return null;
+      }
+
+      Size actualHandle = instanceHandle - this.baseHandleID;
+
+      if( !this.instanceData[actualHandle].adaptor ) {
+        setError( "IDRenderEngine.getSelectionDrawableItem: error, uninitialized handle: " + instanceHandle );
+        return null;
+      }
+      // We at least need a default material to force buffers creation/update
+      Ref<IDRenderEngineMaterial> IDMaterial = null;
+      Size lastMaterialUID = this.instanceData[actualHandle].lastMaterialUID;
+      if( lastMaterialUID )
+        IDMaterial = this.materialUIDToData[lastMaterialUID].adaptor;
+
+      if( !IDMaterial ) {
+        return null;
+        //setError( "IDRenderEngine.getSelectionDrawableItem: limitation: for selection to work, item must be visible and have a material. If the item should not be actually drawn, the material should be EnableSelectionMaterial." );
+      }
+
+      Ref<IDRenderEngine> mutableThis = this;
+      return mutableThis.instanceData[actualHandle].adaptor.getUpdatedSelectionDrawableItem( mutableThis.inlineDrawing, mutableThis.instanceData[actualHandle].sourceInstance, context, IDMaterial );
+    }
+
+    UInt32 IDRenderEngine.getDrawIterationIndex() {
+      return this.updateIteration;
+    }
+
+    /// implementation of InlineDrawingCallback
+    IDRenderEngine.viewportRegistered!( InlineDrawing inlineDrawing, io Viewport viewport ) {
+      viewport.registerCallback( ViewportDrawPhase_PreDraw, this );
+      viewport.registerCallback( ViewportDrawPhase_PostDraw, this );
+    }
+
+    /// implementation of ViewportCallback
+    Boolean IDRenderEngine.invoke!( ViewportDrawPhase phase, io Viewport viewport, io::DrawContext context ) {
+
+      //cpglSetCheckErrors( true );
+      this.glStateBackup.saveStates();
+
+      if( phase == ViewportDrawPhase_PreDraw ) {
+        ++this.updateIteration;
+        this.instanceDrawListPerPass.resize( 0 );
+        this.instanceDrawListPerPass.resize( RenderPassCount );
+        Ref<ToolsManager> manager = GetToolsManager();
+        manager.drawTools( this, viewport );
+
+        for( Size i = 0; i < this.drawCallbacks.size(); ++i )
+          this.drawCallbacks[i].renderEngineDrawCallback( viewport, PrepareDrawPass_index );
+
+      } else if( phase == ViewportDrawPhase_PostDraw ) {
+
+        for( Size i = 0; i < this.instanceDrawListPerPass.size(); ++i ) {
+
+          for( Size j = 0; j < this.instanceDrawListPerPass[i].size(); ++j ) {
+
+            // Unfortunately we need to repeat these because InlineDrawing shaders can call them directly
+            glEnable( GL_BLEND );
+            glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+            glDisable( GL_CULL_FACE );
+            glDepthFunc( GL_LEQUAL );
+
+            if( i == OnTopWithRelativeDepthRenderPass_index || i == OnTopNoDepthTestRenderPass_index )
+              glDepthRange( 0.0, 0.05 );
+            else
+              glDepthRange( 0.0, 1.0 );
+
+            if( i == OnTopNoDepthTestRenderPass_index ) {
+              glDepthFunc( GL_ALWAYS );
+              glDepthMask( GL_FALSE );
+            } else {
+              glDepthFunc( GL_LEQUAL );
+              glDepthMask( GL_TRUE );
+            }
+
+            Ref<InlineInstance> inst = this.instanceDrawListPerPass[i][j];
+            inst.setActive( true );
+            Ref<InlineMaterial> mat = inst.materials[0];
+            Ref<InlineShader> shader = mat.shader;
+
+            // Check culling params, set in meta-data
+            Boolean cullFront = inst.getMetaData( "cullFront" );
+            Boolean cullBack = inst.getMetaData( "cullBack" );
+
+            if( cullFront || cullBack ) {
+              glEnable( GL_CULL_FACE );
+              if( cullFront && cullBack )
+                glCullFace( GL_FRONT_AND_BACK );
+              else if( cullFront )
+                glCullFace( GL_FRONT );
+              else
+                glCullFace( GL_BACK );
+            } else
+              glDisable( GL_CULL_FACE );
+
+            shader.drawExplicitInstance( inst, mat, context );
+            inst.setActive( false );
+          }
+
+          if( i != PrepareDrawPass_index ) {//prepare draw has been called already
+            for( Size j = 0; j < this.drawCallbacks.size(); ++j )
+              this.drawCallbacks[j].renderEngineDrawCallback( viewport, i );
+          }
+        }
+        glDisable( GL_BLEND );
+        glDepthFunc( GL_LESS );
+        glDisable( GL_CULL_FACE );
+        glCullFace( GL_BACK );
+        glDepthRange( 0.0, 1.0 );
+        glUseProgram( 0 );
+      }
+      this.glStateBackup.restoreStates();
+      return false;
+    }
+
+    IDRenderEngine.registerCallback!( Ref<RenderEngineDrawCallback> callback ) {
+      this.drawCallbacks.push( callback );
+    }
+
+    IDRenderEngine.unregisterCallback!( Ref<RenderEngineDrawCallback> callback ) {
+      for( Size i = 0; i < this.drawCallbacks.size(); ++i ) {
+        if( this.drawCallbacks[i] === callback ) {
+          this.drawCallbacks[i] = this.drawCallbacks[this.drawCallbacks.size() - 1];
+          this.drawCallbacks.resize( this.drawCallbacks.size() - 1 );
+          return;
+        }
+      }
+    }
+
+    IDRenderEngine.clear!(){
+      this.inlineDrawing = null;
+      this.materialUIDToData.clear();
+      this.baseHandleID += this.instanceData.size();//detect old handles and ignore their removal
+      this.instanceData.resize( 0 );
+      this.freeInstanceDataIndices.reset();
+      this.instanceDrawListPerPass.resize( 0 );
+    }
+
+    IDRenderEngine.onAppEvent!( String eventName ) {
+      if( eventName == AppEvent_postNewScene )// clear after tools / InlineDrawing / toolManager cleared
+        this.clear();
+    }
+
+    /// \internal
+    /// Setup of IDRenderEngine singleton.
+    /// \note KL cannot call methods, so we use an object constructor instead.
+    object RenderSetup{
+    };
+
+    RenderSetup() {
+
+      //cpglSetDebugTrace( true );
+      //cpglSetCheckErrors( true );
+
+      IDRenderEngine renderEngine = Singleton_get( RenderEngineSingleton );
+      Ref<InlineDrawing> inlineDrawing = OGLInlineDrawing_GetInstance();
+
+      if( !Boolean( renderEngine ) || ( Boolean( renderEngine ) && ( renderEngine.inlineDrawing !== inlineDrawing ) ) ) {
+
+        if( !renderEngine ) {
+          // Register adaptors for materials, shapes, etc.
+          RegisterAdaptor( Material, RenderEngineInlineDrawingTarget, MaterialToID );
+          RegisterAdaptor( FlatMaterial, RenderEngineInlineDrawingTarget, FlatMaterialToID );
+          RegisterAdaptor( HeadLightShadedMaterial, RenderEngineInlineDrawingTarget, HeadLightShadedMaterialToID );
+          RegisterAdaptor( EnableSelectionMaterial, RenderEngineInlineDrawingTarget, EnableSelectionMaterialToID );
+          RegisterAdaptor( GeometricShape, RenderEngineInlineDrawingTarget, GeometricShapeToID );
+          RegisterAdaptor( Text, RenderEngineInlineDrawingTarget, TextToID );
+
+          renderEngine = IDRenderEngine();
+          Singleton_set( RenderEngineSingleton, renderEngine );
+        }
+        renderEngine.clear();
+        renderEngine.setInlineDrawing( inlineDrawing );
+
+        // Add a "rectangle" shape that is being used
+        InlineMeshShape rectangleShape = InlineMeshShape( InlineDrawingRectangleShapeName, WGetXYRectangleMesh() );
+        inlineDrawing.registerShape( rectangleShape );
+      }
+    }
+
+    InlineTexture GetInlineDrawingTextureFromImage( io Ref<InlineDrawing> inlineDrawing, Image2D image ) {
+      String imageName = image.name;
+      if( !imageName )
+        imageName = image.uid();
+
+      if( !inlineDrawing.hasTexture( imageName ) ) {
+        InlineProceduralTexture inlineTexture = InlineProceduralTexture( imageName );
+        inlineTexture.width = image.width;
+        inlineTexture.height = image.height;
+
+        Image2DColor imageC = image;
+        if( imageC )
+          inlineTexture.colorPixels = imageC.pixels;
+        else
+          throw( "GetInlineDrawingTextureFromImage: not implemented: image type " + image.type() );
+
+        inlineDrawing.registerTexture( inlineTexture );
+        return inlineTexture;
+      } else
+        return inlineDrawing.getTexture( imageName );
+    }
+
+    /// \internal
+    object AppRenderSetup {};
+
+    /// \internal
+    Boolean AppRenderSetup.isRenderEngineValid() {
+      return Boolean( Singleton_get( RenderEngineSingleton ) );
+    }
+    
+  }// namespace InlineDrawingRender
+}// namespace Tool

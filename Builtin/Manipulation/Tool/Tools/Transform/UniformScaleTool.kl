@@ -1,0 +1,99 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  const String UniformScaleTool_XfoChanged = "unSc_changed";
+
+  /// This tool allows to uniformly scale a :kl-ref:`Tool::TransformTarget` in
+  /// 2 or 3 axis by clicking on a 3D gizmo. The tool creates a :kl-ref:`UniformScaleDragInteraction` 
+  /// to map mouse moves to transform changes.
+  ///
+  /// While this tool is used as a sub-tool of the :kl-ref:`ScaleTool`,
+  /// it can also be created independently.
+  object UniformScaleTool : XfoTargetAlignedGizmo{
+    Boolean localTranslate;
+    UniformScaleDragInteraction scaleInteraction;
+
+    Scalar handleWidth;
+    Vec2 localHandleOffset;
+    Color handleColor;
+    DrawElements handleElts;
+    Boolean scalePlane;
+
+    Float32 drawScaleFactor;
+  };
+
+  /// Creates a UniformScaleTool. A gizmo will be created if there is at least 2 or 3 scaled axis.
+  UniformScaleTool( TransformTarget target, Boolean scaleX, Boolean scaleY, Boolean scaleZ, Color handleColor, Vec2 localHandleOffset, Scalar handleWidth, Color highlightColor ) {
+    this.construct( target, scaleX, scaleY, scaleZ, handleColor, localHandleOffset, handleWidth, highlightColor );
+  }
+
+  UniformScaleTool.construct!( TransformTarget target, Boolean scaleX, Boolean scaleY, Boolean scaleZ, Color handleColor, Vec2 localHandleOffset, Scalar handleWidth, Color highlightColor ) {
+
+    this.drawScaleFactor = 1;
+    this.localHandleOffset = localHandleOffset;
+    this.handleWidth = handleWidth;
+    this.handleColor = handleColor;
+
+    // Add a drag interaction to the shape
+    MouseClickDragRaycastInteraction clickAndDragInteraction();
+    this.scaleInteraction = UniformScaleDragInteraction( clickAndDragInteraction, target, scaleX, scaleY, scaleZ, this.localTranslate, 100 );
+    this.attachComponent( this.scaleInteraction );
+    this.scaleInteraction.addListener( this, false, ToolEvent_DragMove, UniformScaleTool_XfoChanged );
+    this.scaleInteraction.addListener( this, false, ToolEvent_DragEnd, UniformScaleTool_XfoChanged );
+
+    GeometricShape gizmoShape();
+    this.handleElts = DrawElements();
+    gizmoShape.setGeometry( this.handleElts );
+
+    Vec3 planeNormal = this.scaleInteraction.planeNormalIfPlane;
+    if( planeNormal != Vec3() ) {
+      this.scalePlane = true;
+      Xfo localTransform;
+      localTransform.ori.setFrom2Vectors( Vec3( 0, 1, 0 ), planeNormal );
+      gizmoShape.setLocalTransform( localTransform );
+    }
+
+    if( scaleX && scaleY && scaleZ ) {
+      this.handleElts.setPen( this.handleColor, 1 );
+      this.handleElts.drawTrianglesCube( Xfo(), this.handleWidth, this.handleWidth, this.handleWidth );
+    }
+
+    this.parent.construct( target, highlightColor, gizmoShape, this.scaleInteraction );
+    this.enableLocalTranslation( true );
+
+    this.updateHandle();
+  }
+
+  UniformScaleTool.enableLocalTranslation!( Boolean localTranslate ) {
+    this.localTranslate = localTranslate;
+    this.alignModifier.setAlignType( true, this.localTranslate, false, true );
+    this.scaleInteraction.setLocal( localTranslate );
+  }
+
+  UniformScaleTool.updateHandle!() {
+    if( !this.scalePlane )
+      return;
+
+    // Draw in local space (Y up)
+    this.handleElts.clear();
+    this.handleElts.setPen( this.handleColor, 1 );
+
+    Xfo translateXfo( Vec3( this.localHandleOffset.x, 0, this.localHandleOffset.y ) * this.drawScaleFactor );
+    this.handleElts.drawSquare( translateXfo, this.handleWidth, this.handleWidth );
+    this.handleElts.setPen( Color( this.handleColor.r, this.handleColor.g, this.handleColor.b, 0.5 ), 1 );
+    this.handleElts.drawTrianglesPlane( translateXfo, this.handleWidth, this.handleWidth );
+  }
+
+  /// \internal
+  UniformScaleTool.onEvent!( ToolEvent event, ToolEventUserID userID ) {
+    if( event.name == UniformScaleTool_XfoChanged ) {
+      this.drawScaleFactor = this.scaleInteraction.lastFactor;
+      this.updateHandle();
+    }
+    this.parent.onEvent( event, userID );
+  }
+
+}// namespace Tool

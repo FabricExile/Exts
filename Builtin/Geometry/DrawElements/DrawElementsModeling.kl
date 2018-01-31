@@ -1,0 +1,837 @@
+/*
+ *  Copyright 2010-2015 Fabric Software Inc. All rights reserved.
+ */
+
+/// draws a single point given a position
+function DrawElements.drawPoint!(Vec3 pos) {
+  Index firstIndex = this.allocatePoints(1);
+  Index colorIndex = firstIndex;
+  this.pointsIndices[this.pointsIndicesOffset++] = firstIndex;
+
+  Ref<Vec3Attribute> positionsAttr = this.getOrCreatePositionsAttribute();
+  Ref<Vec3Attribute> normalsAttr = this.getOrCreateNormalsAttribute();
+  positionsAttr.values[firstIndex] = pos;
+  normalsAttr.values[firstIndex] = this.defaultNormal;
+  positionsAttr.incrementVersion();
+  normalsAttr.incrementVersion();
+
+  this.drawPenColors(colorIndex);
+}
+
+/// draws a bunch of points
+function DrawElements.drawPoints!( Vec3 pos[] ) {
+  Index firstIndex = this.allocatePoints( pos.size() );
+  Index colorIndex = firstIndex;
+
+  Ref<Vec3Attribute> positionsAttr = this.getOrCreatePositionsAttribute();
+  Ref<Vec3Attribute> normalsAttr = this.getOrCreateNormalsAttribute();
+
+  for( Size i = 0; i<pos.size(); i++ ) {
+    this.pointsIndices[this.pointsIndicesOffset++] = firstIndex;
+    positionsAttr.values[firstIndex] = pos[i];
+    normalsAttr.values[firstIndex] = this.defaultNormal;
+    firstIndex++;
+  }
+  positionsAttr.incrementVersion();
+  normalsAttr.incrementVersion();
+
+  this.drawPenColors( colorIndex );
+}
+
+/// draws a line given two positions
+/// \dfgPresetDefault from {"x": 0.0, "y": 0.0, "z": 0.0}
+/// \dfgPresetDefault to {"x": 0.0, "y": 4.0, "z": 0.0}
+function DrawElements.drawLine!(Vec3 from, Vec3 to) {
+  Index firstIndex = this.allocateLines(2, 1);
+  Index colorIndex = firstIndex;
+
+  Ref<Vec3Attribute> positionsAttr = this.getOrCreatePositionsAttribute();
+  Ref<Vec3Attribute> normalsAttr = this.getOrCreateNormalsAttribute();
+
+  this.linesIndices[this.linesIndicesOffset++] = firstIndex;
+  positionsAttr.values[firstIndex] = from;
+  normalsAttr.values[firstIndex++] = this.defaultNormal;
+
+  this.linesIndices[this.linesIndicesOffset++] = firstIndex;
+  positionsAttr.values[firstIndex] = to;
+  normalsAttr.values[firstIndex] = this.defaultNormal;
+
+  positionsAttr.incrementVersion();
+  normalsAttr.incrementVersion();
+
+  this.drawPenColors(colorIndex);
+}
+
+/// draws a segmented line given two positions, a number of segmentation
+/// segments (minimum of 2) and a segment ratio (0.0 to 1.0).
+/// \dfgPresetDefault from {"x": 0.0, "y": 0.0, "z": 0.0}
+/// \dfgPresetDefault to {"x": 0.0, "y": 4.0, "z": 0.0}
+/// \dfgPresetDefault numSegments 8
+/// \dfgPresetDefault ratio 0.5
+function DrawElements.drawSegmentedLine!(Vec3 from, Vec3 to, Size numSegments, Scalar ratio) {
+
+  if( numSegments <= 1 ) {
+    this.drawLine( from, to );
+    return;
+  }
+
+  Size nbVertices = numSegments * 2;
+  Index firstIndex = this.allocateLines(nbVertices, numSegments);
+  Index colorIndex = firstIndex;
+
+  Ref<Vec3Attribute> positionsAttr = this.getOrCreatePositionsAttribute();
+  Ref<Vec3Attribute> normalsAttr = this.getOrCreateNormalsAttribute();
+
+  Vec3 pos = from;
+  Vec3 motion = (to - from);
+  Scalar totalRatio = Scalar(numSegments-1) + ratio;
+  Vec3 gap = (1.0 - ratio) * motion / totalRatio;
+  motion = ratio * motion / totalRatio;
+
+  for(Size i=0;i<nbVertices;i++) {
+    this.linesIndices[this.linesIndicesOffset++] = firstIndex;
+    positionsAttr.values[firstIndex] = pos;
+    normalsAttr.values[firstIndex++] = this.defaultNormal;
+    if(i % 2 == 0)
+      pos += motion;
+    else
+      pos += gap;
+  }
+
+  positionsAttr.incrementVersion();
+  normalsAttr.incrementVersion();
+
+  this.drawPenColors(colorIndex);
+}
+
+/// overloaded method, uses 0.5 for the ratio
+function DrawElements.drawSegmentedLine!(Vec3 from, Vec3 to, Size numSegments) {
+  this.drawSegmentedLine(from, to, numSegments, 0.5);
+}
+
+/// draws a line through all of the points provided
+function DrawElements.drawLineStrip!(Vec3 points[]) {
+  Index firstIndex = this.allocateLines(points.size(), points.size()-1);
+  Index colorIndex = firstIndex;
+
+  Ref<Vec3Attribute> positionsAttr = this.getOrCreatePositionsAttribute();
+  Ref<Vec3Attribute> normalsAttr = this.getOrCreateNormalsAttribute();
+
+  for( UInt32 i=0; i<points.size(); i++){
+    positionsAttr.values[firstIndex] = points[i];
+    normalsAttr.values[firstIndex++] = this.defaultNormal;
+    if(i > 0){
+      this.linesIndices[this.linesIndicesOffset++] = firstIndex - 2;
+      this.linesIndices[this.linesIndicesOffset++] = firstIndex - 1;
+    }
+  }
+
+  positionsAttr.incrementVersion();
+  normalsAttr.incrementVersion();
+
+  this.drawPenColors(colorIndex);
+}
+
+/// draws a line through all of the points provided
+function DrawElements.drawLineSegments!( Vec3 starts[], Vec3 ends[] ) {
+  if( starts.size() != ends.size() || starts.size() == 0 )
+    return;
+
+  Index firstIndex = this.allocateLines( starts.size() * 2, starts.size() * 2 );
+  Index colorIndex = firstIndex;
+
+  Ref<Vec3Attribute> positionsAttr = this.getOrCreatePositionsAttribute();
+  Ref<Vec3Attribute> normalsAttr = this.getOrCreateNormalsAttribute();
+
+  for( Integer i = 0; i<starts.size(); i++ ) {
+    positionsAttr.values[firstIndex] = starts[i];
+    normalsAttr.values[firstIndex++] = this.defaultNormal;
+    positionsAttr.values[firstIndex] = ends[i];
+    normalsAttr.values[firstIndex] = this.defaultNormal;
+    this.linesIndices[this.linesIndicesOffset++] = firstIndex - 1;
+    this.linesIndices[this.linesIndicesOffset++] = firstIndex++;
+  }
+
+  positionsAttr.incrementVersion();
+  normalsAttr.incrementVersion();
+
+  this.drawPenColors( colorIndex );
+}
+
+/// draws a line circle around the Y axis given a transform for the circle, 
+/// a radius and a detail setting. the detail describes the number 
+/// of line segments of the circle (minimum of 3).
+/// \dfgPresetDefault radius 3.0
+/// \dfgPresetDefault detail 12
+function DrawElements.drawCircle!(Xfo xfo, Scalar radius, UInt32 detail) {
+  Index firstIndex = this.allocateLines(detail, detail);
+  Index colorIndex = firstIndex;
+
+  Ref<Vec3Attribute> positionsAttr = this.getOrCreatePositionsAttribute();
+  Ref<Vec3Attribute> normalsAttr = this.getOrCreateNormalsAttribute();
+
+  UInt32 id0 = firstIndex;
+  Vec3 p;
+  for (UInt32 i = 0; i < detail; i++) {
+    Scalar angle = (Scalar(i) / Scalar(detail)) * TWO_PI;
+    p = xfo.transformVector(Vec3(sin(angle) * radius, 0.0, cos(angle) * radius));
+    this.linesIndices[this.linesIndicesOffset++] = firstIndex;
+    positionsAttr.values[firstIndex] = p;
+    normalsAttr.values[firstIndex++] = this.defaultNormal;
+    if(i < (detail-1))
+      this.linesIndices[this.linesIndicesOffset++] = firstIndex;
+  }
+  this.linesIndices[this.linesIndicesOffset++] = id0;
+
+  positionsAttr.incrementVersion();
+  normalsAttr.incrementVersion();
+
+  this.drawPenColors(colorIndex);
+}
+
+/// draws a line arc around the Y axis given a transform for the arc, 
+/// a radius, a angular min and max as a Vec3 and a detail setting. 
+/// the detail describes the number of line segments of the circle (minimum of 3).
+/// \param angleMinMax [minAngle, maxAngle], in radians
+/// \dfgPresetDefault radius 3.0
+/// \dfgPresetDefault angleMinMax {"x": 0.0, "y": 1.47}
+/// \dfgPresetDefault detail 12
+function DrawElements.drawArc!( Xfo xfo, Scalar radius, Vec2 angleMinMax, UInt32 detail ) {
+  Index firstIndex = this.allocateLines(detail, detail-1);
+  Index colorIndex = firstIndex;
+
+  Ref<Vec3Attribute> positionsAttr = this.getOrCreatePositionsAttribute();
+  Ref<Vec3Attribute> normalsAttr = this.getOrCreateNormalsAttribute();
+
+  UInt32 id0 = firstIndex;
+  Vec3 p;
+  for (UInt32 i = 0; i < detail; i++) {
+    Scalar blend = (Scalar(i) / Scalar(detail-1));
+    Scalar angle = (1.0 - blend) * angleMinMax.x + blend * angleMinMax.y;
+    p = xfo.transformVector(Vec3(sin(angle) * radius, 0.0, cos(angle) * radius));
+    if(i > 0)
+    {
+      this.linesIndices[this.linesIndicesOffset++] = firstIndex - 1;
+      this.linesIndices[this.linesIndicesOffset++] = firstIndex;
+    }
+    positionsAttr.values[firstIndex] = p;
+    normalsAttr.values[firstIndex++] = this.defaultNormal;
+  }
+
+  positionsAttr.incrementVersion();
+  normalsAttr.incrementVersion();
+
+  this.drawPenColors(colorIndex);
+}
+
+/// draws three line circles representing a sphere given a transform
+/// for the sphere, a radius and a detail setting. 
+/// the detail describes the number of line segments for each circle (minimum of 3).
+/// \dfgPresetDefault radius 3.0
+/// \dfgPresetDefault detail 12
+function DrawElements.drawSphereLines!(Xfo xfo, Scalar radius, UInt32 detail) {
+  Index firstIndex = this.allocateLines(detail * 3, detail * 3);
+  Index colorIndex = firstIndex;
+
+  Ref<Vec3Attribute> positionsAttr = this.getOrCreatePositionsAttribute();
+  Ref<Vec3Attribute> normalsAttr = this.getOrCreateNormalsAttribute();
+
+  Quat offset;
+  Xfo circleXfo = xfo;
+  this.drawCircle(circleXfo, radius, detail);
+
+  offset.setFromAxisAndAngle(Vec3(1.0, 0.0, 0.0), HALF_PI);
+  circleXfo.ori = xfo.ori * offset;
+  this.drawCircle(circleXfo, radius, detail);
+
+  offset.setFromAxisAndAngle(Vec3(0.0, 0.0, 1.0), HALF_PI);
+  circleXfo.ori = xfo.ori * offset;
+  this.drawCircle(circleXfo, radius, detail);
+
+  this.drawPenColors(colorIndex);
+}
+
+
+/// draws a capsule shape using lines. 
+/// the detail describes the number of line segments for each circle (minimum of 3).
+/// \dfgPresetDefault radius 3.0
+/// \dfgPresetDefault height 7.0
+/// \dfgPresetDefault detail 12
+function DrawElements.drawCapsuleLines!(Xfo xfo, Scalar radius, Scalar height, UInt32 detail) {
+
+  Xfo baseXfo;
+  baseXfo.tr.y = height * -0.5;
+  this.drawCircle(xfo * baseXfo, radius, detail);
+
+  Xfo arcXfo;
+  arcXfo.ori.setFromAxisAndAngle(Vec3(1.0, 0.0, 0.0), HALF_PI);
+  this.drawArc(xfo * baseXfo * arcXfo, radius, Vec2(-HALF_PI, HALF_PI), detail);
+
+  arcXfo.ori.setFromAxisAndAngle(Vec3(0.0, 0.0, 1.0), -HALF_PI);
+  Quat rotX;
+  rotX.setFromAxisAndAngle(Vec3(1.0, 0.0, 0.0), HALF_PI);
+  arcXfo.ori = rotX * arcXfo.ori;
+  this.drawArc(xfo * baseXfo * arcXfo, radius, Vec2(-HALF_PI, HALF_PI), detail);
+
+  Xfo tipXfo;
+  tipXfo.tr.y = height * 0.5;
+  this.drawCircle(xfo * tipXfo, radius, detail);
+  arcXfo.ori.setFromAxisAndAngle(Vec3(1.0, 0.0, 0.0), -HALF_PI);
+  this.drawArc(xfo * tipXfo * arcXfo, radius, Vec2(-HALF_PI, HALF_PI), detail);
+
+  arcXfo.ori.setFromAxisAndAngle(Vec3(0.0, 0.0, 1.0), -HALF_PI);
+  rotX.setFromAxisAndAngle(Vec3(1.0, 0.0, 0.0), -HALF_PI);
+  arcXfo.ori = rotX * arcXfo.ori;
+  this.drawArc(xfo * tipXfo * arcXfo, radius, Vec2(-HALF_PI, HALF_PI), detail);
+
+  this.drawLine(xfo.transformVector(Vec3(radius, height*-0.5, 0.0)), xfo.transformVector(Vec3(radius, height*0.5, 0.0)));
+  this.drawLine(xfo.transformVector(Vec3(-radius, height*-0.5, 0.0)), xfo.transformVector(Vec3(-radius, height*0.5, 0.0)));
+  this.drawLine(xfo.transformVector(Vec3(0.0, height*-0.5, radius)), xfo.transformVector(Vec3(0.0, height*0.5, radius)));
+  this.drawLine(xfo.transformVector(Vec3(0.0, height*-0.5, -radius)), xfo.transformVector(Vec3(0.0, height*0.5, -radius)));
+}
+
+/// draws a line square given a transform for the square, a length (along X),
+/// a width (along Z).
+/// \dfgPresetDefault length 3.0
+/// \dfgPresetDefault width 5.0
+function DrawElements.drawSquare!(Xfo xfo, Scalar length, Scalar width) {
+  Index firstIndex = this.allocateLines(4, 4);
+  Index colorIndex = firstIndex;
+
+  Ref<Vec3Attribute> positionsAttr = this.getOrCreatePositionsAttribute();
+  Ref<Vec3Attribute> normalsAttr = this.getOrCreateNormalsAttribute();
+
+  UInt32 id0 = firstIndex;
+  
+  this.linesIndices[this.linesIndicesOffset++] = firstIndex;
+  positionsAttr.values[firstIndex] = xfo.tr + xfo.ori.rotateVector(Vec3(length * 0.5, 0.0, width * 0.5));
+  normalsAttr.values[firstIndex++] = this.defaultNormal;
+  this.linesIndices[this.linesIndicesOffset++] = firstIndex;
+  
+  this.linesIndices[this.linesIndicesOffset++] = firstIndex;
+  positionsAttr.values[firstIndex] = xfo.tr + xfo.ori.rotateVector(Vec3(length *-0.5, 0.0, width * 0.5));
+  normalsAttr.values[firstIndex++] = this.defaultNormal;
+  this.linesIndices[this.linesIndicesOffset++] = firstIndex;
+
+  this.linesIndices[this.linesIndicesOffset++] = firstIndex;
+  positionsAttr.values[firstIndex] = xfo.tr + xfo.ori.rotateVector(Vec3(length *-0.5, 0.0, width *-0.5));
+  normalsAttr.values[firstIndex++] = this.defaultNormal;
+  this.linesIndices[this.linesIndicesOffset++] = firstIndex;
+
+  this.linesIndices[this.linesIndicesOffset++] = firstIndex;
+  positionsAttr.values[firstIndex] = xfo.tr + xfo.ori.rotateVector(Vec3(length * 0.5, 0.0, width *-0.5));
+  normalsAttr.values[firstIndex++] = this.defaultNormal;
+  this.linesIndices[this.linesIndicesOffset++] = id0;
+
+  positionsAttr.incrementVersion();
+  normalsAttr.incrementVersion();
+  
+  this.drawPenColors(colorIndex);
+}
+
+/// draws a line bounding box given a transform for the box, a minimum and
+/// maximum position.
+/// \dfgPresetDefault bboxmin {"x": -2.0, "y": -2.0, "z": -2.0}
+/// \dfgPresetDefault bboxmax {"x": 2.0, "y": 2.0, "z": 2.0}
+function DrawElements.drawBBox!(Xfo xfo, Vec3 bboxmin, Vec3 bboxmax) {
+  Index firstIndex = this.allocateLines(8, 12);
+  Index colorIndex = firstIndex;
+
+  Ref<Vec3Attribute> positionsAttr = this.getOrCreatePositionsAttribute();
+  Ref<Vec3Attribute> normalsAttr = this.getOrCreateNormalsAttribute();
+
+  UInt32 id0 = firstIndex;
+
+  positionsAttr.values[firstIndex] = xfo.transformVector(Vec3(bboxmin.x, bboxmin.y, bboxmin.z));
+  normalsAttr.values[firstIndex++] = this.defaultNormal;
+  positionsAttr.values[firstIndex] = xfo.transformVector(Vec3(bboxmin.x, bboxmax.y, bboxmin.z));
+  normalsAttr.values[firstIndex++] = this.defaultNormal;
+  positionsAttr.values[firstIndex] = xfo.transformVector(Vec3(bboxmin.x, bboxmax.y, bboxmax.z));
+  normalsAttr.values[firstIndex++] = this.defaultNormal;
+  positionsAttr.values[firstIndex] = xfo.transformVector(Vec3(bboxmin.x, bboxmin.y, bboxmax.z));
+  normalsAttr.values[firstIndex++] = this.defaultNormal;
+  positionsAttr.values[firstIndex] = xfo.transformVector(Vec3(bboxmax.x, bboxmin.y, bboxmin.z));
+  normalsAttr.values[firstIndex++] = this.defaultNormal;
+  positionsAttr.values[firstIndex] = xfo.transformVector(Vec3(bboxmax.x, bboxmax.y, bboxmin.z));
+  normalsAttr.values[firstIndex++] = this.defaultNormal;
+  positionsAttr.values[firstIndex] = xfo.transformVector(Vec3(bboxmax.x, bboxmax.y, bboxmax.z));
+  normalsAttr.values[firstIndex++] = this.defaultNormal;
+  positionsAttr.values[firstIndex] = xfo.transformVector(Vec3(bboxmax.x, bboxmin.y, bboxmax.z));
+  normalsAttr.values[firstIndex++] = this.defaultNormal;
+
+  this.linesIndices[this.linesIndicesOffset++] = id0 + 0; this.linesIndices[this.linesIndicesOffset++] = id0 + 4;
+  this.linesIndices[this.linesIndicesOffset++] = id0 + 1; this.linesIndices[this.linesIndicesOffset++] = id0 + 5;
+  this.linesIndices[this.linesIndicesOffset++] = id0 + 2; this.linesIndices[this.linesIndicesOffset++] = id0 + 6;
+  this.linesIndices[this.linesIndicesOffset++] = id0 + 3; this.linesIndices[this.linesIndicesOffset++] = id0 + 7;
+  this.linesIndices[this.linesIndicesOffset++] = id0 + 0; this.linesIndices[this.linesIndicesOffset++] = id0 + 1;
+  this.linesIndices[this.linesIndicesOffset++] = id0 + 1; this.linesIndices[this.linesIndicesOffset++] = id0 + 2;
+  this.linesIndices[this.linesIndicesOffset++] = id0 + 2; this.linesIndices[this.linesIndicesOffset++] = id0 + 3;
+  this.linesIndices[this.linesIndicesOffset++] = id0 + 3; this.linesIndices[this.linesIndicesOffset++] = id0 + 0;
+  this.linesIndices[this.linesIndicesOffset++] = id0 + 4; this.linesIndices[this.linesIndicesOffset++] = id0 + 5;
+  this.linesIndices[this.linesIndicesOffset++] = id0 + 5; this.linesIndices[this.linesIndicesOffset++] = id0 + 6;
+  this.linesIndices[this.linesIndicesOffset++] = id0 + 6; this.linesIndices[this.linesIndicesOffset++] = id0 + 7;
+  this.linesIndices[this.linesIndicesOffset++] = id0 + 7; this.linesIndices[this.linesIndicesOffset++] = id0 + 4;
+
+  positionsAttr.incrementVersion();
+  normalsAttr.incrementVersion();
+
+  this.drawPenColors(colorIndex);
+}
+
+/// draws a cross given a transform
+function DrawElements.drawAxes!(Xfo xfo, Boolean bothSides) {
+
+  Index firstIndex = this.allocateLines(6, 3);
+  Index colorIndex = firstIndex;
+  Index id0 = firstIndex;
+
+  Ref<Vec3Attribute> positionsAttr = this.getOrCreatePositionsAttribute();
+  Ref<Vec3Attribute> normalsAttr = this.getOrCreateNormalsAttribute();
+  ColorAttribute vertexColorsAttr = this.getOrCreateColorAttribute();
+
+  positionsAttr.values[firstIndex] = xfo.transformVector(Vec3(1, 0, 0));
+  normalsAttr.values[firstIndex] = xfo.ori.rotateVector(Vec3(0, 1, 0));
+  vertexColorsAttr.values[firstIndex++] = Color(1.0, 0.0, 0.0);
+
+  positionsAttr.values[firstIndex] = xfo.transformVector(bothSides ? Vec3(-1, 0, 0) : Vec3(0, 0, 0));
+  normalsAttr.values[firstIndex] = xfo.ori.rotateVector(Vec3(0, 1, 0));
+  vertexColorsAttr.values[firstIndex++] = Color(1.0, 0.0, 0.0);
+
+  positionsAttr.values[firstIndex] = xfo.transformVector(Vec3(0, 1, 0));
+  normalsAttr.values[firstIndex] = xfo.ori.rotateVector(Vec3(1, 0, 0));
+  vertexColorsAttr.values[firstIndex++] = Color(0.0, 1.0, 0.0);
+
+  positionsAttr.values[firstIndex] = xfo.transformVector(bothSides ? Vec3(0, -1, 0) : Vec3(0, 0, 0));
+  normalsAttr.values[firstIndex] = xfo.ori.rotateVector(Vec3(1, 0, 0));
+  vertexColorsAttr.values[firstIndex++] = Color(0.0, 1.0, 0.0);
+
+  positionsAttr.values[firstIndex] = xfo.transformVector(Vec3(0, 0, 1));
+  normalsAttr.values[firstIndex] = xfo.ori.rotateVector(Vec3(0, 1, 0));
+  vertexColorsAttr.values[firstIndex++] = Color(0.0, 0.0, 1.0);
+
+  positionsAttr.values[firstIndex] = xfo.transformVector(bothSides ? Vec3(0, 0, -1) : Vec3(0, 0, 0));
+  normalsAttr.values[firstIndex] = xfo.ori.rotateVector(Vec3(0, 1, 0));
+  vertexColorsAttr.values[firstIndex++] = Color(0.0, 0.0, 1.0);
+
+  positionsAttr.incrementVersion();
+  normalsAttr.incrementVersion();
+  vertexColorsAttr.incrementVersion();
+
+  this.linesIndices[this.linesIndicesOffset++] = id0 + 0; this.linesIndices[this.linesIndicesOffset++] = id0 + 1;
+  this.linesIndices[this.linesIndicesOffset++] = id0 + 2; this.linesIndices[this.linesIndicesOffset++] = id0 + 3;
+  this.linesIndices[this.linesIndicesOffset++] = id0 + 4; this.linesIndices[this.linesIndicesOffset++] = id0 + 5;
+
+  // this doesn't call into drawPenColors since it does it itself
+}
+
+
+function DrawElements.setTriangle!( Size ptIdx0, Size ptIdx1, Size ptIdx2 ) {
+  this.trianglesIndices[this.trianglesIndicesOffset++] = ptIdx0;
+  this.trianglesIndices[this.trianglesIndicesOffset++] = ptIdx1;
+  this.trianglesIndices[this.trianglesIndicesOffset++] = ptIdx2;
+}
+
+/// draws a single triangle given three positions and three normals
+function DrawElements.drawTriangle!(Vec3 p0, Vec3 p1, Vec3 p2, Vec3 n0, Vec3 n1, Vec3 n2) {
+  Index firstIndex = this.allocateTriangles(3, 1);
+  Index colorIndex = firstIndex;
+
+  Ref<Vec3Attribute> positionsAttr = this.getOrCreatePositionsAttribute();
+  Ref<Vec3Attribute> normalsAttr = this.getOrCreateNormalsAttribute();
+
+  this.trianglesIndices[this.trianglesIndicesOffset++] = firstIndex;
+  positionsAttr.values[firstIndex] = p0;
+  normalsAttr.values[firstIndex++] = n0;
+
+  this.trianglesIndices[this.trianglesIndicesOffset++] = firstIndex;
+  positionsAttr.values[firstIndex] = p1;
+  normalsAttr.values[firstIndex++] = n1;
+
+  this.trianglesIndices[this.trianglesIndicesOffset++] = firstIndex;
+  positionsAttr.values[firstIndex] = p2;
+  normalsAttr.values[firstIndex++] = n2;
+  
+  positionsAttr.incrementVersion();
+  normalsAttr.incrementVersion();
+
+  this.drawPenColors(colorIndex);
+}
+
+
+/// draws a single triangle given three positions and a single normal
+function DrawElements.drawTriangle!(Vec3 p0, Vec3 p1, Vec3 p2, Vec3 n) {
+  this.drawTriangle(p0, p1, p2, n, n, n);
+}
+
+/// draws a single triangle given only three positions
+function DrawElements.drawTriangle!(Vec3 p0, Vec3 p1, Vec3 p2) {
+  Vec3 n = (p2 - p0).cross(p0 - p1).unit();
+  this.drawTriangle(p0, p1, p2, n, n, n);
+}
+
+/// draws a triangle sphere given a transform for the sphere, a radius
+/// and a detail setting. the detail setting describes the 
+/// number of segments along u and v of the sphere (minimum of 3).
+/// \dfgPresetDefault radius 3.0
+/// \dfgPresetDefault detail 12
+function DrawElements.drawTrianglesSphere!(Xfo xfo, Scalar radius, UInt32 detail) {
+  UInt32 sides = (detail >= 0) ? (detail * 2 + 3) : 3;
+  UInt32 loops = (detail >= 0) ? (detail + 1) : 1;
+  UInt32 nbLoops = loops + 1;
+  UInt32 nbSides = sides + 1;
+  
+
+  Index firstIndex = this.allocateTriangles(2 * sides * (2 + loops), 2 * sides * (loops + 1));
+  Index colorIndex = firstIndex;
+  Size numVertsStart = firstIndex;
+
+  Ref<Vec3Attribute> positionsAttr = this.getOrCreatePositionsAttribute();
+  Ref<Vec3Attribute> normalsAttr = this.getOrCreateNormalsAttribute();
+
+  for (UInt32 i = 0; i <= nbLoops; i++) {
+    Scalar theta = (i / Scalar(nbLoops)) * PI;
+    for (UInt32 j = 0; j < nbSides; j++) {
+      Scalar phi = (j / Scalar(sides)) * 2.0 * PI;
+
+      Vec3 normal = Vec3(
+        sin(theta) * cos(phi),
+        cos(theta),
+        sin(theta) * sin(phi)
+      );
+      positionsAttr.values[firstIndex] = xfo.tr + normal * radius;
+      normalsAttr.values[firstIndex++] = normal;
+    }
+  }
+  
+  // Body of the sphere
+  for (UInt32 i = 0; i < nbLoops; i++) {
+    for (UInt32 j = 0; j < sides; j++) {
+      UInt32 v0, v1, v2, v3;
+      v0 = (nbSides * i) + j;
+      v1 = (nbSides * i) + ((j + 1) % nbSides);
+      v2 = (nbSides * (i+1)) + ((j + 1) % nbSides);
+      v3 = (nbSides * (i+1)) + j;
+      
+      this.trianglesIndices[this.trianglesIndicesOffset++] = numVertsStart + v0;
+      this.trianglesIndices[this.trianglesIndicesOffset++] = numVertsStart + v1;
+      this.trianglesIndices[this.trianglesIndicesOffset++] = numVertsStart + v3;
+      this.trianglesIndices[this.trianglesIndicesOffset++] = numVertsStart + v1;
+      this.trianglesIndices[this.trianglesIndicesOffset++] = numVertsStart + v2;
+      this.trianglesIndices[this.trianglesIndicesOffset++] = numVertsStart + v3;
+    }
+  }
+
+  positionsAttr.incrementVersion();
+  normalsAttr.incrementVersion();
+
+  this.drawPenColors(colorIndex);
+}
+
+/// draws a triangle cone given a transform for the cone, a radius,
+/// a height (along Y) and a detail setting. the detail setting
+/// describes the segmentation of the cone circle (minimum of 3).
+/// \dfgPresetDefault radius 3.0
+/// \dfgPresetDefault height 7.0
+/// \dfgPresetDefault detail 12
+function DrawElements.drawTrianglesCone!(Xfo xfo, Scalar radius, Scalar height, UInt32 detail) {
+  UInt32 sides = (detail >= 0) ? (detail * 2 + 3) : 3;
+  Index firstIndex = this.allocateTriangles(sides * 2 + 2, 2 * sides);
+  Index colorIndex = firstIndex;
+
+  Ref<Vec3Attribute> positionsAttr = this.getOrCreatePositionsAttribute();
+  Ref<Vec3Attribute> normalsAttr = this.getOrCreateNormalsAttribute();
+  
+  Size numVertsStart = firstIndex;
+
+  Vec3 yNormal = xfo.ori.getYaxis().negate();
+  positionsAttr.values[firstIndex] = xfo.tr;
+  normalsAttr.values[firstIndex++] = yNormal;
+  positionsAttr.values[firstIndex] = xfo.transformVector(Vec3(0, height, 0));
+  normalsAttr.values[firstIndex++] = yNormal.negate();
+
+  for (UInt32 j = 0; j < sides; j++) {
+    Scalar phi = (j / Scalar(sides)) * 2.0 * PI;
+    Vec3 normal = Vec3(cos(phi), 0.0, sin(phi));
+    Vec3 pos = xfo.transformVector(normal * radius);
+
+    positionsAttr.values[firstIndex] = pos;
+    normalsAttr.values[firstIndex++] = normal;
+    positionsAttr.values[firstIndex] = pos;
+    normalsAttr.values[firstIndex++] = yNormal;
+  }
+  
+  for (UInt32 j = 0; j < sides; j++) {
+    UInt32 v0, v1, v2, v3;
+    v0 = 0;
+    v1 = 2 + (j % sides) * 2;
+    v2 = 2 + ((j + 1) % sides) * 2;
+    v3 = 1;
+    
+    this.trianglesIndices[this.trianglesIndicesOffset++] = numVertsStart + v0;
+    this.trianglesIndices[this.trianglesIndicesOffset++] = numVertsStart + v1+1;
+    this.trianglesIndices[this.trianglesIndicesOffset++] = numVertsStart + v2+1;
+    this.trianglesIndices[this.trianglesIndicesOffset++] = numVertsStart + v1;
+    this.trianglesIndices[this.trianglesIndicesOffset++] = numVertsStart + v3;
+    this.trianglesIndices[this.trianglesIndicesOffset++] = numVertsStart + v2;
+  }
+
+  positionsAttr.incrementVersion();
+  normalsAttr.incrementVersion();
+
+  this.drawPenColors(colorIndex);
+}
+
+/// draws a triangle cube given a transform for the cube, a width (along X),
+/// a height (along Y), a length (along Z).
+/// \dfgPresetDefault width 4.0
+/// \dfgPresetDefault height 4.0
+/// \dfgPresetDefault length 4.0
+function DrawElements.drawTrianglesCube!(Xfo xfo, Scalar width, Scalar height, Scalar length) {
+  Index firstIndex = this.allocateTriangles(24, 12);
+  Index colorIndex = firstIndex;
+
+  Ref<Vec3Attribute> positionsAttr = this.getOrCreatePositionsAttribute();
+  Ref<Vec3Attribute> normalsAttr = this.getOrCreateNormalsAttribute();
+
+  Size numVertsStart = firstIndex;
+
+  Vec3 p0 = xfo.transformVector(Vec3(-width * 0.5, -height * 0.5, -length * 0.5));
+  Vec3 p1 = xfo.transformVector(Vec3(-width * 0.5, -height * 0.5, length * 0.5));
+  Vec3 p2 = xfo.transformVector(Vec3(width * 0.5, -height * 0.5, length * 0.5));
+  Vec3 p3 = xfo.transformVector(Vec3(width * 0.5, -height * 0.5, -length * 0.5));
+  Vec3 p4 = xfo.transformVector(Vec3(-width * 0.5, height * 0.5, -length * 0.5));
+  Vec3 p5 = xfo.transformVector(Vec3(-width * 0.5, height * 0.5, length * 0.5));
+  Vec3 p6 = xfo.transformVector(Vec3(width * 0.5, height * 0.5, length * 0.5));
+  Vec3 p7 = xfo.transformVector(Vec3(width * 0.5, height * 0.5, -length * 0.5));
+
+  Vec3 nX = xfo.ori.getXaxis();
+  Vec3 nY = xfo.ori.getYaxis();
+  Vec3 nZ = xfo.ori.getZaxis();
+
+  // bot
+  this.drawTriangle(p2, p1, p0, nY.negate());
+  this.drawTriangle(p0, p3, p2, nY.negate());
+
+  // top
+  this.drawTriangle(p4, p5, p6, nY);
+  this.drawTriangle(p6, p7, p4, nY);
+
+  // left
+  this.drawTriangle(p0, p1, p4, nX.negate());
+  this.drawTriangle(p1, p5, p4, nX.negate());
+
+  // right
+  this.drawTriangle(p2, p3, p6, nX);
+  this.drawTriangle(p3, p7, p6, nX);
+
+  // front
+  this.drawTriangle(p1, p2, p5, nZ);
+  this.drawTriangle(p2, p6, p5, nZ);
+
+  // back
+  this.drawTriangle(p3, p0, p7, nZ.negate());
+  this.drawTriangle(p0, p4, p7, nZ.negate());
+
+  positionsAttr.incrementVersion();
+  normalsAttr.incrementVersion();
+
+  this.drawPenColors(colorIndex);
+}
+
+/// draws a triangle plane given a transform for the plane, a width (along X),
+/// a height (along Z).
+/// \dfgPresetDefault width 4.0
+/// \dfgPresetDefault height 4.0
+function DrawElements.drawTrianglesPlane!(Xfo xfo, Scalar width, Scalar height) {
+  Index firstIndex = this.allocateTriangles(6, 2);
+  Index colorIndex = firstIndex;
+
+  Ref<Vec3Attribute> positionsAttr = this.getOrCreatePositionsAttribute();
+  Ref<Vec3Attribute> normalsAttr = this.getOrCreateNormalsAttribute();
+  
+  Vec3 p0 = xfo.transformVector(Vec3(-width * 0.5, 0, -height * 0.5));
+  Vec3 p1 = xfo.transformVector(Vec3(width * 0.5, 0, -height * 0.5));
+  Vec3 p2 = xfo.transformVector(Vec3(width * 0.5, 0, height * 0.5));
+  Vec3 p3 = xfo.transformVector(Vec3(-width * 0.5, 0, height * 0.5));
+
+  this.drawTriangle(p0, p1, p2);
+  this.drawTriangle(p2, p3, p0);
+
+  positionsAttr.incrementVersion();
+  normalsAttr.incrementVersion();
+
+  this.drawPenColors(colorIndex);
+}
+
+/**
+Draws a transformed triangles cylinder.
+Before applying the transformation, the base will be centered at Y = -`height` / 2, and its top will be at Y = `height` / 2.
+
+\param xfo Created points will be transformed by this Xfo
+\param radius Radius of the cylinder
+\param height Height of the cylinder
+\param caps If true, a disc will be added at the base and the top of the cylinder (closed)
+\param sides Number of cylinder sides
+\category primitives
+\dfgPresetDefault radius 1.0
+\dfgPresetDefault height 4.0
+\dfgPresetDefault caps true
+\dfgPresetDefault sides 8
+\dfgPresetRange radius (0.0, 8.0)
+\dfgPresetRange height (0.0, 8.0)
+\dfgPresetRange sides (3, 24)
+*/
+function DrawElements.drawTrianglesCylinder!( Xfo xfo, Scalar radius, Scalar height, Boolean caps, Integer sides ) {
+
+  Size nb_sides = sides > 3 ? sides : 3;
+  Size nb_pts = nb_sides * 2;
+  Size nb_tri = nb_sides * 2;
+  if( caps ) {
+    nb_pts += ( 1 + nb_sides ) * 2;
+    nb_tri += nb_sides * 2;
+  }
+
+  Ref<Vec3Attribute> positions = this.getOrCreatePositionsAttribute();
+  Ref<Vec3Attribute> normals = this.getOrCreateNormalsAttribute();
+
+  Index firstPoint = this.allocateTriangles( nb_pts, nb_tri );
+
+  // build the topology for the body of the cylinder
+  for( UInt32 j = 0; j < nb_sides; j++ ) {
+    UInt32 v0, v1, v2, v3;
+    v0 = j;
+    v1 = ( j + 1 ) % nb_sides;
+    v2 = nb_sides + ( ( j + 1 ) % nb_sides );
+    v3 = nb_sides + j;
+
+    this.setTriangle( firstPoint + v0, firstPoint + v1, firstPoint + v2 );
+    this.setTriangle( firstPoint + v0, firstPoint + v2, firstPoint + v3 );
+
+    Scalar phi = ( j / Scalar( nb_sides ) ) * 2.0 * PI;
+    Vec3 normal = xfo.ori.rotateVector( Vec3( sin( phi ), 0.0, cos( phi ) ) );
+    normals.values[firstPoint + v0] = normal;
+    normals.values[firstPoint + v2] = normal;
+  }
+
+
+  if( caps ) {
+    // Bottom cap topology 
+    Size capPoints = nb_sides * 2;
+    for( UInt32 j = 0; j < nb_sides; j++ ) {
+      UInt32 v0, v1, v2;
+      v0 = nb_pts - 1;
+      v1 = capPoints + ( ( j + 1 ) % nb_sides );
+      v2 = capPoints + j;
+      this.setTriangle( firstPoint + v0, firstPoint + v1, firstPoint + v2 );
+
+      Vec3 normal = xfo.ori.rotateVector( Vec3( 0.0, -1.0, 0.0 ) );
+      normals.values[v0] = normal;
+      normals.values[v1] = normal;
+      normals.values[v2] = normal;
+    }
+    // Top cap topology
+    capPoints = nb_sides * 3;
+    for( UInt32 j = 0; j < nb_sides; j++ ) {
+      UInt32 v0, v1, v2;
+
+      v0 = capPoints + j;
+      v1 = capPoints + ( ( j + 1 ) % nb_sides );
+      v2 = nb_pts - 2;
+      this.setTriangle( firstPoint + v0, firstPoint + v1, firstPoint + v2 );
+      Vec3 normal = xfo.ori.rotateVector( Vec3( 0.0, 1.0, 0.0 ) );
+      normals.values[v0] = normal;
+      normals.values[v1] = normal;
+      normals.values[v2] = normal;
+    }
+  }
+
+  // Set positions
+  Integer voff = firstPoint;
+  for( UInt32 i = 0; i < 2; i++ ) {
+    Scalar y = ( i * height ) - ( height * 0.5 );
+    for( UInt32 j = 0; j < nb_sides; j++ ) {
+      Scalar phi = ( j / Scalar( nb_sides ) ) * 2.0 * PI;
+      Vec3 pos = xfo.transformVector( Vec3( sin( phi ) * radius, y, cos( phi ) * radius ) );
+      this.setPointPosition( voff, pos );
+      if( caps )
+        this.setPointPosition( voff + nb_sides*2, pos );
+      voff++;
+    }
+  }
+  if( caps ) {
+    // Top cap
+    this.setPointPosition( firstPoint + nb_pts - 1, xfo.transformVector( Vec3( 0.0, height * -0.5, 0.0 ) ) );
+    this.setPointPosition( firstPoint + nb_pts - 2, xfo.transformVector( Vec3( 0, height * 0.5, 0 ) ) );
+  }
+
+  this.drawPenColors( firstPoint );
+}
+
+/**
+Draws a transformed triangles torus.
+Before applying the transformation, it will be in the XZ plane, centered at the origin.
+
+\param xfo Created points will be transformed by this Xfo
+\param innerRadius The radius of torus's sections (torus's height)
+\param outerRadius The radius of the torus's ring center
+\param loops Increasing this number will add sections to the torus
+\param slices Increasing this number will add transversal sections to the torus
+\category primitives
+\dfgPresetDefault innerRadius 1.0
+\dfgPresetDefault outerRadius 4
+\dfgPresetDefault detail 4
+\dfgPresetRange innerRadius (0.0, 8.0)
+\dfgPresetRange outerRadius (0.0, 12.0)
+\dfgPresetRange slices (2, 12)
+\dfgPresetRange loops (2, 12)
+*/
+function DrawElements.drawTrianglesTorus!( Xfo xfo, Scalar innerRadius, Scalar outerRadius, Size loops, Size slices ) {
+
+  Ref<Vec3Attribute> positions = this.getOrCreatePositionsAttribute();
+  Ref<Vec3Attribute> normals = this.getOrCreateNormalsAttribute();
+
+  Size actualSlices = ( slices < 3 ) ? 3 : slices;
+  Size actualLoops = ( loops < 3 ) ? 3 : loops;
+  Size nb_pts = actualSlices * actualLoops;
+  Size nb_tri = actualSlices * actualLoops * 2;
+
+  Index firstPoint = this.allocateTriangles( nb_pts, nb_tri );
+
+  for( Size i = 0; i < actualLoops; i++ ) {
+    for( Size j = 0; j < actualSlices; j++ ) {
+
+      Size v0, v1, v2, v3;
+      Size ip = ( i + 1 ) % actualLoops;
+      Size jp = ( j + 1 ) % actualSlices;
+      v0 = actualSlices * i + j;
+      v1 = actualSlices * i + jp;
+      v2 = actualSlices * ip + jp;
+      v3 = actualSlices * ip + j;
+
+      this.setTriangle( firstPoint + v0, firstPoint + v1, firstPoint + v2 );
+      this.setTriangle( firstPoint + v0, firstPoint + v2, firstPoint + v3 );
+    }
+  }
+
+  Size index = firstPoint;
+
+  for( Size i = 0; i < actualLoops; i++ ) {
+    Scalar theta = ( i / Scalar( actualLoops ) ) * 2.0 * PI;
+    Scalar ctheta = cos( theta );
+    Scalar stheta = sin( theta );
+
+    for( Size j = 0; j < actualSlices; j++ ) {
+      Scalar phi = ( j / Scalar( actualSlices ) ) * 2.0 * PI;
+
+      Scalar sphi = sin( phi );
+      Scalar cphi = cos( phi );
+      Scalar d = outerRadius + cphi * innerRadius;
+
+      this.setPointPosition( index, xfo.transformVector( Vec3( ctheta * d, innerRadius * sphi, stheta * d ) ) );
+      normals.values[ index ] = xfo.ori.rotateVector( Vec3( ctheta * cphi, sphi, stheta * cphi ) );
+
+      index++;
+    }
+  }
+  this.drawPenColors( firstPoint );
+}

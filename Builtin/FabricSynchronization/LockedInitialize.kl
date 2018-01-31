@@ -1,0 +1,75 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+struct LockedInitialize {
+  UInt32 state;
+};
+
+/// \internal
+const UInt32 _LockedInitialize_uninitialized = 0;
+/// \internal
+const UInt32 _LockedInitialize_initializing = 1;
+/// \internal
+const UInt32 _LockedInitialize_initialized = 2;
+
+inline Boolean LockedInitialize.initialized() {
+  return this.state == _LockedInitialize_initialized;
+}
+
+inline LockedInitialize.reset!() {
+  this.state.atomicAnd(0);
+}
+
+struct InitializeBracket {
+  Data init;
+  Boolean callerMustInitialize;
+};
+
+inline InitializeBracket( io LockedInitialize init ) {
+  this.init = init.data();
+  if( init.state == _LockedInitialize_initialized )
+    return;
+  UInt32 result = init.state.atomicCAS( _LockedInitialize_uninitialized, _LockedInitialize_initializing );
+  if(result == _LockedInitialize_uninitialized) {
+    atomicMemoryBarrier_Acquire();
+    this.callerMustInitialize = true;
+    return;
+  } else {
+
+    ActiveWaitLoopControl waitControl();
+
+    while( true ) {
+      //Wait until the other thread has initialized it
+      waitControl.wait();
+      //Make a dummy atomic op to ensure memory cache is flushed
+      if( init.state.atomicAnd(7) == _LockedInitialize_initialized )
+        return;
+    }
+  }
+}
+
+inline Boolean InitializeBracket.mustInitialize() {
+  return this.callerMustInitialize;
+}
+
+inline ~InitializeBracket() {
+  if( this.callerMustInitialize ) {
+    atomicMemoryBarrier_Release();
+    this.init->{LockedInitialize}.state.atomicCAS( _LockedInitialize_initializing, _LockedInitialize_initialized );
+  }
+}
+
+/// Helper class for attaching an Object member in a thread-safe way
+struct ThreadSafeAttachedData {
+  LockedInitialize initialized;
+  Object attached;
+};
+
+Ref<Object> ThreadSafeAttachedData.getOrCreateAttachedObject!( Type type ) {
+  InitializeBracket initBracket(this.initialized);
+  if( initBracket.mustInitialize() )
+    this.attached = type.createNew();
+  
+  return this.attached;
+}

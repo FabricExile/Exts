@@ -1,0 +1,187 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+
+/**
+\versionadded 1.12.0
+
+The OGLWireFrameShader inherits the OGLInlineShader. It encapsulates any other :ref:`inlineshader`, while setting the polygon mode to lines.
+
+\example
+  InlineDrawing draw = OGLInlineDrawing();
+  OGLWireFrameShader shader = draw.registerShader(OGLWireFrameShader('wireframe', OGLSurfaceShader()));
+  shader.setPolygonOffset(-1.0); // draw as overlay
+  InlineMaterial mat = shader.getOrCreateMaterial('blue');
+  mat.setUniform('u_diffuseColor', Color(0.0, 0.0, 1.0));
+\endexample
+\dfgPresetOmit
+*/
+object OGLWireFrameShader: OGLInlineShader {
+  /// \internal
+  Boolean asLines;
+  /// \internal
+  Scalar polyOffset;
+  /// \internal
+  OGLInlineShader shader;
+};
+
+
+
+/// default constructor 
+function OGLWireFrameShader(OGLInlineShader shader) { 
+  this.init(this.type(), shader); 
+}
+
+/// default constructor taking a name
+function OGLWireFrameShader(String name, OGLInlineShader shader) {
+  this.init(name, shader); 
+}
+
+function OGLWireFrameShader.init!(String name, OGLInlineShader shader) {
+  this.name = name;
+  this.shader = shader;
+  this.asLines = true;
+  this.polyOffset = 0.0;
+}
+
+/// sets the wireframe option on the shader
+function OGLWireFrameShader.setWireFrame!(Boolean enabled) {
+  this.asLines = enabled;
+}
+
+/// sets the polygonoffset (0.0 disables)
+function OGLWireFrameShader.setPolygonOffset!(Scalar offset) {
+  this.polyOffset = offset;
+}
+
+/// returns the name of this shader
+function String OGLWireFrameShader.getName() {
+  return this.name + '_' + this.shader.getName();
+}
+
+/// called by the InlineDrawing, should not be called manually
+/// \internal
+function Boolean OGLWireFrameShader.draw!(io DrawContext context) {
+
+  if(this.asLines)
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
+  if(this.polyOffset != 0.0) {
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(this.polyOffset, 1.0);
+  }
+
+  Boolean result = this.shader.draw(context);
+
+  if(this.asLines)
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
+  if(this.polyOffset != 0.0)
+    glDisable(GL_POLYGON_OFFSET_FILL);
+
+  return result;
+}
+
+/// returns true if this shader has a material with a given name
+function Boolean OGLWireFrameShader.hasMaterial(String name) {
+  return this.shader.hasMaterial(name);
+}
+
+/// returns (and eventually creates) a new matching material with a given name
+function InlineMaterial OGLWireFrameShader.getOrCreateMaterial!(String name) {
+  return this.shader.getOrCreateMaterial(name);
+}
+
+/// returns the number of materials in this shader
+function Size OGLWireFrameShader.getMaterialCount() {
+  return this.shader.getMaterialCount();
+}
+
+/// returns an existing material by index
+function InlineMaterial OGLWireFrameShader.getMaterial(Index index) {
+  return this.shader.getMaterial(index);
+}
+
+/// define a new uniform on the shader. the uniformType is
+/// auxiliary and can be used within the shader later if required.
+function OGLWireFrameShader.defineUniform!(InlineUniform uniform) {
+  this.shader.defineUniform(uniform);
+}
+
+/// returns true if this shader has a uniform with a given name
+function Boolean OGLWireFrameShader.hasUniform(String name) {
+  return this.shader.hasUniform(name);
+}
+
+/// sets the global value of a uniform
+/// this can be changed per material, per instance or even per transform
+function OGLWireFrameShader.setUniform!(InlineUniform uniform) {
+  this.shader.setUniform(uniform);
+}
+
+/// draws a uniform for the shader, applies the value essentially.
+/// this particular method avoid the lookup of the location by name
+/// and draws the uniform directly
+/// \dfgPresetOmit
+function Boolean OGLWireFrameShader.bindUniformToLocation!(io DrawContext context, InlineUniform uniform, Integer location) {
+  return this.shader.bindUniformToLocation(context, uniform, location);
+}
+
+/// \internal
+function Boolean OGLWireFrameShader.bindTexture!(io DrawContext context, InlineUniform uniform, Integer location, Integer textureUnit, Integer textureSizeLocation) {
+  return this.shader.bindTexture(context, uniform, location, textureUnit, textureSizeLocation);
+}
+
+
+/// draws a uniform for the shader, applies the value essentially. 
+/// this should be used from within the InlineMaterial's draw or 
+/// the InlineInstance's draw.
+/// \internal
+function Boolean OGLWireFrameShader.drawUniform!(io DrawContext context, InlineUniform uniform) {
+  return this.shader.drawUniform(context, uniform);
+}
+
+/// define a surface attribute with a given name and type
+function OGLWireFrameShader.defineAttribute!(String name, String attributeType) {
+  this.shader.defineAttribute(name, attributeType);
+}
+
+/// returns the number of attributes
+function Size OGLWireFrameShader.getAttributeCount() {
+  return this.shader.getAttributeCount();
+}
+
+/// returns the name of an attribute
+function String OGLWireFrameShader.getAttributeName(Index index) {
+  return this.shader.getAttributeName(index);
+}
+
+/// returns the type of an attribute
+function String OGLWireFrameShader.getAttributeType(Index index) {
+  return this.shader.getAttributeType(index);
+}
+
+/// returns true if this shader has an attribute with a given name
+function Integer OGLWireFrameShader.getAttributeID(String name) {
+  return this.shader.getAttributeID(name);
+}
+
+/// returns the ID / location of a given attribute inside the shader.
+function Boolean OGLWireFrameShader.hasAttribute(String name) {
+  return this.shader.hasAttribute(name);
+}
+
+Boolean OGLWireFrameShader.supportsHardwareInstancing!() {
+
+  return this.shader.supportsHardwareInstancing();
+
+}
+
+/// enables or disables the hardware instancing
+Boolean OGLWireFrameShader.enableHardwareInstancing!(io DrawContext context, Boolean enable, io Object storage, Xfo xfos[], UInt32 version) {
+
+  return this.shader.enableHardwareInstancing(context, enable, storage, xfos, version);
+
+}

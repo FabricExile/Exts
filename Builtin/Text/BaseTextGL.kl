@@ -1,0 +1,342 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+require FreeTypeGL, FabricOGL;
+
+/**
+  \versionadded 2.4.0
+    
+  BaseTextGL extends FreeTypeGL to draw 2D text and 2D primitives with FabricOGL.
+  It's in charge of generating and binding the OpenGL buffers.
+  It also provides high level methods to push or insert text to draw.
+
+  \example
+
+    UInt32 nbString = 10;
+    UInt32 nbMaxCharacter = 3;
+    Color color(1.0f, 0.0f, 0.0f, 1.0f);   
+
+    // 1. Push text sequentially
+    // Allocate the buffers and set the number of items to draw to zero.
+    BaseTextGL.allocVertices((2*nbString+1)*(2*nbString+1), nbMaxCharacter);
+    
+    // Clear the previous content (set the number of items to draw to zero),
+    // It doesn't re-allocate the buffers.
+    BaseTextGL.clearVertices();
+    
+    // Push new text to draw
+    BaseTextGL.setState(FreeTypeGL_FROZEN);
+    for(SInt32 i=0; i<nbString; ++i)
+    {
+      Vec3 pos = Vec3(i, 0, 0);
+      String str = String(i);
+      // When pushing new text, the number of elements 
+      // to draw is automatically updated.
+      BaseTextGL.pushText(str, color, pos);
+    } 
+    BaseTextGL.setState(FreeTypeGL_DIRTY);
+
+
+    // 2. Insert text in parallel
+    // Allocates the buffers and set the number of items to draw
+    // equals to buffersc capacity 
+    BaseTextGL.allocAndSetVerticesSize(nbString, nbMaxCharacter);
+    
+    operator InsertText<<< i >>> (io BaseTextGL Text) {
+      Vec3 pos = Vec3(i, 0, 0);
+      String str = String(i);
+      Color color(1.0f, 0.0f, 0.0f, 1.0f);   
+      Text.insertText(i, str, color, pos);
+    }
+
+    // Insert new text to draw
+    BaseTextGL.setState(FreeTypeGL_FROZEN);
+    InsertText<<< nbString >>>(BaseTextGL);
+    BaseTextGL.setState(FreeTypeGL_DIRTY);
+  
+  \endexample
+
+  \seealso :kl-ref:`FreeTypeGL`, :kl-ref:`Text`.
+
+  \dfgPresetOmit
+*/
+object BaseTextGL : FreeTypeGL, Text {
+  /// Shader program id.
+  /// Use to bind the buffers.
+  protected UInt32 programId;
+  /// Reference to the atlas.
+  /// Used to add text.
+  protected Ref<AtlasGL> atlas;
+  /// Number of GLSL attributes.
+  protected UInt32 attributesCount;
+};
+ 
+/// Initializes a BaseTextGL to draw text.
+/// \param atlas A reference to an AtlasGL. Must be set to draw text.
+/// \param attributes GLSL attributes list (as a string)
+protected BaseTextGL.init!(Ref<AtlasGL> atlas, String attributes) {
+  this.init(GL_TRIANGLES, attributes, 4, 6);
+  this.setAtlas(atlas);
+}
+
+/// Constructs an OGLText to draw line or text primitives.
+/// \param mode GL drawing mode (GL_LINES, GL_TRIANGLES, ...)
+/// \param attributes GLSL attributes list (as a string)
+/// \param vertexSize Vertices size
+/// \param indexSize Indices size
+protected BaseTextGL.init!(UInt32 mode, String attributes, UInt32 vertexSize, UInt32 indexSize) {
+  this.parent.init();
+  this.createVertices(attributes, mode, vertexSize, indexSize);
+  this.attributesCount = attributes.split(",").size();
+}
+
+/// \internal
+/// Destructor, automatically called.
+~BaseTextGL() {
+  UInt32 buffersTemp[];
+  buffersTemp.push(this.getVerticesID());
+  buffersTemp.push(this.getIndicesID());
+  UInt32 buffers<> = buffersTemp;
+  glDeleteBuffers( 2, buffers );
+}
+
+/// Sets a reference to the atlas.
+/// \param atlas A reference to an AtlasGL.
+BaseTextGL.setAtlas!(Ref<AtlasGL> atlas) {
+  if(!atlas)
+  {
+    setError("The AtlasGL is null");
+    return;
+  }
+  this.atlas = atlas;
+}
+
+/// Gets a reference to the atlas.
+Ref<AtlasGL> BaseTextGL.getAtlas() {
+  return this.atlas;
+}
+
+/// Gets the ID of the GLSL shader (program) used.
+UInt32 BaseTextGL.getProgramId() {
+  return this.programId;
+}
+
+/// Gets the ID of the GLSL shader (program) used.
+/// \param programId Shader program ID.
+BaseTextGL.setProgramId!(UInt32 programId) {
+  this.programId = programId;
+}
+
+/// Binds the vertices buffers.
+protected BaseTextGL.bindVertices!() {
+  Data data;
+  this.getVerticesData(data);
+
+  UInt32 vsize = this.getNumberVertices() * this.getNumberVerticesItems();
+  if(vsize != this.getGPUVSize())
+  {
+    glBufferData(GL_ARRAY_BUFFER, vsize, data, GL_DYNAMIC_DRAW);
+    this.setGPUVSize(vsize);
+  }
+  else 
+    glBufferSubData(GL_ARRAY_BUFFER, 0, vsize, data);
+}
+
+/// Binds the indices buffers.
+protected BaseTextGL.bindIndices!() {
+  Data data;
+  this.getIndicesData(data);
+
+  UInt32 isize = this.getNumberIndices() * this.getNumberIndicesItems();
+  if(isize != this.getGPUISize())
+  {
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, isize, data, GL_DYNAMIC_DRAW);
+    this.setGPUISize(isize);
+  }
+  else 
+    glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, isize, data);
+}
+
+/// Generates the OpenGL buffers (vertex and index).
+protected BaseTextGL.generateBuffers!() {
+  if(!this.getVerticesID())
+  {
+    UInt32 verticesIds[]; verticesIds.push(this.getVerticesID());
+    glGenBuffers(1, verticesIds);
+    this.setVerticesID(verticesIds[0]);
+  }
+  
+  if(!this.getIndicesID())
+  {
+    UInt32 indicesIds[]; indicesIds.push(this.getIndicesID());
+    glGenBuffers(1, indicesIds);
+    this.setIndicesID(indicesIds[0]);
+  }
+}
+
+/// Enables the OpenGL vertex attributes.
+protected BaseTextGL.enableAttributes!() {
+  for(UInt32 i=0; i<this.attributesCount; ++i)
+  {
+    if(this.getAttributeIndex(i) == -1)
+    {
+      String name; this.getAttributeName(i, name);
+      this.setAttributeIndex(i, glGetAttribLocation(this.getProgramId(), name));
+      if(this.getAttributeIndex(i) == -1) return;
+    }
+    glEnableVertexAttribArray(this.getAttributeIndex(i));
+
+    Data data;
+    this.getAttributePointer(i, data);
+
+    glVertexAttribPointer(
+      this.getAttributeIndex(i), 
+      this.getAttributeSize(i), 
+      this.getAttributeType(i),
+      this.isAttributeNormalized(i), 
+      this.getAttributeStride(i), 
+      data);
+  }
+}
+
+/// Disables the OpenGL vertex attributes.
+protected BaseTextGL.disableAttributes!() {
+  for(UInt32 i=0; i<this.attributesCount ; ++i)
+  {
+    SInt32 attrIndex = this.getAttributeIndex(i);
+    glDisableVertexAttribArray(attrIndex);
+  }
+}
+
+/// Implementation of :kl-ref:`Text`.
+/// To override
+protected BaseTextGL.prepareRender!() {
+}
+
+/// Implementation of :kl-ref:`Text`.
+/// To override
+protected BaseTextGL.finishRender!() {
+}
+
+/// Renders the buffers.
+BaseTextGL.render!() {
+  this.prepareRender();
+
+  if(this.getNumberIndices())
+  {
+    Data data; 
+    glDrawElements(this.getMode(), this.getNumberIndices(), GL_UNSIGNED_INT, data);
+  }
+  else 
+    glDrawArrays(this.getMode(), 0, this.getNumberVertices());
+ 
+  this.finishRender();
+}
+
+/// Vertex attributes for text.
+struct TextTextVertexAttributes {
+  Vec2 vertex; 
+  Vec2 uvs;
+  Color color; 
+  Vec3 stringPos; 
+};
+
+TextTextVertexAttributes(Vec2 vertex, Vec2 uvs, Color color, Vec3 stringPos) {
+  this.vertex = vertex;
+  this.uvs = uvs;
+  this.color = color;
+  this.stringPos = stringPos;
+}
+
+/// Pushs a string to render.
+/// \param text The text to add
+/// \param color Text color
+/// \param pos Text position (in 3D space)
+BaseTextGL.pushText!(String text, Color color, Vec3 pos) {
+
+  Float32 kerning = 0.0f;
+  UInt32 size = text.length();
+
+  UInt32 indices[]; indices.resize(this.indexSize *size);
+  TextTextVertexAttributes vertices[]; vertices.resize(this.vertexSize*size);
+
+  for(UInt32 i = 0; i < size; ++i)
+  {
+    Float32 xo, yo, width, heigth, s0, t0, s1, t1, advance, kerning_;
+    String prev = (i > 0) ? text[i-1] : "";
+    
+    this.atlas.getGlyphAttributes(
+      text[i], prev,
+      kerning_, advance,
+      xo, yo, width, heigth,
+      s0, s1, t0, t1);
+
+    kerning += kerning_; 
+    Float32 x0 = floor( kerning + 0.5f ) + xo;// round to have shaper sampling
+    Float32 y0  = yo;
+    Float32 x1  = x0 + width;
+    Float32 y1  = y0 - heigth;
+    kerning += advance;
+
+    indices[i*this.indexSize + 0] = 0;
+    indices[i*this.indexSize + 1] = 1;
+    indices[i*this.indexSize + 2] = 2;
+    indices[i*this.indexSize + 3] = 0;
+    indices[i*this.indexSize + 4] = 2;
+    indices[i*this.indexSize + 5] = 3;
+
+    vertices[i*this.vertexSize + 0] = TextTextVertexAttributes(Vec2(x0, y0), Vec2(s0, t0), color, pos);
+    vertices[i*this.vertexSize + 1] = TextTextVertexAttributes(Vec2(x0, y1), Vec2(s0, t1), color, pos);
+    vertices[i*this.vertexSize + 2] = TextTextVertexAttributes(Vec2(x1, y1), Vec2(s1, t1), color, pos);
+    vertices[i*this.vertexSize + 3] = TextTextVertexAttributes(Vec2(x1, y0), Vec2(s1, t0), color, pos);
+  }
+
+  this.pushVerticesList(text.length(), vertices.data(), indices.data());
+}
+
+/// Inserts a string to render, thread-safe.
+/// \param index Index of the String to add
+/// \param text The String to add
+/// \param color Text color
+/// \param pos Text position (in 3D space)
+BaseTextGL.insertText!(UInt32 index, String text, Color color, Vec3 pos) {
+ 
+  Float32 kerning = 0.0f;
+  UInt32 indices[]; indices.resize(this.indexSize *this.getMaxVerticesCount());
+  TextTextVertexAttributes vertices[]; vertices.resize(this.vertexSize*this.getMaxVerticesCount());
+
+  UInt32 size = Math_min(text.length(), this.getMaxVerticesCount());
+
+  for(UInt32 i = 0; i < size; ++i)
+  {
+    Float32 xo, yo, width, heigth, s0, t0, s1, t1, advance, kerning_;
+    String prev = (i > 0) ? text[i-1] : "";
+  
+    if(this.atlas.getGlyphAttributes(
+        text[i], prev,
+        kerning_, advance,
+        xo, yo, width, heigth,
+        s0, s1, t0, t1))  
+    {
+      kerning += kerning_; 
+      Float32 x0 = kerning + xo;// round to have shaper sampling
+      Float32 y0 = yo;
+      Float32 x1 = x0 + width;
+      Float32 y1 = y0 - heigth;
+      kerning += advance;
+      indices[i*this.indexSize + 0] = 0;
+      indices[i*this.indexSize + 1] = 1;
+      indices[i*this.indexSize + 2] = 2;
+      indices[i*this.indexSize + 3] = 0;
+      indices[i*this.indexSize + 4] = 2;
+      indices[i*this.indexSize + 5] = 3;
+
+      vertices[i*this.vertexSize + 0] = TextTextVertexAttributes(Vec2(x0, y0), Vec2(s0, t0), color, pos);
+      vertices[i*this.vertexSize + 1] = TextTextVertexAttributes(Vec2(x0, y1), Vec2(s0, t1), color, pos);
+      vertices[i*this.vertexSize + 2] = TextTextVertexAttributes(Vec2(x1, y1), Vec2(s1, t1), color, pos);
+      vertices[i*this.vertexSize + 3] = TextTextVertexAttributes(Vec2(x1, y0), Vec2(s1, t0), color, pos);
+    }
+  }
+  this.insertVerticesList(index, size, vertices.data(), indices.data());
+}

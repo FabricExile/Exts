@@ -1,0 +1,74 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+    "uiNodeColor" : "{\n  \"r\" : 132,\n  \"g\" : 106,\n  \"b\" : 97\n  }"
+    },
+  "title" : "getOrCreateMaterialInstance",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Execute" : {}
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "importer",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Importer"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Ref<ImporterObject>"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "baseMaterial",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String" : "material"
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "name",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String" : "inst"
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String"
+      }
+    ],
+  "extDeps" : {
+    "AssetPatterns" : "*",
+    "Util" : "*"
+    },
+  "presetGUID" : "79CE7D6206F760F2B4EA2AB14E9FEF36",
+  "code" : "dfgEntry {
+  if(importer == null)
+    return;
+  if(name == '' || baseMaterial == '')
+    return;
+
+  String path = '/' + dfgNodePath.replace('.', '/') + '/' + name;
+  result = importer.getOrCreateObject('Material', path, path);
+  ImporterMaterial material(result);
+  if(material == null)
+    return;
+
+  material.setBaseMaterial(baseMaterial);
+}
+"
+  }

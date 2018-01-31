@@ -1,0 +1,58 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+/**
+\versionadded 1.12.0
+The :ref:`xfoparam` implements the :ref:`param` interface for Xfo values.
+*/
+
+require Math;
+
+object XfoParam : Param {
+  String name;
+  Xfo value;
+  Param options[String];
+};
+
+// default constructor
+function XfoParam(String name) {
+  this.name = name;
+}
+
+/// constructor taking input value
+function XfoParam(String name, Xfo value) {
+  this.name = name;
+  this.value = value;
+}
+
+// returns the name of this parameter
+function String XfoParam.getName() {
+  return this.name;
+}
+
+// returns the value type of this parameter
+function String XfoParam.getValueType() {
+  return "Xfo";
+}
+
+// getting an option on this param
+function Param XfoParam.getOption(String name)
+{
+  return this.options.get(name, null);
+}
+
+// setting an option on the parameter
+function XfoParam.setOption!(Param option)
+{
+  this.options[option.getName()] = option;
+}
+
+// returns the param's value
+function Xfo XfoParam.getValue() {
+  return this.value;
+}
+
+// sets the param's value
+function XfoParam.setValue!(Xfo value) {
+  this.value = value;
+}

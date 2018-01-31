@@ -1,0 +1,471 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+struct Curves_ParamLen {
+  Float32 param;
+  Float32 len;
+  Float32 prevSegLen;
+  Float32 invPrevSegLen;//Computed on demand
+  Float32 invPrevSegDeltaParam;//Computed on demand
+};
+
+inline Curves_ParamLen( Float32 param, Float32 len, Float32 prevSegLen ) {
+  this.param = param;
+  this.len = len;
+  this.prevSegLen = prevSegLen;
+  this.invPrevSegLen = 0;
+}
+
+// Note: this is threadsafe, since getting a Float32 is atomic (at worst, gets computed twice)
+Float32 Curves_ParamLen.getOrComputeInvPrevSegLen!() {
+  if( this.invPrevSegLen == 0 )
+    this.invPrevSegLen = ( this.prevSegLen < DIVIDEPRECISION ) ? 1.0f : 1.0f / this.prevSegLen;
+  return this.invPrevSegLen;
+}
+
+// Note: this is threadsafe, since getting a Float32 is atomic (at worst, gets computed twice)
+Float32 Curves_ParamLen.getOrComputePrevSegDeltaParam!( Float32 prevParam ) {
+  if( this.invPrevSegDeltaParam == 0 ) {
+    Float32 deltaParam = this.param - prevParam;
+    this.invPrevSegDeltaParam = ( deltaParam < DIVIDEPRECISION ) ? 1.0f : 1.0f / deltaParam;
+  }
+  return this.invPrevSegDeltaParam;
+}
+
+/// \internal
+struct Curves_lengthComputeCache_perThreadTempBuffers{
+  Vec3 vecData[];//Avoid memory allocations: only resize up
+  Curves_ParamLen paramLenData[];//Avoid memory allocations: only resize up
+};
+
+object Curves_lengthComputeCache_tempBuffers{
+  Curves_lengthComputeCache_perThreadTempBuffers perThread[];
+};
+
+Curves_lengthComputeCache_tempBuffers() {
+  this.perThread.resize( getThreadCount() );
+}
+
+/// \internal
+struct Curves_lengthComputeCache_data{
+  UInt32 lastPositionsPlusStructureVersion;//If per curve
+  LightLock updateLock;//If per curve
+
+  Curves_ParamLen paramLenTable[];
+  Float32 len;
+  Float32 invLen;
+};
+
+/// \internal
+object Curves_lengthComputeCache{
+  // Computation settings
+  Boolean precise;
+  UInt32 initialSamplesPerSpan;
+  Float32 preciseTolerance;
+
+  Ref<Curves> curves;
+  Ref<Curves_lengthComputeCache_tempBuffers> tempBuffers;
+  Ref<PerCurveSamplingTable> sharedSamplingTables;
+
+  LightReadersWriterLock structureRWLock;
+  UInt32 lastStructureVersion;
+
+  Curves_lengthComputeCache_data perCurveData[];
+};
+
+Curves_lengthComputeCache() {
+  this.precise = true;
+  this.initialSamplesPerSpan = 16;
+  this.preciseTolerance = 1e-3f;
+
+  this.tempBuffers = GetOrCreateSingleton( "CurvesLenTBuffs", Curves_lengthComputeCache_tempBuffers );
+}
+
+
+/// \internal
+/// Recursive function that will insert segments until tolerance or max recursion level is reached
+/// Note: Curves_ParamLen.len should be recomputed afterward
+Curves.appendPreciseLenSegments( 
+  UInt32 remainingRecLevel, 
+  Ref<Curves_lengthComputeCache> cache, Curves_data curveData, 
+  Curves_ParamLen prevParamLen, Vec3 prevPos,
+  Curves_ParamLen paramLen, Vec3 pos,
+  Curves_ParamLen nextParamLen, Vec3 nextPos,
+  Float64 squaredToleranceFactor, 
+  io Curves_ParamLen paramLenTable[], io UInt32 nextParamTableIndex,
+  Boolean onlyAddPrevious ) {
+
+  Float32 allSqLen = ( nextPos - prevPos ).lengthSquared();
+  Float64 maxSqLen = allSqLen * squaredToleranceFactor;
+  Float32 prevLenSum = paramLen.prevSegLen + nextParamLen.prevSegLen;
+
+//report( "rec = " + remainingRecLevel );
+//report( "prevP = " + prevParamLen.param + " prevPos = " + prevPos );
+//report( "P = " + paramLen.param + " segL " + paramLen.prevSegLen + " pos = " + pos );
+//report( "nextP = " + nextParamLen.param + " segL " + nextParamLen.prevSegLen + " nextPos = " + nextPos );
+//report( "MAXLen " + sqrt( maxSqLen ) + " seglensum " + (prevLenSum)+" tolFactor " + squaredToleranceFactor );
+
+  if( remainingRecLevel != 0 && maxSqLen < prevLenSum*prevLenSum ) {
+    // Not enough precise (too much curvature): add more segments
+
+    // Split segment going from prevPos to pos in two
+    Float32 prevMiddleParam = ( prevParamLen.param + paramLen.param ) * 0.5f;
+    Vec3 prevMiddlePos = this.data.getPositionAtParam( curveData, prevMiddleParam );
+
+    Float32 prevSubPrevLen = ( prevMiddlePos - prevPos ).length();
+    Curves_ParamLen prevSubPrevParamLen( prevMiddleParam, 0, prevSubPrevLen );//Will recompute curve len at the end
+
+    Float32 prevSubNextLen = ( pos - prevMiddlePos ).length();
+    Curves_ParamLen prevSubNextParamLen( paramLen.param, 0, prevSubNextLen );//Will recompute curve len at the end
+    this.appendPreciseLenSegments(
+      remainingRecLevel - 1,
+      cache, curveData,
+      prevParamLen, prevPos,
+      prevSubPrevParamLen, prevMiddlePos,
+      prevSubNextParamLen, pos,
+      squaredToleranceFactor,
+      paramLenTable, nextParamTableIndex,
+      false );
+
+    if( !onlyAddPrevious ) {
+      // Split segment going from pos to nextPos in two
+      Float32 nextMiddleParam = ( paramLen.param + nextParamLen.param ) * 0.5f;
+      Vec3 nextMiddlePos = this.data.getPositionAtParam( curveData, nextMiddleParam );
+
+      Float32 nextSubPrevLen = ( nextMiddlePos - pos ).length();
+      Curves_ParamLen nextSubPrevParamLen( nextMiddleParam, 0, nextSubPrevLen );//Will recompute curve len at the end
+
+      Float32 nextSubNextLen = ( nextPos - nextMiddlePos ).length();
+      Curves_ParamLen nextSubNextParamLen( nextParamLen.param, 0, nextSubNextLen );//Will recompute curve len at the end
+
+      this.appendPreciseLenSegments(
+        remainingRecLevel - 1,
+        cache, curveData,
+        paramLen, pos,
+        nextSubPrevParamLen, nextMiddlePos,
+        nextSubNextParamLen, nextPos,
+        squaredToleranceFactor,
+        paramLenTable, nextParamTableIndex,
+        false );
+    }
+
+  } else {
+    UInt32 index = nextParamTableIndex++;
+    if( nextParamTableIndex >= paramLenTable.size() )
+      paramLenTable.resize( nextParamTableIndex + 1 );
+    paramLenTable[index] = paramLen;
+
+    if( !onlyAddPrevious ) {
+      paramLenTable[nextParamTableIndex++] = nextParamLen;
+    }
+  }
+}
+
+/// \internal
+Curves.updateCurveTables( Ref<Curves_lengthComputeCache> cache, Curves_data curveData, io Curves_lengthComputeCache_data curveLengthData, io Curves_lengthComputeCache_perThreadTempBuffers tempBuffers ) {
+  // Linear is a special case, as no sampling is required
+  curveLengthData.len = 0;
+  curveLengthData.invLen = 1;
+
+  if( curveData.curveType == curveType_linear ) {
+
+    UInt32 sampleCount = curveData.pointCount + curveData.wrappedCVCount;
+
+    curveLengthData.paramLenTable.resize( sampleCount ? sampleCount : 1 );
+    curveLengthData.paramLenTable[0] = Curves_ParamLen( curveData.domainStart, 0, 0 );
+
+    UInt32 segCount = sampleCount ? sampleCount - 1 : 0;
+    if( segCount ) {
+      Float32 param = curveData.domainStart + 1;
+      Vec3 prevPos = this.data.getPointPosition( curveData, 0 );
+      for( Size i = 0; i < segCount; ++i ) {
+        Vec3 nextPos = this.data.getPointPosition( curveData, i+1 );
+        Float32 prevSegLen = ( nextPos - prevPos ).length();
+        curveLengthData.len += prevSegLen;
+        curveLengthData.paramLenTable[i + 1] = Curves_ParamLen( param, curveLengthData.len, prevSegLen );
+
+        prevPos = nextPos;
+        param += 1.0f;
+      }
+    }
+  } else {
+    // First, do a sampling of the curve (both precise + fast methods)
+
+    // Reuse the methods of CurveSampling to share code (even if not all this data is important here)
+    UInt32 samplesCount, segmentCount, curveSpans;
+    Boolean curveTypeNeedsSharedDataCache, loopingSegments;
+
+    this.data.getSamplingData(
+      curveData, cache.initialSamplesPerSpan,
+      samplesCount, loopingSegments,
+      curveSpans, curveTypeNeedsSharedDataCache );
+
+    if( samplesCount+1 > tempBuffers.vecData.size() )
+      tempBuffers.vecData.resize( samplesCount+1 );
+
+    UInt32 curveSampleOffset;
+
+    for( Size i = 0; i < curveSpans; ++i ) {
+      Curves_samplingComputeWorkUnit MTData;
+      MTData.curveIndex = curveData.selfIndex;
+      MTData.unitIndex = i;
+      MTData.sampleOffset = curveSampleOffset;
+
+      // Special case: for NURBS: skip empty spans
+      if( this.data.isEmptyNURBSSpan( curveData, i ) ) {
+        samplesCount -= cache.initialSamplesPerSpan;
+        continue;
+      }
+
+      // Do the sampling
+      this.data.sampleCurvePositionsInternal2(
+        cache.initialSamplesPerSpan,
+        false, false,
+        curveData, MTData,
+        cache.sharedSamplingTables.perCurveTypePackedCache,
+        tempBuffers.vecData,
+        tempBuffers.vecData );
+
+      curveSampleOffset += cache.initialSamplesPerSpan;
+    }
+
+    // Additional sample for closed curve
+    if( loopingSegments && samplesCount > 0 )
+      tempBuffers.vecData[samplesCount++] = tempBuffers.vecData[0];
+
+    Float32 invSamplesPerSpan = 1.0f / cache.initialSamplesPerSpan;
+    UInt32 segCount = samplesCount ? samplesCount - 1 : 0;
+    if( !segCount ) {
+      curveLengthData.paramLenTable.resize( 1 );
+      curveLengthData.paramLenTable[0] = Curves_ParamLen( curveData.domainStart, 0, 0 );
+      return;
+    }
+
+    // We now have the initial samples.
+    Size tableSize = segCount + 1;
+    Curves_ParamLen table<>;
+
+    if( cache.precise ) {
+      if( tableSize > tempBuffers.paramLenData.size() )
+        tempBuffers.paramLenData.resize( tableSize );
+      table = tempBuffers.paramLenData;
+    } else {
+      curveLengthData.paramLenTable.resize( tableSize );
+      table = curveLengthData.paramLenTable;
+    }
+
+    Curves_ParamLen prevParamLen = Curves_ParamLen( curveData.domainStart, 0, 0 );
+    table[0] = prevParamLen;
+
+    UInt32 sampleOffset = 1;
+    for( Size i = 0; i < curveSpans; ++i ) {
+      Vec2 range = this.data.getSpanRange( curveData, i );
+      if( IsEmptyCurvesSpanRange( range ) )
+        continue;// no samples taken for this span
+
+      Float32 param = range.x;
+      Float32 sampleStep = ( range.y - range.x ) * invSamplesPerSpan;
+
+      for( Size j = 0; j < cache.initialSamplesPerSpan; ++j ) {
+        Float32 prevSegLen = ( tempBuffers.vecData[sampleOffset] - tempBuffers.vecData[sampleOffset-1] ).length();
+        curveLengthData.len += prevSegLen;
+
+        param += sampleStep;
+        table[sampleOffset++] = Curves_ParamLen( param, curveLengthData.len, prevSegLen );
+      }
+    }
+
+    if( cache.precise ) {
+      if( curveLengthData.len < 1e-5f ) {
+        curveLengthData.paramLenTable.resize( 1 );
+        curveLengthData.paramLenTable[0] = Curves_ParamLen( curveData.domainStart, 0, 0 );
+        return;
+      }
+
+      UInt32 nextParamTableIndex;
+
+      if( curveLengthData.paramLenTable.size() < tableSize )
+        curveLengthData.paramLenTable.resize( tableSize );
+
+      curveLengthData.paramLenTable[nextParamTableIndex++] = table[0];
+
+      Float64 tolerancePerUnit = cache.preciseTolerance / curveLengthData.len + 1.0;//Tolerance per unit of length
+      Float64 squaredToleranceFactor = tolerancePerUnit*tolerancePerUnit;
+
+      UInt32 maxRecLevel = 3;
+      // Adjust according to initial samples. Note: initial samples is at least 4.
+      if( cache.initialSamplesPerSpan <= 12 )
+        ++maxRecLevel;
+
+      if( cache.initialSamplesPerSpan <= 6 )
+        ++maxRecLevel;
+
+      if( cache.preciseTolerance < 1e-3f )
+        ++maxRecLevel;
+
+      if( cache.preciseTolerance < 1e-4f )
+        ++maxRecLevel;
+
+      if( cache.preciseTolerance < 1e-5f )
+        ++maxRecLevel;
+
+      //Start from table. Determine if more refinement is required at each segment, recursively.
+      for( Size i = 1; i < tableSize - 1; ++i ) {
+
+        // Check if sample of "i" is good enough for the provided tolerance
+        Vec3 prevPos = tempBuffers.vecData[i - 1];
+        Vec3 pos = tempBuffers.vecData[i];
+        Vec3 nextPos = tempBuffers.vecData[i + 1];
+
+        Boolean lastSeg = i == tableSize - 2;
+//report( "i " + i + "params " + table[i - 1].param + " " + table[i].param + " " + table[i + 1].param + " last " + lastSeg );
+        this.appendPreciseLenSegments( maxRecLevel, cache, curveData, table[i - 1], prevPos, table[i], pos, table[i + 1], nextPos, squaredToleranceFactor, curveLengthData.paramLenTable, nextParamTableIndex, !lastSeg );
+      }
+
+      curveLengthData.paramLenTable.resize( nextParamTableIndex );
+
+      // Recompute the final curve len
+      curveLengthData.len = 0;
+      for( Size i = 1; i < nextParamTableIndex; ++i ) {
+        curveLengthData.len += curveLengthData.paramLenTable[i].prevSegLen;
+        curveLengthData.paramLenTable[i].len = curveLengthData.len;
+      }
+    }
+  }
+  curveLengthData.invLen = ( curveLengthData.len > DIVIDEPRECISION ) ? 1.0f / curveLengthData.len : 1.0f;
+}
+
+/// \internal
+Ref<Curves_lengthComputeCache> Curves.getLengthComputeCache() {
+  Ref<Curves> mutableThis = this;
+  InitializeBracket bracket( mutableThis.lengthComputeCacheInit );
+
+  if( bracket.mustInitialize() ) {
+    mutableThis.lengthComputeCache = Curves_lengthComputeCache();
+    mutableThis.lengthComputeCache.curves = this;
+  }
+  return mutableThis.lengthComputeCache;
+}
+
+/// \internal
+/// This can be called in parallel. However, it is not threadsafe under structural changes, and might give
+/// unpredictable results if called while the positions are changing.
+Ref<Curves_lengthComputeCache> Curves.getUpdatedComputeCache( UInt32 curveIndex ) {
+
+  Ref<Curves_lengthComputeCache> cache = this.getLengthComputeCache();
+
+  // First, check if structure changed
+  UInt32 structureVersion = this.getStructureVersion();
+  if( structureVersion != cache.lastStructureVersion ) {
+    LightWriteBracket cacheWriteLockBracket( cache.structureRWLock );
+    if( this.getStructureVersion() != cache.lastStructureVersion.atomicGet() ) {// Ensure that another thread didn't do it meanwhile
+
+      UInt32 curveCount = this.curveCount();
+
+      cache.perCurveData.resize( curveCount );
+      cache.sharedSamplingTables = GetPerCurveSamplingTable( cache.initialSamplesPerSpan );
+
+      // Ensure to update sampling shared tables
+      { // Scope the LightWriteBracket
+        LightWriteBracket samplingTablesLockBracket( cache.sharedSamplingTables.rwLock );
+
+        for( Size i = 0; i < curveCount; ++i ) {
+          cache.perCurveData[i].lastPositionsPlusStructureVersion = 0;
+
+          UInt32 samplesCount, segmentCount, multithreadedUnitsForCurve;
+          Boolean curveTypeNeedsSharedDataCache, loopingSegments;
+
+          this.data.getSamplingData(
+            this.data.curvesData[i], cache.initialSamplesPerSpan,
+            samplesCount, loopingSegments,
+            multithreadedUnitsForCurve, curveTypeNeedsSharedDataCache );
+
+          if( curveTypeNeedsSharedDataCache )
+            this.data.updateCurveTypeAndOrderSharedDataCache( this.data.curvesData[i], cache.initialSamplesPerSpan, cache.sharedSamplingTables.perCurveTypePackedCache );
+        }
+      }
+      // Only set it at the end, as this is a thread barrier
+      cache.lastStructureVersion = this.getStructureVersion();
+    }
+  }
+
+  // Ensure curve data is up-to-date.
+  // Note: we don't support that this function is being called at the same time as position changes.
+
+  UInt32 positionsPlusStructureVersion = this.attributes.positionsAttribute.getVersion() + structureVersion;
+
+  // First, check if positions changed
+  if( positionsPlusStructureVersion != cache.perCurveData[curveIndex].lastPositionsPlusStructureVersion ) {
+    LightLockBracket curveCacheLockBracket( cache.perCurveData[curveIndex].updateLock );
+
+    if( positionsPlusStructureVersion != cache.perCurveData[curveIndex].lastPositionsPlusStructureVersion.atomicGet() ) {// Ensure that another thread didn't do it meanwhile
+
+      LightReadBracket samplingTablesLockBracket( cache.sharedSamplingTables.rwLock );
+
+      this.updateCurveTables( cache, this.data.curvesData[curveIndex], cache.perCurveData[curveIndex], cache.tempBuffers.perThread[getThreadIndex()] );
+
+      // Only set it at the end, as this is a thread barrier
+      cache.perCurveData[curveIndex].lastPositionsPlusStructureVersion = positionsPlusStructureVersion;
+    }
+  }
+  return cache;
+}
+
+/// This is mutable as it will cache inverse of segment length
+Float32 Curves_lengthComputeCache_data.getParamFromLen!( Float32 len ) {
+
+  // Do an upper bound search
+  UInt32 end = this.paramLenTable.size();
+
+  SInt32 low = 1;
+  SInt32 high = end;
+
+  while( low < high ) {
+    SInt32 mid = ( low + high ) / 2;
+    Float32 value = this.paramLenTable[mid].len;
+    if( len >= value ) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+  if( low >= end )// no upper bound: at the end
+    return this.paramLenTable[end-1].param;
+
+  // [low-1, low] is the range
+  Float32 relativeLen = ( len < 0 ? 0 : len ) - this.paramLenTable[low - 1].len;
+  Float32 ratio = relativeLen * this.paramLenTable[low].getOrComputeInvPrevSegLen();
+  Float32 prevParam = this.paramLenTable[low - 1].param;
+//report( "len " + len + " low " + low + " relativeLen " + relativeLen + " ratio " + ratio + " prevParam " + prevParam );
+  return prevParam + ratio * ( this.paramLenTable[low].param - prevParam );
+}
+
+/// This is mutable as it will cache inverse of segment length
+Float32 Curves_lengthComputeCache_data.getLenFromParam!( Float32 param ) {
+  // Do an upper bound search
+  UInt32 end = this.paramLenTable.size();
+
+  SInt32 low = 1;
+  SInt32 high = end;
+
+  while( low < high ) {
+    SInt32 mid = ( low + high ) / 2;
+    Float32 value = this.paramLenTable[mid].param;
+    if( param >= value ) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+  if( low >= end )// no upper bound: at the end
+    return this.paramLenTable[end-1].len;
+
+  // [low-1, low] is the range
+  Float32 prevParam = this.paramLenTable[low - 1].param;
+  Float32 relativeParam = param < prevParam ? 0 : param - prevParam;
+  Float32 ratio = relativeParam * this.paramLenTable[low].getOrComputePrevSegDeltaParam( prevParam );
+  Float32 prevLen = this.paramLenTable[low - 1].len;
+  return prevLen + ratio * ( this.paramLenTable[low].len - prevLen );
+}

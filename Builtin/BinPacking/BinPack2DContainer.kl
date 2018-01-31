@@ -1,0 +1,152 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/**
+A BinPack2DContainer is used to place an array of packages. This is 
+Useful for stacking boxes in a 2D space, for example. The BinPack2DContainer
+is used by the Geometry extension to create UV spaces, for example.
+
+\rst
+  .. kl-example:: Place some packages
+
+    // create a container
+    BinPack2DContainer container(128, 128);
+
+    // create some packages
+    BinPack2DPackage packages[];
+    packages.push(BinPack2DPackage(0, 64, 32));
+    packages.push(BinPack2DPackage(1, 126, 2));
+    packages.push(BinPack2DPackage(2, 16, 16));
+
+    container.Place(packages);
+
+    packages = container.GetPackages();
+    for(Size i=0;i<packages.size();i++)
+      report(packages[i]);
+
+\endrst
+*/
+struct BinPack2DContainer {
+  BinPack2DRegion region;
+  BinPack2DRegion regions[];
+  UInt32 numRegions;
+  BinPack2DPackage packages[];
+};
+
+/// default constructor from width and height
+function BinPack2DContainer(SInt32 w, SInt32 h) {
+  // start with the complete region!
+  this.region = BinPack2DRegion(BinPack2DCoord(0, 0), BinPack2DSize(w, h));
+}
+
+/// returns all placed packages inside of the container
+function BinPack2DPackage[] BinPack2DContainer.GetPackages() {
+  return this.packages;
+}
+
+/// places an array of packages into the container. remaining packages are returned in remainder.
+/// packages are sorted by size automatically prior to placement.
+function Boolean BinPack2DContainer.Place!(BinPack2DPackage packages[], io BinPack2DPackage remainder[]) {
+  Boolean placedAll = true;
+
+  BinPack2DPackage sortedPackages[] = BinPack2DPackage_QuickSortBySize(packages);
+
+  this.numRegions = 1;
+  this.regions.resize(sortedPackages.size() + 1);
+  this.regions[0] = this.region;
+
+  for(Size i=0;i<sortedPackages.size();i++) {
+    if(this.Place(sortedPackages[i]) == false) {
+      placedAll = false;
+      remainder.push(sortedPackages[i]);
+    }
+  }
+
+  return placedAll;
+}
+
+/// places an array of packages into the container
+function Boolean BinPack2DContainer.Place!(BinPack2DPackage packages[]) {
+  BinPack2DPackage remainder[];
+  return this.Place(packages, remainder);
+}
+
+private Boolean BinPack2DContainer.Place!(BinPack2DPackage inPackage) {
+
+  BinPack2DPackage pkg = inPackage;
+
+  for(Size i=0;i<this.numRegions;i++) {
+    Boolean rotated = false;
+    if(this.regions[i].Contains(pkg.region, rotated)) {
+      if(rotated)
+        pkg.Rotate();
+      this.Use(pkg, i);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+private Boolean BinPack2DContainer.Use!(BinPack2DPackage inPackage, UInt32 indexToConsume) {
+
+  BinPack2DPackage pkg = inPackage;
+  pkg.region.coord = this.regions[indexToConsume].coord;
+
+  // bubble sort the region as well as the remaining region
+  BinPack2DRegion remaining = this.regions[indexToConsume].Consume(pkg.region);
+  UInt32 index = indexToConsume;
+  while(index > 0)
+  {
+    if(this.regions[index] < this.regions[index-1])
+    {
+      BinPack2DRegion tmp = this.regions[index];
+      this.regions[index] = this.regions[index-1];
+      this.regions[index-1] = tmp;
+      index--;
+    }
+    else
+    {
+      break;
+    }
+  }
+  while(index < this.numRegions - 1)
+  {
+    if(this.regions[index] > this.regions[index+1])
+    {
+      BinPack2DRegion tmp = this.regions[index];
+      this.regions[index] = this.regions[index+1];
+      this.regions[index+1] = tmp;
+      index++;
+    }
+    else
+    {
+      break;
+    }
+  }
+
+  if(!remaining.IsEmpty())
+  {
+    index = this.numRegions++;
+    this.regions[index] = remaining;
+    while(index > 0)
+    {
+      if(this.regions[index] < this.regions[index-1])
+      {
+        BinPack2DRegion tmp = this.regions[index];
+        this.regions[index] = this.regions[index-1];
+        this.regions[index-1] = tmp;
+        index--;
+      }
+      else
+      {
+        break;
+      }
+    }
+  }
+
+  this.packages.push(pkg);
+
+  return true;
+}

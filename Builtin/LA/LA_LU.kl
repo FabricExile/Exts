@@ -1,0 +1,169 @@
+/*
+ *  Copyright(c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+// Licensed to the Apache Software Foundation(ASF) under one or more
+// contributor license agreements.  See the NOTICE file distributed with
+// this work for additional information regarding copyright ownership.
+// The ASF licenses this file to You under the Apache License, Version 2.0
+//(the "License"); you may not use this file except in compliance with
+// the License.  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Calculates the LUP-decomposition of a square matrix.
+// The LUP-decomposition of a matrix A consists of three matrices L, U and
+// P that satisfy: P*A = L*U. L is lower triangular(with unit
+// diagonal terms), U is upper triangular and P is a permutation matrix. All
+// matrices are m*m.</p>
+// As shown by the presence of the P matrix, this decomposition is
+// implemented using partial pivoting.
+// This class is based on the class with similar name from the
+// "http://math.nist.gov/javanumerics/jama/" library.
+//
+//   converted the java code to KL using a Mat struct
+//
+// @see "http://mathworld.wolfram.com/LUDecomposition.html"
+// @see "http://en.wikipedia.org/wiki/LU_decomposition"
+// @since 2.0(changed to concrete class in 3.0)
+
+require Math;
+ 
+///
+/// Compute the LU decomposition of a square matrix with partial pivoting.
+///
+/// Upon successful completion, A will store both the lower and upper
+/// components of the decomposition
+///
+LA_LU_Decompose(io Mat A, Float32 singThreshold, io UInt32 pivot[], io Boolean even) {
+ 
+  if(A.cols() != A.rows())
+    throw "LA::LA_LU_Decompose, the matrix A is not squared";
+
+  even = true;
+  Vec luRow(A.cols());
+
+  // Initialize permutation array and parity
+  for(UInt32 row = 0; row < A.cols(); row++) 
+    pivot[row] = row;
+  
+  // Loop over columns
+  for(UInt32 col = 0; col < A.cols(); col++) 
+  {
+    // upper
+    for(UInt32 row = 0; row < col; row++) 
+    {
+      A.getRow(row, luRow);
+      Float32 sum = luRow.get(col);
+      for(UInt32 i = 0; i < row; i++) 
+        sum -= luRow.get(i) * A.get(i, col);
+      A.set(row, col, sum);
+    }
+
+    // lower
+    UInt32 max = col; // permutation row
+    Float32 largest = -1e100;
+    for(UInt32 row = col; row < A.cols(); row++) 
+    {
+      A.getRow(row, luRow);
+      Float32 sum = luRow.get(col);
+      for(UInt32 i = 0; i < col; i++) 
+        sum -= luRow.get(i) * A.get(i, col);
+      
+      A.set(row, col, sum);
+
+      // maintain best permutation choice
+      if(abs(sum) > largest) 
+      {
+        largest = abs(sum);
+        max = row;
+      }
+    }
+
+    // Singularity check
+    if(abs(A.get(max, col)) < singThreshold) 
+      throw "LA::LA_LU_Decompose, the matrix A is singular";
+
+    // Pivot if necessary
+    if(max != col) 
+    {
+      A.swapRows(max, col);
+      pivot.swap(max, col);
+      even = !even;
+    }
+
+    // Divide the lower elements by the "winning" diagonal elt.
+    Float32 luDiag = A.get(col, col);
+    for(UInt32 row = col + 1; row < A.cols(); row++) 
+      A.set(row * A.cols() + col, A.get(row, col) / luDiag);
+  }
+}
+ 
+///
+/// Solve the linear equation Ax=b where A has already been decomposed by
+/// LA_LU_Decompose as LU
+///
+LA_LU_Solve(Mat LU, UInt32 pivot[], io Vec x, Vec b) {
+
+  // Apply permutations to b
+  for(UInt32 r = 0; r < pivot.size(); r++)
+    x.set(r, b.get(pivot[r]));
+
+  // Solve LY = b
+  for(UInt32 c = 0; c < pivot.size(); c++) 
+  {
+    for(UInt32 i = c + 1; i < pivot.size(); i++) 
+      x.set(i, x.get(i) - x.get(c) * LU.get(i, c));
+  }
+
+  // Solve UX = Y
+  for(Integer c = pivot.size() - 1; c >= 0; c--) 
+  {
+    x.set(c, x.get(c) / LU.get(c, c));
+    for(UInt32 i = 0; i < c; i++) 
+      x.set(i, x.get(i) - x.get(c) * LU.get(i, c));
+  }
+}
+
+///
+/// Solve the linear equation Ax=b 
+///
+LA_LU_DecomposeAndSolve(io Mat A, io Vec x, Vec b) {
+  Boolean even;
+  UInt32 pivot[]; pivot.resize(A.cols());
+  LA_LU_Decompose(A, 0.0f, pivot, even);
+  LA_LU_Solve(A, pivot, x, b);
+}
+
+/// \internal
+operator LA_LU_Solve_task(
+  Index index, 
+  Mat LU, 
+  UInt32 pivot[], 
+  io Mat X,
+  Mat B) 
+{
+  Vec b(B.rows()), x(X.rows());
+  B.getCol(index, b);
+  LA_LU_Solve(LU, pivot, x, b);
+  X.setCol(index, x);
+}
+
+///
+/// Solve the linear equation AX=B 
+///
+LA_LU_DecomposeAndSolve(io Mat A, io Mat X, Mat B) {
+
+  Boolean even;
+  UInt32 pivot[]; pivot.resize(A.cols());
+  LA_LU_Decompose(A, 0.0f, pivot, even);
+
+  X = Mat(B.rows(), B.cols());
+  LA_LU_Solve_task<<<B.cols()>>>(A, pivot, X, B);
+}

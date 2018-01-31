@@ -1,0 +1,71 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+/// This command adds or removes items to/from an ItemReferences target object.
+/// The ItemReferences is usually a path corresponding to an external data (eg: Canvas port).
+object ChangeItemsCommand : BaseScriptableCommand{};
+
+ChangeItemsCommand() {
+  this.init();
+}
+
+ChangeItemsCommand.init!( ) {
+  this.declareArg( "target", ItemReferences, CommandArgFlag_IO | CommandArgFlag_CREATE_IF_NULL, RTVal() );
+  this.declareArg( "added", ItemReferences, CommandArgFlag_IN | CommandArgFlag_OPTIONAL, RTVal() );
+  this.declareArg( "removed", ItemReferences, CommandArgFlag_IN | CommandArgFlag_OPTIONAL, RTVal() );
+}
+
+Boolean ChangeItemsCommand.canUndo() {
+  return true;
+}
+
+ItemReferences ChangeItemsCommand.getItemReferencesArg!(String name) {
+  ItemReferences itemRefs = null;
+  RTVal itemRefsVal = this.getArgValue(name);
+  if (itemRefsVal.type().isA(ItemReferences))
+    itemRefs = itemRefsVal;
+  return itemRefs;
+}
+
+Boolean ChangeItemsCommand.doIt!( io String error ) {
+  if( !this.parent.doIt( error ) )
+    return false;
+  return this.redoIt();
+}
+
+
+Boolean ChangeItemsCommand.undoIt!() {
+  ItemReferences ref = this.getItemReferencesArg("target");
+  ItemReferences added = this.getItemReferencesArg("added");
+  ItemReferences removed = this.getItemReferencesArg("removed");
+
+  if (ref) {
+    if ( added )
+      ref.remove( added );
+
+    if ( removed )
+      ref.add( removed );
+  }
+  // Note: we don't need to set back the data since objects data is shared in KL
+  return this.parent.undoIt();
+}
+
+Boolean ChangeItemsCommand.redoIt!() {
+  if( !this.parent.redoIt() )
+    return false;
+
+  ItemReferences ref = this.getItemReferencesArg( "target" );
+  ItemReferences added = this.getItemReferencesArg( "added" );
+  ItemReferences removed = this.getItemReferencesArg( "removed" );
+
+  if( ref ) {
+    if( removed )
+      ref.remove( removed );
+
+    if( added )
+      ref.add( added );
+  }
+  // Note: we don't need to set back the data since objects data is shared in KL
+  return true;
+}

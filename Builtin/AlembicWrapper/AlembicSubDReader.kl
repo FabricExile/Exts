@@ -1,0 +1,357 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Alembic;
+require Geometry;
+
+/**
+  The :kl-ref:`AlembicSubDReader` specializes the :kl-ref:`AlembicObjectReader` interface for reading :kl-ref:`AlembicISubD` data. 
+  It can be created using the :kl-ref:`AlembicArchiveReader.getSubD` method. 
+  Please refer to the :kl-ref:`AlembicPolyMeshReader` for a source code example.
+  \seealso AlembicSubDWriter
+*/
+object AlembicSubDReader : AlembicBaseObjectReader, AlembicGeometryReader{
+  /// \internal
+  private AlembicISubD _subd;
+  /// \internal
+  private AlembicISubDSchema _schema;
+  /// \internal
+  private AlembicISubDSample _sampleA;
+  /// \internal
+  private AlembicISubDSample _sampleB;
+  /// \internal
+  private AlembicGeometryAttributesReader _attributesReader;
+  /// \internal
+  private UInt64 _geometryUid;
+};
+
+/// \internal
+private AlembicSubDReader(AlembicArchiveReader archive, AlembicIObject subd) {
+
+  this._subd = AlembicISubD(subd);
+  this._schema = this._subd.getSchema();
+  this.parent.set( archive, subd, this._schema.getTimeSampling(), this._schema.getNumSamples(), this._schema.getChildBoundsProperty() );
+
+  this._sampleA = AlembicISubDSample();
+  this._sampleB = AlembicISubDSample();
+  this._attributesReader = AlembicGeometryAttributesReader(archive, this._schema.getArbGeomParams());
+}
+
+/// returns the full path of the wrapped AlembicISubD
+public String AlembicSubDReader.getPath() {
+  return this._subd.asIObject().getFullName();
+}
+
+/// returns true if this reader wraps a valid AlembicISubD
+public Boolean AlembicSubDReader.valid() {
+  if(!this._subd.valid())
+    return false;
+  return this.parent.valid();
+}
+
+/// clears all pointers and releases all alembic containers
+public AlembicSubDReader.reset!() {
+  this._subd.reset();
+  this._schema.reset();
+  this._sampleA = null;
+  this._sampleB = null;
+}
+
+/// returns the number of samples of this reader
+public SInt32 AlembicSubDReader.getNumSamples() {
+  return this._numSamples;
+}
+
+/// returns the schema of this reader
+public AlembicISubDSchema AlembicSubDReader.getSchema() 
+{ 
+  return this._schema; 
+}
+
+/// returns the first sample used by this reader
+public AlembicISubDSample AlembicSubDReader.getSampleA() 
+{ 
+  return this._sampleA; 
+}
+
+/// returns the second sample used by this reader
+public AlembicISubDSample AlembicSubDReader.getSampleB() 
+{ 
+  return this._sampleB; 
+} 
+
+/// returns the timesampling of this reader
+public AlembicTimeSampling AlembicSubDReader.getTimeSampling() 
+{ 
+  return this._timeSampling; 
+}
+
+/// returns the bounding box
+public Box3 AlembicSubDReader.getSelfBounds!(Float64 time, io Boolean isConstant) {
+  isConstant = this._numSamples <= 1;
+  AlembicSampleInfo info(time, this._timeSampling, this._numSamples);
+  this._schema.get(this._sampleA, this.archive.getISampleSelector( info.indexA ));
+  if(info.requiresInterpolation())
+    this._schema.get(this._sampleB, this.archive.getISampleSelector( info.indexB ));
+
+  Box3 box = this._sampleA.getSelfBounds();
+  if(info.requiresInterpolation())
+  {
+    Box3 box2 = this._sampleB.getSelfBounds();
+    box.min = box.min.linearInterpolate(box2.min, Float32(info.fraction));
+    box.max = box.max.linearInterpolate(box2.max, Float32(info.fraction));
+  }
+  return box;
+}
+
+/// Returns true if the bounds of this object, excluding the children, are constant
+public Boolean AlembicSubDReader.areSelfBoundsConstant() {
+  // To be overriden
+  return this._numSamples <= 1;
+}
+
+/// reads a sample at a given time. this will properly interpolate between samples.
+/// the result is stored into the provided PolygonMesh.
+/// \dfgPresetCreate
+public AlembicSubDReader.readSample!(Float64 time, io PolygonMesh mesh) {
+
+  if(this == null)
+    return;
+  
+  if( !this.updateTimeInfo(time) )
+    return;
+
+  if(!mesh)
+    mesh = PolygonMesh();
+
+  Boolean theSameGeo = mesh.uid() == this._geometryUid;
+  this._geometryUid = mesh.uid();
+
+  // From Pablo , dosn't work in zeuxis
+  //if(this._info.time == time && theSameGeo)
+  //  return;
+
+  //AlembicSampleInfo info(time, this._timeSampling, this._numSamples);
+  //if(info == this._info && theSameGeo)
+  //  return;
+  //this._info = info;
+
+  this._schema.get(this._sampleA, AlembicISampleSelector(this._info.indexA));
+  if(this._info.requiresInterpolation())
+    this._schema.get(this._sampleB, this._infoIndexBSelector);
+
+  Vec3 positionsValuesA<> = this._sampleA.getPositions();
+  Vec3 positionsValuesB<>;
+  if(this._info.requiresInterpolation()) {
+    positionsValuesB = this._sampleB.getPositions();
+    if(positionsValuesA.size() != positionsValuesB.size())
+      this._info.roundToClosestFrame();
+  }
+
+  // topology
+  if(mesh.pointCount() == 0 || 
+    this._schema.getTopologyVariance() == Alembic_kHeterogenousTopology ||
+    mesh.pointCount() != positionsValuesA.size()
+    ) {
+
+    Boolean meshWasEmpty = mesh.pointCount() == 0;
+  
+    mesh.clear();
+    mesh.createPoints(positionsValuesA.size());
+    mesh.beginStructureChanges();
+
+    SInt32 faceCounts<> = this._sampleA.getFaceCounts();
+    SInt32 faceIndices<> = this._sampleA.getFaceIndices();
+
+    LocalIndexArray indexArray;
+    UInt32 ptIndexIter = 0;
+
+    for( Size i = 0; i < faceCounts.size(); ++i ) {
+      UInt32 polSize = faceCounts[i];
+      indexArray.resize(0);
+      for( Size j = 0; j < polSize; ++j )
+        indexArray.push( faceIndices[ptIndexIter++] );
+      mesh.addPolygon( indexArray );
+    }
+
+    mesh.endStructureChanges();
+
+    // create a material ID attribute
+    if(meshWasEmpty) {
+
+      String faceSets[] = this._schema.getFaceSetNames();
+      if(faceSets.size() > 1) {
+        Ref<IntegerAttribute> materialIDAttr = mesh.getOrCreateIntegerAttribute('materialID');
+        for(Size i=0;i<materialIDAttr.values.size();i++)
+          materialIDAttr.values[i] = 0;
+
+        for(Size i=0;i<faceSets.size();i++) {
+          AlembicIFaceSetSample faceSetSample();
+          this._schema.getFaceSet(faceSets[i]).getSchema().get(faceSetSample);
+          SInt32 faces<> = faceSetSample.getFaces();
+          for(Size j=0;j<faces.size();j++) {
+            Size size = mesh.getPolygonSize(faces[j]);
+            for(Size k=0;k<size;k++) {
+              mesh.setPolygonAttribute(faces[j], k, materialIDAttr, i+1);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  Size nbPoints = mesh.pointCount();
+
+  // perform positions
+  Vec3Attribute positionsAttr = mesh.getOrCreateVec3Attribute('positions');
+  if(this._info.requiresInterpolation()) {
+    for(Size i=0;i<nbPoints;i++)
+      mesh.setPointPosition(i, positionsValuesA[i].linearInterpolate(positionsValuesB[i], Float32(this._info.fraction)));
+  } else {
+    for(Size i=0;i<nbPoints;i++)
+      mesh.setPointPosition(i, positionsValuesA[i]);
+  }
+  positionsAttr.incrementVersion();
+  mesh.recomputePointNormals();
+
+  // perform velocities
+  Vec3 velocitiesValuesA<> = this._sampleA.getVelocities();
+  if(velocitiesValuesA.size() > 0) {
+    Vec3Attribute velocitiesAttr = mesh.getOrCreateVec3Attribute('velocities');
+    if(this._info.requiresInterpolation()) {
+      Vec3 velocitiesValuesB<> = this._sampleB.getVelocities();
+      for(Size i=0;i<nbPoints;i++)
+        velocitiesAttr.values[i] = velocitiesValuesA[i].linearInterpolate(velocitiesValuesB[i], Float32(this._info.fraction));
+    } else {
+      for(Size i=0;i<nbPoints;i++)
+        velocitiesAttr.values[i] = velocitiesValuesA[i];
+    }
+    velocitiesAttr.incrementVersion();
+  }  
+
+  // uvs
+  AlembicIVec2VfGeomParam uvsParam = this._schema.getUVsParam();
+  if(uvsParam.valid()) {
+    if(!mesh.has('uvs0')) { // || uvsParam.getNumSamples() > 1) {
+      if(uvsParam.isIndexed()) {
+        AlembicSampleInfo info(time, this._timeSampling, uvsParam.getNumSamples());
+        AlembicIVec2VfGeomParamSample sampleA = uvsParam.getIndexed(this.archive.getISampleSelector( info.indexA ));
+        Vec2 uvsValuesA<> = sampleA.getVals();
+        UInt32 indicesA<> = sampleA.getIndices();
+        AlembicIVec2VfGeomParamSample sampleB = null;
+        Vec2 uvsValuesB<>;
+        UInt32 indicesB<>;
+        if(info.requiresInterpolation()) {
+          sampleB = uvsParam.getIndexed(this.archive.getISampleSelector( info.indexB ));
+          uvsValuesB = sampleB.getVals();
+          indicesB = sampleB.getIndices();
+          if(uvsValuesA.size() != uvsValuesB.size())
+            info.roundToClosestFrame();
+        }
+        if(uvsValuesA.size() > 0) {
+          Ref<Vec2Attribute> attr = mesh.getOrCreateVec2Attribute('uvs0');
+          if(sampleA.getScope() == Alembic_kVertexScope || indicesA.size() == mesh.pointCount()) {
+            if(info.requiresInterpolation()) {
+              for(UInt32 i=0;i<mesh.pointCount();i++) {
+                Vec2 value = uvsValuesA[indicesA[i]].linearInterpolate(uvsValuesB[indicesB[i]], Float32(info.fraction));
+                mesh.setPointAttribute( i, attr, value );
+              }
+            } else {
+              for(UInt32 i=0;i<mesh.pointCount();i++) {
+                Vec2 value = uvsValuesA[indicesA[i]];
+                mesh.setPointAttribute( i, attr, value );
+              }
+            }
+          } else {
+            if(info.requiresInterpolation()) {
+              Size offset = 0;
+              for(Size i=0;i<mesh.polygonCount();i++) {
+                Size count = mesh.getPolygonSize(i);
+                for(UInt32 j=0;j<count;j++) {
+                  Vec2 value = uvsValuesA[indicesA[offset]].linearInterpolate(uvsValuesB[indicesB[offset]], Float32(info.fraction));
+                  mesh.setPolygonAttribute( i, count - 1 - j, attr, value );
+                  offset++;
+                }
+              }
+            } else {
+              Size offset = 0;
+              for(Size i=0;i<mesh.polygonCount();i++) {
+                Size count = mesh.getPolygonSize(i);
+                for(UInt32 j=0;j<count;j++) {
+                  Vec2 value = uvsValuesA[indicesA[offset]];
+                  mesh.setPolygonAttribute( i, count - 1 - j, attr, value );
+                  offset++;
+                }
+              }
+            }
+          }     
+          attr.incrementVersion();
+        }
+      } else {
+        AlembicSampleInfo info(time, this._timeSampling, uvsParam.getNumSamples());
+        AlembicIVec2VfGeomParamSample sampleA = uvsParam.getExpanded(this._infoIndexASelector);
+        Vec2 uvsValuesA<> = sampleA.getVals();
+        AlembicIVec2VfGeomParamSample sampleB = null;
+        Vec2 uvsValuesB<>;
+        if(info.requiresInterpolation()) {
+          sampleB = uvsParam.getExpanded(this.archive.getISampleSelector( info.indexB ));
+          uvsValuesB = sampleB.getVals();
+          if(uvsValuesA.size() != uvsValuesB.size())
+            info.roundToClosestFrame();
+        }
+        if(uvsValuesA.size() > 0) {
+          Ref<Vec2Attribute> attr = mesh.getOrCreateVec2Attribute('uvs0');
+          if(sampleA.getScope() == Alembic_kVertexScope || uvsValuesA.size() == mesh.pointCount()) {
+            if(info.requiresInterpolation()) {
+              for(UInt32 i=0;i<mesh.pointCount();i++) {
+                Vec2 value = uvsValuesA[i].linearInterpolate(uvsValuesB[i], Float32(info.fraction));
+                mesh.setPointAttribute( i, attr, value );
+              }
+            } else {
+              for(UInt32 i=0;i<mesh.pointCount();i++) {
+                Vec2 value = uvsValuesA[i];
+                mesh.setPointAttribute( i, attr, value );
+              }
+            }
+          } else {
+            if(info.requiresInterpolation()) {
+              Size offset = 0;
+              for(Size i=0;i<mesh.polygonCount();i++) {
+                Size count = mesh.getPolygonSize(i);
+                for(UInt32 j=0;j<count;j++) {
+                  Vec2 value = uvsValuesA[offset].linearInterpolate(uvsValuesB[offset], Float32(info.fraction));
+                  mesh.setPolygonAttribute( i, count - 1 - j, attr, value );
+                  offset++;
+                }
+              }
+            } else {
+              Size offset = 0;
+              for(Size i=0;i<mesh.polygonCount();i++) {
+                Size count = mesh.getPolygonSize(i);
+                for(UInt32 j=0;j<count;j++) {
+                  Vec2 value = uvsValuesA[offset];
+                  mesh.setPolygonAttribute( i, count - 1 - j, attr, value );
+                  offset++;
+                }
+              }
+            }
+          }     
+          attr.incrementVersion();
+        }
+      }
+    }
+  }
+
+  this._attributesReader.readSample(time, mesh, false);
+}
+
+/// Reads a geometry sample at a given time
+public AlembicSubDReader.readSample!(Float64 time, io Geometry geom) {
+  PolygonMesh mesh = geom;
+  if( !mesh ) {
+    geom = PolygonMesh();
+    mesh = geom;
+  }
+  this.readSample( time, mesh );
+}

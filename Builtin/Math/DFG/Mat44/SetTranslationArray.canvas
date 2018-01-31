@@ -1,0 +1,74 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Mat44.html",
+    "uiTooltip" : "Sets the translation components\nof this matrix to a given Vec3\n\n Supported by Mat44"
+    },
+  "title" : "SetTranslation[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 249,\n  \"g\" : 157,\n  \"b\" : 28\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Mat44[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "tr",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "9DFD7D79933DC210A1965AE6AD8A70B1",
+  "code" : "require Math;
+
+operator Math_Mat44_setTranslation_task<<<index>>>(
+  io Mat44[] this
+, in Vec3[] tr
+) {
+  this[index < this.size() ? index : this.size() - 1].setTranslation(tr[index < tr.size() ? index : tr.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( tr.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < tr.size()) task_size = tr.size();
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Mat44_setTranslation_task(index, this, tr);
+    }
+  } else {
+    Math_Mat44_setTranslation_task<<<task_size>>>(this, tr);
+  }
+}
+"
+  }

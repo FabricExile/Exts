@@ -1,0 +1,148 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Ray.html",
+    "uiTooltip" : "Measures the intersection between the ray and a line segment in 3d space.\nIf the line segment is behind the Ray, the method returns False.\n\n Supported by Ray"
+    },
+  "title" : "IntersectLineSegment[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Ray[]" : [
+          {
+            "start" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              },
+            "direction" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Ray[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "lineP0",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "lineP1",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "dist",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "rayParam",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "segmentParam",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "D0D36185DF1B1FF0747D2F5C1E5C41C6",
+  "code" : "require Math;
+
+operator Math_Ray_intersectLineSegment_task<<<index>>>(
+  io Boolean[] result
+, in Ray[] this
+, in Vec3[] lineP0
+, in Vec3[] lineP1
+, out Scalar[] dist
+, out Scalar[] rayParam
+, out Scalar[] segmentParam
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].intersectLineSegment(lineP0[index < lineP0.size() ? index : lineP0.size() - 1], lineP1[index < lineP1.size() ? index : lineP1.size() - 1], dist[index < dist.size() ? index : dist.size() - 1], rayParam[index < rayParam.size() ? index : rayParam.size() - 1], segmentParam[index < segmentParam.size() ? index : segmentParam.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( lineP0.size() == 0) return;
+  if( lineP1.size() == 0) return;
+  if( dist.size() == 0) return;
+  if( rayParam.size() == 0) return;
+  if( segmentParam.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < lineP0.size()) task_size = lineP0.size();
+  if(task_size < lineP1.size()) task_size = lineP1.size();
+  result.resize(task_size);
+  dist.resize(task_size);
+  rayParam.resize(task_size);
+  segmentParam.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Ray_intersectLineSegment_task(index, result, this, lineP0, lineP1, dist, rayParam, segmentParam);
+    }
+  } else {
+    Math_Ray_intersectLineSegment_task<<<task_size>>>(result, this, lineP0, lineP1, dist, rayParam, segmentParam);
+  }
+}
+"
+  }

@@ -1,0 +1,118 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Mat33.html",
+    "uiTooltip" : "Setter from vectors, column-wise\n\n Supported by Mat33"
+    },
+  "title" : "SetColumns[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 249,\n  \"g\" : 157,\n  \"b\" : 28\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Mat33[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "col0",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "col1",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "col2",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "79E6C4D896DC4BD22DE5577094FBCBC7",
+  "code" : "require Math;
+
+operator Math_Mat33_setColumns_task<<<index>>>(
+  io Mat33[] this
+, in Vec3[] col0
+, in Vec3[] col1
+, in Vec3[] col2
+) {
+  this[index < this.size() ? index : this.size() - 1].setColumns(col0[index < col0.size() ? index : col0.size() - 1], col1[index < col1.size() ? index : col1.size() - 1], col2[index < col2.size() ? index : col2.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( col0.size() == 0) return;
+  if( col1.size() == 0) return;
+  if( col2.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < col0.size()) task_size = col0.size();
+  if(task_size < col1.size()) task_size = col1.size();
+  if(task_size < col2.size()) task_size = col2.size();
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Mat33_setColumns_task(index, this, col0, col1, col2);
+    }
+  } else {
+    Math_Mat33_setColumns_task<<<task_size>>>(this, col0, col1, col2);
+  }
+}
+"
+  }

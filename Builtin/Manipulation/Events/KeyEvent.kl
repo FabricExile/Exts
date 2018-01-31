@@ -1,0 +1,52 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 1.12.0
+
+  :kl-ref:`KeyEvent` object is used to propagate keyboard events 
+  into the Manipulation system from the host application.
+
+  \seealso :kl-ref:`BaseEvent`
+  
+  \dfgPresetOmit
+*/
+object KeyEvent : BaseEvent {    
+  /// The number of keys involved in this event.
+  UInt32 count;
+
+  /// True if this event comes from an auto-repeating key.
+  /// Returns false if it comes from an initial key press.
+  Boolean isAutoRepeat;
+
+  /// The code of the key that was pressed or released.
+  Key key;
+};
+
+/// Constructor.
+/// \param eventType The key event type (press, release ...).
+/// \param modifiers The key modifier.
+/// \param count The number of keys involved in this event.
+/// \param isAutoRepeat Set this event is auto-repeating.
+/// \param key The code of the key that was pressed or released.
+KeyEvent(
+  EventType eventType, 
+  ModiferKey modifiers, 
+  UInt32 count, 
+  Boolean isAutoRepeat, 
+  Key key)
+{
+  this.key = key;
+  this.count = count;
+  this.eventType = eventType;
+  this.modifiers = modifiers;
+  this.isAutoRepeat = isAutoRepeat;
+}
+
+String KeyEvent.describe( Boolean includeContext ) {
+  String result = "KeyEvent key=" + DescribeModifiersIfAny( this.modifiers ) + DescribeKey( this.key ) + " event=" + DescribeEventType( this.eventType );
+  if( includeContext )
+    result += " " + this.describeContext();
+  return result;
+}

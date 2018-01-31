@@ -1,0 +1,305 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/// Enables logging of lock acquire / release events.
+const Boolean SimpleLock_trace = false;
+
+/// \internal
+const UInt32 _SimpleLock_unlocked = 0;
+/// \internal
+const UInt32 _SimpleLock_locked = 1;
+
+
+/**
+The SimpleLock is a simple, reentrant, active-wait mutex designed for protecting access to resources that are locked for a 
+relatively small time. The waiting thread will not return to the scheduler, and wait actively. 
+There is no queue, so starvation is possible under sustained access competition.
+
+The SimpleLock is reentrant, and can be acquired by the same thread multiple times. Acquiring a lock 
+multiple times does incur some overhead, so care should be taken to avoid locking when possible
+if execution speed is important.
+
+Locking is done by passing a SimpleLock to the following functions:
+:kl-ref:`Acquire`, :kl-ref:`Release` and :kl-ref:`TryAcquire`. The :kl-ref:`AutoLock`
+wrapper encapsulates the :kl-ref:`Acquire` and :kl-ref:`Release` of a :kl-ref:`SimpleLock`, which can
+reduce coding the errors (eg: forgetting to release the lock).
+
+The following facilities might be useful for debugging locking problems:
+\rst
+
+- A `.label` member (construction parameter) is used to identify the lock when logging errors or tracing.
+
+- A `.maxWaitSeconds` member (construction parameter) specifies a maximum delay to get the lock. If that delay is passed:
+
+  - If `.throwAtMaxWait` (construction parameter), an exception will be thrown (default)
+
+  - Else, an error statement will get printed
+
+- If the `Boolean SimpleLock_trace` constant is set to true, each lock and unlock actions will be logged
+
+.. warning::
+
+  If an exception is thrown by the thread that locked a lock, the lock will remain in a locked 
+  state forever. This applies for AutoLock helper since KL won't cleanup the stack upon exceptions.
+
+The following example shows using locks to ensure that multiple theads can safely write to the same objectin parallel.
+
+.. kl-fileexample:: ${FABRIC_SCENE_GRAPH_DIR}/Test/Exts/Synchronization/SimpleLock_simpleTest.kl
+
+\endrst
+
+
+*/
+object SimpleLock {
+  /// internal
+  UInt32 state;
+ 
+  /// wait time before checking again, to reduce lock competition (constructor argument)
+  Scalar secondsBetweenChecks;
+
+  /// wait time before an error is triggered (constructor argument)
+  Scalar maxWaitSeconds;
+
+  /// if true, errors will be thrown, else printed (constructor argument)
+  Boolean throwAtMaxWait;
+
+  /// Label used for traces or error messages
+  String debugName;
+
+  //Because KL doesn't have 'volatile' variables, we will split
+  //the lock count per thread.
+  /// \internal
+  UInt32 perThreadCounts[];
+};
+
+/// \internal
+function SimpleLock._init!( String debugName, Scalar maxWaitSeconds, Boolean throwAtMaxWait, Scalar secondsBetweenChecks ) {
+  this.debugName = debugName;
+  this.secondsBetweenChecks = secondsBetweenChecks;
+  this.throwAtMaxWait = throwAtMaxWait;
+  this.maxWaitSeconds = maxWaitSeconds;
+  this.perThreadCounts.resize( getThreadCount() );//custom TLS
+}
+
+/**
+  Constructs a SimpleLock.
+  \param debugName This name will identify the lock if acquiring fails (`maxWaitSeconds`) or if logging is enabled (`SimpleLock_trace`)
+  \param maxWaitSeconds Acquiring delay time in seconds before printing or throwing an error (use `SCALAR_INFINITE`, or `1e100`, for no error reporting).
+  \param throwAtMaxWait If true, an error will be thrown if a lock can't be acquired after `maxWaitSeconds`. Else, the error will only be logged.
+  Acquiring delay errors will be thrown, else an error will be set and logged (using KL's `setError`)
+  \param secondsBetweenChecks Small delay before the lock is tested again (to minimize lock competition: memory cache flushes and CPU synchronization). This number should be smaller if the lock is expected to be held for a small amount of time (eg: `1e-6`).
+*/
+function SimpleLock( String debugName, Scalar maxWaitSeconds, Boolean throwAtMaxWait, Scalar secondsBetweenChecks ) {
+  this._init( debugName, maxWaitSeconds, throwAtMaxWait, secondsBetweenChecks );
+}
+
+/**
+  Constructs a SimpleLock.
+  \param debugName This name will identify the lock if acquiring fails (`maxWaitSeconds`) or if logging is enabled (`SimpleLock_trace`)
+  \param maxWaitSeconds Acquiring delay time in seconds before printing or throwing an error (use `SCALAR_INFINITE`, or `1e100`, for no error reporting).
+  \param throwAtMaxWait If true, an error will be thrown if a lock can't be acquired after `maxWaitSeconds`. Else, the error will only be logged.
+  The default delay between lock checks is `1.0e-6` second.
+*/
+function SimpleLock( String debugName, Scalar maxWaitSeconds, Boolean throwAtMaxWait ) {
+  this._init( debugName, maxWaitSeconds, throwAtMaxWait, 1.0e-6 );
+}
+
+/**
+  Constructs a SimpleLock.
+  \param debugName This name will identify the lock if acquiring fails (`maxWaitSeconds`) or if logging is enabled (`SimpleLock_trace`)
+  \param maxWaitSeconds Acquiring delay time in seconds before printing or throwing an error (use `SCALAR_INFINITE`, or `1e100`, for no error reporting).
+  The default delay between lock checks is `1.0e-6` second. An error will be thrown if a lock can't be acquired after `maxWaitSeconds`.
+*/
+function SimpleLock( String debugName, Scalar maxWaitSeconds ) {
+  this._init( debugName, maxWaitSeconds, true, 1.0e-6 );
+}
+
+/**
+  Constructs a SimpleLock.
+  \param debugName This name will identify the lock if acquiring fails (`maxWaitSeconds`) or if logging is enabled (`SimpleLock_trace`)
+  The default delay between lock checks is `1.0e-6` second. An error will be thrown if a lock can't be acquired after 5 seconds.
+*/
+function SimpleLock( String debugName ) {
+  this._init( debugName, 5.0, true, 1.0e-6 );
+}
+
+/**
+  Constructs a SimpleLock.
+  The default delay between lock checks is `1.0e-6` second. An error will be thrown if a lock can't be acquired after 5 seconds.
+  \note It is recommended to use constructors that provides a `debugName` to the lock.
+*/
+function SimpleLock() {
+  this._init( "", 5.0, true, 1.0e-6 );
+}
+
+SimpleLock.cloneMembersTo(io SimpleLock that) {
+  //Important: don't copy this.state!
+  that = SimpleLock(
+    this.debugName,
+    this.maxWaitSeconds,
+    this.throwAtMaxWait,
+    this.secondsBetweenChecks
+    );
+}
+
+/// Destructor. An error will be logged if locked at the moment of destruction.
+function ~SimpleLock() {
+  if( this.state == _SimpleLock_locked )
+    setError("~SimpleLock() : Error : deleting a locked SimpleLock: "+this.debugName);
+}
+
+/// Returns 'true' if currently locked.
+/// However, by the time it returns, another thread might already have changed that state,
+/// so it should only be used for heuristic purposes.
+inline Boolean SimpleLock.locked() {
+  return this.state == _SimpleLock_locked;
+}
+
+/// Tries to acquire a lock for ``maxWaitSeconds`` seconds. Will return ``false`` if failed.
+function Boolean TryAcquire( Ref<SimpleLock> simpleLock, Scalar maxWaitSeconds ) {
+  Ref<SimpleLock> lockNoConst = simpleLock;//Trick KL's 'const'
+  Float64 totalWait;
+  UInt32 threadId = getThreadIndex();
+
+  ActiveWaitLoopControl waitControl();
+  waitControl.activeWaitTimeSlice = lockNoConst.secondsBetweenChecks;
+
+  while( true ) {
+    // This lock might be owned by the current thread. 
+    // In that case, we can continue. 
+    if( lockNoConst.perThreadCounts[threadId] ){
+      ++lockNoConst.perThreadCounts[threadId];
+      if( SimpleLock_trace )
+        report("Re-entering the lock:" + lockNoConst.debugName + " thread:" + threadId + " count:" + lockNoConst.perThreadCounts[threadId]);
+      break;
+    }
+    UInt32 result = lockNoConst.state.atomicCAS( _SimpleLock_unlocked, _SimpleLock_locked );
+    if( result == _SimpleLock_unlocked ){
+      lockNoConst.perThreadCounts[threadId] = 1;
+      atomicMemoryBarrier_Acquire();
+      if( SimpleLock_trace )
+        report("Entering the lock:" + lockNoConst.debugName + " thread:" + threadId + " count: 1");
+      break;
+    }
+
+    if( totalWait > maxWaitSeconds )
+      return false;
+    waitControl.wait();
+    totalWait += lockNoConst.secondsBetweenChecks;
+  }
+  return true;
+}
+
+/// Tries to acquire a lock immediately and will return ``false`` if failed.
+inline Boolean TryAcquire( Ref<SimpleLock> simpleLock ) {
+  UInt32 threadId = getThreadIndex();
+  Ref<SimpleLock> lockNoConst = simpleLock;//Trick KL's 'const'
+  if( lockNoConst.perThreadCounts[threadId] ){
+    if( SimpleLock_trace )
+      report("Re-entering the lock:" + lockNoConst.debugName + " thread:" + threadId + " count:" + lockNoConst.perThreadCounts[threadId]);
+    ++lockNoConst.perThreadCounts[threadId];
+    return true;
+  }
+  UInt32 result = lockNoConst.state.atomicCAS( _SimpleLock_unlocked, _SimpleLock_locked );
+  if(result == _SimpleLock_unlocked){
+    lockNoConst.perThreadCounts[threadId] = 1;
+    if( SimpleLock_trace )
+      report("Entering the lock:" + lockNoConst.debugName + " thread:" + threadId + " count: 1");
+  }
+  return result == _SimpleLock_unlocked;
+}
+
+/// Acquires a lock. If it takes more than ``maxWaitSeconds``, an exception is thrown.
+function Acquire( Ref<SimpleLock> simpleLock, Scalar maxWaitSeconds ) {
+  while( !TryAcquire( simpleLock, maxWaitSeconds ) ) {
+    String message = "Acquire SimpleLock "+simpleLock.debugName+": giving up after maximum delay of "+simpleLock.maxWaitSeconds+" seconds. Possible causes: locked for too long, trying to re-enter the lock, coding error (missing 'Release'), locked forever because of a 'throw' or another exception, deadlock.";
+    if( simpleLock.throwAtMaxWait )
+      throw(message);
+    else
+      setError(message);
+  }
+  if( SimpleLock_trace )
+    report("SimpleLock.Acquire: "+simpleLock.debugName);
+}
+
+/// Acquires a lock. If it takes more than ``lock.maxWaitSeconds``, an exception is thrown.
+inline Acquire( Ref<SimpleLock> simpleLock ) {
+  Acquire( simpleLock, simpleLock.maxWaitSeconds );
+}
+
+/// Releases a lock.
+function Release( Ref<SimpleLock> simpleLock ) {
+  UInt32 threadId = getThreadIndex();
+  UInt32 count = simpleLock.perThreadCounts[threadId];
+  if( count ){
+    if( simpleLock.state == _SimpleLock_locked ){
+      Ref<SimpleLock> lockNoConst = simpleLock;//Trick KL's 'const'
+      --count;
+      lockNoConst.perThreadCounts[threadId] = count;
+      if( SimpleLock_trace )
+        report("Releasing the lock:" + lockNoConst.debugName + " count:" + count);
+      if(count == 0){
+        if( SimpleLock_trace )
+          report("SimpleLock.Released: "+simpleLock.debugName + " thread:" + threadId);
+        //Note: call an 'atomic' just to force an immediate memory commit
+        atomicMemoryBarrier_Release();
+        lockNoConst.state.atomicCAS( _SimpleLock_locked, _SimpleLock_unlocked );
+      }
+      else if(count == UInt32(-1)){
+        setError("Release SimpleLock "+simpleLock.debugName+": error: lock Aquire/Release counts do not match.");
+      }
+    }
+  }
+  else{
+    setError("Release SimpleLock "+simpleLock.debugName+": error: lock not owned by thread trying to release.");
+  }
+}
+
+/**
+  Automatically acquires and releases a lock, upon its construction and destruction.
+  The AutoLock is intended to be created as a local variable, whose scope is the same as the need for a lock.
+  
+  To localize the scope of an AutoLock, add an additional code block:
+\rst
+
+::
+  
+    ... thread-safe code ...
+    {
+      AutoLock lock( this.myLock );
+      ... thread unsafe code (critical section) ...
+    }
+    ... thread-safe code ...
+
+\endrst
+*/  
+struct AutoLock {
+  Ref<SimpleLock> simpleLock;
+};
+
+/// Acquires the `lock` with a specific maximum delay (overrides lock's default)
+/// The lock will be released at the destruction of the AutoLock.
+inline AutoLock( Ref<SimpleLock> simpleLock, Scalar maxWaitSeconds ) {
+  this.simpleLock = simpleLock;
+  Acquire( simpleLock, maxWaitSeconds );
+}
+
+/// Acquires the `lock`.
+/// The lock will be released at the destruction of the AutoLock.
+inline AutoLock( Ref<SimpleLock> simpleLock ) {
+  this.simpleLock = simpleLock;
+  if( simpleLock )
+    Acquire( simpleLock, simpleLock.maxWaitSeconds );
+}
+
+/// \internal
+function AutoLock.=( AutoLock other ) {
+  throw("AutoLock.= : Error : copying not allowed");
+}
+
+/// \internal
+inline ~AutoLock() {
+  if( this.simpleLock )
+    Release( this.simpleLock );
+}

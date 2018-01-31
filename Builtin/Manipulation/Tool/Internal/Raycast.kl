@@ -1,0 +1,106 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// \internal
+  /// Provides more context related to a raycast query.
+  /// This is used internally for tool picking / selection.
+  struct RaycastContext {
+    DrawContext context;
+    Ref<Event> event;
+
+    Vec2 viewportCoords;
+    Vec2 normalizedViewportCoords;
+    Ray cameraSpaceRay;
+    Ray worldSpaceRay;
+
+    BaseTool activeTools[];
+    BaseTool activeExclusiveTools[];
+  };
+
+  interface RaycastTargetShape;
+  interface RaycastTarget;
+
+  /// \internal
+  /// Provides information related to a raycast result.
+  /// This is used internally for tool picking / selection.
+  struct RaycastResult {
+    Scalar cameraDistance;
+
+    RaycastTarget owner;//Tool or other RaycastTarget handler
+    RaycastTargetShape leafOwner;//Actual sub-tool or drawn RaycastTargetShape
+
+    Boolean handleLater;// If true, the result is not handled immediately
+  };
+
+  interface RaycastTargetShape {
+    /// Returns a selection manager compatible item (for raycast).
+    Ref<SelectionDrawableItem> getSelectionDrawableItem( DrawContext context );
+  };
+
+  /// \internal
+  /// Interface supported by tool shapes for supporting raycast (selection).
+  /// This is used internally for tool picking / selection.
+  interface RaycastTarget {
+    /// Returns a selection manager compatible item (for raycast).
+    /// Note: raycast groups 
+    SelectionManagerDrawList getSelectionDrawList( RaycastContext context );
+
+    /// Called on the resulting target set when raycast started (eg: click but no release yet)
+    onRaycastInitiated!( io RaycastContext context, RaycastResult result );
+
+    /// Called on the resulting target set when was successfully raycasted
+    onRaycastSucceeded!( io RaycastContext context, RaycastResult result );
+
+    /// Called on the resulting target set when it wasn't raycasted
+    onRaycastFail!( io RaycastContext context );
+  };
+
+  RaycastResult() {
+    this.cameraDistance = SCALAR_INFINITE;
+  }
+
+  Boolean RaycastResult.isValid() {
+    return Boolean( this.owner ) && this.cameraDistance != SCALAR_INFINITE;
+  }
+
+  /// \internal
+  PrepareRaycastContext( Ref<ToolsManager> manager, Ref<Viewport> viewport, Ref<RenderEngine> renderEngine, Ref<Event> event, Vec2 pixelCoordinates, io RaycastContext context ) {
+    context.context.renderEngine = renderEngine;
+    context.context.viewport = viewport;
+    context.event = event;
+
+    context.activeTools = manager.getActiveTools( false );
+    context.activeExclusiveTools = manager.getActiveTools( true );
+
+    context.viewportCoords = pixelCoordinates;
+    context.normalizedViewportCoords = ( ( pixelCoordinates + Vec2( 0.5 ) ) / viewport.getDimensions() ) * 2.0 - Vec2( 1 );
+    context.normalizedViewportCoords.y = -context.normalizedViewportCoords.y;//Y inverted
+
+    Mat44 projInv = context.context.viewport.getProjectionMat().inverse();
+    Vec3 viewportNear = projInv * Vec3( context.normalizedViewportCoords.x, context.normalizedViewportCoords.y, -1.0 );
+    Vec3 viewportFar = projInv * Vec3( context.normalizedViewportCoords.x, context.normalizedViewportCoords.y, 1.0 );
+    context.cameraSpaceRay = Ray( viewportNear, ( viewportFar - viewportNear ).unit_safe() );
+
+    Mat44 cameraMat = context.context.viewport.getCamera().getMat44();
+    Vec3 worldNear = cameraMat * viewportNear;
+    Vec3 worldFar = cameraMat * viewportFar;
+    context.worldSpaceRay = Ray( worldNear, ( worldFar - worldNear ).unit_safe() );
+  }
+
+  RaycastResult.merge!( RaycastResult other, Boolean forceWin ) {
+    if( other.isValid() ) {
+      if( !this.isValid() || forceWin || this.cameraDistance >= other.cameraDistance )
+        this = other;
+    }
+  }
+
+  /// Provides more context in raycast-related events (ToolEvent.sender).
+  interface RaycastTriggered {
+    Boolean hasCurrentRaycast();
+    RaycastResult getCurrentRaycastResult();
+    RaycastContext getCurrentRaycastContext();
+  };
+}// namespace Tool

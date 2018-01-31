@@ -1,0 +1,65 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "writes a single sample into the file based on the provided PolygonMesh.\n\nSupported types:\n  this: AlembicSubDWriter\n  mesh: Ref<PolygonMesh>\n  result: Boolean\n"
+    },
+  "title" : "WriteSample[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicSubDWriter[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "mesh",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "PolygonMesh[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "A2264C9B94A8948833C41E7108FD22B6",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicSubDWriter_writeSample_task<<<index>>>(
+  io Boolean[] result
+, io AlembicSubDWriter[] this
+, in PolygonMesh[] mesh
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].writeSample(mesh[index < mesh.size() ? index : mesh.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( mesh.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < mesh.size()) task_size = mesh.size();
+  result.resize(task_size);
+  for(Size index = 0; index < task_size; index++) {
+    AlembicWrapper_AlembicSubDWriter_writeSample_task(index, result, this, mesh);
+  }
+}
+"
+  }

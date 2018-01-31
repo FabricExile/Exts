@@ -1,0 +1,211 @@
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+function Boolean BaseGeometry.setUInt32ArrayAttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  UInt32[] value
+) {
+  if(!this.setAttributeValue_CheckIndex(mode, index))
+    return false;
+
+  UInt32ArrayAttribute cast = attr;
+  if(cast == null)
+    return false;
+
+  Ref<UInt32ArrayAttribute> castRef = cast;
+
+  LocalL16UInt32Array valueL;
+  valueL.resize(value.size());
+  for(Size j=0;j<value.size();j++)
+    valueL.set(j, value[j]);
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      PolygonMesh mesh = this;
+      if(mesh)
+      {
+        mesh.setPointAttribute(index, castRef, valueL);
+      }
+      else
+      {
+        cast.set(index, valueL);
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++)
+        mesh.setPolygonAttribute( index, i, castRef, valueL );
+      break;
+    }
+    case 2: // per face corner
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      mesh.setPolygonAttribute(index, faceCorner % size, castRef, valueL);
+      break;
+    }
+    case 3: // all
+    {
+      for(Size i=0;i<cast.size();i++)
+        cast.set(i, valueL);
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport SetValue mode for UInt32ArrayAttribute.");
+      return false;
+    }
+  }  
+
+  cast.incrementVersion();
+  return true;
+}
+
+/// \internal
+function Boolean BaseGeometry.setIntegerArrayAttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  SInt32[] value
+) {
+  if(!this.setAttributeValue_CheckIndex(mode, index))
+    return false;
+
+  IntegerArrayAttribute cast = attr;
+  if(cast == null)
+    return false;
+
+  Ref<IntegerArrayAttribute> castRef = cast;
+
+  LocalL16SInt32Array valueL;
+  valueL.resize(value.size());
+  for(Size j=0;j<value.size();j++)
+    valueL.set(j, value[j]);
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      PolygonMesh mesh = this;
+      if(mesh)
+      {
+        mesh.setPointAttribute(index, castRef, valueL);
+      }
+      else
+      {
+        cast.set(index, valueL);
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++)
+        mesh.setPolygonAttribute( index, i, castRef, valueL );
+      break;
+    }
+    case 2: // per face corner
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      mesh.setPolygonAttribute(index, faceCorner % size, castRef, valueL);
+      break;
+    }
+    case 3: // all
+    {
+      for(Size i=0;i<cast.size();i++)
+        cast.set(i, valueL);
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport SetValue mode for IntegerArrayAttribute.");
+      return false;
+    }
+  }  
+
+  cast.incrementVersion();
+  return true;
+}
+
+/// \internal
+function Boolean BaseGeometry.setScalarArrayAttributeValue(
+  GeometryAttribute attr,
+  SInt32 mode,
+  Index index,
+  UInt32 faceCorner,
+  Float32[] value
+) {
+  if(!this.setAttributeValue_CheckIndex(mode, index))
+    return false;
+
+  ScalarArrayAttribute cast = attr;
+  if(cast == null)
+    return false;
+
+  Ref<ScalarArrayAttribute> castRef = cast;
+
+  LocalL16ScalarArray valueL;
+  valueL.resize(value.size());
+  for(Size j=0;j<value.size();j++)
+    valueL.set(j, value[j]);
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      PolygonMesh mesh = this;
+      if(mesh)
+      {
+        mesh.setPointAttribute(index, castRef, valueL);
+      }
+      else
+      {
+        cast.set(index, valueL);
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      for(Size i=0;i<size;i++)
+        mesh.setPolygonAttribute( index, i, castRef, valueL );
+      break;
+    }
+    case 2: // per face corner
+    {
+      PolygonMesh mesh = this;
+      Size size = mesh.getPolygonSize(index);
+      mesh.setPolygonAttribute(index, faceCorner % size, castRef, valueL);
+      break;
+    }
+    case 3: // all
+    {
+      for(Size i=0;i<cast.size();i++)
+        cast.set(i, valueL);
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport SetValue mode for ScalarArrayAttribute.");
+      return false;
+    }
+  }  
+
+  cast.incrementVersion();
+  return true;
+}

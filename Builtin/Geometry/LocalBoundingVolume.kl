@@ -1,0 +1,950 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+require Math;
+
+/// Enum for LocalBoundingVolume.type
+const Integer LocalBoundingVolume_infinite = 0;
+/// Enum for LocalBoundingVolume.type
+const Integer LocalBoundingVolume_bBox = 1;
+/// Enum for LocalBoundingVolume.type
+const Integer LocalBoundingVolume_bSphere = 2;
+/// Enum for LocalBoundingVolume.type
+const Integer LocalBoundingVolume_bCone = 3; //Note: center = 0, dir = -Z
+/// Enum for LocalBoundingVolume.type
+const Integer LocalBoundingVolume_bPyramid = 4; //Note: center = 0, dir = -Z
+
+/**
+  A LocalBoundingVolume is a union structure for expressing multiple simple bounding volume types, such as
+  a box, a sphere, a cone, a pyramid and infinite.
+*/
+struct LocalBoundingVolume {
+  /// The type of bounding volume (LocalBoundingVolume_infinite, LocalBoundingVolume_bBox, LocalBoundingVolume_bSphere, LocalBoundingVolume_bCone, LocalBoundingVolume_bPyramid)
+  Integer type;
+  /// union; usage depends on bounding volume type
+  Vec3 pt1;
+  /// union; usage depends on bounding volume type
+  Vec3 pt2;
+  /// union; usage depends on bounding volume type
+  Scalar sc1;
+  /// union; usage depends on bounding volume type
+  Scalar sc2;
+  /// union; usage depends on bounding volume type
+  Scalar sc3;
+  /// union; usage depends on bounding volume type
+  Scalar sc4;
+};
+
+/// \internal
+inline Boolean LocalBoundingVolume.equal?( LocalBoundingVolume other ) {
+  if( this.type != other.type )
+    return false;
+  switch( this.type ) {
+    case LocalBoundingVolume_infinite:
+      return true;
+    case LocalBoundingVolume_bBox:
+      return this.pt1.equal(other.pt1) && this.pt2.equal(other.pt2);
+    case LocalBoundingVolume_bSphere:
+      return this.pt1.equal(other.pt1) && this.sc1 == other.sc1;
+    case LocalBoundingVolume_bCone:
+      return this.sc1 == other.sc1 && this.sc2 == other.sc2;
+    case LocalBoundingVolume_bPyramid:
+      return this.sc1 == other.sc1 && this.sc2 == other.sc2 && this.sc3 == other.sc3 && this.sc4 == other.sc4;
+  }
+  return false;
+}
+
+inline Boolean == (LocalBoundingVolume a, LocalBoundingVolume b) {
+  return a.equal(b);
+}
+
+inline Boolean != (LocalBoundingVolume a, LocalBoundingVolume b) {
+  return !a.equal(b);
+}
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////
+// BBox: pt1 = min, pt2 = max
+
+/// If the LocalBoundingVolume is a box, returns the min
+/// \category box
+inline Vec3 LocalBoundingVolume.bBoxGetMin() {
+  return this.pt1;
+}
+
+/// If the LocalBoundingVolume is a box, returns the max
+/// \category box
+inline Vec3 LocalBoundingVolume.bBoxGetMax() {
+  return this.pt2;
+}
+
+/// Sets the bounding box min (LocalBoundingVolume must be a box)
+/// \category box
+inline LocalBoundingVolume.bBoxSetMin!( Vec3 min ) {
+  this.pt1 = min;
+}
+
+/// Sets the bounding box max (LocalBoundingVolume must be a box)
+/// \category box
+inline LocalBoundingVolume.bBoxSetMax!( Vec3 max ) {
+  this.pt2 = max;
+}
+
+/// Initializes the LocalBoundingVolume as a bounding box
+/// \category box
+inline LocalBoundingVolume.bBoxInit!( Vec3 min, Vec3 max ) {
+  this.type = LocalBoundingVolume_bBox;
+  this.pt1 = min;
+  this.pt2 = max;
+  this.sc1 = 0;
+}
+
+/// Initializes the LocalBoundingVolume as a bounding box
+/// \category box
+inline LocalBoundingVolume.bBoxInit!() {
+  this.type = LocalBoundingVolume_bBox;
+  this.pt1.x = 0;
+  this.pt1.y = 0;
+  this.pt1.z = 0;
+  this.pt2.x = 0;
+  this.pt2.y = 0;
+  this.pt2.z = 0;
+  this.sc1 = -1;
+}
+
+/// Grows the bounding box to include a point (LocalBoundingVolume must be a box)
+/// \category box
+inline LocalBoundingVolume.bBoxAdd!( Vec3 pt ) {
+  if( this.sc1 == -1 ) {
+    this.sc1 = 0;
+    this.pt1 = pt;
+    this.pt2 = pt;
+  } else {
+    if( pt.x < this.pt1.x )
+      this.pt1.x = pt.x;
+    else if( pt.x > this.pt2.x )
+      this.pt2.x = pt.x;
+
+    if( pt.y < this.pt1.y )
+      this.pt1.y = pt.y;
+    else if( pt.y > this.pt2.y )
+      this.pt2.y = pt.y;
+
+    if( pt.z < this.pt1.z )
+      this.pt1.z = pt.z;
+    else if( pt.z > this.pt2.z )
+      this.pt2.z = pt.z;
+  }
+}
+
+/// Returns the bounding box volume (LocalBoundingVolume must be a box)
+/// \category box
+function Scalar LocalBoundingVolume.bBoxGetVolume() {
+  Vec3 bboxSize = this.pt2 - this.pt1;
+  return bboxSize.x * bboxSize.y * bboxSize.z;
+}
+
+/// Grows the bounding box to include another bounding box, defined by min and max (LocalBoundingVolume must be a box)
+/// \category box
+function LocalBoundingVolume.bBoxAddBBox!( Vec3 min, Vec3 max ) {
+  if( this.sc1 == -1 ) {
+    this.sc1 = 0;
+    this.pt1 = min;
+    this.pt2 = max;
+  } else {
+    if( min.x < this.pt1.x )
+      this.pt1.x = min.x;
+    if( max.x > this.pt2.x )
+      this.pt2.x = max.x;
+
+    if( min.y < this.pt1.y )
+      this.pt1.y = min.y;
+    if( max.y > this.pt2.y )
+      this.pt2.y = max.y;
+
+    if( min.z < this.pt1.z )
+      this.pt1.z = min.z;
+    if( max.z > this.pt2.z )
+      this.pt2.z = max.z;
+  }
+}
+
+/// Returns true if point is in or on the bounding box (LocalBoundingVolume must be a box)
+/// \category box
+inline Boolean LocalBoundingVolume.bBoxContains(Vec3 point) {
+  return BBoxContains(this.pt1, this.pt2, point);
+}
+
+/// Returns the orthographic projection matrix corresponding to the bounding box range, with -Z as the view direction (LocalBoundingVolume must be a box)
+/// \category box
+inline Mat44 LocalBoundingVolume.bBoxGetOrthographicMat44() {
+  if( this.type != LocalBoundingVolume_bBox )
+    setError("bBoxGetOrthographicMat44: error: volume is not a bBox");
+  return asymmetricOrthographicFrustum( this.pt1.x, this.pt1.y, this.pt2.x, this.pt2.y, -this.pt2.z, -this.pt1.z );
+}
+
+/// \internal Transfers the scaling component of a transform into the local bounding box (LocalBoundingVolume must be a box)
+function transformedBBoxComputeUnscaled(
+  Mat44 transform, LocalBoundingVolume localBVol, 
+  out Mat44 noScalingTransform, out LocalBoundingVolume noScalingLocalBVol
+  ) {
+  if( localBVol.type != LocalBoundingVolume_bBox )
+    setError("transformedBBoxComputeVectors: error: volume is not a bBox");
+
+  //Here, we want to compute the inverse transform with no scaling, the scaling being applied as part of the min/max definition.
+  //This way, a sphere remains a sphere in local space after this transfo, simplifying the intersection checks.
+  Mat33 rotation;
+  Vec3 scaling, translation;
+  transform.decompose(scaling, rotation, translation);
+
+  noScalingTransform.setFromMat33(rotation);
+  noScalingTransform.setTranslation(translation);
+  noScalingLocalBVol.bBoxInit( localBVol.pt1 * scaling, localBVol.pt2 * scaling );
+}
+
+/// Transforms the bounding box and returns a transformed origin and axis (dX, dY, dZ) (LocalBoundingVolume must be a box)
+/// \category box
+inline transformedBBoxGetVectors( Mat44 transform, LocalBoundingVolume localBVol, out Vec3 origin, out Vec3 dX, out Vec3 dY, out Vec3 dZ ) {
+  origin = transform * Vec3(localBVol.pt1.x, localBVol.pt1.y, localBVol.pt1.z);
+  dX = Vec3(transform.row0.x, transform.row1.x, transform.row2.x) * (localBVol.pt2.x-localBVol.pt1.x);
+  dY = Vec3(transform.row0.y, transform.row1.y, transform.row2.y) * (localBVol.pt2.y-localBVol.pt1.y);
+  dZ = Vec3(transform.row0.z, transform.row1.z, transform.row2.z) * (localBVol.pt2.z-localBVol.pt1.z);
+}
+
+/// Returns the global bounding box of a transformed bounding box (LocalBoundingVolume must be a box)
+/// \category box
+function transformedBBoxGetBBox( Mat44 transform, LocalBoundingVolume localBVol, out Vec3 min, out Vec3 max ) {
+  Vec3 origin, dX, dY, dZ;
+  transformedBBoxGetVectors( transform, localBVol, origin, dX, dY, dZ );
+  Vec3 ptX = origin + dX;
+  Vec3 ptY = origin + dY;
+  Vec3 ptZ = origin + dZ;
+
+  LocalBoundingVolume bbox;
+  bbox.bBoxInit();
+  bbox.bBoxAdd(origin);
+  bbox.bBoxAdd(ptX);
+  bbox.bBoxAdd(ptY);
+  bbox.bBoxAdd(ptZ);
+
+  bbox.bBoxAdd(ptX+dY);
+  bbox.bBoxAdd(ptX+dY+dZ);
+  bbox.bBoxAdd(ptX+dZ);
+  bbox.bBoxAdd(ptZ+dY);
+  min = bbox.pt1;
+  max = bbox.pt2;
+}
+
+/// Grows the bounding box to include a transformed bounding box (LocalBoundingVolume must be a box)
+/// \category box
+function LocalBoundingVolume.bBoxAddTransformedBBox!( LocalBoundingVolume other, Mat44 transform ) {
+  Vec3 min, max;
+  transformedBBoxGetBBox( transform, other, min, max );
+  if( min.x < this.pt1.x )
+    this.pt1.x = min.x;
+  if( max.x > this.pt2.x )
+    this.pt2.x = max.x;
+
+  if( min.y < this.pt1.y )
+    this.pt1.y = min.y;
+  if( max.y > this.pt2.y )
+    this.pt2.y = max.y;
+
+  if( min.z < this.pt1.z )
+    this.pt1.z = min.z;
+  if( max.z > this.pt2.z )
+    this.pt2.z = max.z;
+}
+
+/// \internal Returns the intersection with a transformed sphere, but the transform needs to have no scaling and its inverse needs to be provided (LocalBoundingVolume must be a box)
+/// \category box
+inline UInt8 LocalBoundingVolume.bBoxGetBSphereIntersection( Mat44 noScalingInvTransform, Vec3 sphereCenter, Scalar sphereRadius ) {
+  Vec3 localSphereCenter = noScalingInvTransform * sphereCenter;
+  return bBoxGetBSphereIntersection( this.pt1, this.pt2, localSphereCenter, sphereRadius );
+}
+
+/// \internal Returns the maximum distance of a bounding box to a plane
+/// \category box
+inline Scalar LocalBoundingVolume.bBoxGetMaxDistToPlane(Vec3 planeOrigin, Vec3 planeNormal) {
+  Vec3 pts[8];
+  getBBoxPoints(this.pt1, this.pt2, pts);
+  Scalar maxDist;
+  for( Size i = 0; i < 8; ++i ) {
+    Scalar dist = (pts[i]-planeOrigin).dot(planeNormal);
+    if( dist > maxDist || i == 0 )
+      maxDist = dist;
+  }
+  return maxDist;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////
+// BSphere
+
+/// Returns the radius of a bounding sphere (LocalBoundingVolume must be a sphere)
+/// \category sphere
+inline Scalar LocalBoundingVolume.bSphereGetRadius() {
+  return this.sc1;
+}
+
+/// Returns the squared radius of a bounding sphere (LocalBoundingVolume must be a sphere)
+/// \category sphere
+inline Scalar LocalBoundingVolume.bSphereGetSquaredRadius() {
+  return this.sc2;
+}
+
+/// Returns the center of a bounding sphere (LocalBoundingVolume must be a sphere)
+/// \category sphere
+inline Vec3 LocalBoundingVolume.bSphereGetCenter() {
+  return this.pt1;
+}
+
+/// Sets the center of a bounding sphere (LocalBoundingVolume must be a sphere)
+/// \category sphere
+inline LocalBoundingVolume.bSphereSetCenter!( Vec3 center ) {
+  this.pt1 = center;
+}
+
+/// Sets the radius of a bounding sphere (LocalBoundingVolume must be a sphere)
+/// \note treats 'negative' values as an infinite radius
+/// \category sphere
+inline LocalBoundingVolume.bSphereSetRadius!( Scalar radius ) {
+  if( radius >= 0 ) {
+    this.sc1 = radius;
+    this.sc2 = radius * radius;
+  } else {
+    this.sc1 = -1;
+    this.sc2 = -1;
+  }
+}
+
+/// Initializes the LocalBoundingVolume as a bounding sphere
+/// \category sphere
+inline LocalBoundingVolume.bSphereInit!( Vec3 center, Scalar radius ) {
+  this.type = LocalBoundingVolume_bSphere;
+  this.pt1 = center;
+  this.bSphereSetRadius( radius );
+}
+
+/// Initializes the LocalBoundingVolume as a bounding sphere
+/// \category sphere
+inline LocalBoundingVolume.bSphereInit!( Vec3 center, Scalar radius, Scalar sqRadius ) {
+  this.type = LocalBoundingVolume_bSphere;
+  this.sc1 = radius;
+  this.sc2 = sqRadius;
+}
+
+/// Returns true if the point is inside the bounding sphere (LocalBoundingVolume must be a sphere)
+/// \category sphere
+inline Boolean LocalBoundingVolume.bSphereContains( Vec3 point ) {
+  Vec3 deltaVec = point - this.pt1;
+  return deltaVec.lengthSquared() < this.sc2;
+}
+
+/// Returns true if the sphere intersects the input sphere (LocalBoundingVolume must be a sphere)
+/// \category sphere
+inline Boolean LocalBoundingVolume.bSphereIntersectsBSphere( Vec3 center, Scalar radius ) {
+  Scalar radiusSum = this.sc1 + radius;
+  Scalar minSqDist = radiusSum * radiusSum;
+  Vec3 distVec = this.pt1 - center;
+  return distVec.lengthSquared() <= minSqDist;
+}
+
+/// Returns the distance vector from a point to this sphere (LocalBoundingVolume must be a sphere)
+/// \category sphere
+inline Vec3 LocalBoundingVolume.bSphereGetLocalDistanceVector( Vec3 point ) {
+  Vec3 deltaCenter = point - this.pt1;
+  Scalar sqLen = deltaCenter.lengthSquared();
+  if( sqLen < ( this.sc2 + DIVIDEPRECISION ) )
+    return Vec3(0,0,0);
+  Scalar len = sqrt( sqLen );
+  return ( deltaCenter / len ) * ( len - this.sc1 );
+}
+
+/// Returns the bounding box of a transformed sphere (LocalBoundingVolume must be a sphere)
+/// \category sphere
+inline transformedBSphereGetBBox(Mat44 transform, LocalBoundingVolume localBVol, out Vec3 min, out Vec3 max) {
+  Vec3 bSphereCenter;
+  Scalar bSphereSquaredRadius;
+  transformedBSphereGetBSphere( transform, localBVol.pt1, localBVol.sc1, bSphereCenter, bSphereSquaredRadius );
+  Scalar radius = sqrt(bSphereSquaredRadius);
+  Vec3 delta = Vec3(radius, radius, radius);
+  min = bSphereCenter - delta;
+  max = bSphereCenter + delta;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////
+// BPyramid
+
+/// Returns the near width of the truncated pyramid (LocalBoundingVolume must be a pyramid)
+/// \category pyramid
+inline Scalar LocalBoundingVolume.bPyramidGetNearWidth() {
+  return this.sc1;
+}
+
+/// Returns the near height of the truncated pyramid (LocalBoundingVolume must be a pyramid)
+/// \category pyramid
+inline Scalar LocalBoundingVolume.bPyramidGetNearHeight() {
+  return this.sc2;
+}
+
+/// Returns the near distance of the truncated pyramid (LocalBoundingVolume must be a pyramid)
+/// \category pyramid
+inline Scalar LocalBoundingVolume.bPyramidGetNear() {
+  return this.sc3;
+}
+
+/// Returns the far distance of the truncated pyramid (LocalBoundingVolume must be a pyramid)
+/// \category pyramid
+inline Scalar LocalBoundingVolume.bPyramidGetFar() {
+  return this.sc4;
+}
+
+/// Sets the near width of the truncated pyramid (LocalBoundingVolume must be a pyramid)
+/// \category pyramid
+inline LocalBoundingVolume.bPyramidSetNearWidth!( Scalar nearWidth ) {
+  this.sc1 = nearWidth;
+}
+
+/// Sets the near height of the truncated pyramid (LocalBoundingVolume must be a pyramid)
+/// \category pyramid
+inline LocalBoundingVolume.bPyramidSetNearHeight!( Scalar nearHeight ) {
+  this.sc2 = nearHeight;
+}
+
+/// Sets the near distance of the truncated pyramid (LocalBoundingVolume must be a pyramid)
+/// \category pyramid
+inline LocalBoundingVolume.bPyramidSetNear!( Scalar near ) {
+  this.sc3 = near;
+}
+
+/// Sets the far distance of the truncated pyramid (LocalBoundingVolume must be a pyramid)
+/// \category pyramid
+inline LocalBoundingVolume.bPyramidSetFar!( Scalar far ) {
+  this.sc4 = far;
+}
+
+/// Initializes the LocalBoundingVolume as a truncated pyramid
+/// \category pyramid
+inline LocalBoundingVolume.bPyramidInit!( Scalar nearWidth, Scalar nearHeight, Scalar near, Scalar far  ) {
+  this.type = LocalBoundingVolume_bPyramid;
+  this.sc1 = nearWidth;
+  this.sc2 = nearHeight;
+  this.sc3 = near;
+  this.sc4 = far;
+}
+
+/// Returns the perspective transform corresponding to the bounding pyramid (LocalBoundingVolume must be a pyramid)
+/// \category pyramid
+inline Mat44 LocalBoundingVolume.bPyramidGetPerspectiveMat44() {
+  if( this.type != LocalBoundingVolume_bPyramid )
+    setError("bPyramidGetPerspectiveMat44: error: volume is not a bPyramid");
+  return symmetricPerspectiveFrustum( this.sc1, this.sc2, this.sc3, this.sc4, 0, 0 );
+}
+
+/// \internal Returns vectors describing the pyramid
+/// \category pyramid
+function transformedBPyramidComputeVectors(
+  Mat44 transform, LocalBoundingVolume localBVol, 
+  out Vec3 origin, out Vec3 unitDir, out Scalar near, out Scalar far, out Vec3 nearRightVec, out Vec3 nearUpVec
+  ) {
+  if( localBVol.type != LocalBoundingVolume_bPyramid )
+    setError("transformedBPyramidComputeVectors: error: volume is not a bPyramid");
+
+  origin = transform.translation();
+  unitDir = Vec3( -transform.row0.z, -transform.row1.z, -transform.row2.z );
+  Scalar factor = unitDir.length();
+  if( factor > DIVIDEPRECISION )
+    unitDir /= factor;
+
+  near = localBVol.sc3 * factor;
+  far = localBVol.sc4 * factor;
+  Mat33 scalRotMat = transform.upperLeft();
+  nearRightVec = Vec3( localBVol.sc1 * 0.5 * transform.row0.x, localBVol.sc1 * 0.5 * transform.row1.x, localBVol.sc1 * 0.5 * transform.row2.x );
+  nearUpVec = Vec3( localBVol.sc2 * 0.5 * transform.row0.y, localBVol.sc2 * 0.5 * transform.row1.y, localBVol.sc2 * 0.5 * transform.row2.y );
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////
+// BCone
+
+/// Returns the angle of the cone in radian (LocalBoundingVolume must be a cone)
+/// \category cone
+inline Scalar LocalBoundingVolume.bConeGetRadAngle() {
+  return this.sc1;
+}
+
+/// Returns the height (cutoff) of the cone (LocalBoundingVolume must be a cone)
+/// \category cone
+inline Scalar LocalBoundingVolume.bConeGetCutoff() {
+  return this.sc2;
+}
+
+/// Returns the cached value of tan(angle/2) of the cone (LocalBoundingVolume must be a cone)
+/// \category cone
+inline Scalar LocalBoundingVolume.bConeGetTanHalfAngle() {
+  return this.sc3;
+}
+
+/// Returns the cached value of cos(angle/2) of the cone (LocalBoundingVolume must be a cone)
+/// \category cone
+inline Scalar LocalBoundingVolume.bConeGetCosHalfAngle() {
+  return this.sc4;
+}
+
+/// Sets the angle of the cone, in radian (LocalBoundingVolume must be a cone)
+/// \category cone
+inline LocalBoundingVolume.bConeSetRadAngle!( Scalar radAngle ) {
+  this.sc1 = radAngle;
+  this.sc3 = tan(radAngle/2);
+  this.sc4 = 1.0/sqrt(1.0+this.sc3*this.sc3);// == cos(radAngle/2);
+}
+
+/// Sets the height (cutoff) of the cone (LocalBoundingVolume must be a cone)
+/// \category cone
+inline LocalBoundingVolume.bConeSetCutoff!( Scalar cutoff ) {
+  this.sc2 = cutoff;
+}
+
+/// Initializes the LocalBoundingVolume as a cone
+/// \category cone
+inline LocalBoundingVolume.bConeInit!( Scalar radAngle, Scalar cutoff ) {
+  this.type = LocalBoundingVolume_bCone;
+  this.bConeSetRadAngle( radAngle );
+  this.bConeSetCutoff( cutoff );
+}
+
+/// Returns the local distance vector from the cone to a point (LocalBoundingVolume must be a cone)
+/// \category cone
+function Vec3 LocalBoundingVolume.bConeGetLocalDistanceVector( Vec3 point ) {
+  //1) If inside, dist == 0
+  Scalar maxZAxisDist = this.sc3 * -point.z + DIVIDEPRECISION;
+  Scalar maxZAxisSqDist = maxZAxisDist * maxZAxisDist;
+
+  Scalar zAxisSqDist = point.x*point.x + point.y*point.y;
+  if( zAxisSqDist <= maxZAxisSqDist && point.z <= DIVIDEPRECISION && (point.z >= -this.sc2 || this.sc2 < 0 ) )
+    return Vec3(0,0,0);
+
+  //2) Compute cone-orthogonal vector
+  Scalar zAxisDist = sqrt(zAxisSqDist);
+  Vec2 unitPerpVec;
+  if( zAxisDist > DIVIDEPRECISION ) {
+    Scalar zAxisInvDist = 1.0/zAxisDist;
+    unitPerpVec = Vec2( point.x*zAxisInvDist, point.y*zAxisInvDist );
+  }
+
+  Vec2 maxDistPerpVec = unitPerpVec * maxZAxisDist;
+  Scalar parallelDelta = ( zAxisDist - maxZAxisDist ) * this.sc4 * this.sc3 * this.sc4;
+  Scalar perpDelta = parallelDelta * this.sc3;
+  Scalar parallelVecZ = point.z - parallelDelta;
+
+  Boolean atTip = parallelVecZ > DIVIDEPRECISION;
+  Boolean atEnd = parallelVecZ < -this.sc2 && (this.sc2 >= 0);
+
+  if( !atTip && !atEnd ) {
+    Vec3 coneParallelVec = Vec3( unitPerpVec.x * (perpDelta + maxZAxisDist), unitPerpVec.y * (perpDelta + maxZAxisDist), parallelVecZ );
+    return point - coneParallelVec;
+  }
+
+  if( atTip )
+    return point;
+
+  //atEnd
+  Scalar endMaxDist = this.sc2 * this.sc3;
+  if( zAxisDist > endMaxDist ) {
+    Vec2 endMaxDistPerpVec = unitPerpVec * endMaxDist;
+    return Vec3( point.x-endMaxDistPerpVec.x, point.y-endMaxDistPerpVec.y, point.z+this.sc2 );
+  }
+  return Vec3( 0, 0, point.z+this.sc2 );
+}
+
+/// \internal Returns vectors describing the cone (LocalBoundingVolume must be a cone)
+/// \category cone
+function transformedBConeComputeVectors(
+  Mat44 transform, LocalBoundingVolume localBVol, 
+  out Vec3 origin, out Vec3 unitDir, out Scalar length, out Scalar tanHalfAngle, out Scalar cosHalfAngle
+  ) {
+  if( localBVol.type != LocalBoundingVolume_bCone )
+    setError("transformedBConeComputeVectors: error: volume is not a bCone");
+  origin = transform.translation();
+  unitDir = Vec3( -transform.row0.z, -transform.row1.z, -transform.row2.z );
+  length = unitDir.length();
+  if( length > DIVIDEPRECISION )
+    unitDir /= length;
+  else
+    unitDir = Vec3(0.0, 1.0, 0.0);
+  length *= localBVol.sc2;
+  tanHalfAngle = localBVol.sc3;
+  cosHalfAngle = localBVol.sc4;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////
+// Helpers
+
+/// Returns a bounding sphere englobing the transformed LocalBoundingVolume
+function localBVolGetBSphere( Mat44 transform, LocalBoundingVolume localBVol, out Vec3 bSphereCenter, out Scalar bSphereSquaredRadius ) {
+  if( localBVol.type == LocalBoundingVolume_bCone ) {
+    Vec3 origin, unitDir;
+    Scalar length, tanHalfAngle, cosHalfAngle;
+    transformedBConeComputeVectors( transform, localBVol, 
+      origin, unitDir, length, tanHalfAngle, cosHalfAngle );
+    coneGetBSphere( origin, unitDir, length, tanHalfAngle, bSphereCenter, bSphereSquaredRadius );
+  } else if( localBVol.type == LocalBoundingVolume_bPyramid ) {
+    Vec3 origin, unitDir, nearRightVec, nearUpVec;
+    Scalar near, far;
+    transformedBPyramidComputeVectors( transform, localBVol, origin, unitDir, near, far, nearRightVec, nearUpVec );
+    bPyramidGetBSphere( origin, unitDir, near, far, nearRightVec, nearUpVec,
+                                  bSphereCenter, bSphereSquaredRadius );
+  } else if( localBVol.type == LocalBoundingVolume_bBox ) {
+    transformedBBoxGetBSphere( transform, localBVol.pt1, localBVol.pt2, bSphereCenter, bSphereSquaredRadius );
+  } else if( localBVol.type == LocalBoundingVolume_bSphere ) {
+    transformedBSphereGetBSphere( transform, localBVol.pt1, localBVol.sc1, bSphereCenter, bSphereSquaredRadius );
+   } else //TODO: implement others!
+    report("localBVolGetBSphere: unsupported LocalBoundingVolume type: " + localBVol.getDesc() );
+}
+
+/// Returns a bounding box englobing the transformed LocalBoundingVolume
+function localBVolGetBBox( Mat44 transform, LocalBoundingVolume localBVol, out Vec3 min, out Vec3 max ) {
+  if( localBVol.type == LocalBoundingVolume_bCone ) {
+    Vec3 origin, unitDir;
+    Scalar length, tanHalfAngle, cosHalfAngle;
+    transformedBConeComputeVectors( transform, localBVol, 
+      origin, unitDir, length, tanHalfAngle, cosHalfAngle );
+    coneGetBBox( origin, unitDir, length, tanHalfAngle, min, max );
+  } else if( localBVol.type == LocalBoundingVolume_bPyramid ) {
+    Vec3 origin, unitDir, nearRightVec, nearUpVec;
+    Scalar near, far;
+    transformedBPyramidComputeVectors( transform, localBVol, origin, unitDir, near, far, nearRightVec, nearUpVec );
+    pyramidGetBBox( origin, unitDir, near, far, nearRightVec, nearUpVec, min, max );
+  } else if( localBVol.type == LocalBoundingVolume_bBox ) {
+    transformedBBoxGetBBox( transform, localBVol, min, max );
+  } else if( localBVol.type == LocalBoundingVolume_bSphere ) {
+    transformedBSphereGetBBox( transform, localBVol, min, max );
+   } else //TODO: implement others!
+    report("localBVolGetBBox: unsupported LocalBoundingVolume type: " + localBVol.getDesc() );
+}
+
+/// Returns the distance from a point to a transformed LocalBoundingVolume
+function Scalar getSquaredDistanceToTransformedBVol( LocalBoundingVolume localBVol, Mat44 localBVolTransfo, Vec3 globalPos ) {
+  //Optmize: avoid inverting the Mat44 matrix since row 4 is expected to be empty...
+  Mat33 localBVolScaleRot = localBVolTransfo.upperLeft();
+  Mat33 localBVolInvScaleRot = localBVolScaleRot.inverse();
+  Vec3 localCoord = localBVolInvScaleRot * (globalPos - localBVolTransfo.translation());
+  Vec3 localDistanceVector;
+  if( localBVol.type == LocalBoundingVolume_infinite )
+    return 0;
+  else if( localBVol.type == LocalBoundingVolume_bCone )
+    localDistanceVector = localBVol.bConeGetLocalDistanceVector( localCoord );
+  else if( localBVol.type == LocalBoundingVolume_bSphere ) {
+    localDistanceVector = localBVol.bSphereGetLocalDistanceVector( localCoord );
+  } else
+    report("localBVolGetBSphere: unsupported LocalBoundingVolume type: " + localBVol.getDesc() );
+  return (localBVolScaleRot * localDistanceVector).lengthSquared();//Transform to put back scaling
+}
+
+/// \internal
+/// \param segments Temporary storage for volume computations (to avoid memory allocations)
+function ClipSegmentsWithBBox( LocalBoundingVolume bbox, io SegmentPoints segments ) {
+  ClipSegmentsWithPlane( bbox.pt1, Vec3(-1,0,0), segments);
+  ClipSegmentsWithPlane( bbox.pt1, Vec3(0,-1,0), segments);
+  ClipSegmentsWithPlane( bbox.pt1, Vec3(0,0,-1), segments);
+  ClipSegmentsWithPlane( bbox.pt2, Vec3(1,0,0), segments);
+  ClipSegmentsWithPlane( bbox.pt2, Vec3(0,1,0), segments);
+  ClipSegmentsWithPlane( bbox.pt2, Vec3(0,0,1), segments);
+}
+
+/// \internal 
+/// Modifies the bBox bounding box as clipped by the transformed bounding volume.
+/// \param segments Temporary storage for volume computations (to avoid memory allocations)
+/// \note Only pyramid and box bounding volumes are supported.
+function ClipBBoxWithBVol( LocalBoundingVolume localBVol, Mat44 transform, out LocalBoundingVolume bBox, io SegmentPoints tempSegments ) {
+
+  Vec3 bboxPts[8];
+  getBBoxPoints( bBox.pt1, bBox.pt2, bboxPts );
+  GetBoxSegments( bboxPts, tempSegments );
+
+  LocalBoundingVolume resultBBox;
+  resultBBox.bBoxInit();
+
+  LocalBoundingVolume projBBox;
+  projBBox.bBoxInit(Vec3(-1,-1,-1),Vec3(1,1,1));
+
+  Vec3 bVolPts[8];
+  Mat44 projMat;
+
+  if( localBVol.type == LocalBoundingVolume_bPyramid ) {
+    Vec3 origin, unitDir, nearRightVec, nearUpVec;
+    Scalar near, far;
+    transformedBPyramidComputeVectors( transform, localBVol, origin, unitDir, near, far, nearRightVec, nearUpVec );
+    Vec3 leftPlaneNormal, rightPlaneNormal, upPlaneNormal, downPlaneNormal;
+    bPyramidComputePlanes( origin, unitDir, near, far, nearRightVec, nearUpVec, leftPlaneNormal, rightPlaneNormal, upPlaneNormal, downPlaneNormal );
+
+    //Clip bbox with pyramid
+    Vec3 nearCenter = origin+unitDir*near;
+    Vec3 farCenter = origin+unitDir*far;
+    Scalar ratio = far/near;
+    Vec3 farRightVec = nearRightVec*ratio;
+    Vec3 farUpVec = nearUpVec*ratio;
+    ClipSegmentsWithPlane( nearCenter, unitDir.negate(), tempSegments );
+    ClipSegmentsWithPlane( farCenter, unitDir, tempSegments );
+    ClipSegmentsWithPlane( origin, rightPlaneNormal, tempSegments );
+    ClipSegmentsWithPlane( origin, leftPlaneNormal, tempSegments );
+    ClipSegmentsWithPlane( origin, upPlaneNormal, tempSegments );
+    ClipSegmentsWithPlane( origin, downPlaneNormal, tempSegments );
+
+    for( Size i = 0; i < tempSegments.size(); ++i ) {
+      Vec3 pt1, pt2;
+      tempSegments.get(i, pt1, pt2);
+      resultBBox.bBoxAdd(pt1);
+      resultBBox.bBoxAdd(pt2);
+    }
+
+    //Set bVol points; to be added if contained by bbox
+    bVolPts[0] = nearCenter+nearRightVec+nearUpVec;
+    bVolPts[1] = nearCenter-nearRightVec+nearUpVec;
+    bVolPts[2] = nearCenter+nearRightVec-nearUpVec;
+    bVolPts[3] = nearCenter-nearRightVec-nearUpVec;
+    bVolPts[4] = farCenter+farRightVec+farUpVec;
+    bVolPts[5] = farCenter-farRightVec+farUpVec;
+    bVolPts[6] = farCenter+farRightVec-farUpVec;
+    bVolPts[7] = farCenter-farRightVec-farUpVec;
+
+    projMat = localBVol.bPyramidGetPerspectiveMat44() * transform.inverse();
+
+  } else if( localBVol.type == LocalBoundingVolume_bBox ) {
+    Vec3 min, dX, dY, dZ;
+    transformedBBoxGetVectors( transform, localBVol, min, dX, dY, dZ );
+    Vec3 max = min + dX + dY + dZ;
+
+    ClipSegmentsWithPlane( min, dX.negate(), tempSegments );
+    ClipSegmentsWithPlane( min, dY.negate(), tempSegments );
+    ClipSegmentsWithPlane( min, dZ.negate(), tempSegments );
+    ClipSegmentsWithPlane( max, dX, tempSegments );
+    ClipSegmentsWithPlane( max, dY, tempSegments );
+    ClipSegmentsWithPlane( max, dZ, tempSegments );
+
+    for( Size i = 0; i < tempSegments.size(); ++i ) {
+      Vec3 pt1, pt2;
+      tempSegments.get(i, pt1, pt2);
+      resultBBox.bBoxAdd(pt1);
+      resultBBox.bBoxAdd(pt2);
+    }
+
+    //Set bVol points; to be added if contained by bbox
+    bVolPts[0] = min;
+    bVolPts[1] = min+dX;
+    bVolPts[2] = min+dY;
+    bVolPts[3] = max-dZ;
+    bVolPts[4] = min+dZ;
+    bVolPts[5] = max-dY;
+    bVolPts[6] = max-dX;
+    bVolPts[7] = max;
+
+    projMat = localBVol.bBoxGetOrthographicMat44() * transform.inverse();
+  }
+
+  for(Size i = 0; i < 8; ++i) {
+    if(bBox.bBoxContains(bVolPts[i]))
+      resultBBox.bBoxAdd(bVolPts[i]);
+  }
+
+  //Clip bVol with bbox
+  GetBoxSegments( bVolPts, tempSegments );
+  ClipSegmentsWithBBox( bBox, tempSegments );
+
+  for( Size i = 0; i < tempSegments.size(); ++i ) {
+      Vec3 pt1, pt2;
+    tempSegments.get(i, pt1, pt2);
+    resultBBox.bBoxAdd(pt1);
+    resultBBox.bBoxAdd(pt2);
+  }
+
+  //Add bbox points contained by bVol
+  for(Size i = 0; i < 8; ++i) {
+    Vec3 projPt = projMat * bboxPts[i];
+    if(projBBox.bBoxContains(projPt))
+      resultBBox.bBoxAdd(bboxPts[i]);
+  }
+  bBox = resultBBox;
+}
+
+/// \internal Increase 2D bbox
+inline bBox2DAddPt(io Vec2 min, out Vec2 max, Vec2 pt) {
+  if( pt.x < min.x )
+    min.x = pt.x;
+  else if( pt.x > max.x )
+    max.x = pt.x;
+
+  if( pt.y < min.y )
+    min.y = pt.y;
+  else if( pt.y > max.y )
+    max.y = pt.y;
+}
+
+
+function Boolean LocalBoundingVolume.pyramidNearPlaneIntersectsBVol?( Mat44 pyrTransform, LocalBoundingVolume localBVol, Mat44 transform ) {
+  if( this.type != LocalBoundingVolume_bPyramid )
+    setError("pyramidNearPlaneIntersectsBVol: error: volume is not a bPyramid");
+
+  Vec2 halfPlaneSize = Vec2(this.sc1, this.sc2)*0.5;
+
+  if( localBVol.type == LocalBoundingVolume_bSphere ) {
+    if( localBVol.sc1 < 0 )//infinite
+      return true;
+    Mat44 pyrToBVol = transform.inverse()*pyrTransform;
+    Vec3 localCenter;
+    Scalar localSquaredRadius;
+    transformedBSphereGetBSphere( pyrToBVol, localBVol.pt1, localBVol.sc1, localCenter, localSquaredRadius );
+    Scalar nearZ = -this.sc3;
+    Scalar zDist = nearZ-localCenter.z;
+    Scalar sqZDist = zDist*zDist;
+    if( sqZDist > localSquaredRadius )
+      return false;
+    Scalar sqRadiusAtNear = localSquaredRadius - sqZDist;
+    Vec2 relativeCenter = Vec2(abs(localCenter.x), abs(localCenter.y));
+    Vec2 distVec = relativeCenter - halfPlaneSize;
+    if( distVec.x < 0.0 )
+      distVec.x = 0.0;
+    if( distVec.y < 0.0 )
+      distVec.y = 0.0;
+    return distVec.lengthSquared() <= sqRadiusAtNear;
+  } else if( localBVol.type == LocalBoundingVolume_bCone ) {
+    //Answer is approximate in this case: might return some false positives, but only a few
+    //To improve... if time.
+    Mat44 bVolToPyr = pyrTransform.inverse()*transform;
+    Vec3 coneOrig = bVolToPyr.translation();
+    coneOrig.z += this.sc3;
+    Vec3 coneDir = Vec3(-bVolToPyr.row0.z, -bVolToPyr.row1.z, -bVolToPyr.row2.z).unit();
+    if( coneOrig.z < 0 ) {
+      coneOrig.z = -coneOrig.z;
+      coneDir.z = -coneDir.z;
+    }
+    Scalar coneLen = localBVol.sc2;
+    Boolean infinite = coneLen < 0;
+    if( infinite )
+      coneLen = 1;
+    Vec3 coneEnd = coneOrig + coneDir * (infinite ? 1 : coneLen);
+    Vec2 projDir = Vec2(coneDir.x, coneDir.y);
+    Scalar projCosAngle = projDir.length();
+    Vec2 normProjDir;
+    if( projCosAngle > 1.0e-12 )
+      normProjDir = projDir / projCosAngle;
+    else
+      normProjDir = Vec2(0,1);//Any unit vec perp to Z
+
+    Vec3 coneEndZMinVec = coneLen * localBVol.sc3 * Vec3(coneDir.z*normProjDir.x, coneDir.z*normProjDir.y, -projCosAngle).unit();
+    if( coneEndZMinVec.z > 0 )
+      coneEndZMinVec = coneEndZMinVec.negate();
+
+    Vec3 coneEndZMin = coneEnd + coneEndZMinVec;
+    if( !infinite && coneEndZMin.z >= 0 || infinite && coneEndZMin.z >= coneOrig.z )
+      return false;//Cone doesn't cross the near infinite plane
+
+    Vec3 origToMinVec = coneEndZMin-coneOrig;
+    Scalar deltaZ = -origToMinVec.z;
+    if( deltaZ < 1.0e-12 )
+      return false;
+    Vec3 minIntersectPos = coneOrig + origToMinVec*(coneOrig.z/deltaZ);
+    if(  minIntersectPos.x >= -halfPlaneSize.x && minIntersectPos.x <= halfPlaneSize.x
+      && minIntersectPos.y >= -halfPlaneSize.y && minIntersectPos.y <= halfPlaneSize.y )
+      return true;
+
+    //get max signed proj dists of bbox corners, from minIntersectPos in normProjDir
+    Vec2 minIntersectPosV2 = Vec2(minIntersectPos.x, minIntersectPos.y);
+    Scalar maxSignedProj = (Vec2(-halfPlaneSize.x,-halfPlaneSize.y)-minIntersectPosV2).dot(normProjDir);
+    Scalar minSignedProj = maxSignedProj;
+    Scalar signedProj = (Vec2(halfPlaneSize.x,-halfPlaneSize.y)-minIntersectPosV2).dot(normProjDir);
+    if( signedProj > maxSignedProj )
+      maxSignedProj = signedProj;
+    if( signedProj < minSignedProj )
+      minSignedProj = signedProj;
+    signedProj = (Vec2(-halfPlaneSize.x,halfPlaneSize.y)-minIntersectPosV2).dot(normProjDir);
+    if( signedProj > maxSignedProj )
+      maxSignedProj = signedProj;
+    if( signedProj < minSignedProj )
+      minSignedProj = signedProj;
+    signedProj = (Vec2(halfPlaneSize.x,halfPlaneSize.y)-minIntersectPosV2).dot(normProjDir);
+    if( signedProj > maxSignedProj )
+      maxSignedProj = signedProj;
+    if( signedProj < minSignedProj )
+      minSignedProj = signedProj;
+
+    if( maxSignedProj < 0 )
+      return false;
+
+    Scalar maxCutoff = maxSignedProj;
+    Scalar maxAmplitudeDist = maxCutoff;
+
+    Vec3 coneEndZMax = coneEnd - coneEndZMinVec;
+    Vec3 origToMaxVec = coneEndZMax-coneOrig;
+    deltaZ = -origToMaxVec.z;
+
+    Boolean maxZVecIntersects = deltaZ > 1.0e-12;
+    Vec3 maxZVecIntersectPos;
+    if( maxZVecIntersects ) {
+      maxZVecIntersectPos = coneOrig + origToMaxVec*(coneOrig.z/deltaZ);
+      signedProj = (Vec2(maxZVecIntersectPos.x,maxZVecIntersectPos.y)-minIntersectPosV2).dot(normProjDir);
+      if( signedProj < minSignedProj )
+        return false;
+      //It is an ellipse: max amplitude is at half dist
+      if( signedProj < maxAmplitudeDist )
+        maxAmplitudeDist = signedProj;
+    }
+
+    if( !infinite && coneEndZMax.z > 1.0e-12 ) {
+      //Check light cutoff intersection
+      Vec3 maxToMinVec = coneEndZMin-coneEndZMax;
+      Vec3 cutoffIntersectPos = coneEndZMax + maxToMinVec*(coneEndZMax.z/-maxToMinVec.z);
+      signedProj = (Vec2(cutoffIntersectPos.x,cutoffIntersectPos.y)-minIntersectPosV2).dot(normProjDir);
+      if( signedProj < maxAmplitudeDist )
+        maxAmplitudeDist = signedProj;
+    }
+
+    Vec2 upVec = normProjDir*maxAmplitudeDist;
+
+    Vec3 maxAmplitudePos = minIntersectPos + Vec3(upVec.x, upVec.y, 0);
+    Scalar maxAmplitudeLightDist = (maxAmplitudePos-coneOrig).dot(coneDir);
+    Scalar coneRadAtMaxAmplitudeLightDist = maxAmplitudeLightDist*localBVol.sc3;
+    Vec3 maxAmpRadVec = maxAmplitudePos - (coneOrig + maxAmplitudeLightDist*coneDir);
+    Scalar rightDistAtMaxAmplitude;
+    if(Vec2(maxAmpRadVec.x,maxAmpRadVec.y).dot(normProjDir) <= 0) {
+      //Safe to take radius at cutoff pos (radius increases with cutoff dist); 
+      //else the radius maxima is not obvious to determine so play safe and take max radius (coneRadAtMaxAmplitudeLightDist)
+      Scalar radAtMaxAmplitudeLightDist = maxAmpRadVec.length();
+      rightDistAtMaxAmplitude = coneRadAtMaxAmplitudeLightDist*coneRadAtMaxAmplitudeLightDist - radAtMaxAmplitudeLightDist*radAtMaxAmplitudeLightDist;
+      if( rightDistAtMaxAmplitude > 0 )//Should not, but play safe with rounding errors
+        rightDistAtMaxAmplitude = sqrt(rightDistAtMaxAmplitude);
+      else
+        rightDistAtMaxAmplitude = 0;
+    } else
+      rightDistAtMaxAmplitude = coneRadAtMaxAmplitudeLightDist;//Play safe: this is not an ellipse, but more an oval...
+
+    Vec2 rightVec = Vec2(-normProjDir.y, normProjDir.x)*rightDistAtMaxAmplitude;
+
+    //This is where we approximate. Just build a bbox around the min/max/left/right and compare
+    //Note: using a rectangle VS rotatedRectangle intersection routine would be more precise here.
+    Vec2 min = minIntersectPosV2-rightVec;
+    Vec2 max = min;
+    bBox2DAddPt(min, max, minIntersectPosV2+rightVec);
+    bBox2DAddPt(min, max, Vec2(maxAmplitudePos.x, maxAmplitudePos.y)-rightVec);
+    bBox2DAddPt(min, max, Vec2(maxAmplitudePos.x, maxAmplitudePos.y)+rightVec);
+
+    return min.x < halfPlaneSize.x && max.x > -halfPlaneSize.x &&  min.y < halfPlaneSize.y && max.y > -halfPlaneSize.y;
+  } else
+    setError("pyramidNearPlaneIntersectsBVol: unsupported LocalBoundingVolume type: " + localBVol.getDesc());
+  return false;
+}
+
+/// Returns a description of the LocalBoundingVolume
+function String LocalBoundingVolume.getDesc() {
+  if( this.type == LocalBoundingVolume_infinite )
+    return "infinite bVol";
+  else if( this.type == LocalBoundingVolume_bBox )
+    return "bBox: min=" + this.pt1 + " max=" + this.pt2;
+  else if( this.type == LocalBoundingVolume_bSphere )
+    return "bSphere: center=" + this.pt1 + " radius=" + this.sc1;
+  else if( this.type == LocalBoundingVolume_bCone )
+    return "bCone: radAngle=" + this.sc1 + " cutoff=" + this.sc2 + " cosAngle=" + this.sc3;
+  else if( this.type == LocalBoundingVolume_bPyramid )
+    return "bPyramid: nearWidth=" + this.sc1 + " nearHeight=" + this.sc2 + " near=" + this.sc3 + " far=" + this.sc4;
+
+  return "invalid LocalBoundingVolume";
+}

@@ -1,0 +1,156 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+require OSOGL, FabricOGL, FabricSynchronization;
+
+/// \internal
+struct _OGLThreadContexts {
+  OSOGLContext dummyContext;
+  OSOGLContext drawSharedContext;
+  OSOGLContext prevContext;
+  Ref<Object> currentContextWrapper;
+  Object ownedCurrentContextWrapper;
+};
+
+inline _OGLThreadContexts() {
+  this.dummyContext = OSOGLContext();
+  this.drawSharedContext = OSOGLContext();
+  this.prevContext = OSOGLContext();
+}
+
+object OGLPerThreadContexts {
+  /// \internal
+  _OGLThreadContexts perThreadContexts[];
+  Boolean tracingEnabled;
+  Boolean perThreadDrawContextsInitialized;
+  Boolean perThreadDummyContextsInitialized;
+};
+
+function OGLPerThreadContexts() {
+  this.perThreadContexts.resize( getThreadCount() );
+}
+
+function ~OGLPerThreadContexts() {
+  //report("OGLPerThreadContexts Destroying");
+}
+
+function OGLPerThreadContexts.preparePerThreadContexts!( Boolean currentContextIsDrawContext, Boolean initAllThreads ) {
+  Size coreIndex = getThreadIndex();
+  if( !currentContextIsDrawContext ) {
+    if( this.perThreadDrawContextsInitialized || this.perThreadDummyContextsInitialized )
+      return;
+    if( !initAllThreads && this.perThreadContexts[coreIndex].dummyContext.isValid() )
+      return;
+    
+    //Search for an existing base context
+    UInt32 baseContext = -1;
+    for( Size i = 0; i < this.perThreadContexts.size(); ++i ) {
+      if( this.perThreadContexts[i].dummyContext.isValid() ) {
+        baseContext = i;
+        break;
+      }
+    }
+    if( baseContext == -1 ) {
+      this.perThreadContexts[coreIndex].dummyContext.create(1,1);
+      if( this.tracingEnabled )
+        report("OGLPerThreadContexts.preparePerThreadContexts: create dummyContext " + this.perThreadContexts[coreIndex].dummyContext.getIDString()+" for Core "+ coreIndex);
+      baseContext = coreIndex;
+    }
+
+    if( initAllThreads ) {
+      this.perThreadDummyContextsInitialized = true;
+      for( Size i = 0; i < this.perThreadContexts.size(); ++i ) {
+        if( !this.perThreadContexts[i].dummyContext.isValid() ) {
+          this.perThreadContexts[i].dummyContext.createShared(1, 1, this.perThreadContexts[baseContext].dummyContext);
+          if( this.tracingEnabled )
+            report("OGLPerThreadContexts.preparePerThreadContexts: create dummyContext " + this.perThreadContexts[i].dummyContext.getIDString()+" for Core "+ i);
+        }
+      }
+    } else if( !this.perThreadContexts[coreIndex].dummyContext.isValid() ) {
+      this.perThreadContexts[coreIndex].dummyContext.createShared(1, 1, this.perThreadContexts[baseContext].dummyContext);
+      if( this.tracingEnabled )
+        report("OGLPerThreadContexts.preparePerThreadContexts: create dummyContext " + this.perThreadContexts[coreIndex].dummyContext.getIDString()+" for Core "+ coreIndex);
+    }
+
+  } else {
+    if( this.perThreadDrawContextsInitialized )
+      return;
+
+    if( !initAllThreads && this.perThreadContexts[coreIndex].drawSharedContext.isValid() )
+      return;
+
+    this.perThreadContexts[coreIndex].prevContext.setFromCurrent();
+    
+    if( !this.perThreadContexts[coreIndex].prevContext.isValid() ) {
+      setError("OGLPerThreadContexts.preparePerThreadContexts: no current GL context");
+      return;
+    }
+
+    if( initAllThreads ) {
+      this.perThreadDrawContextsInitialized = true;
+      for( Size i = 0; i < this.perThreadContexts.size(); ++i ) {
+        if( !this.perThreadContexts[i].drawSharedContext.isValid() ) {
+          this.perThreadContexts[i].drawSharedContext.createShared(1, 1, this.perThreadContexts[coreIndex].prevContext);
+          if( this.tracingEnabled )
+            report("OGLPerThreadContexts.preparePerThreadContexts: create drawSharedContext " + this.perThreadContexts[i].drawSharedContext.getIDString()+" for Core "+ i);
+        }
+        //NOTE: FOR NOW, only have a "main thread" draw context else it creates GL issues.
+        break;
+      }
+    } else {
+      this.perThreadContexts[coreIndex].drawSharedContext.createShared(1, 1, this.perThreadContexts[coreIndex].prevContext);
+      if( this.tracingEnabled )
+        report("OGLPerThreadContexts.preparePerThreadContexts: create drawSharedContext " + this.perThreadContexts[coreIndex].drawSharedContext.getIDString()+" for Core "+ coreIndex);
+    }
+  }
+}
+
+inline Boolean OGLPerThreadContexts.hasDrawSharedContext!() {
+  Size coreIndex = getThreadIndex();
+  return this.perThreadContexts[coreIndex].drawSharedContext.isValid();
+}
+
+function OGLPerThreadContexts.setupContext!( Boolean preserveExternalContextIfAny, io Boolean hasExternalContext ) {
+  Size coreIndex = getThreadIndex();
+  hasExternalContext = false;
+  if( preserveExternalContextIfAny ) {
+    this.perThreadContexts[coreIndex].prevContext.setFromCurrent();
+    if( this.perThreadContexts[coreIndex].prevContext.isValid() ) {
+      if( this.perThreadContexts[coreIndex].prevContext.isSameContext( this.perThreadContexts[coreIndex].drawSharedContext ) )
+        return;//Already on draw shared
+      else if( this.perThreadContexts[coreIndex].prevContext.isSameContext( this.perThreadContexts[coreIndex].dummyContext ) ) {
+        if( !this.perThreadContexts[coreIndex].drawSharedContext.isValid() )
+          return;//Draw shared has not been created; keep dummy
+      } else {
+        hasExternalContext = true;
+        return;//Context is not one of ours; just keep it
+      }
+    }
+  }
+
+  if( this.perThreadContexts[coreIndex].drawSharedContext.isValid() ) {
+    this.perThreadContexts[coreIndex].drawSharedContext.makeCurrent();
+    if( this.tracingEnabled )
+      report( "OGLPerThreadContexts.setupContext: makeCurrent drawSharedContext " + this.perThreadContexts[coreIndex].drawSharedContext.getIDString() );
+  } else if( this.perThreadContexts[coreIndex].dummyContext.isValid() ) {
+    this.perThreadContexts[coreIndex].dummyContext.makeCurrent();
+    if( this.tracingEnabled )
+      report( "OGLPerThreadContexts.setupContext: makeCurrent dummyContext " + this.perThreadContexts[coreIndex].dummyContext.getIDString() );
+  } else
+    setError("Error: OGLPerThreadContexts.setupContext: context was not initialized");
+}
+
+inline OGLPerThreadContexts.setCurrentContextWrapper!( Ref<Object> contextWrapper, Boolean ownedByThread ) {
+  Size coreIndex = getThreadIndex();
+  this.perThreadContexts[coreIndex].currentContextWrapper = contextWrapper;
+  if( ownedByThread ) {
+    this.perThreadContexts[coreIndex].ownedCurrentContextWrapper = contextWrapper;
+  } else
+    this.perThreadContexts[coreIndex].ownedCurrentContextWrapper = null;
+}
+
+inline Ref<Object> OGLPerThreadContexts.getCurrentContextWrapper() {
+  Size coreIndex = getThreadIndex();
+  return this.perThreadContexts[coreIndex].currentContextWrapper;
+}

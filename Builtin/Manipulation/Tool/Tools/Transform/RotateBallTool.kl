@@ -1,0 +1,61 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// This tool allows to rotate a :kl-ref:`Tool::TransformTarget` by clicking 
+  /// on a virtual sphere. The tool creates a :kl-ref:`RotateBallDragInteraction` 
+  /// to map mouse moves to transform changes.
+  ///
+  /// While this tool is used as a sub-tool of the :kl-ref:`RotateTool`,
+  /// it can also be created independently.
+  object RotateBallTool : XfoTargetAlignedGizmo {
+    RotateBallDragInteraction rotateDragInteraction;
+  };
+
+  RotateBallTool( TransformTarget target, Color gizmoColor, Float32 gizmoSize, Color highlightColor ) {
+    this.construct( target, gizmoColor, gizmoSize, highlightColor );
+  }
+
+  RotateBallTool( TransformTarget target, Color highlightColor, Ref<BaseTool> gizmoShape, Float32 gizmoSize ) {
+    this.construct( target, highlightColor, gizmoShape, gizmoSize );
+  }
+
+  RotateBallTool.construct!( TransformTarget target, Color gizmoColor, Float32 gizmoSize, Color highlightColor ) {
+
+    DrawElements elts();
+    elts.setPen( gizmoColor, 1 );
+    elts.drawTrianglesSphere( Xfo(), gizmoSize, 40 );
+
+    GeometricShape gizmoShape();
+    gizmoShape.setGeometry( elts );
+    Ref<PropertyContainer> propertyContainer = gizmoShape;
+    SetDrawCullFront( propertyContainer, true );
+
+    this.construct( target, highlightColor, gizmoShape, gizmoSize );
+  }
+
+  RotateBallTool.construct!( TransformTarget target, Color highlightColor, Ref<BaseTool> gizmoShape, Float32 gizmoSize ) {
+    // Add a drag interaction to the shape
+    this.rotateDragInteraction = RotateBallDragInteraction( MouseClickDragRaycastInteraction(), target, gizmoSize );//TODO: get perspective compensated size
+    this.attachComponent( this.rotateDragInteraction );
+    this.parent.construct( target, highlightColor, gizmoShape, this.rotateDragInteraction );
+  }
+
+  /// \internal
+  RotateBallTool.onEnterState!( String newState, Boolean mainState ) {
+    if( newState == XfoTargetAlignedGizmo_dragging ) {
+      // Get contextual viewport, set radius based on actual transform (perspective compensated)
+      DrawContext context = GetCurrentEventContext();
+      if( context.viewport ) {
+        Mat44 transform = this.getPerspectiveCompensatedTransform( context.viewport );
+        Xfo xfo( transform );
+        this.rotateDragInteraction.ballRadius = xfo.sc.x;
+        this.rotateDragInteraction.setBallDrawCenter( xfo.tr );
+      }
+    }
+    this.parent.onEnterState( newState, mainState );
+  }
+
+}// namespace Tool

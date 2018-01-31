@@ -1,0 +1,108 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+
+/**
+\versionadded 1.12.0
+
+The OGLDebugPointShader inherits the OGLInlineShader. It extends the OGLInlineShader for shading with flat colors, using the vertexColors attribute for the diffuse.
+
+\rst
+Attributes
+----------
+=============== ============ =====================================
+Name            Type         Description
+=============== ============ =====================================
+positions       Vec3         Geometry positions
+vertexColors    Color        Color per vertex
+pointSizes      Float32      Float32 per vertex
+=============== ============ =====================================
+\endrst
+\dfgPresetOmit
+
+*/
+object OGLDebugPointShader: OGLInlineShader {};
+
+/// default constructor
+function OGLDebugPointShader() {
+  // Avoid calling the init method if this default constructor is being invoked 
+  // during the construction of a derived object.
+  if(this.type() == OGLDebugPointShader)
+    this.init(String(this.type()));
+}
+
+/// default constructor taking a name
+function OGLDebugPointShader(String name) {
+  this.init(name);
+}
+
+/// initialize the OGLDebugPointShader using name
+/// \internal
+function OGLDebugPointShader.init!(String name) {
+  this.name = name;
+  this.setVertexCode("
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+
+      uniform mat4 u_viewMatrix;
+      uniform mat4 u_projection;
+      uniform mat4 u_modelMatrix;
+
+      uniform int u_usePointSizes;
+      uniform float u_defaultPointSize;
+      
+      attribute vec4 positions;
+      attribute vec4 vertexColors;
+      attribute float pointSizes;
+      
+      varying vec4 v_vertexColor;
+
+      void main(){
+        gl_Position = u_projection * (u_viewMatrix * (u_modelMatrix * positions));
+        if(u_usePointSizes == 0)
+          gl_PointSize = u_defaultPointSize;
+        else
+          gl_PointSize = pointSizes;
+        v_vertexColor = vertexColors;
+      }
+    ");
+  this.setFragmentCode("
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+      
+      uniform int u_useVertexColors;
+      uniform vec4 u_defaultColor;
+
+      varying vec4 v_vertexColor;
+      
+      void main(){
+        if(u_useVertexColors == 0)
+          gl_FragColor = u_defaultColor;
+        else
+          gl_FragColor = v_vertexColor;
+      }
+    ");  
+  this.defineUniform(InlineUniform("u_viewMatrix", Mat44()));
+  this.defineUniform(InlineUniform("u_projection", Mat44()));
+  this.defineUniform(InlineUniform("u_modelMatrix", Mat44()));
+  this.defineUniform(InlineUniform("u_useVertexColors", SInt32(1)));
+  this.defineUniform(InlineUniform("u_defaultColor", Color(1.0, 0.0, 0.0, 1.0)));
+  this.defineUniform(InlineUniform("u_usePointSizes", SInt32(1)));
+  this.defineUniform(InlineUniform("u_defaultPointSize", Float32(2.0)));
+  this.defineAttribute('positions', "Vec4");
+  this.defineAttribute('vertexColors', "Vec4");
+  this.defineAttribute('pointSizes', "Float32");
+}
+
+/// called by the InlineDrawing, should not be called manually
+/// \internal
+function Boolean OGLDebugPointShader.draw!(io DrawContext context) {
+
+  glEnable(GL_VERTEX_PROGRAM_POINT_SIZE);
+
+  Boolean result = this.parent.draw(context);
+
+  glDisable(GL_VERTEX_PROGRAM_POINT_SIZE);
+
+  return result;
+}

@@ -1,0 +1,571 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Singletons;
+require InlineDrawing;
+
+
+
+alias UInt32 SurfacePaintManipulator_State;
+const SurfacePaintManipulator_State SurfacePaintManipulator_State_Active = 0;
+const SurfacePaintManipulator_State SurfacePaintManipulator_State_Painting = 1;
+const SurfacePaintManipulator_State SurfacePaintManipulator_State_Suspended = 2;
+const SurfacePaintManipulator_State SurfacePaintManipulator_State_ResizingBrush = 3;
+
+
+/**
+\versionadded 1.12.0
+
+A struct representing a single point in a paint stroke path. This structure is use
+to gather data from the geometry being painted. Used in the 'collectPointsProduce' and
+'collectPointsReduce' MapReduce call.
+\note The :kl-ref:`SurfacePaintManipulator` generates an array of these structs
+during painting.
+\seealso SurfacePaintManipulator, SurfaceAttributePaintManipulator, SurfaceSculptManipulator
+\dfgPresetOmit
+*/
+object SurfacePaintManipulator_StrokePoint {
+  InlineInstance instance;
+  GeometryLocation location;
+  Vec3 objectSpacePoint;
+  Vec3 worldSpacePoint;
+};
+
+SurfacePaintManipulator_StrokePoint(InlineInstance instance, GeometryLocation location, Vec3 objectSpacePoint, Vec3 worldSpacePoint){
+  this.instance = instance;
+  this.location = location;
+  this.objectSpacePoint = objectSpacePoint;
+  this.worldSpacePoint = worldSpacePoint;
+}
+
+/**
+\versionadded 1.12.0
+
+ A collection of points gathered during a single event. The collected points are then
+ passed to the onPaint method implemented in the sepcliazed PaintManipulator.
+\seealso SurfacePaintManipulator
+\dfgPresetOmit
+*/
+struct SurfacePaintManipulator_PointCollection {
+  /// the mesh being painted.
+  PolygonMesh mesh;
+  /// The ray generated from the mouse event.
+  Ray ray;
+  /// point ids of the points inside the paint brush during this update.
+  Integer pointIds[];
+  /// the distances of the points from the center of the brush. 
+  Scalar distances[];
+  /// weights computed based on a cosine falloff of the points, multiplied by the brush strength.
+  Scalar weights[];
+};
+
+/**
+\versionadded 1.12.0
+
+An interface for paint manipulator that defines the virtual methods
+that can be overridden in specialized painting tools. 
+\note: when the 'virtual' keyword is introduced into KL, we can eliminate this interface and simply decorate the methods in SurfacePaintManipulator with the virtual keyword.
+\seealso SurfacePaintManipulator, SurfaceAttributePaintManipulator, SurfaceSculptManipulator
+\dfgPresetOmit
+*/
+interface ISurfacePaintManipulator {
+
+  /// Invoked by the SurfacePaintManipulator when the paint stroke begins.
+  /// The event passed in is the mouse down event.  
+  onStrokeBegin!(io MouseEvent mouseEvent);
+  
+  /// Invoked by the SurfacePaintManipulator when the paint stroke ends.
+  /// The event passed in is the mouse up event.  
+  onStrokeEnd!(io MouseEvent mouseEvent);
+
+  /// Invoked by the SurfacePaintManipulator during painting for each mouse move event.
+  /// the collectedPoints struct contains the points, distances and weights
+  /// of the points in the geometry that are within the volume of the paint brush.
+  onPaint!(io MouseEvent mouseEvent, SurfacePaintManipulator_PointCollection collectedPoints);
+
+  /// Sets the port to drive. This by default is set to the evalID,
+  /// which forces a refresh of the execution of the DCC node, so for example
+  /// a deformer will be reexecuted.
+  setPortToDrive!(String portName);
+
+  /// Sets the graph name within the DCC
+  setGraph!(String graphName);
+};
+
+
+/**
+\versionadded 1.12.0
+
+  The :kl-ref:`SurfacePaintManipulator` provides base services for a wide range 
+  of paint based manipulators. You can use the SurfacePaintManipulator as the basis 
+  for your own custom paint manipulators.
+
+  The SurfacePaintManipulator provides the following services. 
+
+   - It manages an array of target geometries. 
+   - It manages the processing of events to generate a paint stroke. 
+   - It raycasts the target geometries and collects the points within the brush volume into a data structure called SurfacePaintManipulator_PointCollection
+   - It invokes the virtual methods defined in ISurfacePaintManipulator to enable derived manipulators to apply the paint data to the scene.
+
+  The SurfacePaintManipulator supports painting tools that can paint multiple geometries in a single point stroke.
+
+  \rst
+
+  Usage
+  =====
+   - A Click and drag with a mouse button generates a paint stroke
+   - At the start of the paint stroke the 'onStrokeBegin' function to be invoked
+   - Each update of the paint stroke causes 'onPaint' function to be invoked
+   - At the end of the paint stroke the 'onStrokeEnd' function to be invoked
+   - The mouse wheel can be used to resize the paint brush, except on platforms that do not support the mouse wheel.
+   - The 'Ctrl' modifier key can be held during a mouse drag to resize the brush on these platforms.
+  \endrst
+
+  Derived paint manipulators overide the 'onStrokeBegin', 'onPaint' and 'onStrokeEnd' methods to compute a change in the scene. 
+
+  \seealso Manipulator, ISurfacePaintManipulator, SurfaceAttributePaintManipulator, SurfaceSculptManipulator
+  \dfgPresetOmit
+*/
+object SurfacePaintManipulator : Manipulator, ISurfacePaintManipulator {
+
+  InlineInstance targetGeometries[];
+
+
+  /// The stroke points making up the current paint stroke.
+  SurfacePaintManipulator_StrokePoint strokePath[];
+
+  SurfacePaintManipulator_State state;
+
+  Scalar brushSize;
+  Scalar brushStrength;
+  Scalar brushScaleSpeed;
+  Scalar mouseDownBrushSize;
+  Vec2 mouseDownScreenPos;
+
+  InlineMaterial paintBrushMaterial;
+  InlineInstance paintBrush;
+
+  String portToDrive;
+  String hostName;
+  String graphName;
+  UInt32 evalID;
+};
+
+~SurfacePaintManipulator()
+{ 
+  // Remove the instance from the material
+  // so it's removed from ID.
+  Ref<InlineInstance> inst = this.paintBrush;
+  this.paintBrushMaterial.removeInstance(inst);
+}
+
+/// Initialize the default values of the SurfacePaintManipulator
+/// \note Should be called by any manipulators inheriting from 
+/// :kl-ref:`SurfacePaintManipulator` within thier constructors.
+SurfacePaintManipulator.init!(){
+  this.brushSize = 0.1;
+  this.brushStrength = 1.0;
+  this.brushScaleSpeed = 1.0;
+  this.portToDrive = "evalID";
+  this.evalID = 117;
+
+  // this is a singleton
+  InlineDrawing drawing = OGLInlineDrawing_GetInstance();
+
+  InlineShader hudShader = drawing.registerShader(OGLHUDShader('OGLHUDShader'));
+
+  this.paintBrushMaterial = hudShader.getOrCreateMaterial("SurfacePaintManipulator_PaintBrush");
+  this.paintBrushMaterial.setUniform('u_color', Color(1.0, 0.0, 0.0));
+
+  Lines lines();
+  Quat q;
+  q.setFromAxisAndAngle( Vec3( 1, 0, 0 ), HALF_PI );
+  lines.addCircle(Xfo(q), 1.0, 24);
+
+  InlineShape shape = InlineLinesShape('SurfacePaintManipulator_PaintBrush', lines);
+  drawing.registerShape(shape);
+
+  InlineTransform transform = StaticInlineTransform('SurfacePaintManipulator_PaintBrush_Transform', Xfo());
+  drawing.getRoot().addChild(transform);
+
+  this.paintBrush = InlineInstance('SurfacePaintManipulator', transform, shape);
+}
+
+/// When the manipulator is enabled, this callback function is invoked. 
+SurfacePaintManipulator.onEnable!(){
+  // Enable the rendering of the brush by adding it to the material.
+  if(!this.paintBrush.hasMaterial(this.paintBrushMaterial))
+    this.paintBrush.addMaterial(this.paintBrushMaterial);
+}
+
+/// When the manipulator is disabled, this callback function is invoked. 
+SurfacePaintManipulator.onDisable!(){
+  // Disable the rendering of the brush by removing it from the material.
+  if(this.paintBrush.hasMaterial(this.paintBrushMaterial))
+    this.paintBrush.removeMaterial(this.paintBrushMaterial);
+}
+
+SurfacePaintManipulator.setPortToDrive!(String portName){
+  this.portToDrive = portName;
+}
+
+SurfacePaintManipulator.setGraph!(String graphName){
+  this.graphName = graphName;
+}
+
+/// Returns true if the target geometry has already been added to the paint manipulator.
+Boolean SurfacePaintManipulator.hasTargetGeometry!(InlineInstance instance){
+  Ref<InlineInstance> ref_instance = instance; 
+  for(Integer i=0; i<this.targetGeometries.size(); i++){
+    Ref<InlineInstance> cur_instance = this.targetGeometries[i]; 
+    if(cur_instance === ref_instance)
+      return true;
+  }
+  return false;
+}
+
+/// Add a new target geometry to the paint manipulator.
+SurfacePaintManipulator.addTargetGeometry!(InlineInstance instance){
+
+  InlineShape shape = instance.getShape();
+  PolygonMesh mesh = shape.getGeometry();
+  if(mesh == null){
+    report("WARNING: Geometry is not a PolygonMesh:" + instance.getName() );
+    return;
+  }
+  SpatialQueryable queryable = shape.getGeometry();
+  if(queryable == null){
+    report("WARNING: Geometry cannot be raycast.");
+    return;
+  }
+  if(!this.hasTargetGeometry(instance))
+    this.targetGeometries.push(instance);
+}
+
+/// Updates the brush sceenspace transform based on the given mouse event.
+SurfacePaintManipulator.updateBrush!(io Event event, Vec2 mousePos){
+  Vec2 viewportDim = event.getViewport().getDimensions();
+  Scalar viewportAspectRatio = viewportDim.x / viewportDim.y;
+  Xfo brushXfo(
+    Vec3(
+    ((mousePos.x / viewportDim.x) - 0.5) * 2.0, 
+    ((mousePos.y / viewportDim.y) - 0.5) * -2.0, 
+    -1.0), 
+    Quat(), 
+    Vec3(this.brushSize / viewportAspectRatio, this.brushSize, this.brushSize)
+  );
+  this.paintBrush.getTransform().setLocalXfo(0, brushXfo);
+}
+
+/// \internal
+/// Raycasts a single inline instance, generating a :kl-ref:`SurfacePaintManipulator_StrokePoint`
+/// if the geometry is the closest target geometry hit by the ray.
+SurfacePaintManipulator.raycastInstance!(Ray ray, InlineInstance instance, io Scalar distance, io SurfacePaintManipulator_StrokePoint strokePoint){
+
+  GeometryLocation locations[] = instance.raycast(ray, true, false, 0.0, SCALAR_INFINITE);
+  if(locations.size() == 1){
+    Xfo xfo = instance.getTransform().getGlobalXfo(0);
+        SpatialQueryable queryable = instance.getShape().getGeometry();
+        Vec3 objectSpacePoint = queryable.getPositionAtLocation(locations[0]);
+    Vec3 worldSpacePoint = xfo.transformVector(objectSpacePoint);
+    Scalar dist = (worldSpacePoint - ray.start).length();
+    if(dist < distance){
+      strokePoint = SurfacePaintManipulator_StrokePoint(instance, locations[0], objectSpacePoint, worldSpacePoint);
+      distance = dist;
+    }
+  }
+}
+
+/// \internal
+/// Raycasts all target geometries, passing the stroke point for the closest to 
+/// :kl-ref:`SurfacePaintManipulator.collectGeometryPointsFromStrokePoint` for processing.
+Boolean SurfacePaintManipulator.raycastTargetGeometries!(io MouseEvent mouseEvent){
+  // We cast to InlineViewport to access the method calcRayFromScreenPos
+  Ref<InlineViewport> viewport = mouseEvent.getViewport();
+  Ray ray = viewport.calcRayFromScreenPos(mouseEvent.pos);
+  Scalar distance = BIGSCALAR_POSITIVE;
+
+  SurfacePaintManipulator_StrokePoint strokePoint = null;
+  for(Integer i=0; i< this.targetGeometries.size(); i++){
+    this.raycastInstance(ray, this.targetGeometries[i], distance, strokePoint);
+  }
+
+  if(strokePoint != null){
+    this.strokePath.push(strokePoint);
+    this.collectGeometryPointsFromStrokePoint(mouseEvent, strokePoint, ray, mouseEvent.getViewport().getCamera().getFovY());
+    return true;
+  }
+  return false;
+}
+
+//////////////////////////////////////
+//
+/// \internal
+/// A struct for collecting points during surface painting.
+struct CollectPointsSharedData {
+  PolygonMesh mesh;
+  Ref<Vec3Attribute> srcPosAttr;
+  Vec3 brushPos;
+  Scalar brushSize;
+  Scalar brushStrength;
+  SurfacePaintManipulator_StrokePoint strokePath[];
+};
+
+/// \internal
+/// A struct for collecting points during surface painting.
+struct CollectPointsMapOutput {
+  Boolean collected;
+  Integer pointIndex;
+  Scalar distance;
+  Scalar weight;
+};
+
+/// \internal
+/// An operator for collecting points during surface painting.
+operator collectPointsProduce(io CollectPointsMapOutput result, Index index, Size count, CollectPointsSharedData sharedData) {
+  Vec3 pos = sharedData.mesh.getPointPosition(index); 
+  if(sharedData.strokePath.size() == 1){
+    Scalar dist = pos.distanceTo(sharedData.strokePath[0].objectSpacePoint);
+    if(dist < sharedData.brushSize){
+      result.collected = true;
+      result.pointIndex = index;
+      result.distance = dist;
+      result.weight = ((cos(PI * (dist / sharedData.brushSize)) * 0.5) + 0.5) * sharedData.brushStrength;
+      return;
+    }
+  }
+  else {
+    Vec3 p1 = sharedData.strokePath[sharedData.strokePath.size()-2].objectSpacePoint;
+    Vec3 p2 = sharedData.strokePath[sharedData.strokePath.size()-1].objectSpacePoint;
+    Scalar dist = distFromPointToSegment(pos, p1, p2);
+    if(dist < sharedData.brushSize){
+      result.collected = true;
+      result.pointIndex = index;
+      result.distance = dist;
+      result.weight = ((cos(PI * (dist / sharedData.brushSize)) * 0.5) + 0.5) * sharedData.brushStrength;
+      return;
+    }
+  }
+  result.collected = false;
+}
+
+/// \internal
+/// An operator for collecting points during surface painting.
+operator collectPointsReduce(CollectPointsMapOutput input, io SurfacePaintManipulator_PointCollection output, Index index, Size count) {
+  if(input.collected){
+    output.pointIds.push(input.pointIndex);
+    output.distances.push(input.distance);
+    output.weights.push(input.weight);
+  }
+}
+
+/// \internal
+/// Collects the points in the PolygonMesh painted in the most recent stroke 
+/// point. These collected points are then sent to the virtual function 
+/// :kl-ref:`ISurfacePaintManipulator.onPaint` for processing.
+SurfacePaintManipulator.collectGeometryPointsFromStrokePoint!(io MouseEvent mouseEvent, SurfacePaintManipulator_StrokePoint strokePoint, Ray ray, Scalar fovY){
+
+  InlineInstance instance = this.strokePath[this.strokePath.size()-1].instance;
+  InlineTransform transform = instance.getTransform();
+  InlineShape shape = instance.getShape();
+  PolygonMesh mesh = shape.getGeometry();
+  if(!mesh)
+    return;
+
+  Scalar dist = strokePoint.worldSpacePoint.distanceTo(ray.start);
+  CollectPointsSharedData collectPointsSharedData;
+  collectPointsSharedData.mesh = mesh;
+  Float32 scale = instance.getTransform().getGlobalXfo(0).sc.x;
+  if(scale == 0.0)
+    scale = 1.0;
+
+  // Compute projected size ratio
+  // Brush size is size in Y, in normalized viewport coordinates
+  Ref<Viewport> viewport = mouseEvent.getViewport();
+  Mat44 viewProj = viewport.getProjectionMat() * viewport.getViewMat();
+  Float32 normalizedDepth = (viewProj * strokePoint.worldSpacePoint).z;
+  Mat44 viewProjInv = viewProj.inverse();
+  Vec3 upperBrushProjection = viewProjInv * Vec3( 0, this.brushSize, normalizedDepth );
+  Vec3 centerBrushProjection = viewProjInv * Vec3( 0, 0, normalizedDepth );
+  Float32 projectedSize = upperBrushProjection.distanceTo( centerBrushProjection );
+
+  collectPointsSharedData.brushSize = projectedSize;
+  collectPointsSharedData.brushStrength = this.brushStrength;
+  collectPointsSharedData.strokePath = this.strokePath;
+
+  ValueProducer<SurfacePaintManipulator_PointCollection> reducer = createReduce( 
+    createArrayGenerator(
+      createConstValue( mesh.pointCount() ),
+      collectPointsProduce,
+      createConstValue( collectPointsSharedData )
+    ),
+    collectPointsReduce
+  );
+  SurfacePaintManipulator_PointCollection collectedPoints = reducer.produce();
+  
+  collectedPoints.mesh = mesh;
+  collectedPoints.ray = ray;
+
+  // Cast this to the ISurfacePaintManipulator so that we can invoke the virtual method
+  // Note: when the 'virtual' keyword is introduced into KL, we can eliminate this step.
+  Ref<ISurfacePaintManipulator> ipainter = this;
+  ipainter.onPaint( mouseEvent, collectedPoints);
+}
+
+/// The event handler function for the SurfacePaintManipulator
+/// \param event The event propagated from the host DCC application 
+SurfacePaintManipulator.onEvent!(io Event event){
+  // Cast this to the ISurfacePaintManipulator so that we can invoke the virtual method
+  // Note: when the 'virtual' keyword is introduced into KL, we can eliminate this step.
+  Ref<ISurfacePaintManipulator> ipainter = this;
+
+  Boolean fireCustomCommand = false;
+
+  if(event.eventType() == Event_MouseButtonPress){
+    MouseEvent mouseEvent = event;
+    switch(this.state){
+    case SurfacePaintManipulator_State_Active:
+      // Avoid disabling camera manipulation in Maya
+      // Note: testing the host name is casing a crash that doesn't make sense.
+      if(mouseEvent.host.hostName == "Maya" && (mouseEvent.modifiers & ModiferKey_Alt) != 0){
+        // While the camera manipulation is occuring, hide the
+        // paint brush and do not accept the events.
+        this.state = SurfacePaintManipulator_State_Suspended;
+        this.onDisable();
+      }
+      else if((mouseEvent.modifiers & ModiferKey_Ctrl) != 0){
+        // While the camera manipulation is occuring, hide the
+        // paint brush and do not accept the events.
+        this.state = SurfacePaintManipulator_State_ResizingBrush;
+        this.mouseDownBrushSize = this.brushSize;
+        this.mouseDownScreenPos = mouseEvent.pos;
+        event.accept();
+      }
+      else{
+        this.strokePath.resize(0);
+        ipainter.onStrokeBegin(mouseEvent);
+        this.state = SurfacePaintManipulator_State_Painting;
+        if(this.raycastTargetGeometries(mouseEvent)){
+          event.getHost().requestRedraw();
+        }
+        event.accept();
+        fireCustomCommand = true;
+      }
+      break;
+    }
+  }
+  else if(event.eventType() == Event_MouseMove){
+    // suspend event handling while manipulating the camera. 
+    MouseEvent mouseEvent = event;
+    switch(this.state){
+      case SurfacePaintManipulator_State_Suspended: return;
+      case SurfacePaintManipulator_State_Active:
+        this.updateBrush(event, mouseEvent.pos);
+        event.getHost().requestRedraw();
+        event.accept();
+        break;
+      case SurfacePaintManipulator_State_Painting:
+        // On drag
+        this.updateBrush(event, mouseEvent.pos);
+        this.raycastTargetGeometries(mouseEvent);
+        event.getHost().requestRedraw();
+        event.accept();
+        fireCustomCommand = true;
+        break;
+      case SurfacePaintManipulator_State_ResizingBrush:
+        Scalar drag = this.mouseDownScreenPos.x - mouseEvent.pos.x;
+        this.brushSize = this.mouseDownBrushSize + drag * Scalar(0.0001) * this.brushScaleSpeed;
+        if(this.brushSize < 0.001)
+          this.brushSize = 0.001;
+        this.updateBrush(event, mouseEvent.pos);
+        event.getHost().requestRedraw();
+        event.accept();
+        break;
+    }
+  }
+  else if(event.eventType() == Event_MouseButtonRelease){
+    MouseEvent mouseEvent = event;
+    switch(this.state){
+    case SurfacePaintManipulator_State_Suspended:
+      // reenable event handling now that camera manipulation is over. 
+      this.state = SurfacePaintManipulator_State_Active;
+      this.onEnable();
+      event.getHost().requestRedraw();
+      break;
+    case SurfacePaintManipulator_State_Active:
+      event.accept();
+      break;
+    case SurfacePaintManipulator_State_Painting:
+      // On release, end the stroke(which should cause an undo to be generated in the callback)
+      this.state = SurfacePaintManipulator_State_Active;
+      ipainter.onStrokeEnd(mouseEvent);
+      event.getHost().requestRedraw();
+      event.accept();
+      break;
+    case SurfacePaintManipulator_State_ResizingBrush:
+      this.state = SurfacePaintManipulator_State_Active;
+      event.accept();
+      break;
+    }
+  }
+  else if(event.eventType() == Event_Wheel){
+    // Use the mouse wheel to reize the brush. 
+    if(this.state != SurfacePaintManipulator_State_Suspended){
+      MouseWheelEvent mouseWheelEvent = event;
+      this.brushSize = this.brushSize + mouseWheelEvent.delta * Scalar(0.0001) * this.brushScaleSpeed;
+      if(this.brushSize < 0.001)
+        this.brushSize = 0.001;
+      this.updateBrush(event, mouseWheelEvent.pos);
+      event.getHost().requestRedraw();
+      event.accept();
+    }
+  }
+  else if(event.eventType() == Event_Leave){
+    if(this.state != SurfacePaintManipulator_State_Suspended){
+      // When the mouse leaves the viewport, hide the brush. 
+      this.onDisable();
+      event.getHost().requestRedraw();
+    }
+  }
+  else if(event.eventType() == Event_Enter){
+    if(this.state != SurfacePaintManipulator_State_Suspended){
+      // When the mouse enters the viewport, show the brush. 
+      this.onEnable();
+      event.getHost().requestRedraw();
+    }
+  }
+
+  // update the dcc's host
+  if(fireCustomCommand){
+    if(this.portToDrive.length() > 0 &&
+      this.hostName.length() > 0 &&
+      this.graphName.length() > 0){
+
+      Host host = event.getHost();
+      this.evalID++;
+      if(this.hostName == 'Maya') {
+        String attr = this.graphName + '.' + this.portToDrive;
+        String args[];
+        args.push(attr);
+        args.push(this.evalID);
+        host.callCustomCommand('setAttr', args);
+      }
+    }
+  }
+}
+
+/// Virtual function overridden in manipulators inheriting from SurfacePaintManipulator
+SurfacePaintManipulator.onStrokeBegin!(io MouseEvent mouseEvent){
+  setError("Should be defined in an object inheriting from SurfacePaintManipulator");
+}
+
+/// Virtual function overridden in manipulators inheriting from SurfacePaintManipulator
+SurfacePaintManipulator.onStrokeEnd!(io MouseEvent mouseEvent){
+  setError("Should be defined in an object inheriting from SurfacePaintManipulator");
+}
+
+/// Virtual function overridden in manipulators inheriting from SurfacePaintManipulator
+SurfacePaintManipulator.onPaint!(io MouseEvent mouseEvent, SurfacePaintManipulator_PointCollection collectedPoints){
+  setError("Should be defined in an object inheriting from SurfacePaintManipulator");
+}

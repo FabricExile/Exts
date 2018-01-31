@@ -1,0 +1,1318 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  A Curve is an accessor for a Curves's sub-curve at a specific index.
+  It is equivalent to a <Curves, curveIndex> pair. See Curves for more information.
+
+  \note The Curve holds an owner reference to its Curves object, so it is garanteed\
+  that the associated Curves won't be destroyed while one of many Curve refer to it.
+
+  \note For any two Curve are part of the same Curves container, methods that read Curve parameters, get or set their attributes \
+  are thread safe. Methods that modify the curve set or their topology (eg: :kl-ref:`Curve.addPoints`) are not thread safe.
+
+\dfgTypeColor Color( 51, 1, 106 )
+*/
+struct Curve {
+  Curves curves;
+  UInt32 curveIndex;
+};
+
+/// Constructs an uninitialized Curve.
+/// \dfgPresetOmit
+inline Curve() {
+  this.curveIndex = InvalidIndex;
+}
+
+/// \dfgPresetOmit
+Curves Curve.createCurvesContainerIfNone!() {
+  if( !this.curves )
+    this.curves = Curves();
+
+  if( this.curves.curveCount() < 1 )
+    this.curves.setCurveCount( 1 );
+
+  this.curveIndex = 0;
+  return this.curves;
+}
+
+/// Initizalizes a Curve from an existing Curves's curveIndex.
+/// The Curve keeps an owning reference to the Curves container.
+inline Curve( Ref<Curves> curves, UInt32 curveIndex ) {
+  this.curves = curves;
+  this.curveIndex = curveIndex;
+}
+
+/// Returns a Curve accessor for the sub-curve of index `curveIndex`.
+/// The Curve keeps an owning reference to the Curves container.
+inline Curve Curves.getCurve( UInt32 curveIndex ) {
+  return Curve( this, curveIndex );
+}
+
+/// Returns Curve's Curves container.
+inline Ref<Curves> Curve.getCurves() {
+  return this.curves;
+}
+
+/// Returns the sub-curve index for this Curve's Curves container.
+inline UInt32 Curve.getCurveIndex() {
+  return this.curveIndex;
+}
+
+/// Returns true if this curve refers to a valid Curves sub-curve.
+inline Boolean Curve.isValid() {
+  return Boolean( this.curves ) && this.curveIndex < this.curves.curveCount() && !this.curves.isRemoved( this.curveIndex );
+}
+
+/// Copies the source curve.
+/// \param createMissingSourceAttributes If a source attribute doesn't exist on this container, create it. If false, that source attribute is ignored.
+Curve.copyFrom!( Curve sourceCurve, Boolean createMissingSourceAttributes ) {
+  this.curves.copyCurve( sourceCurve.curves, sourceCurve.curveIndex, this.curveIndex, createMissingSourceAttributes );
+}
+
+/// Push source curve to our last index.
+/// \param createMissingSourceAttributes If a source attribute doesn't exist on this container, create it. If false, that source attribute is ignored.
+inline Curve Curves.pushCurve!( Curve sourceCurve, Boolean createMissingSourceAttributes ) {
+  return Curve( this, this.pushCurve( sourceCurve.curves, sourceCurve.curveIndex, createMissingSourceAttributes ) );
+}
+
+/// Returns true if the curves stores its positions in Float64 (double precision Vec3_d),
+/// otherwise they are stored in Float32 (single precision Vec3).
+inline Boolean Curve.hasFloat64Positions() {
+  return this.curves.hasFloat64Positions();
+}
+
+/// Returns Curve's attribute container (shared with other sub-curves of the same Curves container).
+inline Ref<GeometryAttributes> Curve.getAttributes() {
+  return this.curves.getAttributes();
+}
+
+/**
+  Returns the first "global" point index for the curve, which corresponds to its index in the GeometryAttributes.
+  Other curve points use the next indices: [ Curve.getFirstPointIndex() .. Curve.getPointCount()-1 ]
+  \seealso Curve.getPointCount, Curve.getPointRange
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline UInt32 Curve.getFirstPointIndex() {
+  return this.curves.getFirstPointIndex( this.curveIndex );
+}
+
+/**
+  Returns the number of points (control vertices) for the curve.
+  \category point
+  \seealso Curve.getFirstPointIndex, Curve.getPointRange
+  \dfgCreateArrayPreset
+*/
+inline UInt32 Curve.pointCount() {
+  return this.curves.getPointCount( this.curveIndex );
+}
+
+/**
+  Returns the point (control vertices) count for the curve.
+  \param includeRepeatedPoints If true, the point count will include repeated points, which is one additional point for a closed curve, and (order-1) points for a periodic NURBS curve.
+  \seealso Curve.getFirstPointIndex, Curve.getPointRange
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline UInt32 Curve.getPointCount( Boolean includeRepeatedPoints ) {
+    return this.curves.getPointCount( this.curveIndex, includeRepeatedPoints );
+}
+
+/// Returns true if the Curve has at least one rational weight != 1.0.
+/// \category point
+inline Boolean Curve.isRational() {
+  return this.curves.isRational( this.curveIndex );
+}
+
+/**
+  Returns the point index range correponding to curve's points. Last point index is pointsEnd - 1 (if > 0 points).
+  \seealso Curve.getFirstPointIndex, Curve.getPointCount
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline Curve.getPointRange( io UInt32 firstPoint, io UInt32 pointsEnd ) {
+  this.curves.getPointRange( this.curveIndex, firstPoint, pointsEnd );
+}
+/// Returns true if the curve is closed (starts and ends at its first point).
+/// \category topology
+inline Boolean Curve.isClosed() {
+  return this.curves.isClosed( this.curveIndex );
+}
+
+/// Returns true if the curve is open (starts at its first point, ends at its last point).
+/// \category topology
+inline Boolean Curve.isOpen() {
+  return this.curves.isOpen( this.curveIndex );
+}
+
+/// Returns the curve type: curveType_linear, curveType_bezier or curveType_NURBS
+inline UInt8 Curve.getCurveType() {
+  return this.curves.getCurveType( this.curveIndex );
+}
+
+/// Returns the curve type as a String: "linear", "Bezier" or "NURBS".
+inline String Curve.getCurveTypeString() {
+  return this.curves.getCurveTypeString( this.curveIndex );
+}
+
+/**
+  Returns the order of the curve. The order is equal to curve's degree + 1.
+  The order also corresponds to the number of weighted points that influence the curve at a specific parameter.
+  A higher order allows a smoother curve, but implies more complex computations.
+  For NURBS and Bezier curves, the most common order is 4.
+  \seealso Curve.getDegree
+*/
+inline UInt8 Curve.getOrder() {
+  return this.curves.getOrder( this.curveIndex );
+}
+
+/**
+  Returns the degree of the curve. The order is equal to curve's order - 1.
+  A higher degree allows a smoother curve, but implies more complex computations.
+  For NURBS and Bezier curves, the most common degree is 3.
+  \seealso Curve.getOrder
+*/
+inline UInt8 Curve.getDegree() {
+  return this.curves.getDegree( this.curveIndex );
+}
+
+/**
+  Returns the curve domain start and end. This is the range of parameter ("t" or "u")
+  at which the curve can be evaluated. For NURBS, the domain depends on the knot values
+  and its form. For linear and Bezier curves, the domain depends on the number of
+  spans (curve segments or pieces). See Curves for more details.
+  \note For all curve types, it is possible that the domain doesn't start at 0, if the curve was imported or if a NURBS has explicit knot values.
+*/
+inline Vec2 Curve.getDomain() {
+  return this.curves.getDomain( this.curveIndex );
+}
+
+
+/// Pre-allocates point space for this curve so that :kl-ref:`Curve.addPoints` doesn't need to resize the memory vector.
+/// \warning If not under a structure change bracket (:kl-ref:`Curve.beginStructureChanges` or CurvesStructureChangeBracket), \
+             first point index of all curves might be changed because of memory compaction.
+inline Curve.reservePoints!( UInt32 pointCount ) {
+  this.curves.reservePoints( this.curveIndex, pointCount );
+}
+
+/**
+  Adds points to the curve, and returns the first added point index.
+  \return First added point index (global index)
+  \note For some curve types, such as Beziers, added point will have an effect only if a full piece is formed (eg: `degree` points; see Curves)
+
+  \warning If not under a structure change bracket (:kl-ref:`Curves.beginStructureChanges` or CurvesStructureChangeBracket), \
+  first point index of all curves might be changed because of memory compaction.
+  \warning Structural changes and change brackets are not thread safe
+  \category modeling
+*/
+inline UInt32 Curve.addPoints!( UInt32 addedPointCount ) {
+  return this.curves.addPoints( this.curveIndex, addedPointCount );
+}
+
+/**
+  Adds points to the curve, and returns the first added point index.
+  \return First added point index (global index)
+  \note For some curve types, such as Beziers, added point will have an effect only if a full piece is formed (eg: `degree` points; see Curves)
+
+  \warning If not under a structure change bracket (:kl-ref:`Curves.beginStructureChanges` or CurvesStructureChangeBracket), \
+  first point index of all curves might be changed because of memory compaction.
+  \warning Structural changes and change brackets are not thread safe
+  \dfgPresetType pointPositions Vec3[]
+  \category modeling
+*/
+inline UInt32 Curve.addPoints!( Vec3 pointPositions<> ) {
+  return this.curves.addPoints( this.curveIndex, pointPositions );
+}
+
+/**
+  Adds points to the curve, and returns the first added point index.
+  \param pointPositions Positions, in actual 3D coordinates (not in homogeneous coordinates)
+  \param rationalWeights Rational weights for the curve points
+  \return First added point index (global index)
+  \note For some curve types, such as Beziers, added point will have an effect only if a full piece is formed (eg: `degree` points; see Curves)
+
+  \warning If not under a structure change bracket (:kl-ref:`Curves.beginStructureChanges` or CurvesStructureChangeBracket), \
+  first point index of all curves might be changed because of memory compaction.
+  \warning Structural changes and change brackets are not thread safe
+  \dfgPresetTitle AddRationalPoints
+  \dfgPresetType pointPositions Vec3[]
+  \dfgPresetType rationalWeights Float32[]
+  \category modeling
+*/
+inline UInt32 Curve.addPoints!( Vec3 pointPositions<>, Float32 rationalWeights<> ) {
+  return this.curves.addPoints( this.curveIndex, pointPositions, rationalWeights );
+}
+
+/**
+Inserts a point in the curve, and returns the added point index. Note that this will add a curve segment, and will change curve's shape.
+For NURBS curves, a delta knot value of 1 is inserted after the point, or before if it is the last point. For Bezier, in order to keep
+pieces' alignment, it is recommended to insert 'degree' consecutive points, at piece boundary index (P*degree multiplier).
+
+\note For some curve types, such as Beziers, added point will have an effect only if a full piece is formed (eg: `degree` points; see Curves)
+
+\warning If not under a structure change bracket (:kl-ref:`Curves.beginStructureChanges` or CurvesStructureChangeBracket), \
+point indices of all curves might be changed because of memory compaction.
+\warning Structural changes and change brackets are not thread safe
+\return Added point index (global index)
+\param curvePointIndex Curve point index where the point will be inserted, between 0 and Curves.getPointCount( curveIndex )
+\param pointPosition Position of the inserted point
+\category modeling
+*/
+inline UInt32 Curve.insertPoint!( UInt32 curvePointIndex, Vec3 pointPosition ) {
+  return this.curves.insertPoint( this.curveIndex, curvePointIndex, pointPosition );
+}
+
+/**
+Deletes a point from the curve.
+
+\warning If not under a structure change bracket (:kl-ref:`Curves.beginStructureChanges` or CurvesStructureChangeBracket), \
+point indices of all curves might be changed because of memory compaction.
+\warning Structural changes and change brackets are not thread safe
+\param curvePointIndex Curve point index of the point to be removed, between 0 and Curves.getPointCount( curveIndex )-1
+\category modeling
+*/
+inline Curve.deletePoint!( UInt32 curvePointIndex ) {
+  this.curves.deletePoint( this.curveIndex, curvePointIndex );
+}
+
+/**
+  Removes the curve. If the caller didn't open a structure change bracket (:kl-ref:`Curves.beginStructureChanges` or CurvesStructureChangeBracket),
+  the curve index will be replaced by the last valid one if applicable, so that all indices are used. If there a structure change bracket,
+  this index replacement will be delayed until the last bracket is closed.
+  \warning Structural changes and change brackets are not thread safe
+  \category modeling
+*/
+inline Curve.removeCurve!( ) {
+  this.curves.removeCurve( this.curveIndex );
+}
+
+/**
+  Opens or closes the curve.
+
+  - For a linear curve, this only results in an added or removed segment between the last and first point.
+
+  - For a Bezier curve:
+
+    - When closing, the last point (end of last piece) is removed so the piece ends with the first point (shared with the 1st piece).
+
+    - When opening, the a last point is added, and it position is copied from the first point. The curve is then topologically
+    open, even if visually it is not open until a different position is assigned to the last point.
+
+  - For a NURBS curve:
+
+    - When closing, the last point is removed so the curve ends with the first point (shared).
+
+    - When opening, the a last point is added, and it position is copied from the first point. The curve is then topologically
+    open, even if visually it is not open until a different position is assigned to the last point.
+
+  \note If a NURBS curve is in periodic form, it is first converted to closed form without changing the point positions (the curve shape changes).
+
+  \warning Structural changes and change brackets are not thread safe
+  \category modeling
+*/
+inline Curve.openOrCloseCurve!( Boolean open ) {
+  this.curves.openOrCloseCurve( this.curveIndex, open );
+}
+
+/**
+Opens the curve (or does nothing is already open).
+
+  - For a linear curve, this only results in a removed segment between the last and first point.
+
+  - For a Bezier and NURBS curve, the a last point is added, and it position is copied from the first point. The curve is then topologically
+  open, even if visually it is not open until a different position is assigned to the last point.
+
+\note If a NURBS curve is in periodic form, it is first converted to closed form without changing the point positions (the curve shape changes).
+
+\warning Structural changes and change brackets are not thread safe
+\category modeling
+*/
+inline Curve.openCurve!( ) {
+  this.curves.openCurve( this.curveIndex );
+}
+
+/**
+  Closes the curve (or does nothing is already closed).
+
+  - For a linear curve, this only results in a removed segment between the last and first point.
+
+  - For a Bezier curve, the last point (end of last piece) is removed so the piece ends with the first point (shared with the 1st piece).
+
+  - For a NURBS curve, the last point is removed so the curve ends with the first point (shared).
+
+  \note If a NURBS curve is in periodic form, it is first converted to closed form without changing the point positions (the curve shape changes).
+
+  \warning Structural changes and change brackets are not thread safe
+  \category modeling
+*/
+inline Curve.closeCurve!( ) {
+  this.curves.closeCurve( this.curveIndex );
+}
+
+/// Returns true if the curve has been removed by method :kl-ref:`Curves.removeCurve` (invalid curve index).
+inline Boolean Curve.isRemoved() {
+  return this.curves.isRemoved( this.curveIndex );
+}
+
+/**
+  Marks the end of structural changes for the curves. If some point or curve indices is unused, this might recompact the indices for all curves
+  to maximize memory usage.
+  \warning Structural changes and change brackets are not thread safe
+  \note The :kl-ref:`CurvesStructureChangeBracket` wraps a being/endStructureChanges using its constructor and destructor, which can reduce unbalanced bracket errors.
+  \note Structure change brackets can be nested, in which case only the outer :kl-ref:`Curve.endStructureChanges` will compile the changes.
+  \seealso Curve.beginStructureChanges, Curves.removeCurve
+*/
+inline Curve.endStructureChanges!( ) {
+  this.curves.endStructureChanges();
+}
+
+/**
+  Signals the beginning of structural changes for the curves, like adding points or removing curve.
+  Structure change brackets will delay the recompaction of point and curve indices, which might happen if
+  some indices are unused after the changes.
+  \warning Structural changes and change brackets are not thread safe
+  \note The :kl-ref:`CurvesStructureChangeBracket` wraps a being/endStructureChanges using its constructor and destructor, which can reduce unbalanced bracket errors.
+  \note Structure change brackets can be nested, in which case only the outer :kl-ref:`Curve.endStructureChanges` will compile the changes.
+  \category modeling
+  \seealso Curve.endStructureChanges, Curves.removeCurve
+*/
+inline Curve.beginStructureChanges!( ) {
+  this.curves.beginStructureChanges();
+}
+
+/// Construct a local structure change bracket for the curve.
+/// \warning Structural changes and change brackets are not thread safe
+inline CurvesStructureChangeBracket( Curve curve ) {
+  this.curves = curve.getCurves();
+  if( this.curves )
+    this.curves.beginStructureChanges();
+}
+
+/**
+  Returns the global point index for a curve's sub-point.
+  This index corresponds to this point's position in the GeometryAttributes container.
+  \param curvePointIndex Curve's sub-point index, ranging from 0 to :kl-ref:`Curve.getPointCount` - 1
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline UInt32 Curve.getPointIndex( UInt32 curvePointIndex ) {
+  return this.curves.getPointIndex( this.curveIndex, curvePointIndex );
+}
+
+/**
+  Returns the global attribute index for a curve's sub-point.
+  This index corresponds to this point's values in the GeometryAttributes container.
+  \param curvePointIndex Curve's sub-point index, ranging from 0 to :kl-ref:`Curve.getPointCount` - 1
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline UInt32 Curve.getAttributeIndex( UInt32 curvePointIndex ) {
+  return this.curves.getAttributeIndex( this.curveIndex, curvePointIndex );
+}
+
+/**
+  Returns the point position. If there is a rational weight, it will be divided by that weight (converted from homogeneous).
+  \param curvePointIndex Curve's sub-point index, ranging from 0 to :kl-ref:`Curve.getPointCount` - 1
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline Vec3 Curve.getPointPosition( UInt32 curvePointIndex ) {
+  return this.curves.getPointPosition( this.curveIndex, curvePointIndex );
+}
+
+/**
+  Returns the point position. If there is a rational weight, it will be divided by that weight (converted from homogeneous).
+  \param curvePointIndex Curve's sub-point index, ranging from 0 to :kl-ref:`Curve.getPointCount` - 1
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline Vec3_d Curve.getPointPosition_d( UInt32 curvePointIndex ) {
+  return this.curves.getPointPosition_d( this.curveIndex, curvePointIndex );
+}
+
+/**
+  Returns a 4D point in homogeneous coordinate, which is (x*W, y*W, z*W, W), where W is the rational weight.
+  \param curvePointIndex Curve's sub-point index, ranging from 0 to :kl-ref:`Curve.getPointCount` - 1
+  \category point
+  \seealso Curves.getRationalWeight, Curves.getHomogeneousPointPosition_d
+  \dfgCreateArrayPreset
+*/
+inline Vec4 Curve.getHomogeneousPointPosition( UInt32 curvePointIndex ) {
+  return this.curves.getHomogeneousPointPosition( this.curveIndex, curvePointIndex );
+}
+
+/**
+  Returns the rational weight for curve's point. By default, rational weights are 1.0.
+  \param curvePointIndex Curve's sub-point index, ranging from 0 to :kl-ref:`Curve.getPointCount` - 1
+  \category point
+  \seealso Curves.getHomogeneousPointPosition
+  \dfgCreateArrayPreset
+*/
+inline Float32 Curve.getRationalWeight( UInt32 curvePointIndex ) {
+  return this.curves.getRationalWeight( this.curveIndex, curvePointIndex );
+}
+
+/**
+  Returns a 4D point in homogeneous coordinate in double precision, which is (x*W, y*W, z*W, W), where W is the rational weight.
+  \param curvePointIndex Curve's sub-point index, ranging from 0 to :kl-ref:`Curve.getPointCount` - 1
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline Vec4_d Curve.getHomogeneousPointPosition_d( UInt32 curvePointIndex ) {
+  return this.curves.getHomogeneousPointPosition_d( this.curveIndex, curvePointIndex );
+}
+
+/**
+  Sets the position of a curve point.
+  \note Once point positions have been set, call :kl-ref:`Curve.incrementPointPositionsVersion` (see :ref:`attributeversioning`)
+  \note If positions are stored as Vec3_d (Float64), a conversion will be applied.
+  \note This function is threadsafe if the curves structure and attribute sharing layout is not modified by another thread.
+  \param curvePointIndex Curve's sub-point index, ranging from 0 to :kl-ref:`Curve.getPointCount` - 1
+  \seealso Curve.hasFloat64Positions, Curve.setPointPosition( UInt32, UInt32, Vec3_d )
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline Curve.setPointPosition!( UInt32 curvePointIndex, Vec3 position ) {
+  this.curves.setPointPosition( this.curveIndex, curvePointIndex, position );
+}
+
+/**
+  Sets the position of a curve point.
+  The position is the actual 3D position and not an homogeneous coordinate; it will be made an homogeneous coordinate internally.
+  \note Once point positions have been set, call :kl-ref:`Curve.incrementPointPositionsVersion` (see :ref:`attributeversioning`)
+  \note If positions are stored as Vec3_d (Float64), a conversion will be applied.
+  \note This function is threadsafe if the curves structure and attribute sharing layout is not modified by another thread.
+  \param curvePointIndex Curve's sub-point index, ranging from 0 to :kl-ref:`Curve.getPointCount` - 1
+  \seealso Curve.hasFloat64Positions, Curve.setPointPosition( UInt32, UInt32, Vec3_d, Float32 )
+  \category point
+  \dfgCreateArrayPreset
+  \dfgPresetTitle SetRationalPointPosition
+*/
+inline Curve.setPointPosition!( UInt32 curvePointIndex, Vec3 position, Float32 rationalWeight ) {
+  this.curves.setPointPosition( this.curveIndex, curvePointIndex, position, rationalWeight );
+}
+
+/**
+  Sets the position of the point in double precision (Float64).
+  \note If positions are stored as Vec3 (Float32), a conversion will be applied.
+  \note Once point positions have been set, call :kl-ref:`Curve.incrementPointPositionsVersion` (see :ref:`attributeversioning`)
+  \note This function is threadsafe if the curves structure and attribute sharing layout is not modified by another thread.
+  \param curvePointIndex Curve's sub-point index, ranging from 0 to :kl-ref:`Curve.getPointCount` - 1
+  \seealso Curve.hasFloat64Positions, Curve.setPointPosition( Size, Vec3 )
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline Curve.setPointPosition_d!( UInt32 curvePointIndex, Vec3_d position ) {
+  this.curves.setPointPosition_d( this.curveIndex, curvePointIndex, position );
+}
+
+/**
+  Sets the position of the point in double precision (Float64), along with its rational weight.
+  The position is the actual 3D position and not an homogeneous coordinate; it will be made an homogeneous coordinate internally.
+  \note If positions are stored as Vec3 (Float32), a conversion will be applied.
+  \note Once point positions have been set, call :kl-ref:`Curve.incrementPointPositionsVersion` (see :ref:`attributeversioning`)
+  \note This function is threadsafe if the curves structure and attribute sharing layout is not modified by another thread.
+  \param curvePointIndex Curve's sub-point index, ranging from 0 to :kl-ref:`Curve.getPointCount` - 1
+  \seealso Curve.hasFloat64Positions, Curve.setPointPosition( Size, Vec3 )
+  \category point
+  \dfgCreateArrayPreset
+  \dfgPresetTitle SetRationalPointPosition_d
+*/
+inline Curve.setPointPosition_d!( UInt32 curvePointIndex, Vec3_d position, Float32 rationalWeight ) {
+  this.curves.setPointPosition_d( this.curveIndex, curvePointIndex, position, rationalWeight );
+}
+
+/**
+  Sets the rational weight of a curve point. This only has an impact on curves that support rational weights (rational Beziers and NURBS).
+  \note Once weights have been set, call :kl-ref:`Curve.incrementPointPositionsVersion` (see :ref:`attributeversioning`)
+  \note This function is threadsafe if the curves structure and attribute sharing layout is not modified by another thread, and if :kl-ref:`Curves.ensureWeightsAttributeExists` has been called.
+  \seealso Curve.hasFloat64Positions, Curve.setPointPosition( Size, Vec3_d )
+  \category point
+  \dfgCreateArrayPreset
+*/
+inline Curve.setRationalWeight!( UInt32 curvePointIndex, Float32 weight ) {
+  this.curves.setRationalWeight( this.curveIndex, curvePointIndex, weight );
+}
+
+/// Helper for incrementing the version of the positions attribute after value changes.
+/// See :ref:`attributeversioning` for more information.
+inline Curve.incrementPointPositionsVersion!( ) {
+  this.curves.incrementPointPositionsVersion();
+}
+
+/// Returns a position on the curve evaluated at this parameter.
+/// The param should be within the range [domainStart .. domainEnd], as returned by :kl-ref:`Curve.getDomain`.
+/// \dfgCreateArrayPreset
+inline Vec3 Curve.getPositionAtParam( Float32 param ) {
+  return this.curves.getPositionAtParam( this.curveIndex, param );
+}
+
+/// Returns a double precision position on the curve evaluated at this parameter.
+/// The param should be within the range [domainStart .. domainEnd], as returned by :kl-ref:`Curve.getDomain`.
+/// \dfgCreateArrayPreset
+inline Vec3_d Curve.getPositionAtParam_d( Float32 param ) {
+  return this.curves.getPositionAtParam_d( this.curveIndex, param );
+}
+
+/**
+  Returns a position on the curve evaluated at this normalized parameter.
+  The normalizedParam should be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.
+  \dfgCreateArrayPreset
+  \dfgPresetRange normalizedParam (0.0, 1.0)
+*/
+inline Vec3 Curve.getPositionAtNormalizedParam( Float32 normalizedParam ) {
+  return this.curves.getPositionAtNormalizedParam( this.curveIndex, normalizedParam );
+}
+
+/**
+  Returns a double precision position on the curve evaluated at this normalized parameter.
+  The normalizedParam should be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.
+  \dfgCreateArrayPreset
+  \dfgPresetRange normalizedParam (0.0, 1.0)
+*/
+inline Vec3_d Curve.getPositionAtNormalizedParam_d( Float32 normalizedParam ) {
+  return this.curves.getPositionAtNormalizedParam_d( this.curveIndex, normalizedParam );
+}
+
+/**
+  Returns the unit curve normal on the curve evaluated at this parameter.
+  The curve normal is computed as the normalized curvature vector. As such, it can be unstable along
+  the curve, depending on curvature changes, and is ill-defined on straight segments.
+  The param should be within the range [domainStart .. domainEnd], as returned by :kl-ref:`Curve.getDomain`.
+  \dfgCreateArrayPreset
+*/
+inline Vec3 Curve.getNormalAtParam( Float32 param ) {
+  return this.curves.getNormalAtParam( this.curveIndex, param );
+}
+
+/**
+  Returns the unit curve normal on the curve evaluated at this normalized parameter.
+  The curve normal is computed as the normalized curvature vector. As such, it can be unstable along
+  the curve, depending on curvature changes, and is ill-defined on straight segments.
+  The normalizedParam should be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.
+  \dfgCreateArrayPreset
+  \dfgPresetRange normalizedParam (0.0, 1.0)
+*/
+inline Vec3 Curve.getNormalAtNormalizedParam( Float32 normalizedParam ) {
+  return this.curves.getNormalAtNormalizedParam( this.curveIndex, normalizedParam );
+}
+
+/// Returns the unit tangent at this parameter.
+/// The param should be within the range [domainStart .. domainEnd], as returned by :kl-ref:`Curve.getDomain`.
+/// \dfgCreateArrayPreset
+inline Vec3 Curve.getTangentAtParam( Float32 param ) {
+  return this.curves.getTangentAtParam( this.curveIndex, param );
+}
+
+/**
+  Returns the unit tangent at this normalized parameter.
+  The normalizedParam should be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.
+  \dfgCreateArrayPreset
+  \dfgPresetRange normalizedParam (0.0, 1.0)
+*/
+inline Vec3 Curve.getTangentAtNormalizedParam( Float32 normalizedParam ) {
+  return this.curves.getTangentAtNormalizedParam( this.curveIndex, normalizedParam );
+}
+
+/**
+  Returns the curvature vector (normal * arcLength) at this parameter.
+  If no curvature (eg: linear curve), Vec3() is returned.
+  The arc length can be computed as curvature.length(), or SCALAR_INFINITE if length is 0.
+  The param should be within the range [domainStart .. domainEnd], as returned by :kl-ref:`Curve.getDomain`.
+  \dfgCreateArrayPreset
+*/
+inline Vec3 Curve.getCurvatureAtParam( Float32 param ) {
+  return this.curves.getCurvatureAtParam( this.curveIndex, param );
+}
+
+/**
+  Returns the curvature vector (normal * arcLength) at this normalized parameter.
+  If no curvature (eg: linear curve), Vec3() is returned.
+  The arc length can be computed as curvature.length(), or SCALAR_INFINITE if length is 0.
+  The normalizedParam should be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.
+  \dfgCreateArrayPreset
+  \dfgPresetRange normalizedParam (0.0, 1.0)
+*/
+inline Vec3 Curve.getCurvatureAtNormalizedParam( Float32 normalizedParam ) {
+  return this.curves.getCurvatureAtNormalizedParam( this.curveIndex, normalizedParam );
+}
+
+/**
+  Returns the unit tangent and the curvature vector (normal * arcLength) at this parameter.
+  If no curvature (eg: linear curve), `curvature` is set to Vec3().
+  The arc length can be computed as curvature.length(), or SCALAR_INFINITE if length is 0.
+  The param should be within the range [domainStart .. domainEnd], as returned by :kl-ref:`Curve.getDomain`.
+  \note This function has the same cost as :kl-ref:`Curve.getCurvatureAtParam` since the tangent is computed internally anyway
+  \dfgCreateArrayPreset
+*/
+inline Curve.getTangentAndCurvatureAtParam( Float32 param, io Vec3 tangent, io Vec3 curvature ) {
+  this.curves.getTangentAndCurvatureAtParam( this.curveIndex, param, tangent, curvature );
+}
+
+/**
+  Returns the unit tangent and the curvature vector (normal * arcLength) at this normalized parameter.
+  If no curvature (eg: linear curve), `curvature` is set to Vec3().
+  The arc length can be computed as curvature.length(), or SCALAR_INFINITE if length is 0.
+  The normalizedParam should be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.
+  \note This function has the same cost as :kl-ref:`Curve.getCurvatureAtNormalizedParam` since the tangent is computed internally anyway
+  \dfgCreateArrayPreset
+  \dfgPresetRange normalizedParam (0.0, 1.0)
+*/
+inline Curve.getTangentAndCurvatureAtNormalizedParam( Float32 normalizedParam, io Vec3 tangent, io Vec3 curvature ) {
+  this.curves.getTangentAndCurvatureAtNormalizedParam( this.curveIndex, normalizedParam, tangent, curvature );
+}
+
+/// Returns the curve derivative vector at this parameter (relative to `param` units).
+/// The param should be within the range [domainStart .. domainEnd], as returned by :kl-ref:`Curve.getDomain`.
+/// \dfgCreateArrayPreset
+inline Vec3 Curve.getDerivativeAtParam( Float32 param ) {
+  return this.curves.getDerivativeAtParam( this.curveIndex, param );
+}
+
+/**
+  Returns the curve derivative vector at this normalized parameter (relative to `normalized param` units).
+  The normalizedParam should be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.
+  \dfgCreateArrayPreset
+  \dfgPresetRange normalizedParam (0.0, 1.0)
+*/
+inline Vec3 Curve.getDerivativeAtNormalizedParam( Float32 normalizedParam ) {
+  return this.curves.getDerivativeAtNormalizedParam( this.curveIndex, normalizedParam );
+}
+
+/// Returns the curve first and second derivative vectors at this parameter (relative to `param` units).
+/// The param should be within the range [domainStart .. domainEnd], as returned by :kl-ref:`Curve.getDomain`.
+/// \dfgCreateArrayPreset
+inline Curve.getDerivativesAtParam( Float32 param, io Vec3 dU, io Vec3 dUU ) {
+  this.curves.getDerivativesAtParam( this.curveIndex, param, dU, dUU );
+}
+
+/**
+  Returns the curve first and second derivative vectors at this normalized parameter (relative to `normalized param` units).
+  The normalizedParam should be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.
+  \dfgCreateArrayPreset
+  \dfgPresetRange normalizedParam (0.0, 1.0)
+*/
+inline Curve.getDerivativesAtNormalizedParam( Float32 normalizedParam, io Vec3 dU, io Vec3 dUU ) {
+  this.curves.getDerivativesAtNormalizedParam( this.curveIndex, normalizedParam, dU, dUU );
+}
+
+/// Returns the array of point indices and associated weights that correspond to curve's evaluation basis at this parameter.
+/// These can be used to evaluate any curve attribute from a convex (linear) combination of point values.
+inline Curve.getPointIndicesAndWeightsAtParam( Float32 param, io LocalL8UInt32Array pointIndices, io LocalL8ScalarArray pointWeights ) {
+  this.curves.getPointIndicesAndWeightsAtParam( this.curveIndex, param, pointIndices, pointWeights );
+}
+
+/**
+  Returns the array of point indices and associated weights that correspond to curve's evaluation basis at this normalized parameter.
+  These can be used to evaluate any curve attribute from a convex (linear) combination of point values.
+  The normalizedParam should be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.
+  \dfgPresetRange normalizedParam (0.0, 1.0)
+*/
+inline Curve.getPointIndicesAndWeightsAtNormalizedParam( Float32 normalizedParam, io LocalL8UInt32Array pointIndices, io LocalL8ScalarArray pointWeights ) {
+  this.curves.getPointIndicesAndWeightsAtNormalizedParam( this.curveIndex, normalizedParam, pointIndices, pointWeights );
+}
+
+/**
+  Returns the array of point indices and associated weights and derivative weights that correspond to curve's evaluation basis at this parameter.
+  These can be used to evaluate any curve attribute and its derivative from a convex (linear) combination of point values.
+  The normalizedParam should be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.
+  \dfgPresetRange normalizedParam (0.0, 1.0)
+*/
+inline Curve.getPointIndicesAndWeightsAtParam( Float32 param, io LocalL8UInt32Array pointIndices, io LocalL8ScalarArray pointWeights, io LocalL8ScalarArray derivativePointWeights ) {
+  this.curves.getPointIndicesAndWeightsAtParam( this.curveIndex, param, pointIndices, pointWeights, derivativePointWeights );
+}
+
+/**
+  Returns the array of point indices and associated weights and derivative weights that correspond to curve's evaluation basis at this normalized parameter.
+  These can be used to evaluate any curve attribute and its derivative from a convex (linear) combination of point values.
+  The normalizedParam should be within the range [0..1], which will be remapped linearly from domainStart to domainEnd.
+  \dfgPresetRange normalizedParam (0.0, 1.0)
+*/
+inline Curve.getPointIndicesAndWeightsAtNormalizedParam( Float32 normalizedParam, io LocalL8UInt32Array pointIndices, io LocalL8ScalarArray pointWeights, io LocalL8ScalarArray derivativePointWeights ) {
+  this.curves.getPointIndicesAndWeightsAtNormalizedParam( this.curveIndex, normalizedParam, pointIndices, pointWeights, derivativePointWeights );
+}
+
+/**
+  Returns the computation of the curve length.
+  \note This computation can be relatively costly, as it cannot be done analytically. The computation is cached along with a table that \
+  maps length to parameter values. The computation speed and precision of length-related methods is controlled \
+  by parameters of :kl-ref:`Curves.setLengthComputeParameters`
+  \category length
+*/
+inline Float32 Curve.getLength() {
+  return this.curves.getCurveLength( this.curveIndex );
+}
+
+/**
+  Returns the parameter corresponding to the curve length, where 0 is mapped to domainStart, and length is mapped to domainEnd.
+  Values outside of 0..length will be clamped to that range.
+  \note This computation can be relatively costly, as it cannot be done analytically. The computation is cached along with a table that \
+  maps length to parameter values. The computation speed and precision of length-related methods is controlled \
+  by parameters of :kl-ref:`Curves.setLengthComputeParameters`
+  \category length
+  \dfgCreateArrayPreset
+*/
+inline Float32 Curve.getParameterFromLength( Float32 length ) {
+  return this.curves.getParameterFromLength( this.curveIndex, length );
+}
+
+/**
+  Returns the normalized parameter (0..1) corresponding to the curve length ratio (0..1).
+  Values outside of 0..1 will be clamped to that range.
+  \note This computation can be relatively costly, as it cannot be done analytically. The computation is cached along with a table that \
+  maps length to parameter values. The computation speed and precision of length-related methods is controlled \
+  by parameters of :kl-ref:`Curves.setLengthComputeParameters`
+  \category length
+  \dfgCreateArrayPreset
+  \dfgPresetRange ratio (0.0, 1.0)
+*/
+inline Float32 Curve.getNormalizedParameterFromLengthRatio( Float32 ratio ) {
+  return this.curves.getNormalizedParameterFromLengthRatio( this.curveIndex, ratio );
+}
+
+/**
+  Returns the curve length corresponding to the parameter, where domainStart is mapped to 0, and domainEnd is mapped to length.
+  Values outside of domainStart..domainEnd will be clamped to that range.
+  \note This computation can be relatively costly, as it cannot be done analytically. The computation is cached along with a table that \
+  maps length to parameter values. The computation speed and precision of length-related methods is controlled \
+  by parameters of :kl-ref:`Curves.setLengthComputeParameters`
+  \category length
+  \dfgCreateArrayPreset
+*/
+inline Float32 Curve.getLengthFromParameter( Float32 param ) {
+  return this.curves.getLengthFromParameter( this.curveIndex, param );
+}
+
+/**
+  Returns the curve length ratio (0..1) corresponding to the normalized parameter (0..1).
+  Values outside of 0..1 will be clamped to that range.
+  \note This computation can be relatively costly, as it cannot be done analytically. The computation is cached along with a table that \
+  maps length to parameter values. The computation speed and precision of length-related methods is controlled \
+  by parameters of :kl-ref:`Curves.setLengthComputeParameters`
+  \category length
+  \dfgCreateArrayPreset
+  \dfgPresetRange normalizedParam (0.0, 1.0)
+*/
+inline Float32 Curve.getLengthRatioFromNormalizedParameter( Float32 normalizedParam ) {
+  return this.curves.getLengthRatioFromNormalizedParameter( this.curveIndex, normalizedParam );
+}
+
+/**
+Returns a String description of the Curve
+\param withAttributes Include the attribute values in the description.
+\param useUnitTestPrint use the unitTestPrint method to ensure that the values are consistent accross platforms (used in unit testing).
+\category debugging
+*/
+String Curve.getDesc( Boolean withAttributes, Boolean useUnitTestPrint ) {
+  return this.curves.getCurveDescInternal( this.curveIndex, withAttributes, useUnitTestPrint, String() );
+}
+
+/// Returns a String description of the Curve
+/// \param withAttributes Prints all attribute values
+/// \category debugging
+String Curve.getDesc( Boolean withAttributes ) {
+  return this.getDesc( withAttributes, false );
+}
+
+
+/******************************************************************************
+  LINEAR CURVES
+******************************************************************************/
+
+/**
+  Adds a linear curve, and returns its curve index.
+  If the curve is closed, the pointCount excludes repeated end point count (repeated point is implicit).
+  See Curves for more information about various curve types.
+  \category linear
+  \dfgPresetOmit
+*/
+inline Curve Curves.addLinearCurve!( UInt32 pointCount, Boolean isClosed ) {
+  return Curve( this, this.addLinearCurveIndex( pointCount, isClosed ) );
+}
+
+/**
+  Adds a linear curve, and returns the added curve.
+  If the curve is closed, pointPositions exclude repeated end point (implicitly point 0).
+  See Curves for more information about various curve types.
+  \category linear
+  \dfgPresetType pointPositions Vec3[]
+*/
+inline Curve Curves.addLinearCurve!( Vec3 pointPositions<>, Boolean isClosed ) {
+  return Curve( this, this.addLinearCurveIndex( pointPositions, isClosed ) );
+}
+
+
+/******************************************************************************
+BEZIER CURVES
+******************************************************************************/
+
+/**
+  Adds a bezier curve, and returns the added Curve.
+  See Curves for more information about various curve types.
+  \param pieceCount Number of Bezier pieces. Point count will be `pieceCount*degree + 1` for an open curve, and `pieceCount*degree` for a closed curve.
+  \param degree Degree of the curve (order - 1). Must be between 2 and 7.
+  \category bezier
+  \dfgPresetOmit
+*/
+inline Curve Curves.addBezier!( UInt32 pieceCount, UInt8 degree, Boolean isClosed ) {
+  return Curve( this, this.addBezierIndex( pieceCount, degree, isClosed ) );
+}
+
+/**
+  Adds a bezier curve, and returns the added Curve.
+  If the curve is closed, pointPositions exclude the repeated end point (repeated point is implicit).
+  See Curves for more information about various curve types.
+  \note End points that are not forming a full Bezier piece are ignored until more points are added to complete that piece.
+  \param pointPositions Point positions of the curve, also indicates the number of points for the curve.
+  \param degree Degree of the curve (order - 1). Must be between 2 and 7.
+  \category bezier
+  \dfgPresetDefault degree 3
+  \dfgPresetType pointPositions Vec3[]
+  \dfgPresetRange degree (2, 7)
+*/
+inline Curve Curves.addBezier!( Vec3 pointPositions<>, UInt8 degree, Boolean isClosed ) {
+  return Curve( this, this.addBezierIndex( pointPositions, degree, isClosed ) );
+}
+
+/**
+  Adds a bezier curve, and returns the added Curve.
+  If the curve is closed, pointPositions exclude the repeated end point (repeated point is implicit).
+  See Curves for more information about various curve types.
+  \note End points that are not forming a full Bezier piece are ignored until more points are added to complete that piece.
+  \param degree Degree of the curve (order - 1). Must be between 2 and 7.
+  \param pointPositions Point positions of the curve (3D coordinates, not in homogeneous coordinates), also indicates the number of points for the curve.
+  \param rationalWeights Rational weights for the curve points
+  \category bezier
+  \dfgPresetTitle AddRationalBezier
+  \dfgPresetDefault degree 3
+  \dfgPresetRange degree (2, 7)
+  \dfgPresetType pointPositions Vec3[]
+  \dfgPresetType rationalWeights Float32[]
+*/
+inline Curve Curves.addBezier!( Vec3 pointPositions<>, Float32 rationalWeights<>, UInt8 degree, Boolean isClosed ) {
+  return Curve( this, this.addBezierIndex( pointPositions, rationalWeights, degree, isClosed ) );
+}
+
+/**
+  Adds a quadratic bezier curve, and returns the added Curve.
+  If the curve is closed, the pointCount excludes repeated end point count (repeated point is implicit).
+  See Curves for more information about various curve types.
+  \param pieceCount Number of Bezier pieces. Point count will be `pieceCount*degree + 1` for an open curve, and `pieceCount*degree` for a closed curve.
+  \category bezier
+  \dfgPresetOmit
+*/
+inline Curve Curves.addQuadraticBezier!( UInt32 pieceCount, Boolean isClosed ) {
+  return Curve( this, this.addQuadraticBezierIndex( pieceCount, isClosed ) );
+}
+
+/**
+  Adds a quadratic bezier curve, and returns the added Curve.
+  If the curve is closed, pointPositions exclude repeated end point (implicitly point 0).
+  See Curves for more information about various curve types.
+  \note End points that are not forming a full Bezier piece are ignored until more points are added to complete that piece.
+  \param pointPositions Point positions of the curve, also indicates the number of points for the curve.
+  \category bezier
+  \dfgPresetType pointPositions Vec3[]
+*/
+inline Curve Curves.addQuadraticBezier!( Vec3 pointPositions<>, Boolean isClosed ) {
+  return Curve( this, this.addQuadraticBezierIndex( pointPositions, isClosed ) );
+}
+
+/**
+  Adds a quadratic bezier curve, and returns the added Curve.
+  If the curve is closed, pointPositions exclude repeated end point (implicitly point 0).
+  See Curves for more information about various curve types.
+  \note End points that are not forming a full Bezier piece are ignored until more points are added to complete that piece.
+  \param pointPositions Point positions of the curve (3D coordinates, not in homogeneous coordinates), also indicates the number of points for the curve.
+  \param rationalWeights Rational weights for the curve points
+  \category bezier
+  \dfgPresetTitle AddRationalQuadraticBezier
+  \dfgPresetType pointPositions Vec3[]
+  \dfgPresetType rationalWeights Float32[]
+*/
+inline Curve Curves.addQuadraticBezier!( Vec3 pointPositions<>, Float32 rationalWeights<>, Boolean isClosed ) {
+  return Curve( this, this.addQuadraticBezierIndex( pointPositions, rationalWeights, isClosed ) );
+}
+
+/**
+  Adds a cubic bezier curve, and returns the added Curve.
+  If the curve is closed, the pointCount excludes repeated end point count (repeated point is implicit).
+  See Curves for more information about various curve types.
+  \param pieceCount Number of Bezier pieces. Point count will be `pieceCount*degree + 1` for an open curve, and `pieceCount*degree` for a closed curve.
+  \category bezier
+  \dfgPresetOmit
+*/
+inline Curve Curves.addCubicBezier!( UInt32 pieceCount, Boolean isClosed ) {
+  return Curve( this, this.addCubicBezierIndex( pieceCount, isClosed ) );
+}
+
+/**
+  Adds a cubic bezier curve, and returns the added Curve.
+  If the curve is closed, pointPositions exclude repeated end point (implicitly point 0).
+  See Curves for more information about various curve types.
+  \note End points that are not forming a full Bezier piece are ignored until more points are added to complete that piece.
+  \param pointPositions Point positions of the curve, also indicates the number of points for the curve.
+  \category bezier
+  \dfgPresetType pointPositions Vec3[]
+*/
+inline Curve Curves.addCubicBezier!( Vec3 pointPositions<>, Boolean isClosed ) {
+  return Curve( this, this.addCubicBezierIndex( pointPositions, isClosed ) );
+}
+
+/**
+  Adds a cubic bezier curve, and returns the added Curve.
+  If the curve is closed, pointPositions exclude repeated end point (implicitly point 0).
+  See Curves for more information about various curve types.
+  \note End points that are not forming a full Bezier piece are ignored until more points are added to complete that piece.
+  \param pointPositions Point positions of the curve (3D coordinates, not in homogeneous coordinates), also indicates the number of points for the curve.
+  \param rationalWeights Rational weights for the curve points
+  \category bezier
+  \dfgPresetTitle AddCubicRationalBezier
+  \dfgPresetType pointPositions Vec3[]
+  \dfgPresetType rationalWeights Float32[]
+*/
+inline Curve Curves.addCubicBezier!( Vec3 pointPositions<>, Float32 rationalWeights<>, Boolean isClosed ) {
+  return Curve( this, this.addCubicBezierIndex( pointPositions, rationalWeights, isClosed ) );
+}
+
+
+/******************************************************************************
+NURBS CURVES
+******************************************************************************/
+
+/// \category NURBS
+/// Returns true if it is a periodic NURBS form.
+inline Boolean Curve.isPeriodic() {
+  return this.curves.isPeriodic( this.curveIndex );
+}
+
+/**
+  Adds a NURBS curve, and returns the added Curve.
+  If the curve is closed or periodic, pointCount exclude repeated end point (implicitly point 0).
+  See Curves for more information about various curve types.
+  \note For a closed NURBS curve, it implicitly wraps over point 0. For a periodic NURBS curve,\
+  it implicitly wraps over points [0 .. degree-1].
+  \param pointCount Point count without the implicit repeated points (in the case of closed / periodic).
+  \param degree Degree of the curve (order - 1). Must be between 1 and 7.
+  \param curveForm Must be curveForm_open, curveForm_closed or curveForm_periodic.
+  \category NURBS
+  \dfgPresetOmit
+*/
+inline Curve Curves.addNURBS!( UInt32 pointCount, UInt8 degree, UInt8 curveForm ) {
+  return Curve( this, this.addNURBSIndex( pointCount, degree, curveForm ) );
+}
+
+/**
+  Adds a NURBS curve, and returns the added Curve.
+  If the curve is closed or periodic, pointPositions exclude repeated end point (implicitly point 0).
+  See Curves for more information about various curve types.
+  \note For a closed NURBS curve, it implicitly wraps over point 0. For a periodic NURBS curve,\
+  it implicitly wraps over points [0 .. degree-1].
+  \param pointPositions Point positions of the curve, also indicates the number of points for the curve.
+  \param degree Degree of the curve (order - 1). Must be between 1 and 7.
+  \param curveForm Must be curveForm_open, curveForm_closed or curveForm_periodic.
+  \category NURBS
+  \dfgPresetDefault degree 3
+  \dfgPresetRange degree (1, 7)
+  \dfgPresetType pointPositions Vec3[]
+  \dfgPresetCombo curveForm ( "open", "closed", "periodic" )
+*/
+inline Curve Curves.addNURBS!( Vec3 pointPositions<>, UInt8 degree, UInt8 curveForm ) {
+  return Curve( this, this.addNURBSIndex( pointPositions, degree, curveForm ) );
+}
+
+/**
+  Adds a NURBS curve, and returns the added Curve.
+  If the curve is closed or periodic, pointPositions exclude repeated end point (implicitly point 0).
+  See Curves for more information about various curve types.
+  \note For a closed NURBS curve, it implicitly wraps over point 0. For a periodic NURBS curve,\
+  it implicitly wraps over points [0 .. degree-1].
+  \param pointPositions Point positions of the curve (3D coordinates, not in homogeneous coordinates), also indicates the number of points for the curve.
+  \param rationalWeights Rational weights for the curve points
+  \param degree Degree of the curve (order - 1). Must be between 1 and 7.
+  \param curveForm Must be curveForm_open, curveForm_closed or curveForm_periodic.
+  \category NURBS
+  \dfgPresetTitle AddRationalNURBS
+  \dfgPresetDefault degree 3
+  \dfgPresetRange degree (1, 7)
+  \dfgPresetType pointPositions Vec3[]
+  \dfgPresetType rationalWeights Float32[]
+  \dfgPresetCombo curveForm ( "open", "closed", "periodic" )
+*/
+inline Curve Curves.addNURBS!( Vec3 pointPositions<>, Float32 rationalWeights<>, UInt8 degree, UInt8 curveForm ) {
+  return Curve( this, this.addNURBSIndex( pointPositions, rationalWeights, degree, curveForm ) );
+}
+
+/**
+  Adds a NURBS curve, and returns the added Curve.
+  If the curve is closed or periodic, pointPositions exclude repeated end point (implicitly point 0).
+  This method is useful for specifying non-uniform knot values.
+  See Curves for more information about NURBS knots and forms.
+  \param degree Degree of the curve (order - 1). Must be between 1 and 7.
+  \param curveForm Must be curveForm_open, curveForm_closed or curveForm_periodic.
+  \param knots Knot sequence vector. Values must be in increasing order. For an open and closed curve, the first and last degree\
+  knots must be identical (multiplicity = degree). For a periodic curve, the intervals between the first and last order knots must\
+  be the same.
+  \category NURBS
+  \dfgPresetOmit
+*/
+inline Curve Curves.addNURBS!( UInt8 degree, UInt8 curveForm, Float32 knots<> ) {
+  return Curve( this, this.addNURBSIndex( degree, curveForm, knots ) );
+}
+
+/**
+  Adds a NURBS curve, and returns the added Curve.
+  If the curve is closed or periodic, pointPositions exclude repeated end point (implicitly point 0).
+  This method is useful for specifying non-uniform knot values.
+  See Curves for more information about NURBS knots and forms.
+  \note For a closed NURBS curve, it implicitly wraps over point 0. For a periodic NURBS curve,\
+  it implicitly wraps over points [0 .. degree-1].
+  \param pointPositions Point positions of the curve, also indicates the number of points for the curve.\
+  For an open curve, `pointPositions.size() = knots.size() - degree + 1`.\
+  For a closed curve, `pointPositions.size() = knots.size() - degree`.\
+  For a periodic curve, `pointPositions.size() = knots.size() - degree*2 - 1`.\
+  \param degree Degree of the curve (order - 1). Must be between 1 and 7.
+  \param curveForm Must be curveForm_open, curveForm_closed or curveForm_periodic.
+  \param knots Knot sequence vector. Values must be in increasing order. For an open and closed curve, the first and last degree\
+  knots must be identical (multiplicity = degree). For a periodic curve, the intervals between the first and last order knots must\
+  be the same.
+  \category NURBS
+  \dfgPresetTitle AddNonUniformNURBS
+  \dfgPresetDefault degree 3
+  \dfgPresetRange degree (1, 7)
+  \dfgPresetType pointPositions Vec3[]
+  \dfgPresetType knots Float32[]
+  \dfgPresetCombo curveForm ( "open", "closed", "periodic" )
+*/
+inline Curve Curves.addNURBS!( Vec3 pointPositions<>, UInt8 degree, UInt8 curveForm, Float32 knots<> ) {
+  return Curve( this, this.addNURBSIndex( pointPositions, degree, curveForm, knots ) );
+}
+
+/**
+  Adds a NURBS curve, and returns the added Curve.
+  If the curve is closed or periodic, pointPositions exclude repeated end point (implicitly point 0).
+  This method is useful for specifying non-uniform knot values.
+  See Curves for more information about NURBS knots and forms.
+  \note For a closed NURBS curve, it implicitly wraps over point 0. For a periodic NURBS curve,\
+  it implicitly wraps over points [0 .. degree-1].
+  \param pointPositions Point positions of the curve (3D coordinates, not in homogeneous coordinates), also indicates the number of points for the curve.
+  For an open curve, `pointPositions.size() = knots.size() - degree + 1`.\
+  For a closed curve, `pointPositions.size() = knots.size() - degree`.\
+  For a periodic curve, `pointPositions.size() = knots.size() - degree*2 - 1`.\
+  \param rationalWeights Rational weights for the curve points
+  \param degree Degree of the curve (order - 1). Must be between 1 and 7.
+  \param curveForm Must be curveForm_open, curveForm_closed or curveForm_periodic.
+  \param knots Knot sequence vector. Values must be in increasing order. For an open and closed curve, the first and last degree\
+  knots must be identical (multiplicity = degree). For a periodic curve, the intervals between the first and last order knots must\
+  be the same.
+  \category NURBS
+  \dfgPresetTitle AddNonUniformRationalNURBS
+  \dfgPresetDefault degree 3
+  \dfgPresetRange degree (1, 7)
+  \dfgPresetType pointPositions Vec3[]
+  \dfgPresetType rationalWeights Float32[]
+  \dfgPresetType knots Float32[]
+  \dfgPresetCombo curveForm ( "open", "closed", "periodic" )
+*/
+inline Curve Curves.addNURBS!( Vec3 pointPositions<>, Float32 rationalWeights<>, UInt8 degree, UInt8 curveForm, Float32 knots<> ) {
+  return Curve( this, this.addNURBSIndex( pointPositions, rationalWeights, degree, curveForm, knots ) );
+}
+
+/// \internal
+inline UInt32 Curve.areNURBSKnotsImplicit() {
+  return this.curves.areNURBSKnotsImplicit( this.curveIndex );
+}
+
+/// Returns the number of knots for this NURBS curve.
+/// \category NURBS
+inline UInt32 Curve.getNURBSKnotCount() {
+  return this.curves.getNURBSKnotCount( this.curveIndex );
+}
+
+/// Returns a knot value for this NURBS curve.
+/// \param knotIndex Knot index, between 0 and :kl-ref:`Curve.getNURBSKnotCount-1`
+/// \category NURBS
+inline Float32 Curve.getNURBSKnot( UInt32 knotIndex ) {
+  return this.curves.getNURBSKnot( this.curveIndex, knotIndex );
+}
+
+/// Returns the knot vector for this NURBS curve.
+/// \category NURBS
+inline Float32[] Curve.getNURBSKnots() {
+  return this.curves.getNURBSKnots( this.curveIndex );
+}
+
+/// Sets a knot value for this NURBS curve.
+/// \param knotIndex Knot index, between 0 and :kl-ref:`Curve.getNURBSKnotCount-1`
+/// \note Since knots are set one by one, no validation is made to the knot vector as it can be in an intermediary state
+/// \category NURBS
+inline Curve.setNURBSKnot!( UInt32 knotIndex, Float32 knotValue ) {
+  this.curves.setNURBSKnot( this.curveIndex, knotIndex, knotValue );
+}
+
+/******************************************************************************
+  UTILITY METHODS
+******************************************************************************/
+
+/// Returns an array of parameters from the specified length array
+inline Float32[] Curve.getParametersAtLengths( Float32 lengths[] ){
+  Float32 parameters[];
+  parameters.resize( lengths.size() );
+  
+  for( Size i=0; i<parameters.size(); i++ )
+  {
+    parameters[i] = this.getParameterFromLength(lengths[i]);
+  }
+
+  return parameters;
+}
+
+/// Returns an array of evenly spaced lengths along the length of the curve.
+inline Float32[] Curve.getEvenlySpacedLengths( SInt32 count, Boolean popLast ) {
+  Float32 curveLen = this.getLength();
+
+  Float32 lengths[];
+  lengths.resize( count );
+
+  if(count == 1)
+  {
+    lengths[0] = 0.0;
+  }
+  else
+  {
+    // Generate length array to query position on curve for each point.
+    for( Size i=0; i<count; i++ )
+    {
+      Float32 ratio = Float32(i) / Float32( popLast ? count : count-1 );
+      lengths[i] = (1.0 - ratio) * 0 + ratio * curveLen;
+    }
+  }
+
+  return lengths;
+}
+
+/// Returns the position on the curve at the specified length.
+inline Vec3 Curve.getPositionAtLength( Float32 length, Boolean extrapolateEndFromTangent ) {
+  if(length > this.getLength() && extrapolateEndFromTangent)
+  {
+    return this.getPositionAtParam(this.getParameterFromLength(this.getLength())) + this.getTangentAtParam(this.getParameterFromLength(this.getLength())).multiplyScalar(length - this.getLength());
+  }
+  else
+  {
+    return this.getPositionAtParam(this.getParameterFromLength(length));
+  }
+}
+
+operator GetPositionsAtLengths<<<index>>>(
+  Curve curve,
+  Float32 lengths[],
+  Boolean extrapolateEndFromTangent,
+  io Vec3 positions[]
+  ) {
+  positions[index] = curve.getPositionAtLength( lengths[index], extrapolateEndFromTangent );
+}
+
+/// Returns an array of positions placed at each input length.
+inline Vec3[] Curve.getPositionsAtLengths( Float32[] lengths, Boolean extrapolateEndFromTangent ) {
+  Vec3 points[];
+  points.resize( lengths.size() );
+    
+  if (lengths.size() >= 10000)
+  {
+    GetPositionsAtLengths<<<lengths.size()>>>( this, lengths, extrapolateEndFromTangent, points  );
+  }
+  else
+  {
+    // Perform query on curve geometry for position at each length.
+    for(Integer i=0; i<lengths.size(); i++)
+    {
+      GetPositionsAtLengths( i, this, lengths, extrapolateEndFromTangent, points );
+    }
+  }
+
+  return points;
+}
+
+/// Returns the tangent of the curve at the specified length.
+inline Vec3 Curve.getNormalAtLength( Float32 length ) {
+  if(length > this.getLength())
+  {
+    return this.getNormalAtNormalizedParam(1.0);
+  }
+  else
+  {
+    return this.getNormalAtParam(this.getParameterFromLength(length));
+  }
+}
+
+operator GetNormalsAtLengths<<<index>>>(
+  Curve curve,
+  Float32 lengths[],
+  io Vec3 normals[]
+  ) {
+  normals[index] = curve.getNormalAtLength( lengths[index] );
+}
+
+/// Returns an array of normals at each input length.
+inline Vec3[] Curve.getNormalsAtLengths( Float32[] lengths ) {
+  Vec3 normals[];
+  normals.resize(lengths.size()); 
+
+  if (lengths.size() >= 10000)
+  {
+    GetNormalsAtLengths<<<lengths.size()>>>( this, lengths, normals );
+  }
+  else
+  {
+    // Perform query on curve geometry for Normal at each length
+    for(Integer i=0; i<lengths.size(); i++)
+    {
+      GetNormalsAtLengths( i, this, lengths, normals );
+    }
+  }
+
+  return normals;
+}
+
+/// Returns the Tangent of the curve at the specified length.
+inline Vec3 Curve.getTangentAtLength( Float32 length ) {
+  if(length > this.getLength())
+  {
+    return this.getTangentAtParam(this.getParameterFromLength(this.getLength()));
+  }
+  else
+  {
+    return this.getTangentAtParam(this.getParameterFromLength(length));
+  }
+}
+
+operator GetTangentsAtLengths<<<index>>>(
+  Curve curve,
+  Float32 lengths[],
+  io Vec3 tangents[]
+  ) {
+  tangents[index] = curve.getTangentAtLength( lengths[index] );
+}
+
+/// Returns an array of Tangents at each input length.
+inline Vec3[] Curve.getTangentsAtLengths( Float32[] lengths ) {
+  Vec3 tangents[];
+  tangents.resize(lengths.size()); 
+
+  if (lengths.size() >= 10000)
+  {
+    GetTangentsAtLengths<<<lengths.size()>>>( this, lengths, tangents );
+  }
+  else
+  {
+    // Perform query on curve geometry for tangent at each length
+    for(Integer i=0; i<lengths.size(); i++)
+    {
+      GetTangentsAtLengths( i, this, lengths, tangents );
+    }
+  }
+
+  return tangents;
+}

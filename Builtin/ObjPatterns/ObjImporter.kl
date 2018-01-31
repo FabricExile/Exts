@@ -1,0 +1,105 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+require AssetPatterns;
+require FabricOBJ;
+require FileIO;
+require Util;
+
+// \dfgPresetOmit
+object ObjImporter : BaseImporter {
+};
+
+// \dfgPresetOmit
+function ObjImporter(String filePath) {
+
+  FilePath fpath = filePath;
+  fpath = fpath.makePreferred().expandEnvVars();
+  if(!fpath.exists()) {
+    if(filePath)
+      report("ObjImporter: filePath '"+filePath+"' does not exist.");
+    return;
+  }
+
+  OBJDataHandle handle();
+  ImporterOptions options;
+  handle.openFileHandle(fpath.string(), options);
+
+  ImporterIdentifier identifiers[];
+  handle.getIdentifiers(identifiers);
+
+  for( Size i = 0; i < identifiers.size(); ++i ) {
+    PolygonMesh mesh();
+    this.parseObjPolygonMesh(handle, identifiers[i], mesh);
+
+    String name = (identifiers[i].name != "" ? identifiers[i].name : "");
+    String groupName = (identifiers[i].getStringData("groupName") != "" ? identifiers[i].getStringData("groupName") : "");
+    String matName = (identifiers[i].getStringData("materialName") != "" ? identifiers[i].getStringData("materialName") : "");
+
+    String path = '/'+groupName+'_'+name;
+    if(path == '/_')
+      path = '/shape';
+    path += i;
+    
+    Ref<ImporterShape> shape = this.getOrCreateObject("Shape", i, path);
+    shape.setGeometry(mesh);
+  }
+}
+
+private function ObjImporter.parseObjPolygonMesh(
+  io OBJDataHandle handle,
+  ImporterIdentifier identifier,
+  io PolygonMesh mesh
+) {
+  UInt32 i, j, k, src;
+
+  Size polySizes[];
+  Size packedPolyPoints[];
+  Size packedPolyAttrIndices[];
+
+  handle.getEntityFaceTopologyIndices( identifier.index, packedPolyPoints );
+  handle.getEntityFaceIndices( identifier.index, packedPolyAttrIndices );
+  handle.getEntityFaceSizes( identifier.index, polySizes );
+
+  UInt32 nbPoly = polySizes.size();
+  UInt32 nbPoints = 0;
+  for( i = 0; i < packedPolyPoints.size(); ++i ) {
+    if( UInt32(packedPolyPoints[i]) >= nbPoints )
+      nbPoints = packedPolyPoints[i]+1;
+  }
+  mesh.createPoints( nbPoints );
+  mesh.addPolygons( polySizes, packedPolyPoints );
+
+  Vec3 vec3Data[];
+  Ref<Vec3Attribute> normals = mesh.getOrCreateNormals();
+
+  handle.getEntityPoints( identifier.index, vec3Data );
+  BitVector initPos;
+  initPos.resize(nbPoints);
+  src = 0;
+  for( i = 0; i < nbPoly; ++i ) {
+    UInt32 polSize = UInt32(polySizes[i]);
+    for( j = 0; j < polSize; ++j ) {
+      UInt32 point = mesh.getPolygonPoint( i, j );
+      if( !initPos.get(point) ) {
+        initPos.set(point);
+        UInt32 srcIndex = packedPolyAttrIndices[src];
+        mesh.setPointPosition( point, vec3Data[srcIndex] );
+      }
+      src++;
+    }
+  }
+  handle.getEntityNormals( identifier.index, vec3Data );
+
+  mesh.setAttributeFromPolygonPackedData( "normals", vec3Data, packedPolyAttrIndices );
+
+  Boolean hasTextureCoords = false;
+  handle.hasTextureCoords( hasTextureCoords );
+
+  if( hasTextureCoords ) {
+    Vec2 vec2Data[];
+    handle.getEntityTextureCoords( identifier.index, vec2Data );
+    mesh.setAttributeFromPolygonPackedData( "uvs0", vec2Data, packedPolyAttrIndices );
+  }
+}

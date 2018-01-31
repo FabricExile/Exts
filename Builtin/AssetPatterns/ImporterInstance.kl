@@ -1,0 +1,75 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/**
+The ImporterInstance represents a combination of a transform as well 
+as a reference to another ImporterObject instanced in that location.
+The referenced ImporterObject is called the master.
+\dfgPresetOmit
+*/
+object ImporterInstance : ImporterTransform permits Importer
+{
+};
+
+/// \dfgPresetOmit
+function ImporterInstance(String id, String path) {
+  this.initialize(id, path, 'Instance');
+}
+
+/// \dfgPresetOmit
+protected function ImporterInstance.initialize!(String id, String path, String type) {
+  this.parent.initialize(id, path, type);
+  this.initProperty('master', ImporterString(''));
+}
+
+/**
+  Returns all of the nested objects
+  \dfgPresetCreate
+  \dfgPresetTitle children
+  \dfgPresetFolder Object
+  \dfgPresetTooltip
+    Returns all of the children
+  \enddfgPresetTooltip
+*/
+function Ref<ImporterObject>[] ImporterInstance.getNestedObjects(ImporterContext ctxt) {
+  Ref<ImporterObject> result[];
+  Ref<ImporterObject> master = this.getMaster(ctxt);
+  if(master)
+  	result.push(master);
+
+  Ref<ImporterObject> nested[] = this.parent.getNestedObjects(ctxt);
+  for(Size i=0;i<nested.size();i++) {
+    if(!nested[i])
+      continue;
+    switch(nested[i].getType()) {
+      case "Behavior": {
+        result.push(nested[i]);
+        break;
+      }
+    }
+  }
+  return result;
+}
+
+/// \dfgPresetOmit
+function String ImporterInstance.getMasterID(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('master', context);
+  return mutableThis.getStringProperty('master');
+}
+
+/// \dfgPresetOmit
+function Ref<ImporterObject> ImporterInstance.getMaster(ImporterContext context) {
+  return this.importer.getObjectFromID(this.getMasterID(context));
+}
+
+/// \dfgPresetOmit
+function ImporterInstance.setMasterID!(String id) {
+  this.setProperty('master', id);
+}
+
+/// \dfgPresetOmit
+function ImporterInstance.setMaster!(ImporterObject master) {
+  this.setMasterID(master.getID());
+}

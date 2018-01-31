@@ -1,0 +1,137 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// BaseSelectionDrawableItem implements base services for registering to
+  /// SelectionManagerDrawList(s). It must be specialized to actually
+  /// implement SelectionDrawableItem drawing services.
+  ///
+  /// See :ref:`TPG.selection` for more information and examples.
+  object BaseSelectionDrawableItem : SelectionDrawableItem{
+    SelectionManagerDrawList drawLists[];
+    SelectionManagerDrawListKey keys[];
+
+    UInt32 instanceCount;
+  };
+
+  BaseSelectionDrawableItem() {
+    this.instanceCount = InvalidIndex;
+  }
+
+  BaseSelectionDrawableItem.register!( Ref<SelectionManagerDrawList> drawList, Ref<Object> userRef, UInt32 userID ) {
+    for( Size i = 0; i < this.drawLists.size(); ++i ) {
+      Ref<SelectionManagerDrawList> currDrawList = this.drawLists[i];
+      if( currDrawList === drawList )
+        return;// already part of it
+    }
+    Size index = this.drawLists.size();
+    this.drawLists.push( drawList );
+    SelectionManagerDrawListKey key( userRef, userID );
+    this.keys.push( key );
+
+    this.drawLists[index].addItem( this, this.keys[index] );
+  }
+
+  /// If registering as instance array, each primitive will be a distinct SelectionDrawableItem identified with key.userID == instance index.
+  /// NOTE: not compatible with register()
+  BaseSelectionDrawableItem.registerInstanceArray!( Ref<SelectionManagerDrawList> drawList, Ref<Object> userRef, UInt32 count ) {
+    Boolean found;
+    for( Size i = 0; i < this.drawLists.size(); ++i ) {
+      Ref<SelectionManagerDrawList> currDrawList = this.drawLists[i];
+      if( currDrawList === drawList ) {
+        found = true;// already part of it
+        break;
+      }
+    }
+    if( !found ) {
+      this.drawLists.push( drawList );
+      SelectionManagerDrawListKey key( userRef );
+      this.keys.push( key );
+    }
+
+    if( this.instanceCount == InvalidIndex )
+      this.instanceCount = 0;
+
+    this.updateInstanceCount( count );
+  }
+
+  BaseSelectionDrawableItem.updateInstanceCount!( UInt32 newCount ) {
+    if( this.instanceCount == InvalidIndex )
+      throw( "BaseSelectionDrawableItem.updateInstanceCount: BaseSelectionDrawableItem.registerInstanceArray was not called first" );
+
+    for( Size list = 0; list < this.drawLists.size(); ++list ) {
+      for( Size i = this.instanceCount; i < newCount; ++i ) {
+        this.keys[list].userID = i;
+        this.drawLists[list].addItem( this, this.keys[list] );
+      }
+
+      for( Size i = newCount; i < this.instanceCount; ++i ) {
+        this.keys[list].userID = i;
+        this.drawLists[list].removeItem( this, this.keys[list] );
+      }
+    }
+    this.instanceCount = newCount;
+  }
+
+  inline BaseSelectionDrawableItem.register!( Ref<SelectionManagerDrawList> drawList ) {
+    this.register( drawList, null, InvalidIndex );
+  }
+
+  BaseSelectionDrawableItem.unregister!( Ref<SelectionManagerDrawList> drawList ) {
+    for( Size list = 0; list < this.drawLists.size(); ++list ) {
+      Ref<SelectionManagerDrawList> currDrawList = this.drawLists[list];
+      if( currDrawList === drawList ) {
+        if( this.instanceCount == InvalidIndex )
+          this.drawLists[list].removeItem( this, this.keys[list] );
+        else {
+          for( Size i = 0; i < this.instanceCount; ++i ) {
+            this.keys[list].userID = i;
+            this.drawLists[list].removeItem( this, this.keys[list] );
+          }
+        }
+        Size last = this.drawLists.size() - 1;
+        this.drawLists[list] = this.drawLists[last];
+        this.keys[list] = this.keys[last];
+        this.drawLists.resize( last );
+        this.keys.resize( last );
+        break;
+      }
+    }
+  }
+
+  ~BaseSelectionDrawableItem() {
+    while( this.drawLists )
+      this.unregister( this.drawLists[0] );
+  }
+
+  /// SelectionDrawableItem interface: to be overriden
+  String BaseSelectionDrawableItem.getCustomTransformShaderName() {
+    return String();
+  }
+
+  /// SelectionDrawableItem interface: to be overriden
+  BaseSelectionDrawableItem.buildCustomTransformShader( String shaderName, io OGLProgram shader ) {}
+
+  /// SelectionDrawableItem interface: to be overriden
+  BaseSelectionDrawableItem.prepareForSelectionDraw!( SelectionManagerDrawListKey userKey, UInt8 selectionMode, Ref<Viewport> viewport, io UInt32 glInstanceCount, io Mat44 transform, io OGLBuffer_ positionsBuffer, io OGLBuffer legacyPositionsBuffer, io Ref<OGLProgramParamValues> shaderParamValues, io Ref<OGLContext> context ) {}
+
+  /// SelectionDrawableItem interface: to be overriden
+  Ref<Geometry> BaseSelectionDrawableItem.getGeometry( SelectionManagerDrawListKey userKey ) {
+    return null;
+  }
+
+  /// SelectionDrawableItem interface: to be overriden
+  BaseSelectionDrawableItem.drawGLPrimitivesForSelection!( SelectionManagerDrawListKey userKey, UInt8 selectionMode, Mat44 positionsTransform, UInt32 shaderPrimitiveIndex, io Ref<OGLContext> context ) {}
+
+  /// SelectionDrawableItem interface: to be overriden
+  BaseSelectionDrawableItem.drawGLComponents!( SelectionManagerDrawListKey userKey, io Ref<ItemReference> itemAndComponents, Ref<Viewport> viewport, io Ref<OGLContext> context ) {}
+
+
+  /// SelectionDrawableItem interface: to be overriden
+  /// By default, returns primitiveIDs.indices (1 to 1)
+  UInt32[] BaseSelectionDrawableItem.primitiveIDsToComponents( UInt8 selectionMode, IndexSet primitiveIDs ) {
+    return primitiveIDs.indices;
+  }
+}// namespace Tool

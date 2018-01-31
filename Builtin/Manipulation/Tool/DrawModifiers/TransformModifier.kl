@@ -1,0 +1,78 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /**
+  \versionadded 2.6.0
+
+  The TransformModifier is the default BaseDrawModifier on a BaseTool (:kl-ref:`Tool::BaseTool.addDrawModifier` ).
+  It will compose BaseTool's local transform with its parent (but this is optional). 
+  
+  The composition will only be done if transform spaces are the same (WorldSpace, NormalizedViewportSpace, PixelCoordinatesSpace),
+  else the localTransform and space will be used.
+
+  See :ref:`TPG.tooldrawmodifier` for more information about draw modifiers.
+  */
+  object TransformModifier : BaseDrawModifier{
+    Boolean composeWithParent;
+  };
+
+  TransformModifier() {
+    this.composeWithParent = true;
+  }
+
+  TransformModifier( Boolean composeWithParent ) {
+    this.composeWithParent = composeWithParent;
+  }
+
+  TransformModifier.updateDrawData!( io DrawContext context, Ref<Object> target ) {
+    this.parent.updateDrawData( context, target );
+
+    // Set the parent space as the active space
+    String localSpace;
+    Ref<PropertyContainer> targetProps = target;
+
+    Mat44 localTransform;
+    if( context.contextualProperties.hasLocalProperty( LocalTransformProperty ) ) {
+      // Check context specific first
+      localTransform = GetLocalTransform( context.contextualProperties ).toMat44();
+      localSpace = GetTransformSpace( context.contextualProperties );
+    } else {
+      // Else, check on the target directly
+      localTransform = GetLocalTransform( targetProps ).toMat44();
+      localSpace = GetTransformSpace( targetProps );
+    }
+
+    String space = this.composeWithParent ? GetParentTransformSpace( context.contextualProperties ) : localSpace;
+    if( !space )
+      space = localSpace;
+
+    Boolean composeWithParent = this.composeWithParent;
+    Boolean convertParentFromPixelToNormalized;
+    if( composeWithParent && localSpace == NormalizedViewportSpace && space == PixelCoordinatesSpace ) {
+      // Convert parent transform to normalized viewport space
+      space = NormalizedViewportSpace;
+      convertParentFromPixelToNormalized = true;
+    } else if( space != localSpace ) {
+      // Changing space: cut the relationship
+      // TODO: support conversion from pixel to normalize screen space coords
+      space = localSpace;
+      composeWithParent = false;
+    }
+
+    // If there is a parent (inherited) transform, compose with the local transform.
+    Mat44 parentTransform;
+    if( composeWithParent ) {
+      parentTransform = GetParentTransform( context.contextualProperties );
+      if( convertParentFromPixelToNormalized )
+        parentTransform = PixelTransformToNormalizedViewport( parentTransform, context.viewport );
+    }
+    SetTransform( context.contextualProperties, parentTransform*localTransform );
+    SetTransformSpace( context.contextualProperties, space );
+
+    // Update the renderTransform (viewport space) accordingly
+    UpdateRenderTransform( context );
+  }
+}// namespace Tool

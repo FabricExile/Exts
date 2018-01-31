@@ -1,0 +1,58 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/PolygonMesh.html",
+    "uiTooltip" : "Subdivides the polygons linearly. Each polygon edge will be subdivided in two equal portions, and the created middle points\nwill be joined to a new central point for each polygon.\n\nCreate edge points\nunsplit edge\nSkip over the newly created point\nSplit polygons\nSplit edge garantees that added point was at polygonPointIndex+1,\nso we can assume that polygon odd indices are new points.\noptimize for quads: in such case, splitting as a cross would lead to proper attribute values right away\nremoved 1 by addEdge, added 1 by splitEdge\nonly unsplit points\nonly unsplit points\nWe know that centerPoint has a single, uniform attribute (comes from addEdge+splitPoint)\n\n Supported by PolygonMesh"
+    },
+  "title" : "LinearSubdividePolygons",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "PolygonMesh"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "polygons",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Size[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "firstEdgePoint",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Size"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "firstCenterPoint",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Size"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "68017107237699BFF33B0A65B200B289",
+  "code" : "require Geometry;
+
+dfgEntry {
+  this.linearSubdividePolygons(polygons, firstEdgePoint, firstCenterPoint);
+}
+"
+  }

@@ -1,0 +1,81 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+/**
+\versionadded 1.12.0
+
+The BinaryWriter is used to write binary data to files. It supports writing of any shallow data structure represented as a
+Data pointer and a DataSize.
+
+\seealso BinaryReader, BinaryBlockWriter
+
+\example
+  FilePath path = FilePath('${TEMP}/binaryWriter.bin').expandEnvVars();
+  {
+    BinaryWriter writer = BinaryWriter(path.string());
+    Size count = 50;
+    Scalar values[];
+    values.resize(count);
+    for(Size i=0;i<values.size();i++)
+      values[i] = Scalar(i) * 0.7;
+    report(values[3]);
+    report(values[17]);
+    report(values[33]);
+
+    writer.write(count.data(), count.dataSize());
+    writer.write(values.data(), values.dataSize());
+    report('Binary file written.');
+  }
+\endexample
+*/
+object BinaryWriter : FileWriter {
+  /// \internal
+  Data handle;
+};
+
+/// standard constructor
+function BinaryWriter() = "BinaryWriter_construct";
+
+/// standard destructor
+function ~BinaryWriter() = "BinaryWriter_free";
+
+/// constructs a new writer object with a given filePath
+inline BinaryWriter(String filePath) {
+  this = BinaryWriter();
+  this.open(filePath);
+} 
+
+/// opens a new writable file, returns true if successful
+function Boolean BinaryWriter.open!(String filePath) = "BinaryWriter_open";
+
+/// closes a currently opened file, returns true if successful
+function Boolean BinaryWriter.close!() = "BinaryWriter_close";
+
+/// returns true if the file is currently open
+function Boolean BinaryWriter.isOpen() = "BinaryWriter_isOpen";
+
+/// writes the content of the string into the file
+function BinaryWriter.write!(Data data, UInt64 dataSize) = "BinaryWriter_write";
+
+/// Set position in output sequence
+function BinaryWriter.seek!(UInt64 pos) = "BinaryWriter_seek";
+
+/// returns the position in the file
+function UInt64 BinaryWriter.pos!() = "BinaryWriter_pos";
+
+/// writes a single string to the stream
+function BinaryWriter.writeString!(String string){
+  UInt32 strLength = string.length();
+  String str = string;
+  this.write(strLength.data(), strLength.dataSize());
+  this.write(str.data(), str.dataSize());
+}
+
+/// write an array of string to the stream
+function BinaryWriter.writeStringArray!(String strings[]){
+  UInt32 numStrings = strings.size();
+  this.write(numStrings.data(), numStrings.dataSize());
+  for(UInt32 i=0; i<numStrings; i++){
+    this.writeString(strings[i]);
+  }
+}

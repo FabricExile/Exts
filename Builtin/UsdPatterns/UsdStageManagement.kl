@@ -1,0 +1,123 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/// \internal
+object UsdStageDictLock {
+  LightReentrantLock usdLock;
+};
+
+struct UsdStageDictLockBracket {
+  Ref<UsdStageDictLock> usdLock;
+};
+
+inline UsdStageDictLockBracket( Ref<UsdStageDictLock> usdLock ) {
+  this.usdLock = usdLock;
+  if(this.usdLock)
+    this.usdLock.usdLock.acquire();
+}
+
+inline ~UsdStageDictLockBracket() {
+  if( this.usdLock )
+    this.usdLock.usdLock.release();
+}
+
+/// \dfgPresetOmit
+object UsdStageHandle
+{
+  UsdStage stage;
+  String filePath;
+  UsdStageDictLock lock;
+};
+
+function UsdStageHandle(String filePath)
+{
+  this.filePath = filePath;
+  FilePath resolvedPath = FilePath(filePath).expandEnvVars();
+  this.stage = UsdStage_Open(resolvedPath.string());
+  this.lock = Singleton_init( "UsdStageDictLock", UsdStageDictLock() );
+}
+
+function ~UsdStageHandle()
+{
+  if(this.filePath)
+  {
+    UsdStageDictLockBracket bracket(this.lock);
+
+    UsdStageDict stageDict = Singleton_get("UsdStageDict");
+    if(stageDict)
+    {
+      if(stageDict.handles.has(this.filePath))
+      {
+        stageDict.handles.delete(this.filePath);
+      }
+    }
+  }
+}
+
+/// \internal
+object UsdStageDict
+{
+  Ref<UsdStageHandle> handles[String];
+};
+
+/// \dfgPresetOmit
+public Boolean UsdStageDict_getStage(String filePath, io UsdStageHandle handle, io Boolean clearPrims)
+{
+  clearPrims = handle == null;
+
+  if(handle != null)
+  {
+    if(handle.filePath != filePath)
+    {
+      // report('filepath differes...');
+      handle = null;
+    }
+  }
+
+  if(handle == null)
+  {
+    UsdStageDictLock lock = Singleton_init( "UsdStageDictLock", UsdStageDictLock());
+    UsdStageDictLockBracket bracket(lock);
+    {
+      UsdStageDict stageDict = Singleton_init( "UsdStageDict", UsdStageDict() );
+      if(stageDict.handles.has(filePath))
+      {
+        handle = stageDict.handles.get(filePath, null);
+        // report('reusing existing handle');
+      }
+
+      if(handle == null)
+      {
+        FilePath resolvedPath = FilePath(filePath).expandEnvVars();
+        if(!resolvedPath.exists())
+        {
+          report('Usd stage file '+filePath+' does not exist.');
+          return false;
+        }
+        handle = UsdStageHandle(filePath);
+        stageDict.handles[filePath] = handle;
+        // report('opened new archive '+filePath);
+      }
+
+      clearPrims = true;
+    }
+  }
+
+  return handle != null;
+}
+
+/// \dfgPresetOmit
+public Boolean UsdStageDict_getPrim(String filePath, String primPath, io UsdStageHandle handle, io UsdPrim prim, io Boolean clearPrims)
+{
+  if(!UsdStageDict_getStage(filePath, handle, clearPrims))
+  {
+    prim = UsdPrim();
+    return false;
+  }
+
+  if(!prim.cxx_IsValid() || clearPrims)
+    prim = handle.stage.GetPrimAtPath(primPath);
+
+  return prim.cxx_IsValid();
+}

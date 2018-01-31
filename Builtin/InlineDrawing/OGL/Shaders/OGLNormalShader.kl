@@ -1,0 +1,90 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+
+/**
+\versionadded 1.12.0
+
+The OGLNormalShader inherits the OGLInlineShader. It extends the OGLInlineShader for shading with flat colors, using the geometry normal for the diffuse.
+
+\rst
+Attributes
+----------
+=============== ============ =====================================
+Name            Type         Description
+=============== ============ =====================================
+positions       Vec3         Geometry positions
+normals         Vec3         Geometry normals
+=============== ============ =====================================
+\endrst
+
+\example
+  InlineDrawing draw = OGLInlineDrawing();
+  InlineShader shader = draw.registerShader(OGLNormalShader);
+  InlineMaterial mat = shader.getOrCreateMaterial('normals');
+\endexample
+\dfgPresetOmit
+*/
+object OGLNormalShader: OGLInlineShader {};
+
+/// default constructor
+function OGLNormalShader() {
+  // Avoid calling the init method if this default constructor is being invoked 
+  // during the construction of a derived object.
+  if(this.type() == OGLNormalShader)
+    this.init(String(this.type()));
+}
+
+/// default constructor taking a name
+function OGLNormalShader(String name) {
+  this.init(name);
+}
+
+/// initialize the OGLNormalShader using name
+/// \internal
+function OGLNormalShader.init!(String name) {
+  this.name = name;
+  this.setVertexCode("
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+      
+      uniform mat4 u_viewMatrix;
+      uniform mat4 u_projection;
+      uniform mat4 u_modelMatrix;
+      uniform mat3 u_normalMatrix;
+
+      attribute vec4 positions;
+      attribute vec3 normals;
+
+      varying vec3 v_normal;
+
+      void main(){
+        v_normal = u_normalMatrix * normals;
+        gl_Position = u_projection * (u_viewMatrix * (u_modelMatrix * positions));
+      }
+    ");
+  this.setFragmentCode("
+      #version 120 // We require OpenGL 2.1 for InlineDrawing, which supports GLSL 1.2
+      
+      varying vec3 v_normal;
+
+      void main() {
+        vec4 final_color;
+        vec3 N = normalize(v_normal);
+
+        final_color.x = 0.5 + N.x * 0.5;
+        final_color.y = 0.5 + N.y * 0.5;
+        final_color.z = 0.5 + N.z * 0.5;
+
+        gl_FragColor = final_color;
+      }
+    ");  
+  this.defineUniform(InlineUniform("u_viewMatrix", Mat44()));
+  this.defineUniform(InlineUniform("u_projection", Mat44()));
+  this.defineUniform(InlineUniform("u_modelMatrix", Mat44()));
+  this.defineUniform(InlineUniform("u_normalMatrix", Mat33()));
+  this.defineAttribute('positions', "Vec3");
+  this.defineAttribute('normals', "Vec3");
+}
+

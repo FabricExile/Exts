@@ -1,0 +1,59 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+/// returns true if a singleton with a given name exists
+function Boolean Singleton_has(String key) = "Singleton_has";
+
+/// stores a singleton
+function Singleton_set(String key, Object obj) = "Singleton_set";
+
+/// inits a singleton: sets it only if 'null', and returns set value.
+/// The returned should be used if the singleton needs to be unique among threads.
+function Object Singleton_init(String key, Object obj) = "Singleton_init";
+
+/// retrieves a singleton
+function Object Singleton_get(String key) = "Singleton_get";
+
+/// deletes a singleton
+function Boolean Singleton_remove(String key) = "Singleton_remove";
+
+/// deletes all known singletons that have the removeOnNewScene flag set
+function Singleton_onNewScene() = "Singleton_onNewScene";
+
+/// deletes all known singletons (ignores the removeOnNewScene flag)
+function Singleton_removeAll() = "Singleton_removeAll";
+
+// returns the singleton's removeOnNewScene flag value
+function Boolean Singleton_getRemoveOnNewScene(String key) = "Singleton_getRemoveOnNewScene";
+
+/// sets the singleton's removeOnNewScene flag value
+/// and returns true on success
+function Boolean Singleton_setRemoveOnNewScene(String key, Boolean state) = "Singleton_setRemoveOnNewScene";
+
+/// Checks if a singleton exists with this key. If not, a new object is created from the passed-in type.
+/// This allows to create an Object only when possible.
+Ref<Object> GetOrCreateSingleton( String key, Type singletonObjectType, Boolean removeOnNewScene ) {
+  Object value = Singleton_get( key );
+  if( !value ) {
+    // Singleton_init ensures thread safety. Another one might be returned in race conditions.
+    value = Singleton_init( key, singletonObjectType.createNew() );
+    Singleton_setRemoveOnNewScene( key, removeOnNewScene );
+  }
+  return value;
+}
+
+/// Checks if a singleton exists with this key. If not, a new object is created from the passed-in type.
+/// This allows to create an Object only when possible.
+inline Ref<Object> GetOrCreateSingleton( String key, Type singletonObjectType ) {
+  return GetOrCreateSingleton( key, singletonObjectType, false );
+}
+
+OnNewScene() {
+  Ref<AppEventSingleton> singl = GetOrCreateSingleton( "AppEventSingl", AppEventSingleton );
+  singl.onAppEvent(AppEvent_newScene);
+}
+
+OnAppEvent(String name) {
+  Ref<AppEventSingleton> singl = GetOrCreateSingleton( "AppEventSingl", AppEventSingleton );
+  singl.onAppEvent(name);
+}

@@ -1,0 +1,594 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+require FabricStatistics;
+
+//Structures used for raycast & getClosest
+
+/// This interface enables to abstract the content of a queried object for raycast queries,
+/// enabling for specialization of its content (eg: polygons, geometries).
+/// \note The RaycastResult object must properly support the 'clone' operation
+interface RaycastResult {
+
+  /// Resets the content of the query (new raycast beginning)
+  reset!( Vec3 start, Vec3 unitDir, Boolean doubleSided, Scalar coneThreshold );
+
+  /// If the raycast resulting distance is <= maxDistance, returns 'true'
+  /// and the object should preserve location information for that best candidate.
+	Boolean compareAndUpdate!( Size objectIndex, out Scalar maxDistance );
+
+  /// Sets the resulting raycast location from the other RaycastResult (same type)
+  copyResultFrom!( Ref<RaycastResult> other );
+};
+
+/// This interface enables to abstract the content of a queried object for getClosest queries,
+/// enabling for specialization of its content (eg: polygons, geometries).
+/// \note the ClosestResult object must properly support the 'clone' operation
+interface ClosestResult {
+
+  /// Resets the content of the query (new getClosest beginning).
+  /// If 'hasScaling', then 'scaling' will contain a non-uniform scaling vector.
+  /// Else, 'scaling' will be Vec3(1,1,1).
+  reset!( Vec3 position, Vec3 scaling, Boolean hasScaling );
+
+  /// If the getClosest resulting squared scaled distance is <= maxScaledSquaredDistance, returns 'true'
+  /// and the object should preserve location information for that best candidate.
+	Boolean compareAndUpdate!( Size objectIndex, out Scalar maxScaledSquaredDistance );
+
+  /// Sets the resulting getClosest location from the other ClosestResult (same type)
+  copyResultFrom!( Ref<ClosestResult> other );
+};
+
+/// \internal
+struct QueryHeapItem {
+  UInt32 cellIndex;//Important: cellIndex == 0 will be sorted 'first' if same distance.
+  UInt32 cellDepth;
+  UInt32 objIndex;
+  Scalar distFactor;
+};
+
+/// \internal
+struct QueryHeap {
+  QueryHeapItem heapItems[];
+  Size heapItemsEnd;//heapItems only grows to avoid reallocs
+};
+
+/// \internal
+struct SpatialQueryData {
+  IndexSet visitedItems;
+  BitVector tempBits;
+  QueryHeap heap;
+
+  Object userData;//Spatial accelerations can store what they need here
+};
+
+inline SpatialQueryData.cleanup!( Boolean clearTempBits ) {
+  this.visitedItems.clear();
+  if( clearTempBits )
+    this.tempBits.clearAll();
+  this.heap.reset();
+}
+
+inline Size SpatialQueryData.getQueriedElement( Size index ) {
+  if( index > this.visitedItems.size() )
+    throw("SpatialQueryData.getQueriedElement: index out of range");
+  return this.visitedItems.indices[index];
+}
+
+inline QueryHeap.reset!() {
+  this.heapItemsEnd = 0;
+}
+
+inline Size QueryHeap.size() {
+  return this.heapItemsEnd;
+}
+
+inline QueryHeap.insert!( QueryHeapItem item) {
+  Size child = this.heapItemsEnd;
+  if( child == this.heapItems.size() )
+    this.heapItems.push(item);
+  else
+    this.heapItems[child] = item;
+  ++this.heapItemsEnd;
+
+  while (child > 0) {
+    Size parent = (child - 1) / 2;
+    if( !this.heapItems[parent].closerThan(this.heapItems[child]) ) {
+      QueryHeapItem temp = this.heapItems[parent];
+      this.heapItems[parent] = this.heapItems[child];
+      this.heapItems[child] = temp;
+      child = parent;
+    } else
+      return;
+  }
+}
+
+//Sort by:
+// distance
+// then object < cell
+// then cell depth
+function Boolean QueryHeapItem.closerThan( QueryHeapItem other ) {
+  if( this.distFactor < other.distFactor )
+    return true;
+  if( this.distFactor == other.distFactor ) {
+    if( (this.cellIndex==0) != (other.cellIndex==0) ) {
+      //Same distance, but one is an object, and the other is a cell (
+      return this.cellIndex==0;
+    }
+    return this.cellDepth > other.cellDepth;
+  }
+  return false;
+}
+
+inline QueryHeap.trickleDown!(Size start) {
+  //Trickle down
+  Size root = start;
+  while ( root*2+1 < this.heapItemsEnd ) {
+    Size child = 2*root + 1;
+    if ((child + 1 < this.heapItemsEnd) && !this.heapItems[child].closerThan( this.heapItems[child+1] ) )
+      child += 1;
+
+    if (!this.heapItems[root].closerThan( this.heapItems[child] ) ) {
+      QueryHeapItem temp = this.heapItems[root];
+      this.heapItems[root] = this.heapItems[child];
+      this.heapItems[child] = temp;
+      root = child;
+    }
+    else
+      break;
+  }
+}
+
+function QueryHeap.reverseSort!() {
+  Integer count = this.heapItemsEnd;//Integer: loop can go in negative numbers
+ 
+  //heapify
+  for( Integer start = (count-2)/2; start >=0; start-- )
+    this.trickleDown( start );
+
+  for ( Integer end = count-1; end > 0; end--) {
+    --this.heapItemsEnd;
+    QueryHeapItem temp = this.heapItems[0];
+    this.heapItems[0] = this.heapItems[end];
+    this.heapItems[end] = temp;
+    this.trickleDown( 0 );
+  }
+  this.heapItemsEnd = count;
+}
+ 
+inline Boolean QueryHeap.popMin!(io QueryHeapItem item) {
+  if( this.heapItemsEnd ) {
+    item = this.heapItems[0];
+    --this.heapItemsEnd;
+    this.heapItems[0] = this.heapItems[this.heapItemsEnd];
+    this.trickleDown(0);
+
+    return true;
+  } else
+    return false;
+}
+
+inline Boolean QueryHeap.getMin!(io QueryHeapItem item) {
+  if( this.heapItemsEnd ) {
+    item = this.heapItems[0];
+    return true;
+  } else
+    return false;
+}
+
+/// Here, we sort of re-implement manually map-reduce, so we can share per-thread allocated data, which is not possible with map-reduce
+/// \internal
+operator RaycastNoAcceleration<<<index>>>( Size objectCount, Size batchSize, io Scalar maxDist[8], io RaycastResult results[8] ) {
+  Size start = index*batchSize;
+  Size end = start + batchSize;
+  if( end > objectCount )
+    end = objectCount;
+
+  for( Size i = start; i < end; ++i )
+    results[index].compareAndUpdate( i, maxDist[index] );
+}
+
+/// \internal
+inline GetBatchCountAndSize_min1_max8( Size objectCount, io Size batchCount, io Size batchSize ) {
+  batchSize = objectCount / 7;
+  if( batchSize < 100 )
+    batchSize = 100;
+  batchCount = ( objectCount + (batchSize-1) ) / batchSize;//Batch count: from 0 to 8
+  if( batchCount == 0 )
+    batchCount = 1;
+}
+
+/// Here, we sort of re-implement manually map-reduce, so we can share per-thread allocated data, which is not possible with map-reduce
+/// \internal
+operator GetClosestNoAcceleration<<<index>>>( Size objectCount, Size batchSize, io Scalar maxDist[8], io ClosestResult results[8] ) {
+  Size start = index*batchSize;
+  Size end = start + batchSize;
+  if( end > objectCount )
+    end = objectCount;
+
+  for( Size i = start; i < end; ++i )
+    results[index].compareAndUpdate( i, maxDist[index] );
+}
+
+/// \internal
+inline Boolean _insideBBox( Vec3 min, Vec3 max, Vec3 point ) {
+  return( point.x >= min.x && point.x <= max.x &&
+          point.y >= min.y && point.y <= max.y &&
+          point.z >= min.z && point.z <= max.z);
+}
+
+/// \internal
+struct RayQueryData {
+
+  //Constants
+  Vec3 start;
+  Vec3 unitDir;
+
+  Scalar start3[3];//Used only for bbox tests
+  Scalar unitDir3[3];//Used only for bbox tests
+
+  Integer dirSign3[3];//Used only for bbox tests
+  Scalar absInvUnitDir3[3];//Used only for bbox tests
+
+  Boolean doubleSided;
+  Boolean bidirectional;
+  Scalar coneThreshold;
+
+  //Current values
+  Scalar startFactor;
+  Scalar distFactor;
+  Ref<RaycastResult> bestResult;
+};
+
+function RayQueryData(Ray ray, Boolean doubleSided, Scalar maxDistance, Ref<RaycastResult> result) {
+  //Prepare direction-related constants to accelerate computations
+  this.start = ray.start;
+  this.unitDir = ray.direction.unit_safe();
+  this.doubleSided = doubleSided;
+  this.bidirectional = false;
+
+  this.distFactor = maxDistance;
+  if( result ) {
+    this.bestResult = result;
+    this.bestResult.reset( this.start, this.unitDir, doubleSided, 0 );
+  }
+
+  this._initComponents();
+}
+
+//intersectionLineType: 0 == line, 1 == semi-line, 2 == segment
+function RayQueryData(Vec3 lineStart, Vec3 lineEnd, UInt8 intersectionLineType) {
+  //Prepare direction-related constants to accelerate computations
+  this.start = lineStart;
+
+  Vec3 direction = lineEnd - lineStart;
+  Scalar length = direction.length();
+  this.distFactor = intersectionLineType == 2 ? length : SCALAR_INFINITE;
+  this.unitDir = !Math_badDivisor( length ) ? (direction / length) : Vec3(0,1,0);
+  this.doubleSided = true;
+  this.bidirectional = intersectionLineType == 0;
+
+  this._initComponents();
+}
+
+function RayQueryData._initComponents!() {
+  for( UInt8 i = 0; i < 3; ++i ) {
+    Scalar comp = this.unitDir.component(i);
+    this.unitDir3[i] = comp;
+    this.start3[i] = this.start.component(i);
+    if( comp < -1.0e-6 )
+      this.dirSign3[i] = -1;
+    else if( comp > 1.0e-6 )
+      this.dirSign3[i] = 1;
+    if( this.dirSign3[i] != 0 )
+      this.absInvUnitDir3[i] = 1.0/abs(comp);
+  }
+}
+
+/// \internal
+inline intersectBBoxFromInside( Vec3 min, Vec3 max, RayQueryData rayData, io Scalar intersectUnitDirFactor, io UInt8 side ) {
+  side = 0;
+  Scalar minDistFactor = 1.0e100;
+  for( UInt8 i = 0; i < 3; ++i ) {
+    if( rayData.dirSign3[i] != 0 ) {
+      Scalar axisDist;
+      if( rayData.dirSign3[i] == -1 )
+        axisDist = rayData.start3[i] - min.component(i);
+      else
+        axisDist = max.component(i) - rayData.start3[i];
+      Scalar distFactor = axisDist * rayData.absInvUnitDir3[i];
+      if( distFactor < minDistFactor ) {
+        side = i;
+        minDistFactor = distFactor;
+      }
+    }
+  }
+  intersectUnitDirFactor = minDistFactor;
+}
+
+/// \internal
+inline Boolean intersectBBoxFromOutside( Vec3 min, Vec3 max, RayQueryData rayData, io Scalar intersectUnitDirFactor ) {
+  Size maxDistComp = 3;
+  Scalar maxDistFactor = -1.0e-6;
+  for( UInt8 i = 0; i < 3; ++i ) {
+    if( rayData.dirSign3[i] != 0 ) {
+      Scalar axisDist;
+      if( rayData.dirSign3[i] == -1 )
+        axisDist = rayData.start3[i] - max.component(i);
+      else
+        axisDist = min.component(i) - rayData.start3[i];
+      Scalar distFactor = axisDist * rayData.absInvUnitDir3[i];
+      if( distFactor > maxDistFactor ) {
+        maxDistComp = i;
+        maxDistFactor = distFactor;
+      }
+    }
+  }
+  if( maxDistComp == 3 || maxDistFactor > rayData.distFactor )
+    return false;
+
+  Vec3 pos = maxDistFactor*rayData.unitDir + rayData.start;
+  Scalar relativeEpsilon = maxDistFactor*1.0e-6;
+
+  if( maxDistComp != 0 && (pos.x < min.x-relativeEpsilon || pos.x > max.x+relativeEpsilon) )
+    return false;
+  if( maxDistComp != 1 && (pos.y < min.y-relativeEpsilon || pos.y > max.y+relativeEpsilon) )
+    return false;
+  if( maxDistComp != 2 && (pos.z < min.z-relativeEpsilon || pos.z > max.z+relativeEpsilon) )
+    return false;
+
+  intersectUnitDirFactor = maxDistFactor;
+  return true;
+}
+
+/// \internal
+inline Boolean intersectBBox( Vec3 min, Vec3 max, RayQueryData rayData, io Scalar intersectUnitDirFactor ) {
+  if( _insideBBox( min, max, rayData.start ) ) {
+    intersectUnitDirFactor = 0;
+    return true;
+  }
+  if( !rayData.bidirectional )
+    return intersectBBoxFromOutside( min, max, rayData, intersectUnitDirFactor );
+
+  Size maxDistComp = 3;
+  Scalar maxDistFactor = -1.0e-6;
+  Boolean maxFlip;
+  for( UInt8 i = 0; i < 3; ++i ) {
+    if( rayData.dirSign3[i] != 0 ) {
+      Scalar axisDist;
+      Boolean flip;
+      if( rayData.start3[i] <= min.component(i) ) {
+        axisDist = min.component(i) - rayData.start3[i];
+        flip = rayData.dirSign3[i] == -1;
+      }
+      else {
+        axisDist = rayData.start3[i] - max.component(i);
+        flip = rayData.dirSign3[i] == 1;
+      }
+      Scalar distFactor = axisDist * rayData.absInvUnitDir3[i];
+      if( distFactor > maxDistFactor ) {
+        maxDistComp = i;
+        maxDistFactor = distFactor;
+        maxFlip = flip;
+      }
+    }
+  }
+  if( maxDistComp == 3 || maxDistFactor > rayData.distFactor )
+    return false;
+
+  Scalar signedMaxDistFactor = maxFlip ? -maxDistFactor : maxDistFactor;
+  Vec3 pos = signedMaxDistFactor *rayData.unitDir + rayData.start;
+  Scalar relativeEpsilon = maxDistFactor*1.0e-6;
+
+  if( maxDistComp != 0 && (pos.x < min.x-relativeEpsilon || pos.x > max.x+relativeEpsilon) )
+    return false;
+  if( maxDistComp != 1 && (pos.y < min.y-relativeEpsilon || pos.y > max.y+relativeEpsilon) )
+    return false;
+  if( maxDistComp != 2 && (pos.z < min.z-relativeEpsilon || pos.z > max.z+relativeEpsilon) )
+    return false;
+
+  intersectUnitDirFactor = signedMaxDistFactor;
+  return true;
+}
+
+Boolean RayIntersectsBBox( Ray ray, Box3 bbox, Scalar maxDistance ) {
+  if( BBoxContains( bbox.min, bbox.max, ray.start ) )
+    return true;
+
+  RayQueryData rayData( ray, true, maxDistance, null );
+  Scalar distance;
+  return intersectBBoxFromOutside( bbox.min, bbox.max, rayData, distance );
+}
+
+/// \internal
+struct ClosestQueryData {
+  //Constants
+  Vec3 position;
+  Vec3 scaling;
+  Boolean hasScaling;
+
+  //Current values
+  Scalar maxScaledSquaredDist;
+  Ref<ClosestResult> bestResult;
+};
+
+/// \internal
+inline Scalar getScaledSquaredDistance( Vec3 pos, ClosestQueryData closestData ) {
+  Vec3 vector = closestData.position - pos;
+  if( closestData.hasScaling )
+    return ( vector * closestData.scaling ).lengthSquared();
+  else
+    return vector.lengthSquared();
+}
+
+/// \internal
+inline Scalar getBBoxSquaredDistance( Vec3 min, Vec3 max, ClosestQueryData closestData ) {
+  return getScaledSquaredDistance(bBoxGetClosestPoint( min, max, closestData.position ), closestData );
+}
+
+/// \internal
+function Raycast( 
+    Size objectCount, 
+    Ray ray, 
+    Boolean doubleSided, 
+    Scalar coneThreshold, 
+    Scalar maxDistance,
+    io Ref<RaycastResult> raycastResult ) {
+
+  Size batchCount, batchSize;
+  GetBatchCountAndSize_min1_max8( objectCount, batchCount, batchSize );
+
+  Vec3 unitDir =   ray.direction.unit_safe();
+  Scalar maxDist[8];
+  RaycastResult results[8];
+  for( Size i = 0; i < batchCount; ++i ) {
+    maxDist[i] = maxDistance;
+    if( i == 0 )
+      results[i] = raycastResult;
+    else
+      results[i] = results[0].clone();//Don't use closestResult; it's "identity" on Ref<>
+    results[i].reset( ray.start, unitDir, doubleSided, coneThreshold );
+  }
+  if( batchCount == 1 ) {
+    for( Size i = 0; i < objectCount; ++i )
+      results[0].compareAndUpdate( i, maxDist[0] );
+  } else
+    RaycastNoAcceleration<<<batchCount>>>(objectCount, batchSize, maxDist, results);
+  Scalar minDist = maxDist[0];
+  for( Size i = 1; i < batchCount; ++i ) {
+    if(maxDist[i] < minDist) {
+      minDist = maxDist[i];
+      raycastResult.copyResultFrom( results[i] );
+    }
+  }
+}
+
+/// \internal
+function GetClosest( 
+  Size objectCount,
+  Vec3 position, 
+  Vec3 scaling, 
+  Scalar maxUnscaledDistance,
+  io Ref<ClosestResult> closestResult ) {
+
+  Size batchCount, batchSize;
+  GetBatchCountAndSize_min1_max8( objectCount, batchCount, batchSize );
+  Boolean hasScaling = abs(scaling.x-1.0)>1.0e-5 || abs(scaling.y-1.0)>1.0e-5 || abs(scaling.z-1.0)>1.0e-5;
+  Scalar maxDist[8];
+  ClosestResult results[8];
+  for( Size i = 0; i < batchCount; ++i ) {
+    maxDist[i] = maxUnscaledDistance*maxUnscaledDistance;
+    if( i == 0 )
+      results[i] = closestResult;
+    else
+      results[i] = results[0].clone();//Don't use closestResult; it's "identity" on Ref<>
+    results[i].reset( position, scaling, hasScaling );
+  }
+  if( batchCount == 1 ) {
+    for( Size i = 0; i < objectCount; ++i )
+      results[0].compareAndUpdate( i, maxDist[0] );
+  } else 
+    GetClosestNoAcceleration<<<batchCount>>>(objectCount, batchSize, maxDist, results);
+  Scalar minDist = maxDist[0];
+  for( Size i = 1; i < batchCount; ++i ) {
+    if(maxDist[i] < minDist) {
+      minDist = maxDist[i];
+      closestResult.copyResultFrom( results[i] );
+    }
+  }
+}
+
+/// Helpers & types for accumulating and sorting multiple GeometryLocations
+/// \internal
+struct GeometryLocationAccumulator {
+  GeometryLocation locations[];
+  QueryHeap heap;
+};
+
+inline GeometryLocationAccumulator.reset!() {
+  this.heap.reset();
+}
+
+function GeometryLocationAccumulator.push!( GeometryLocation location, Scalar distFactor ) {
+  if( this.heap.heapItemsEnd == this.locations.size() )
+    this.locations.resize( this.heap.heapItemsEnd+1 );
+  if( this.heap.heapItemsEnd == this.heap.heapItems.size() )
+    this.heap.heapItems.resize( this.heap.heapItemsEnd+1 );
+
+  QueryHeapItem item;
+  item.objIndex = this.heap.heapItemsEnd;
+  item.distFactor = distFactor;
+  this.heap.heapItems[this.heap.heapItemsEnd] = item;
+  this.locations[this.heap.heapItemsEnd] = location;
+
+  ++this.heap.heapItemsEnd;
+}
+
+inline GeometryLocationAccumulator.sort!() {
+  this.heap.reverseSort();
+}
+
+inline Size GeometryLocationAccumulator.size() {
+  return this.heap.size();
+}
+
+inline GeometryLocation GeometryLocationAccumulator.getSortedLocation( Size index ) {
+  //Reverse index (since was reverse sorted)
+  Size locatorIndex = this.heap.heapItems[this.heap.size() - 1 - index].objIndex;
+  return this.locations[locatorIndex];
+}
+
+inline Scalar GeometryLocationAccumulator.getSortedDistance( Size index ) {
+  //Reverse index (since was reverse sorted)
+  return this.heap.heapItems[this.heap.size() - 1 - index].distFactor;
+}
+
+inline GeometryLocationAccumulator.markAsDuplicate!( Size index ) {
+  this.heap.heapItems[this.heap.size() - 1 - index].distFactor = -SCALAR_INFINITE;
+}
+
+function GeometryLocationAccumulator.removeDuplicates!() {
+  Size target;
+  for( Size i = 0; i < this.heap.heapItemsEnd; ++i ) {
+    if( this.heap.heapItems[i].distFactor != -SCALAR_INFINITE ) {
+      if( target != i )
+        this.heap.heapItems[target] = this.heap.heapItems[i];
+      target++;
+    }
+  }
+  this.heap.heapItemsEnd = target;
+}
+
+function GeometryLocationAccumulator.filterSortedAccumulatedLocations!( Ref<SpatialQueryable> owner, Scalar duplicateDistEps ) {
+  Size count = this.size();
+  if( count <= 1 )
+    return;
+
+  //Filter equivalent locations (eg: exactly at edge or point, so on 2 or more triangles)
+  Scalar prevDist = this.getSortedDistance( 0 );
+  Boolean hadDuplicates;
+  for( Size i = 1; i < count; ++i ) {
+    Scalar dist = this.getSortedDistance( i );
+    if( abs( prevDist - dist ) < duplicateDistEps ) {
+      GeometryLocation loc0 = this.getSortedLocation( i - 1 );
+      GeometryLocation loc1 = this.getSortedLocation( i );
+      if( owner.areGeometryLocationsEquivalent( loc0, loc1 ) ) {
+        hadDuplicates = true;
+        this.markAsDuplicate( i - 1 );
+      }
+    }
+    prevDist = dist;
+  }
+  if( hadDuplicates )
+    this.removeDuplicates();
+}
+
+function GeometryLocationAccumulator.sortAndFilterAccumulatedLocations!( Ref<SpatialQueryable> owner, Scalar duplicateDistEps ) {
+  Size count = this.size();
+  if( count <= 1 )
+    return;
+
+  this.sort();
+  this.filterSortedAccumulatedLocations( owner, duplicateDistEps );
+}

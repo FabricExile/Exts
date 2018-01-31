@@ -1,0 +1,72 @@
+//
+// Copyright 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+require SQLite3;
+
+object SQLite3DataBase
+{
+  protected sqlite3 db;
+  protected Boolean debug;
+};
+
+function SQLite3DataBase()
+{
+  SInt32 rc = sqlite3_open(':memory:', this.db);
+  if(rc != SQLITE_OK)
+    throw('SQLite3DataBase(): Error code '+rc);
+  this.debug = false;
+}
+
+function SQLite3DataBase(String filePath)
+{
+  SInt32 rc = sqlite3_open(filePath, this.db);
+  if(rc != SQLITE_OK)
+    throw('SQLite3DataBase("'+filePath+'"): Error code '+rc);
+  this.debug = false;
+}
+
+function ~SQLite3DataBase()
+{
+  SInt32 rc = sqlite3_close(this.db);
+  if(rc != SQLITE_OK)
+    throw('~SQLite3DataBase(): '+sqlite3_errmsg(this.db));
+}
+
+function SQLite3DataBase.setDebug!(Boolean debug)
+{
+  this.debug = debug;
+}
+
+function sqlite3_records SQLite3DataBase.execute(String sql)
+{
+  if(this.debug)
+    report(sql);
+
+  sqlite3_records records;
+  String errors = sqlite3_exec(this.db, sql, records);
+  if(errors.length() > 0)
+    throw("SQLite3DataBase.select('"+sql+"'): "+errors);
+  return records;
+}
+
+function sqlite3_records SQLite3DataBase.select(String sql)
+{
+  return this.execute(sql);
+}
+
+function SInt64 SQLite3DataBase.insert(String sql)
+{
+  this.execute(sql);
+  return sqlite3_last_insert_rowid(this.db);
+}
+
+function SQLite3DataBase.update(String sql)
+{
+  this.execute(sql);
+}
+
+function SQLite3DataBase.delete(String sql)
+{
+  this.execute(sql);
+}

@@ -1,0 +1,80 @@
+//
+// Copyright 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/// \internal
+struct Bt2World_DrawRbdInfo
+{
+  StaticInlineTransform transform;
+  SimpleInlineInstance instance;
+  SInt32 bodyIdxs[];
+};
+
+/// \internal
+struct Bt2World_DrawSbdInfo
+{
+  StaticInlineTransform transform;
+  SimpleInlineInstance instance;
+  SInt32 bodyIdx;
+};
+
+/// \dfgPresetDefault enable true
+function Bt2World.setupDebugDrawing!(Boolean enable)
+{
+  if(enable && !this.handle)
+  {
+    this.drawRbdInfos.clear();
+    this.drawSbdInfos.clear();
+    this.drawShapes.clear();
+    this.handle = DrawingHandle(this.uid()+'_Bt2World');
+  }
+  else if(!enable)
+  {
+    this.drawRbdInfos.clear();
+    this.drawSbdInfos.clear();
+    this.drawShapes.clear();
+    this.handle.clear();
+    this.handle = null;
+  }
+}
+
+/// \dfgPresetDefault enable true
+function Bt2World.useWireFrame!(Boolean enable)
+{
+  if(this.handle)
+  {
+    InlineDrawing draw = this.handle.getDrawing();
+    OGLWireFrameShader shader = draw.registerShader(OGLWireFrameShader('Bt2WorldSurfaceShader', OGLSurfaceShader()));
+    shader.setWireFrame(enable);
+  }
+}
+
+function DrawingHandle Bt2World.getDrawingHandle()
+{
+  return this.handle;
+}
+
+private Bt2World.updateDebugDrawing!()
+{
+  if(!this.handle)
+    return;
+
+  if(!this.dynamicsWorld.cxx_isValid())
+    return;
+
+  for(index, pair in this.drawRbdInfos)
+  {
+    InlineTransform transform = pair.transform;
+    for(Size i=0;i<pair.bodyIdxs.size();i++)
+    {
+      Bt2RigidBody body = this.getRigidBody(pair.bodyIdxs[i]);
+      transform.setLocalXfo(i, body.getXfo());
+    }
+  }
+
+  for(index, pair in this.drawSbdInfos)
+  {
+    Bt2SoftBody body = this.getSoftBody(pair.bodyIdx);
+    body.updateGeometry();
+  }
+}

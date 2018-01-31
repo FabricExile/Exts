@@ -1,0 +1,203 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+require FabricOGL;
+
+const Boolean ReportCodeAndMappingsOnError = true;
+
+const UInt32 OGLShader_notCompiled = 0;
+const UInt32 OGLShader_compileSucceeded = 1;
+const UInt32 OGLShader_compileFailed = 2;
+
+const Integer OGLShaderTypes[] = [GL_COMPUTE_SHADER, GL_VERTEX_SHADER, GL_TESS_CONTROL_SHADER, GL_TESS_EVALUATION_SHADER, GL_GEOMETRY_SHADER, GL_FRAGMENT_SHADER];
+const Size OGLShaderTypeCount = 6;
+
+object OGLShader_ : OGLBaseObject  {
+  String code;
+  String splitCodeLines[];//Cached if preprocessor
+
+  String glslVersion;
+  Integer glShaderType;//GL_VERTEX_SHADER or others
+  GLSLLineMapping lineMappings[];
+
+  UInt32 compileStatus;
+  String compileLog;
+};
+
+function ~OGLShader_() {
+  this.releaseGL();
+}
+
+function OGLShader_( String name, String code, Integer glShaderType ) {
+  this.name = name;
+  this.code = code;
+  this.glShaderType = glShaderType;
+}
+
+function OGLShader_( String name, String filePath, String code, Integer glShaderType, String preprocessorIncludePaths<> ) {
+  this.name = name;
+  this.code = GLSLPreprocessor_preProcess(
+    filePath,
+    code,
+    preprocessorIncludePaths,
+    this.glslVersion,
+    this.lineMappings,
+    this.splitCodeLines,
+    false //reportFilenamesOnly
+    );
+  //report("PRINTING shader code for "+name);
+  //GLSLPreprocessor_debugPrintLines(this.splitCodeLines);
+  this.glShaderType = glShaderType;
+}
+
+inline OGLShader_.releaseGL_contextValidated!( UInt32 bufferID ) {
+  glDeleteShader(this.bufferID);
+}
+
+function String GLShaderTypeToString( Integer glShaderType ) {
+  if( glShaderType == GL_COMPUTE_SHADER )
+    return "compute";
+  else if( glShaderType == GL_VERTEX_SHADER )
+    return "vertex";
+  else if( glShaderType == GL_TESS_CONTROL_SHADER)
+    return "tessControl";
+  else if( glShaderType == GL_TESS_EVALUATION_SHADER)
+    return "tessEvaluation";
+  else if( glShaderType == GL_GEOMETRY_SHADER)
+    return "geometry";
+  else if( glShaderType == GL_FRAGMENT_SHADER)
+    return "fragment";
+  else
+    return "<unknown>";
+}
+
+function UInt32 GLShaderTypeToIndex( Integer glShaderType ) {
+  if( glShaderType == GL_COMPUTE_SHADER )
+    return 0;
+  else if( glShaderType == GL_VERTEX_SHADER )
+    return 1;
+  else if( glShaderType == GL_TESS_CONTROL_SHADER)
+    return 2;
+  else if( glShaderType == GL_TESS_EVALUATION_SHADER)
+    return 3;
+  else if( glShaderType == GL_GEOMETRY_SHADER)
+    return 4;
+  else if( glShaderType == GL_FRAGMENT_SHADER)
+    return 5;
+  else
+    return InvalidIndex;
+}
+
+function OGLShader_.setCodeFromSplitLines!() {
+  this.code = '\n'.join( this.splitCodeLines );
+}
+
+function OGLShader_.reportCodeAndMappings() {
+  if( !this.lineMappings )
+    GLSLPreprocessor_debugPrintLines(this.splitCodeLines);
+  else {
+    Size line;
+    for( Size i = 0; i < this.lineMappings.size(); ++i ) {
+      report("<<<< Source file: " + this.lineMappings[i].resolvedPath +" >>>>");
+
+      for( Size j = 0; j < this.lineMappings[i].numLines; ++j ) {
+        report( "[" + (line+1) + " -> " + ( this.lineMappings[i].sourceFileLine + j + 1 ) + "] " + this.splitCodeLines[ this.lineMappings[i].outputFileLine + j ] );
+        ++line;
+      }
+    }
+  }
+}
+
+function OGLShader_.compile!( Boolean force, io Ref<OGLContext> context ) {
+  if( !force ) {
+    if( this.compileStatus == OGLShader_compileFailed )
+      return;
+    //Note: we need to check that bufferID is 0, since 'createParameter' / 'releaseGL' might have been called
+    if( this.compileStatus == OGLShader_compileSucceeded && this.bufferID != 0 )
+      return;
+  }
+
+  this.compileStatus = OGLShader_notCompiled;
+  this.compileLog = '';
+
+  if( !CheckOGLContextValidity( context ) ) {
+    setError("OGLShader.compile: OpenGL context not bound");
+    return;
+  }
+
+  if( this.bufferID == 0 ) {
+    this.bufferID = glCreateShader(this.glShaderType);
+    if (this.bufferID == 0) {
+      setError("OGLShader.compile " + this.getTraceName() + ": glCreateShader failed");
+      return;
+    }
+  }
+  if( this.tracingEnabled() )
+    report( "OGLShader: compiling " + this.getTraceName() + " (shaderID=" + this.bufferID + ")" );
+
+  // Load and compile the shader source
+  Integer strlens[1];
+  String srcs[1];
+  strlens[0] = this.code.length();
+  srcs[0] = this.code;
+
+  glShaderSource(this.bufferID, srcs.size(), srcs, strlens);
+  glCompileShader(this.bufferID);
+
+  // Check the compile status
+  Integer compiled[1];
+  Integer compiledExt<> = compiled;
+  glGetShaderiv(this.bufferID, GL_COMPILE_STATUS, compiledExt);
+
+  Integer infoLen[1];
+  Integer infoLenExt<> = infoLen;
+  glGetShaderiv(this.bufferID, GL_INFO_LOG_LENGTH, infoLenExt);
+
+  if (infoLen[0] > 1) {// > 1: some drivers report 1 byte strings containing '\0' (should not be treated as warning)
+
+    UInt32 bufferSize[];
+    UInt32 bufferTotalSize = 0;
+    for(Size i=0;i<infoLen.size();i++){
+      bufferSize.push(infoLen[i]);
+      bufferTotalSize += bufferSize[i];
+    }
+    glGetShaderInfoLog(this.bufferID, bufferTotalSize, bufferSize, this.compileLog);
+  }
+  else if (this.compileStatus == OGLShader_compileFailed) {
+    this.compileLog = '<Unknown reason>';
+  }
+
+  //Print errors or warnings, if any
+  if( Boolean(this.compileLog) && Boolean(this.lineMappings) )
+    this.compileLog = GLSLPreprocessor_errorMessageParser( this.compileLog, this.lineMappings );
+
+  if (compiled[0] == 0) {
+    this.compileStatus = OGLShader_compileFailed;
+    setError( "OGLShader.compile " + this.getTraceName() + ": failed:\n" + this.compileLog );
+
+    if( ReportCodeAndMappingsOnError )
+      this.reportCodeAndMappings();
+
+  } else if(compiled[0] == 1) {
+    this.compileStatus = OGLShader_compileSucceeded;
+    if( this.tracingEnabled() ) {
+      if( this.compileLog ) {
+        report( "OGLShader.compile " + this.getTraceName() + ": succeeded:\n" + this.compileLog );
+      } else
+        report( "OGLShader.compile " + this.getTraceName() + ": succeeded" );
+    }
+  } else {
+    this.compileStatus = OGLShader_compileSucceeded;
+    report( "OGLShader.compile " + this.getTraceName() + ": succeeded with warnings:\n" + this.compileLog );
+  }
+}
+
+inline OGLShader_.compile!( io Ref<OGLContext> context ) {
+  this.compile(false, context);
+}
+
+function Boolean OGLShader_.create!( io Ref<OGLContext> context ) {
+  this.compile(context);
+  return this.compileStatus == OGLShader_compileSucceeded;
+}

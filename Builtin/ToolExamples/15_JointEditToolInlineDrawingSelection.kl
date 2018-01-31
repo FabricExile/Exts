@@ -1,0 +1,239 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+using namespace Tool;
+
+/// The MoveChainInlineDrawingToolData object specializes MoveChainTransformTarget by implementing
+/// drawing and selection using InlineDrawing and related higher-level services.
+/// It also uses ItemReferences to hold and draw the highlit and selected components.
+///
+/// Another high-level way to do this which uses only the tool framework
+/// and not InlineDrawing is to use the Tool::BaseShape.getSelectionDrawableItem()
+/// service as done by GeometrySelectionTool.
+object MoveChainInlineDrawingToolData : MoveChainTransformTarget{
+  UInt32 highlightElement;
+
+  DrawingHandle pointsHandle, linesHandle;
+
+  SelectionManagerDrawList selectionDrawList;
+  ItemReferences highlightComponentsToDraw;
+  ItemReferences selectedComponentsToDraw;
+};
+
+MoveChainInlineDrawingToolData() {
+  this.pointsHandle = DrawingHandle();
+  this.linesHandle = DrawingHandle();
+  this.highlightComponentsToDraw = ItemReferences();
+  this.selectedComponentsToDraw = ItemReferences();
+  this.selectionDrawList = SelectionManagerDrawList();
+}
+
+/// We draw the component by creating a Points and a Lines geometry
+/// and drawing them with InlineDrawing. Also, we create
+/// ItemReferences that refer to their highlight/selected components
+/// so these can be drawn using the Tool::DrawItems service.
+MoveChainInlineDrawingToolData.updateInlineDrawingData!() {
+
+  this.clearDrawingData();
+
+  // Don't care about performance; keep it simple and rebuild all
+  Size jointCount = this.chain.jointXfos.size();
+  Points points();
+  points.resize( jointCount );
+
+  Lines lines();
+  lines.addPoints( jointCount );
+
+  // DrawingHandle.drawPoints requires explicit colors and sizes
+  ScalarAttribute sizesAttr = points.getOrCreateSizesAttribute();
+  ColorAttribute colors = points.attributes.getOrCreateColorAttribute( "vertexColors" );
+
+  Mat44 cumulativeTransform;
+  for( Size i = 0; i < jointCount; ++i ) {
+    cumulativeTransform = cumulativeTransform * this.chain.jointXfos[i].toMat44();
+
+    Vec3 pos = cumulativeTransform.translation();
+    lines.setPointPosition(i, pos );
+    points.setPointPosition( i, pos );
+    sizesAttr.values[i] = this.chain.jointDrawSize;
+    colors.values[i] = Color( 0.6f );
+
+    // Add line indices
+    if( i )
+      lines.addLine( i - 1, i );
+  }
+
+  Vec3 dummyResult;
+  InlineInstance instance = null;
+
+  this.pointsHandle.drawPoints( "points", Xfo(), points, dummyResult, instance );
+
+  //Ensure selection uses the right point size
+  InlinePointsShape pointsShape = instance.getShape();
+  pointsShape.setPointSize( this.chain.jointDrawSize );
+
+  // Add points to the selection draw list
+  Tool::InlineDrawingRender::AddSelectableInlineInstanceToList( instance, this.selectionDrawList );
+
+  this.linesHandle.drawLines( "lines", Color( 0.6f ), Color(), 0, Xfo(), lines, dummyResult, instance );
+
+  // Update highlight / selected components draw data,
+  // using the DrawableGeometryComponents services (which allows to draw
+  // components with the Tool::DrawItems helper).
+  // These refer to the InlineDrawing GL buffers in order to share them.
+  Size dummy[];
+  if( this.highlightElement != InvalidIndex ) {
+    Size indices[];
+    indices.push( this.highlightElement );
+    DrawableGeometryComponents drawableComponents( this.selectionDrawList.get( 0 ), this.selectionDrawList.getKey( 0 ), ComponentType_points, indices );
+    this.highlightComponentsToDraw.add( drawableComponents, dummy );
+  }
+
+  if( this.selectedElement != InvalidIndex ) {
+    Size indices[];
+    for( Size i = this.selectedElement; i < jointCount; ++i )
+      indices.push( i );
+
+    DrawableGeometryComponents drawableComponents( this.selectionDrawList.get( 0 ), this.selectionDrawList.getKey( 0 ), ComponentType_points, indices );
+    this.selectedComponentsToDraw.add( drawableComponents, dummy );
+  }
+}
+
+MoveChainInlineDrawingToolData.clearDrawingData!() {
+  this.pointsHandle.clear();
+  this.linesHandle.clear();
+  this.highlightComponentsToDraw.clear();
+  this.selectedComponentsToDraw.clear();
+  // Note: that also clears this.selectionDrawList since
+  // deleted InlineInstances will remove themselves from the list
+}
+
+/// This tool is similar to MoveChainLowLevelExampleTool however
+/// it uses InlineDrawing and higher level selection and component
+/// drawing services instead of directly drawing with OpenGL.
+/// Also, it implements the PathValueTool interface, which
+/// allows it to be registered as the default tool
+/// for editing ChainExampleData. To allow this, the tool
+/// is also registered in ToolExample::ExtDidLoad with a call
+/// to :kl-ref:`Tool::ToolManager.registerPathValueTool`.
+object MoveChainInlineDrawingExampleTool : Tool::BaseTool, PathValueTool{
+  MoveChainInlineDrawingToolData chainData;
+};
+
+MoveChainInlineDrawingExampleTool() {
+  this.chainData = MoveChainInlineDrawingToolData();
+
+  // Register to raw UI events so we get the mouse moves directly
+  this.registerToRawEvents( true, ToolsManagerEventPriority_raycastClick );
+}
+
+MoveChainInlineDrawingExampleTool.update!( String targetPath, ChainExampleData chainData ) {
+  this.chainData.update( targetPath, chainData );
+}
+
+/// Implementation of interface PathValueTool
+MoveChainInlineDrawingExampleTool.setTargetPath!( String path ) {
+  this.chainData.targetPath = path;
+}
+
+/// Implementation of interface PathValueTool
+String MoveChainInlineDrawingExampleTool.getTargetPath() {
+  return this.chainData.targetPath;
+}
+
+/// Implementation of interface PathValueTool
+MoveChainInlineDrawingExampleTool.valueChanged!( RTVal val ) {
+  this.chainData.update( this.chainData.targetPath, ChainExampleData( val ) );
+}
+
+/// Prepare the tool drawing data; delegate to the chainData which will create InlineDrawing instances
+MoveChainInlineDrawingExampleTool.selfUpdateDrawData!( io Tool::DrawContext context, io Boolean drawChildren ) {
+  if( this.isActive() )
+    this.chainData.updateInlineDrawingData();
+
+  this.parent.selfUpdateDrawData( context, drawChildren );
+}
+
+/// The tool is being deactivated; since we explicitly
+/// created InlineDrawing instances, clear these
+MoveChainInlineDrawingExampleTool.deactivating!( ) {
+  this.chainData.clearDrawingData();
+}
+
+/// This code is almost the same as in MoveChainLowLevelExampleTool.onRawEvent,
+/// however it uses MoveChainInlineDrawingToolData's selection list
+/// to which was built from InlineDrawing data.
+MoveChainInlineDrawingExampleTool.onRawEvent!( io Event event ) {
+  MouseEvent mouseEvent = event;
+  if( Boolean(mouseEvent) && !mouseEvent.isAccepted() ) {
+    Boolean mouseOver = !mouseEvent.buttons && mouseEvent.eventType() == Event_MouseMove;
+    Boolean mouseClick = (mouseEvent.buttons | mouseEvent.button ) == MouseButton_LeftButton && mouseEvent.eventType() == Event_MouseButtonPress;
+
+    if( mouseOver || mouseClick ) {
+
+      if( mouseClick )
+        this.chainData.selectedElement = InvalidIndex;
+
+      UInt32 itemIndices[];
+      UInt32 primitivesPerItem[][];
+
+      // Select the closest point that is under the mouse (rectangle of 6X6).
+      // The SelectionManager has a lot of flexibility in its options;
+      // see BaseSelectionTool for examples of advanced usage.
+      Ref<SelectionManager> selectionManager = GetSelectionManager();
+      selectionManager.select( this.chainData.selectionDrawList, GetCurrentEventContext().viewport,
+                               mouseEvent.pos - Vec2( 3 ), mouseEvent.pos + Vec2( 3 ), // select in a slightly larger window, so the mouse can be at a distance of 3 pixels
+                               SelectionMode_Points, // we are selecting points
+                               SelectedGroupType_closest, // select only the closest one (not all overlaps)
+                               false, // don't depth mask with geometry
+                               itemIndices, primitivesPerItem ); // results
+
+      if( itemIndices ) {
+        // We're selecting closest component only, so there must be one index only
+        Size jointIndex = primitivesPerItem[0][0];
+
+        if( this.chainData.highlightElement != jointIndex ) {
+          report( "Mouse is over joint #" + jointIndex );
+          this.chainData.highlightElement = jointIndex;
+        }
+
+        if( mouseClick ) {
+          // Change selected component. We could also check for modifiers (shift, ctrl) for
+          // adding/removing to/from selection. Also, instead of using a single selection, 
+          // we could use the generic, persistable ItemReferences container.
+          // See BaseSelectionTool for an example of how to implement these
+          // higher-level behaviors using the tool framework.
+          this.chainData.selectedElement = jointIndex;
+          report( "Selected joint #" + jointIndex );
+
+          // We use a TranslateDragInteraction to simplify the example.
+          // This maps mouse moves to Xfo translation changes, in viewport
+          // aligned space. Note that we cannot use the higher-level
+          // TranslateInViewportTool since we are not building a gizmo (3D handle)
+          // but rather working directly on the source data.
+          // We make this interaction temporary so it doesn't consume mouse clicks 
+          // that are not relevant to this tool (there might be other tools)
+          MouseClickDragInteraction interaction();
+          TranslateDragInteraction translateDrag( interaction, this.chainData );
+          translateDrag.deleteAfterDrag(true);// delete after this drag interaction
+          this.attachComponent( translateDrag );// need to attach first so its events are propagated to us (parent)
+          interaction.onStart();// Force start since we are already in mouse click
+          mouseEvent.accept();// Ensure another tool won't use that click
+        }
+      } else
+        this.chainData.highlightElement = InvalidIndex;
+
+      ToolChanged(); // Tell the tool manager that we need to redraw
+    }
+  }
+}
+
+/// We manage the drawing ourselves at the low level; call into MoveChainToolData.draw()
+MoveChainInlineDrawingExampleTool.postDraw!( Tool::DrawContext context, String drawPass, io Boolean drawChildren ) {
+  this.parent.postDraw( context, drawPass, drawChildren );
+  if( drawPass == MainRenderPass ) {// Draw in a pass compatible with InlineDrawing (actual depth)
+    DrawItems( this.chainData.selectedComponentsToDraw, context.viewport, Color( 1.0f, 0, 0 ), false );
+    DrawItems( this.chainData.highlightComponentsToDraw, context.viewport, Color( 1.0f ), false );
+  }
+}

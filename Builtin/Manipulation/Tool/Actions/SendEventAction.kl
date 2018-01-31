@@ -1,0 +1,128 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /**
+  \versionadded 2.6.0
+
+  The SendEventAction sends an event upon construction, and can send another one upon destruction (~SendEventAction).
+  Optionally, the event can be sent to the owning parent.
+
+  The action's do and undo can be linked to a BaseTool state and simplify tool's logic and data management (see :kl-ref:`Tool::BaseTool.attachAndDoStateSpecificAction` ).
+  The action can also be triggered (do + undo) by connected events; see :kl-ref:`Tool::BaseAction.connectToDo` and :kl-ref:`Tool::BaseAction.connectToUndo` .
+  See :ref:`TPG.state-actions` for more details and examples related to states and actions.
+
+  \endrst
+
+  */
+
+  /// Maps a source event to a sent event. The sent event can optionally be propagated to its parents.
+  /// \note Only events mapped with mapEventToEvent() will be translated and sent
+  object SendEventAction : BaseAction{
+    Boolean sendToParent;
+
+    ToolEvent doEvent;
+    ToolEvent undoEvent;
+    Boolean sentEvent;
+  };
+
+  SendEventAction() {
+    this.enableSendToParent( true );
+  }
+
+  SendEventAction( Boolean sendToParent ) {
+    this.enableSendToParent( sendToParent );
+  }
+
+  SendEventAction.enableSendToParent!( Boolean sendToParent ) {
+    this.sendToParent = sendToParent;
+  }
+
+  SendEventAction.connectAndAttach!( Ref<EventSource> eventSource, EventName sourceEventName, EventName name, String tag, Ref<Object> customData ) {
+    this.setDoEvent( name, tag, customData );
+    this.connectToDoAndAttach( eventSource, sourceEventName );
+  }
+  inline SendEventAction.connectAndAttach!( Ref<EventSource> eventSource, EventName sourceEventName, EventName name, String tag ) {
+    this.connectAndAttach( eventSource, sourceEventName, name, tag, null );
+  }
+  inline SendEventAction.connectAndAttach!( Ref<EventSource> eventSource, EventName sourceEventName, EventName name ) {
+    this.connectAndAttach( eventSource, sourceEventName, name, String(), null );
+  }
+
+  SendEventAction.connectUndoAndAttach!( Ref<EventSource> eventSource, EventName sourceEventName, EventName name, String tag, Ref<Object> customData ) {
+    this.setUndoEvent( name, tag, customData );
+    this.connectToUndoAndAttach( eventSource, sourceEventName );
+  }
+  inline SendEventAction.connectUndoAndAttach!( Ref<EventSource> eventSource, EventName sourceEventName, EventName name, String tag ) {
+    this.connectUndoAndAttach( eventSource, sourceEventName, name, tag, null );
+  }
+  inline SendEventAction.connectUndoAndAttach!( Ref<EventSource> eventSource, EventName sourceEventName, EventName name ) {
+    this.connectUndoAndAttach( eventSource, sourceEventName, name, String(), null );
+  }
+
+  SendEventAction.setDoEvent!( EventName name, String tag, Ref<Object> customData ) {
+    if( !name ) {
+      setError( "SendEventAction.setDoEvent: event has no name" );
+      return;
+    }
+    this.doEvent.name = name;
+    this.doEvent.tag = tag;
+    this.doEvent.sender = this;
+    this.doEvent.customData = customData;
+  }
+  SendEventAction.setDoEvent!( EventName name, String tag ) { this.setDoEvent( name, tag, null ); }
+  SendEventAction.setDoEvent!( EventName name ) { this.setDoEvent( name, String(), null ); }
+
+  SendEventAction.setUndoEvent!( EventName name, String tag, Ref<Object> customData ) {
+    if( !name ) {
+      setError( "SendEventAction.setUndoEvent: event has no name" );
+      return;
+    }
+    this.undoEvent.name = name;
+    this.undoEvent.tag = tag;
+    this.undoEvent.sender = this;
+    this.undoEvent.customData = customData;
+  }
+  SendEventAction.setUndoEvent!( EventName name, String tag ) { this.setUndoEvent( name, tag, null ); }
+  SendEventAction.setUndoEvent!( EventName name ) { this.setUndoEvent( name, String(), null ); }
+
+  /// \internal
+  SendEventAction.doAction!( ) {
+    UInt32 propagationType = this.sendToParent ? EventPropagationType_parent : EventPropagationType_none;
+    this.doEvent.propagationType = propagationType;
+    this.sendEventToListeners( this.doEvent.name, propagationType, this.doEvent.tag, this.doEvent.customData );
+    this.propagateEvent( this.doEvent, ToolEventUserID() );//Send to parent if applicable
+    this.sentEvent = true;
+    this.parent.doAction();
+  }
+
+  /// \internal
+  /// Non-virtual version that can be safely called from the destructor
+  /// This can be removed once KL is fixed to not call specialized methods in destructors
+  SendEventAction.undoActionInternal!( ) {
+    if( this.sentEvent && Boolean( this.undoEvent.name ) ) {
+      UInt32 propagationType = this.sendToParent ? EventPropagationType_parent : EventPropagationType_none;
+      this.undoEvent.propagationType = propagationType;
+      this.sendEventToListeners( this.undoEvent.name, propagationType, this.undoEvent.tag, this.undoEvent.customData );
+      this.propagateEvent( this.undoEvent, ToolEventUserID() );//Send to parent if applicable
+      this.sentEvent = false;
+    }
+    this.parent.undoAction();
+  }
+
+  /// \internal
+  SendEventAction.undoAction!( ) {
+    this.undoActionInternal();
+  }
+
+  SendEventAction.invalidate!( ) {
+    this.undoActionInternal();
+    this.parent.invalidate();
+  }
+
+  ~SendEventAction() {
+    this.undoActionInternal();
+  }
+}// namespace Tool

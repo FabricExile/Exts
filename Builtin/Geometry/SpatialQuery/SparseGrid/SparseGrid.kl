@@ -1,0 +1,241 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+/**
+
+  The SparseGrid is a spatial acceleration structure that subdivides the 3D space as a regular grid of cubic cells.
+  The SparseGrid object can hold objects that are described as points, or as a bounding volume (box or sphere).
+
+  The grid is sparse because, similarly to a hash table, only cells that contain some objects are allocated.
+  In order to offer a good performance, the SparseGrid offers:
+\rst
+
+  - Compact memory: all data is managed into a few arrays, reducing global memory consumption 
+    and improving speed due to memory locality
+
+  - Auto-adjusting cell size: allows the grid to adjust relatively optimally to various object sizes 
+    and placement. The SparseGrid tracks the various parameters and will update the cell size if 
+    conditions change too much.
+
+  - Incremental update: only objects that move between cells will cause changes.
+
+\endrst
+  Before issuing queries, the :kl-ref:`SparseGrid.updateGrid` method must be called 
+  if grid objects were modified (:kl-ref:`SparseGrid.updatePointObject`, :kl-ref:`SparseGrid.updateBBoxObject`, 
+  :kl-ref:`SparseGrid.updateBSphereObject`, :kl-ref:`SparseGrid.removeObject`).
+
+  By default, the cell size will be adjusted automatically based on the number of objects and
+  their volume. However it is possible to adjust the cell size 
+  using a multiplication factor (see :kl-ref:`SparseGrid.setAutoCellSize`) or an 
+  explicit size (see :kl-ref:`SparseGrid.setExplicitCellSize`).
+
+  Because :kl-ref:`SparseGrid.raycast` and :kl-ref:`SparseGrid.getClosest` need to be more precise
+  than simple bounding volume intersection, these require specialized object intersections 
+  for the actual geometry (polygon, edge, geometry) to be implemented through the RaycastResult and 
+  ClosestResult interfaces.
+
+  Query (read) methods are threadsafe if the grid not modified (not being updated, or its objects are not changed).
+\dfgPresetOmit
+*/
+object SparseGrid : StatisticSourceWithAutoRegisterMember {
+  /// \internal
+  SparseGridStruct data;//We wrap as one struct to minimize unguarded overhead
+
+  //Statistics
+  /// \internal
+  StatisticsAutoRegisterMember autoStats;
+};
+
+function SparseGrid() {
+  if(FabricStatisticsEnabled())
+    this.autoStats = StatisticsAutoRegisterMember(this);
+}
+
+/// \internal
+function Boolean SparseGrid.isValid() {
+  return this.data.initialized;
+}
+
+/// Forces a specific cell size. Disables 'auto-cell-size' mode.
+/// \seealso SparseGrid.setAutoCellSize
+function SparseGrid.setExplicitCellSize!( Scalar cellSize ) {
+  this.data.setCellSize(cellSize);
+}
+
+/// Enables auto-cell-size mode, and the cell size determined by the SparseGrid heuristic will then be multiplied by `autoCellSizeMultiplierHint` 
+/// (value > 1.0 will lead to less grid cells, value < 1.0 will lead to more grid cells)
+/// \seealso SparseGrid.setExplicitCellSize
+function SparseGrid.setAutoCellSize!( Scalar autoCellSizeMultiplierHint ) {
+  this.data.setAutoCellSize( autoCellSizeMultiplierHint );
+}
+
+/// Enables auto-cell-size mode.
+function SparseGrid.setAutoCellSize!() {
+  this.data.setAutoCellSize( 1.0 );
+}
+
+/**
+  Must be called after all changes are done to update the SparseGrid incrementally. Potential changes include calls to:
+
+  - :kl-ref:`SparseGrid.setExplicitCellSize` or :kl-ref:`SparseGrid.setAutoCellSize`
+
+  - :kl-ref:`SparseGrid.updatePointObject`, :kl-ref:`SparseGrid.updateBBoxObject` or :kl-ref:`SparseGrid.updateBSphereObject`
+
+  - :kl-ref:`SparseGrid.removeObject`
+
+  Otherwise, results are unpredictable.
+  \note This function is not thread-safe.
+*/
+inline SparseGrid.updateGrid!() {
+  this.data.updateGrid();
+}
+
+/**
+  Adds or updates a point object.
+  This will not update the SparseGrid: :kl-ref:`SparseGrid.updateGrid` must be called (incremental update) for 
+  the SparseGrid to be valid again once all objects' volumes have been set.
+  \note if objectIndex >= :kl-ref:`SparseGrid.getObjectCount`, the count will be increased automatically
+  \note This method is not thread-safe.
+*/
+inline SparseGrid.updatePointObject!( UInt32 objectIndex, Vec3 position ) {
+  this.data.updatePointObject( objectIndex, position );
+}
+
+/**
+  Adds or updates a bounding box object.
+  This will not update the SparseGrid: :kl-ref:`SparseGrid.updateGrid` must be called (incremental update) for 
+  the SparseGrid to be valid again once all objects' volumes have been set.
+  \note if objectIndex >= :kl-ref:`SparseGrid.getObjectCount`, the count will be increased automatically
+  \note This method is not thread-safe.
+*/
+inline SparseGrid.updateBBoxObject!( UInt32 objectIndex, Vec3 min, Vec3 max ) {
+  this.data.updateBBoxObject( objectIndex, min, max );
+}
+
+/**
+  Adds or updates a bounding sphere object.
+  This will not update the SparseGrid: :kl-ref:`SparseGrid.updateGrid` must be called (incremental update) for 
+  the SparseGrid to be valid again once all objects' volumes have been set.
+  \note if objectIndex >= :kl-ref:`SparseGrid.getObjectCount`, the count will be increased automatically
+  \note This method is not thread-safe.
+*/
+inline SparseGrid.updateBSphereObject!( UInt32 objectIndex, Vec3 center, Scalar radius ) {
+  this.data.updateBSphereObject( objectIndex, center, radius );
+}
+
+/**
+  Removes an object. The SparseGrid remains valid.
+  \note This method is not thread-safe.
+*/
+inline SparseGrid.removeObject!( UInt32 objectIndex ) {
+  this.data.removeObject( objectIndex );
+}
+
+/**
+  Updates the object count, with no changes to remaining objects.
+  Added objects will have no effect until their volume is specified (eg: with :kl-ref:`SparseGrid.updateBSphereObject`).
+  \note If existing objects get truncated, these will be automatically removed from the grid, incrementally (no need to call :kl-ref:`SparseGrid.removeObject` first).
+*/
+function SparseGrid.incrementalUpdateObjectCount!( Size objectCount ) {
+  Size prevObjectCount = this.data.objects.size();
+
+  for( Size i = prevObjectCount; i < objectCount; ++i )
+    this.removeObject(i);//checks if 'isUsed()'
+
+  if( objectCount < prevObjectCount )
+    this.data.objects.resize(objectCount);
+}
+
+/**
+  Raycasts the objects of the SparseGrid.
+  \param data Temporary data used for processing the query. Reusing the same `data` for multiple queries will improve performance by reducing the amount of temporary heap allocations.
+  \param result Implements specialized object intersection through the RaycastResult interface, and will hold the final result.
+  See :kl-ref:`SpatialQueryable.raycast` for a description of the other parameters.
+*/
+inline SparseGrid.raycast( Ray ray, Boolean doubleSided, Scalar maxDistance, io SpatialQueryData data, io Ref<RaycastResult> result ) {
+  this.data.raycast( ray, doubleSided, maxDistance, data, result );
+}
+
+/**
+  Gets the closest object of the SparseGrid.
+  \param data Temporary data used for processing the query. Reusing the same `data` for multiple queries will improve performance by reducing the amount of temporary heap allocations.
+  \param result Implements specialized object intersection through the ClosestResult interface, and will hold the final result.
+  See :kl-ref:`SpatialQueryable.getClosest` for a description of the other parameters.
+*/
+inline SparseGrid.getClosest( Vec3 position, Vec3 scaling, Scalar maxUnscaledDistance, io SpatialQueryData data, io Ref<ClosestResult> result ) {
+  this.data.getClosest( position, scaling, maxUnscaledDistance, data, result );
+}
+
+/**
+  Returns objects intersecting the specified local bounding box.
+  \param result Contains resulting object indices. Important: the actual object count is `result.size()` and not `result.indices.size()` (see IndexSet).
+  \note Depending on the case, it is possible that the SparseGrid returns too many objects by including some that are close to the queried volume but not actually intersecting it.
+  \note Reusing the same `result` for multiple queries will improve performance by reducing the amount of temporary heap allocations
+  \note This function is threadsafe if the SparseGrid is not modified
+*/
+inline SparseGrid.bBoxQuery( Vec3 min, Vec3 max, io IndexSet result ) {
+  this.data.bBoxQuery( min, max, result );
+}
+
+/**
+Returns objects intersecting the specified local position.
+\param result Contains resulting object indices. Important: the actual object count is `result.size()` and not `result.indices.size()` (see IndexSet).
+\note Depending on the case, it is possible that the SparseGrid returns too many objects by including some that are close to the queried volume but not actually intersecting it.
+\note Reusing the same `result` for multiple queries will improve performance by reducing the amount of temporary heap allocations
+\note This function is threadsafe if the SparseGrid is not modified
+*/
+inline SparseGrid.getObjectsAtPosition( Vec3 position, io IndexSet result ) {
+  this.data.getObjectsAtPosition( position, result );
+}
+
+/**
+  Returns objects intersecting the specified local bounding sphere.
+  \param result Contains resulting object indices. Important: the actual object count is `result.size()` and not `result.indices.size()` (see IndexSet).
+  \note Depending on the case, it is possible that the SparseGrid returns too many objects by including some that are close to the queried volume but not actually intersecting it.
+  \note Reusing the same `result` for multiple queries will improve performance by reducing the amount of temporary heap allocations
+  \note This function is threadsafe if the SparseGrid is not modified
+*/
+inline SparseGrid.bSphereQuery( Vec3 center, Scalar radius, io IndexSet result ) {
+  this.data.bSphereQuery( center, radius, result );
+}
+
+/**
+  Returns objects intersecting the specified line, semi-line or line segment.
+  
+  - if `lineIntersectionType` == 0 (`SpatialQuery_lineIntersection`) : intersects with an infinite line passing through `start` and `end`
+
+  - if `lineIntersectionType` == 1 (`SpatialQuery_semiLineIntersection`) : intersects with a semi-line starting at `start`, passing through `end` and continuing infinitely in that direction
+
+  - if `lineIntersectionType` == 2 (`SpatialQuery_segmentIntersection`) : intersects with a segment starting at `start` and ending at `end`
+
+  \param result Contains resulting object indices. Important: the actual object count is `result.size()` and not `result.indices.size()` (see IndexSet).
+  \note Depending on the case, it is possible that the SparseGrid returns too many objects by including some that are close to the queried volume but not actually intersecting it.
+  \note Reusing the same `result` for multiple queries will improve performance by reducing the amount of temporary heap allocations
+  \note This function is threadsafe if the SparseGrid is not modified
+*/
+function SparseGrid.getLineIntersectedObjects( Vec3 start, Vec3 end, UInt8 intersectionLineTypeEnum, io IndexSet result ) {
+  this.data.lineQuery( start, end, intersectionLineTypeEnum, result );
+}
+
+/**
+  Returns the object index range.
+  \note Some of the indices between 0 and `SparseGrid.getObjectCount` might be unused, if object's volume was never specified (eg: with :kl-ref:`SparseGrid.updateBSphereObject`) or if :kl-ref:`SparseGrid.removeObject` was called for an object.
+*/
+inline Size SparseGrid.getObjectCount() {
+  return this.data.objects.size();
+}
+
+/// \internal
+function Size SparseGrid.getMemUsage() {
+  return this.data.getMemUsage();
+}
+
+/// \internal Implementation of StatisticSource interface's 'getStatistics()'.
+function StatisticRecord[] SparseGrid.getStatistics() {
+  StatisticRecord stats[];
+  stats.push( StatisticRecord( Statistic_Name, "SparseGrid" ) );
+  stats.push( StatisticRecord( Statistic_Category, "Geometry" ) );
+  stats.push( StatisticRecord( "ObjectCount", this.getObjectCount() ) );
+  stats.push( StatisticRecord( Statistic_MemoryUsage, this.getMemUsage() ) );
+  return stats;
+}

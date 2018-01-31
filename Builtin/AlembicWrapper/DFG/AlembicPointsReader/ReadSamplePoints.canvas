@@ -1,0 +1,50 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "reads a sample at a given time. this will properly interpolate between samples.\nthe result is stored in the provided Points.\n\nSupported types:\n  this: AlembicPointsReader\n  time: Float64\n  points: Points\n"
+    },
+  "title" : "ReadSamplePoints",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicPointsReader"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "time",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Float64"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "points",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Points"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "CE8966B6608033F7A43A23E5F4445E83",
+  "code" : "require AlembicWrapper;
+
+dfgEntry {
+  this.readSamplePoints(time, points);
+}
+"
+  }

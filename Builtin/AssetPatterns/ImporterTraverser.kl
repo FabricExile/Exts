@@ -1,0 +1,69 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/**
+The ImporterTraverser is a utility for traversing an imported hierarchy.
+Certain objects within an import process might not unfold the complete hierarchy,
+this includes the ImporterGroup as well as the ImporterInstance.
+The ImporterTraverser can be used to fully unfold the hierachy.
+\dfgPresetOmit
+*/
+struct ImporterTraverser
+{
+  Ref<ImporterObject> objects[];
+};
+
+/// \dfgPresetOmit
+function ImporterTraverser(Ref<ImporterObject> objects[]) {
+  this.objects.resize(objects.size());
+  for(Size i=0;i<this.objects.size();i++) {
+    this.objects[i] = objects[i];
+  }
+}
+
+/// \dfgPresetOmit
+function ImporterTraverser(ImporterObject objects[]) {
+  this.objects.resize(objects.size());
+  for(Size i=0;i<this.objects.size();i++) {
+    this.objects[i] = objects[i];
+  }
+}
+
+/// \dfgPresetOmit
+private function ImporterTraverser.traverseObject(
+  Ref<ImporterObject> current,
+  io UInt32 pathToIndex[String],
+  io Ref<ImporterObject> results[]
+) {
+  if(current == null)
+    return;
+  String path = current.getInstancePath();
+  if(pathToIndex.has(path))
+    return;
+  pathToIndex[path] = results.size();
+  results.push(current);
+
+  Ref<ImporterObject> nested[] = current.getNestedObjects(current.defaultContext);
+  for(Size i=0;i<nested.size();i++) {
+    if(!nested[i])
+      continue;
+    ImporterObject nestedClone = nested[i].getOrCreateCloneForPath(current.getInstancePath());
+    nestedClone.parentObject = current;
+    this.traverseObject(nestedClone, pathToIndex, results);
+  }
+}
+
+/**
+Returns a fully traversed list of all objects in the hierarchy based
+on an input list. This will unfold ImporterGroup and ImporterInstance
+objects.
+\dfgPresetOmit
+*/
+function Ref<ImporterObject>[] ImporterTraverser.traverse() {
+  Ref<ImporterObject> results[];
+  UInt32 pathToIndex[String];
+  for(Size i=0;i<this.objects.size();i++)
+    this.traverseObject(this.objects[i], pathToIndex, results);
+  return results;
+}

@@ -1,0 +1,56 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "returns the first sample used by this reader\n\nSupported types:\n  this: AlembicCurvesReader\n  result: AlembicICurvesSample\n"
+    },
+  "title" : "GetSampleA[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "AlembicCurvesReader[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "AlembicICurvesSample[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "03FEBB1F34E188249807F19D09A02970",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicCurvesReader_getSampleA_task<<<index>>>(
+  io AlembicICurvesSample[] result
+, in AlembicCurvesReader[] this
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].getSampleA();
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  Size task_size = this.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      AlembicWrapper_AlembicCurvesReader_getSampleA_task(index, result, this);
+    }
+  } else {
+    AlembicWrapper_AlembicCurvesReader_getSampleA_task<<<task_size>>>(result, this);
+  }
+}
+"
+  }

@@ -1,0 +1,111 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Vec2.html",
+    "uiTooltip" : "Returns the distance of this vector to a line segment defined\nby the start and end points of the line segment\n\n Supported by Vec2"
+    },
+  "title" : "DistanceToSegment[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec2[]" : [
+          {
+            "x" : 0,
+            "y" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec2[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "segmentP0",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec2[]" : [
+          {
+            "x" : 0,
+            "y" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec2[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "segmentP1",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec2[]" : [
+          {
+            "x" : 0,
+            "y" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec2[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "8EA049BCE6D2F0E821E11321F424778B",
+  "code" : "require Math;
+
+operator Math_Vec2_distanceToSegment_task<<<index>>>(
+  io Scalar[] result
+, in Vec2[] this
+, in Vec2[] segmentP0
+, in Vec2[] segmentP1
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].distanceToSegment(segmentP0[index < segmentP0.size() ? index : segmentP0.size() - 1], segmentP1[index < segmentP1.size() ? index : segmentP1.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( segmentP0.size() == 0) return;
+  if( segmentP1.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < segmentP0.size()) task_size = segmentP0.size();
+  if(task_size < segmentP1.size()) task_size = segmentP1.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Vec2_distanceToSegment_task(index, result, this, segmentP0, segmentP1);
+    }
+  } else {
+    Math_Vec2_distanceToSegment_task<<<task_size>>>(result, this, segmentP0, segmentP1);
+  }
+}
+"
+  }

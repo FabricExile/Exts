@@ -1,0 +1,58 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/AlembicWrapper/AlembicPolyMeshReader.html",
+    "uiTooltip" : "reads a sample at a given time. this will properly interpolate between samples.\nthe result is stored in the provided PolygonMesh.\nfreezeAttributeIndices: maintain Mesh's attribute sharing layout of the 1st read sample through playback.\nFor example, if new normal or UV splits are introduced during playback, one of the values will be used (arbitrary).\nThe advantage is to gain more speed and to ensure attribute matching (for effects such as motion blur).\nThis options will be ignored if the topology changes.\n\n Supported by AlembicPolyMeshReader"
+    },
+  "title" : "ReadSample",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicPolyMeshReader"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "time",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Float64"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "freezeAttributeIndices",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Boolean"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "mesh",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "PolygonMesh"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "7F56E286915DF6D629EE3BFE0D7EFE5D",
+  "code" : "require AlembicWrapper;
+
+dfgEntry {
+  this.readSample(time, freezeAttributeIndices, mesh);
+}
+"
+  }

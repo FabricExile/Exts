@@ -1,0 +1,75 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/PolygonMesh.html",
+    "uiTooltip" : "Returns true if a point has been deleted (before it is replaced at last :kl-ref:`PolygonMesh.endStructureChanges`).\n\n Supported by PolygonMesh"
+    },
+  "title" : "IsPointDeleted[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "PolygonMesh[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "point",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Size[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Size[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "358519060AA39E38EF24852F90056C77",
+  "code" : "require Geometry;
+
+operator Geometry_PolygonMesh_isPointDeleted_task<<<index>>>(
+  io Boolean[] result
+, in PolygonMesh[] this
+, in Size[] point
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].isPointDeleted(point[index < point.size() ? index : point.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( point.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < point.size()) task_size = point.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Geometry_PolygonMesh_isPointDeleted_task(index, result, this, point);
+    }
+  } else {
+    Geometry_PolygonMesh_isPointDeleted_task<<<task_size>>>(result, this, point);
+  }
+}
+"
+  }

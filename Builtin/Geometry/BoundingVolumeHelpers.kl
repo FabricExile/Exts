@@ -1,0 +1,685 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+require Math;
+
+/// Returned enum for intersection functions such as :kl-ref:`bBoxGetBSphereIntersection`
+const UInt8 IntersectionNone = 0;
+/// Returned enum for intersection functions such as :kl-ref:`bBoxGetBSphereIntersection`
+const UInt8 IntersectionOverlap = 1;
+/// Returned enum for intersection functions such as :kl-ref:`bBoxGetBSphereIntersection`
+const UInt8 IntersectionIncludesOther = 2;
+
+/// \internal Helper: returns the index (x==0) of the smallest component of the vector
+inline Size getMinComponent( Vec3 dir ) {
+  Vec3 absDir = Vec3( abs(dir.x), abs(dir.y), abs(dir.z) );
+  Scalar min;
+  Size minComp;
+  if( absDir.x < absDir.y ) {
+    min = absDir.x;
+    minComp = 0;
+  } else {
+    min = absDir.y;
+    minComp = 1;
+  }
+  if( absDir.z < min )
+    minComp = 2;
+  
+  return minComp;
+}
+
+/// Returns true if point is in or on the box formed by min and max
+/// \category box
+inline Boolean BBoxContains(Vec3 min, Vec3 max, Vec3 point) {
+  return point.x >= min.x && point.x <= max.x
+      && point.y >= min.y && point.y <= max.y
+      && point.z >= min.z && point.z <= max.z;
+}
+
+/// Returns true if the bounding box formed by min1 and max1 intersects the one formed by min2 and max2
+/// \category box
+function Boolean bBoxIntersectsBBox( Vec3 min1, Vec3 max1, Vec3 min2, Vec3 max2 ) {
+  return min1.x <= max2.x && max1.x >= min2.x
+      && min1.y <= max2.y && max1.y >= min2.y
+      && min1.z <= max2.z && max1.z >= min2.z;
+}
+
+/// If the point is outside the bounding box, returns the closest point on the bounding box formed by bBoxMin and bBoxMax.
+/// Else, the point is returned.
+/// \category box
+inline Vec3 bBoxGetClosestPoint( Vec3 bBoxMin, Vec3 bBoxMax, Vec3 position ) {
+  return Vec3(
+    Math_clamp( position.x, bBoxMin.x, bBoxMax.x ),
+    Math_clamp( position.y, bBoxMin.y, bBoxMax.y ),
+    Math_clamp( position.z, bBoxMin.z, bBoxMax.z ) );
+}
+
+/// Returns the squared distance to the bbox
+/// \category box
+inline Scalar getSquaredDistanceToBBox( Box3 bBox, Vec3 position ) {
+  return ( bBoxGetClosestPoint( bBox.min, bBox.max, position ) - position ).lengthSquared();
+}
+
+/// Returns the squared distance to the bbox
+/// \category box
+inline Scalar getDistanceToBBox( Box3 bBox, Vec3 position ) {
+  return sqrt( getSquaredDistanceToBBox( bBox, position ) );
+}
+
+/// \internal For the bounding box formed by bBoxMin and bBoxMax, returns the point that has the greatest distance to the position.
+/// \category box
+inline Vec3 bBoxGetFarthestPoint( Vec3 bBoxMin, Vec3 bBoxMax, Vec3 position ) {
+  Vec3 farthest;
+  if( position.x <= bBoxMin.x )
+    farthest.x = bBoxMax.x;
+  else if( position.x >= bBoxMax.x )
+    farthest.x = bBoxMin.x;
+  else
+    farthest.x = (position.x - bBoxMin.x) < (bBoxMax.x - position.x) ? bBoxMax.x : bBoxMin.x;
+
+  if( position.y <= bBoxMin.y )
+    farthest.y = bBoxMax.y;
+  else if( position.y >= bBoxMax.y )
+    farthest.y = bBoxMin.y;
+  else
+    farthest.y = (position.y - bBoxMin.y) < (bBoxMax.y - position.y) ? bBoxMax.y : bBoxMin.y;
+
+  if( position.z <= bBoxMin.z )
+    farthest.z = bBoxMax.z;
+  else if( position.z >= bBoxMax.z )
+    farthest.z = bBoxMin.z;
+  else
+    farthest.z = (position.z - bBoxMin.z) < (bBoxMax.z - position.z) ? bBoxMax.z : bBoxMin.z;
+
+  return farthest;
+}
+
+/// Returns true if the bounding box formed by bBoxMin and bBoxMax intersects the 
+/// sphere centered at bSphereCenter with a **squared** radius of bSphereSquaredRadius.
+/// \category box
+inline Boolean bBoxIntersectsBSphere( Vec3 bBoxMin, Vec3 bBoxMax, Vec3 bSphereCenter, Scalar bSphereSquaredRadius ) {
+  Vec3 bboxPoint = bBoxGetClosestPoint(bBoxMin, bBoxMax, bSphereCenter);
+  return (bSphereCenter - bboxPoint).lengthSquared() <= bSphereSquaredRadius;
+}
+
+/// Returns an approximate bounding sphere for the bounding box formed by bBoxMin and bBoxMax, and transformed with transform.
+/// \category box
+inline transformedBBoxGetBSphere( Mat44 transform, Vec3 bBoxMin, Vec3 bBoxMax, out Vec3 bSphereCenter, out Scalar bSphereSquaredRadius ) {
+  Vec3 center = (bBoxMin + bBoxMax) * 0.5;
+  bSphereCenter = transform*center;
+  Vec3 radiusVec = (bBoxMax - bBoxMin) * 0.5;
+  Vec3 transformedRadius = transform.upperLeft() * radiusVec;
+  bSphereSquaredRadius = transformedRadius.lengthSquared();
+}
+
+/**
+  Builds an orthographic projection matrix, which transforms the box range [-w/2, -h/2, n] .. [w/2, h/2, f] 
+  into [-1, -1, -1] .. [1, 1, 1].
+  \param w Width of the view (ranging from -w/2 to w/2)
+  \param h Height of the view (ranging from -h/2 to h/2)
+  \param n Near plane distance
+  \param f Far plane distance
+*/
+inline Mat44 symmetricOrthographicFrustum(
+  Scalar w, Scalar h,
+  Scalar n, Scalar f
+) {
+  Scalar d = f - n;
+  if( d < 1.0e-12 )
+    d = 1.0e-12;
+  Mat44 result(
+    2.0 / (w < 1.0e-12 ? 1.0e-12 : w), 0.0, 0.0, 0.0,
+    0.0, 2.0 / (h < 1.0e-12 ? 1.0e-12 : h), 0.0, 0.0,
+    0.0, 0.0, -2.0 / d, -(f + n) / d,
+    0.0, 0.0, 0.0, 1.0);
+  return result;
+}
+
+/**
+  Builds an orthographic projection matrix, which transforms the box range [lx, ly, n] .. [ux,uy, f] 
+  into [-1, -1, -1] .. [1, 1, 1].
+  \param lx Lower x of the view
+  \param ly Lower y of the view
+  \param ux Upper x of the view
+  \param uy Upper y of the view
+  \param n Near plane distance
+  \param f Far plane distance
+*/
+inline Mat44 asymmetricOrthographicFrustum(
+  Scalar lx, Scalar ly,
+  Scalar ux, Scalar uy,
+  Scalar n, Scalar f,
+) {
+  Scalar cx = (ux + lx)*0.5;
+  Scalar cy = (uy + ly)*0.5;
+  Scalar cz = (f + n)*0.5;
+  Scalar w = ux - lx;
+  Scalar xScale = 2.0 / (w < 1.0e-12 ? 1.0e-12 : w);
+  Scalar h = uy - ly;
+  Scalar yScale = 2.0 / (h < 1.0e-12 ? 1.0e-12 : h);
+  Scalar d = f - n;
+  Scalar zScale = 2.0 / d;
+  if( d < 1.0e-12 )
+    d = 1.0e-12;
+  Mat44 result(
+    xScale, 0.0, 0.0, -cx*xScale,
+    0.0, yScale, 0.0, -cy*yScale,
+    0.0, 0.0, -zScale, -cz*zScale,
+    0.0, 0.0, 0.0, 1.0);
+  return result;
+}
+
+/// Returns the intersection result of a sphere with a box.
+/// `IntersectionOverlap` is returned if the sphere is both outside and inside of the bounding box
+/// `IntersectionIncludesOther` is returned if the sphere is completely inside the bounding box
+/// `IntersectionNone` is returned if the sphere is completely outside of the bounding box
+/// \category box
+function UInt8 bBoxGetBSphereIntersection( Vec3 min, Vec3 max, Vec3 sphereCenter, Scalar sphereRadius ) {
+//report("localSphereCenter "+localSphereCenter+" rad "+sphereRadius+" minmax "+this.pt1+" "+this.pt2);
+  if( sphereCenter.x - sphereRadius >= max.x || sphereCenter.x + sphereRadius <= min.x
+   || sphereCenter.y - sphereRadius >= max.y || sphereCenter.y + sphereRadius <= min.y
+   || sphereCenter.z - sphereRadius >= max.z || sphereCenter.z + sphereRadius <= min.z )
+    return IntersectionNone;
+
+  Scalar distances[3];
+  Boolean centerInside = true;
+  for(Size i = 0; i < 3; ++i) {
+    if(sphereCenter.component(i) < min.component(i)) {
+      distances[i] = min.component(i) - sphereCenter.component(i);
+      centerInside = false;
+    }
+    else if(sphereCenter.component(i) > max.component(i)) {
+      distances[i] = sphereCenter.component(i) - max.component(i);
+      centerInside = false;
+    }
+  }
+
+  if( centerInside ) {
+    if(  sphereCenter.x - sphereRadius >= min.x && sphereCenter.x + sphereRadius <= max.x
+      && sphereCenter.y - sphereRadius >= min.y && sphereCenter.y + sphereRadius <= max.y
+      && sphereCenter.z - sphereRadius >= min.z && sphereCenter.z + sphereRadius <= max.z ){
+      return IntersectionIncludesOther;
+    }
+    return IntersectionOverlap;
+  }
+
+  Scalar squaredDist = distances[0]*distances[0] + distances[1]*distances[1] + distances[2]*distances[2];
+  if(squaredDist > sphereRadius*sphereRadius)
+    return IntersectionNone;
+  return IntersectionOverlap;
+}
+
+/// Returns the intersection result of a 2D sphere with a 2D box.
+/// `IntersectionOverlap` is returned if the sphere is both outside and inside of the bounding box
+/// `IntersectionIncludesOther` is returned if the sphere is completely inside the bounding box
+/// `IntersectionNone` is returned if the sphere is completely outside of the bounding box
+/// \category box
+function UInt8 bBoxGetBSphereIntersection( Vec2 min, Vec2 max, Vec2 sphereCenter, Scalar sphereRadius ) {
+//report("localSphereCenter "+localSphereCenter+" rad "+sphereRadius+" minmax "+this.pt1+" "+this.pt2);
+  if( sphereCenter.x - sphereRadius >= max.x || sphereCenter.x + sphereRadius <= min.x
+   || sphereCenter.y - sphereRadius >= max.y || sphereCenter.y + sphereRadius <= min.y )
+    return IntersectionNone;
+
+  Scalar distances[2];
+  Boolean centerInside = true;
+  for(Size i = 0; i < 2; ++i) {
+    if(sphereCenter.component(i) < min.component(i)) {
+      distances[i] = min.component(i) - sphereCenter.component(i);
+      centerInside = false;
+    }
+    else if(sphereCenter.component(i) > max.component(i)) {
+      distances[i] = sphereCenter.component(i) - max.component(i);
+      centerInside = false;
+    }
+  }
+
+  if( centerInside ) {
+    if(  sphereCenter.x - sphereRadius >= min.x && sphereCenter.x + sphereRadius <= max.x
+      && sphereCenter.y - sphereRadius >= min.y && sphereCenter.y + sphereRadius <= max.y ){
+      return IntersectionIncludesOther;
+    }
+    return IntersectionOverlap;
+  }
+
+  Scalar squaredDist = distances[0]*distances[0] + distances[1]*distances[1];
+  if(squaredDist > sphereRadius*sphereRadius)
+    return IntersectionNone;
+  return IntersectionOverlap;
+}
+
+/// Returns the 8 corner positions of the bbox
+inline getBBoxPoints( Vec3 min, Vec3 max, out Vec3 pts[8] ) {
+  pts[0] = Vec3(min.x, min.y, min.z);
+  pts[1] = Vec3(max.x, min.y, min.z);
+  pts[2] = Vec3(min.x, max.y, min.z);
+  pts[3] = Vec3(max.x, max.y, min.z);
+  pts[4] = Vec3(min.x, min.y, max.z);
+  pts[5] = Vec3(max.x, min.y, max.z);
+  pts[6] = Vec3(min.x, max.y, max.z);
+  pts[7] = Vec3(max.x, max.y, max.z);
+}
+
+/// Returns the bounding sphere, in global space, of a transformed bounding sphere
+inline transformedBSphereGetBSphere(
+  Mat44 transform, Vec3 localCenter, Scalar localRadius, 
+  out Vec3 bSphereCenter, out Scalar bSphereSquaredRadius) {
+
+  bSphereCenter = transform*localCenter;
+  if(localRadius < 0)
+    bSphereSquaredRadius = -1;
+  else {
+    //Might have non-uniform scaling
+    Scalar maxSqRad = Vec3(transform.row0.x, transform.row1.x, transform.row2.x).lengthSquared();
+    Scalar sqRad = Vec3(transform.row0.y, transform.row1.y, transform.row2.y).lengthSquared();
+    if( sqRad > maxSqRad )
+      maxSqRad = sqRad;
+    sqRad = Vec3(transform.row0.z, transform.row1.z, transform.row2.z).lengthSquared();
+    if( sqRad > maxSqRad )
+      maxSqRad = sqRad;
+
+    bSphereSquaredRadius = maxSqRad * localRadius * localRadius;
+  }
+}
+
+/// Returns the intersection result of a box with a sphere.
+/// `IntersectionOverlap` is returned if the box is both outside and inside of the sphere
+/// `IntersectionIncludesOther` is returned if the box is completely inside the sphere
+/// `IntersectionNone` is returned if the box is completely outside of the sphere
+/// \category box
+function UInt8 bSphereGetBBoxIntersection( Vec3 sphereCenter, Scalar sphereRadius, Vec3 min, Vec3 max ) {
+  Scalar sqRadius = sphereRadius*sphereRadius;
+
+  Vec3 closest = bBoxGetClosestPoint( min, max, sphereCenter );
+  if( (closest - sphereCenter).lengthSquared() > sqRadius )
+    return IntersectionNone;
+
+  Vec3 farthest = bBoxGetFarthestPoint( min, max, sphereCenter );
+  if( (farthest - sphereCenter).lengthSquared() <= sqRadius )
+    return IntersectionIncludesOther;
+  else
+    return IntersectionOverlap;
+}
+
+/**
+  Builds a symmetric perspective projection matrix
+  \param nearWidth Width at the near plane of the truncated pyramid
+  \param nearHeight Height at the near plane of the truncated pyramid
+  \param near Near plane distance
+  \param far Far plane distance
+  \param centerX Translation in X to be applied after the projection
+  \param centerY Translation in Y to be applied after the projection
+*/
+inline Mat44 symmetricPerspectiveFrustum(
+  Scalar nearWidth, Scalar nearHeight,
+  Scalar near, Scalar far,
+  Scalar centerX, Scalar centerY
+) {
+  Scalar d = far - near;
+  if( d < 1.0e-12 )
+    d = 1.0e-12;
+  Scalar q = -(far + near) / d;
+  Scalar qn = -2.0 * (far * near) / d;
+  Scalar w = 2.0 * (near / (nearWidth < 1.0e-12 ? 1.0e-12 : nearWidth));
+  Scalar h = 2.0 * (near / (nearHeight < 1.0e-12 ? 1.0e-12 : nearHeight));
+  Mat44 result(
+    w, 0.0, -centerX, 0.0,
+    0.0, h, -centerY, 0.0,
+    0.0, 0.0, q, qn,
+    0.0, 0.0, -1.0, 0.0);
+  return result;
+}
+
+/// \internal Returns the 4 side pyramid plane normals
+function bPyramidComputePlanes(
+  Vec3 origin, Vec3 unitDir, Scalar near, Scalar far, Vec3 nearRightVec, Vec3 nearUpVec,
+  out Vec3 leftPlaneNormal, out Vec3 rightPlaneNormal,
+  out Vec3 upPlaneNormal, out Vec3 downPlaneNormal ) {
+
+  Vec3 nearVec = unitDir * near;
+  Vec3 nearRight = nearVec + nearRightVec;
+  Vec3 nearUpRight = nearRight + nearUpVec;
+  Vec3 nearUp = nearVec + nearUpVec;
+
+  rightPlaneNormal = nearRight.cross( nearUpRight );
+  if(rightPlaneNormal != Vec3(0, 0, 0))
+    rightPlaneNormal = rightPlaneNormal.unit();
+  upPlaneNormal = nearUpRight.cross( nearUp );
+  if(upPlaneNormal != Vec3(0, 0, 0))
+    upPlaneNormal = upPlaneNormal.unit();
+
+  Scalar dot = rightPlaneNormal.dot(unitDir);
+  if( dot > 0 ) {
+    //Negative scaling: flip the normal
+    rightPlaneNormal = rightPlaneNormal.negate();
+    dot = -dot;
+  }
+  Vec3 proj = unitDir * dot;
+  leftPlaneNormal = rightPlaneNormal + ( proj - rightPlaneNormal ) * 2.0;
+
+  dot = upPlaneNormal.dot(unitDir);
+  if( dot > 0 ) {
+    //Negative scaling: flip the normal
+    upPlaneNormal = upPlaneNormal.negate();
+    dot = -dot;
+  }
+  proj = unitDir * dot;
+  downPlaneNormal = upPlaneNormal + ( proj - upPlaneNormal ) * 2.0;
+}
+
+/// \internal Returns the bounding sphere of the pyramid
+function bPyramidGetBSphere( Vec3 origin, Vec3 unitDir, Scalar near, Scalar far, Vec3 nearRightVec, Vec3 nearUpVec,
+                              out Vec3 bSphereCenter, out Scalar bSphereSquaredRadius ) {
+  //This is an approximation!
+  //TODO: compute the precise bsphere mathematically if not too costly (see http://en.wikipedia.org/wiki/Circumscribed_circle; use if tanHalfAngle < 1)
+
+  Scalar factor = 0;
+  if( near > DIVIDEPRECISION )
+    factor = far / near;
+  else
+    setError("pyramidGetBBox: near must be > 0");//TODO: use unit right/up vec; would avoid this limitation...
+
+  bSphereCenter = origin + (near + ( near + far ) * 0.5 ) * unitDir;
+
+  Vec3 maxRadius = origin + far * unitDir + nearRightVec + nearUpVec;
+  bSphereSquaredRadius = ( maxRadius - bSphereCenter ).lengthSquared();
+}
+
+/// \internal Returns the if a pyramid interesects a sphere (approximation). The pyramid planes need to be provided.
+inline Boolean bPyramidIntersectsBSphere(
+  Vec3 pyrOrigin, Vec3 pyrDir, 
+  Scalar pyrNear, Scalar pyrFar,
+  Vec3 pyrLeftPlaneNormal, Vec3 pyrRightPlaneNormal,
+  Vec3 pyrUpPlaneNormal, Vec3 pyrDownPlaneNormal,
+  Vec3 center, Scalar radius   ) {
+
+  Vec3 relativeCenter = center - pyrOrigin;
+  Scalar dirDist = pyrDir.dot( relativeCenter );
+
+  if( dirDist + radius < pyrNear || dirDist - radius > pyrFar )
+    return false;
+  
+  Scalar leftDot = pyrLeftPlaneNormal.dot( relativeCenter );
+  if( leftDot > radius )
+    return false;
+
+  Scalar rightDot = pyrRightPlaneNormal.dot( relativeCenter );
+  if( rightDot > radius )
+    return false;
+
+  Scalar upDot = pyrUpPlaneNormal.dot( relativeCenter );
+  if( upDot > radius )
+    return false;
+
+  Scalar downDot = pyrDownPlaneNormal.dot( relativeCenter );
+  if( downDot > radius )
+    return false;
+
+  return true;
+}
+
+/// \internal Returns the intersection type of a pyramid with a sphere (approximation). The pyramid planes need to be provided.
+inline UInt8 bPyramidGetBSphereIntersection(
+  Vec3 pyrOrigin, Vec3 pyrDir, 
+  Scalar pyrNear, Scalar pyrFar,
+  Vec3 pyrLeftPlaneNormal, Vec3 pyrRightPlaneNormal,
+  Vec3 pyrUpPlaneNormal, Vec3 pyrDownPlaneNormal,
+  Vec3 center, Scalar radius   ) {
+
+  Vec3 relativeCenter = center - pyrOrigin;
+  Scalar dirDist = pyrDir.dot( relativeCenter );
+
+  if( dirDist + radius < pyrNear || dirDist - radius > pyrFar )
+    return IntersectionNone;
+  
+  Scalar leftDot = pyrLeftPlaneNormal.dot( relativeCenter );
+  if( leftDot > radius )
+    return IntersectionNone;
+
+  Scalar rightDot = pyrRightPlaneNormal.dot( relativeCenter );
+  if( rightDot > radius )
+    return IntersectionNone;
+
+  Scalar upDot = pyrUpPlaneNormal.dot( relativeCenter );
+  if( upDot > radius )
+    return IntersectionNone;
+
+  Scalar downDot = pyrDownPlaneNormal.dot( relativeCenter );
+  if( downDot > radius )
+    return IntersectionNone;
+
+  if( dirDist - radius < pyrNear || dirDist + radius > pyrFar || leftDot > -radius || rightDot > -radius || upDot > -radius || downDot > -radius )
+    return IntersectionOverlap;
+
+  return IntersectionIncludesOther;
+}
+
+/// \internal Returns the bounding box of a pyramid
+function pyramidGetBBox( Vec3 origin, Vec3 unitDir, Scalar near, Scalar far, Vec3 nearRightVec, Vec3 nearUpVec, out Vec3 min, out Vec3 max ) {
+
+  //This could be more optimal...
+  Scalar factor = 0;
+  if( near > DIVIDEPRECISION )
+    factor = far / near;
+  else
+    setError("pyramidGetBBox: near must be > 0");//TODO: use unit right/up vec; would avoid this limitation...
+
+  Vec3 nearVec = near * unitDir;
+
+  Vec3 vec = nearVec - nearRightVec - nearUpVec;
+  Vec3 pos = origin + vec;
+  Box3 bbox( pos, pos);
+  bbox.merge( origin + vec * factor );
+
+  vec = nearVec - nearRightVec + nearUpVec;
+  bbox.merge( origin + vec );
+  bbox.merge( origin + vec * factor );
+
+  vec = nearVec + nearRightVec - nearUpVec;
+  bbox.merge( origin + vec );
+  bbox.merge( origin + vec * factor );
+
+  vec = nearVec + nearRightVec + nearUpVec;
+  bbox.merge( origin + vec );
+  bbox.merge( origin + vec * factor );
+
+  min = bbox.min;
+  max = bbox.max;
+}
+
+/// \internal Returns the intersection type between a sphere and a cone (approximation).
+function UInt8 bConeGetBSphereIntersection( Vec3 coneOrigin, Vec3 coneUnitDir, Scalar coneLength, Scalar tanHalfAngle, Scalar invCosHalfAngle, Vec3 center, Scalar radius ) {
+  Vec3 centerVec = center - coneOrigin;
+  Scalar dirDist = coneUnitDir.dot(centerVec);
+  if( dirDist + radius < 0 || dirDist - radius > coneLength )
+    return IntersectionNone;
+
+  Vec3 projectedCenterVec = centerVec - coneUnitDir*dirDist;
+  Scalar projectedCenterVecSquaredconeLength = projectedCenterVec.lengthSquared();
+  Scalar cutoffDist = dirDist * tanHalfAngle;
+  if( dirDist >= 0 ) {
+    Scalar squaredCutoffDist = cutoffDist * cutoffDist;
+    if( projectedCenterVecSquaredconeLength <= squaredCutoffDist ) {
+      if( cutoffDist >= radius ) {
+        Scalar insideMaxDist = cutoffDist - radius;
+        if( projectedCenterVecSquaredconeLength <= insideMaxDist * insideMaxDist )
+          return IntersectionIncludesOther;
+      }
+      return IntersectionOverlap;
+    }
+  }
+
+  Scalar angleAdjustedRadius = radius * invCosHalfAngle;
+
+  Scalar maxDist = angleAdjustedRadius + cutoffDist;
+  if( projectedCenterVecSquaredconeLength <= maxDist*maxDist )
+    return IntersectionOverlap;
+  else
+    return IntersectionNone;
+}
+
+/// \internal Returns if a sphere and a cone intersect (approximation).
+function Boolean bConeIntersectsBSphere( Vec3 coneOrigin, Vec3 coneUnitDir, Scalar coneLength, Scalar tanHalfAngle, Scalar invCosHalfAngle, Vec3 center, Scalar radius ) {
+  Vec3 centerVec = center - coneOrigin;
+  Scalar dirDist = coneUnitDir.dot(centerVec);
+  if( dirDist + radius < 0 || dirDist - radius > coneLength )
+    return false;
+
+  Vec3 projectedCenterVec = centerVec - coneUnitDir*dirDist;
+  Scalar projectedCenterVecSquaredconeLength = projectedCenterVec.lengthSquared();
+  Scalar cutoffDist = dirDist * tanHalfAngle;
+  if( dirDist >= 0 ) {
+    Scalar squaredCutoffDist = cutoffDist * cutoffDist;
+    if( projectedCenterVecSquaredconeLength <= squaredCutoffDist )
+      return true;
+  }
+
+  Scalar angleAdjustedRadius = radius * invCosHalfAngle;
+  Scalar maxDist = angleAdjustedRadius + cutoffDist;
+  return projectedCenterVecSquaredconeLength <= maxDist*maxDist;
+}
+
+/// \internal Returns the bbox of a cone (approximation).
+function coneGetBBox( Vec3 origin, Vec3 unitDir, Scalar length, Scalar tanHalfAngle, out Vec3 min, out Vec3 max ) {
+  //Build BBox out of the cone (approx)
+  Scalar cutLen = length > 1e15 ? 1e15 : length;
+
+  Vec3 perpendicularDir;
+  perpendicularDir.setComponent( getMinComponent( unitDir ), 1.0 );//Make it axis-aligned to minimize axis-aligned bbox
+  perpendicularDir = (perpendicularDir - unitDir*perpendicularDir.dot(unitDir)).unit();
+  perpendicularDir *= cutLen*tanHalfAngle;
+  Vec3 otherPerpendicularDir = perpendicularDir.cross(unitDir);//inherits cutLen*tanHalfAngle factor
+  
+  Vec3 end = origin + unitDir*cutLen;
+  Box3 bbox( origin, origin );
+  bbox.merge( end + perpendicularDir + otherPerpendicularDir );
+  bbox.merge( end + perpendicularDir - otherPerpendicularDir );
+  bbox.merge( end - perpendicularDir + otherPerpendicularDir );
+  bbox.merge( end - perpendicularDir - otherPerpendicularDir );
+  min = bbox.min;
+  max = bbox.max;
+}
+
+/// \internal Returns the bsphere of a cone (approximation).
+inline coneGetBSphere( Vec3 origin, Vec3 unitDir, Scalar length, Scalar tanHalfAngle, out Vec3 bSphereCenter, out Scalar bSphereSquaredRadius ) {
+  //This is an approximation!
+  //TODO: compute the precise bsphere mathematically if not too costly (see http://en.wikipedia.org/wiki/Circumscribed_circle; use if tanHalfAngle < 1)
+  if(length < 0) {
+    bSphereCenter = origin;
+    bSphereSquaredRadius = -1;
+    return;
+  }
+  Scalar halfLen = length * 0.5;
+  bSphereCenter = origin + unitDir * halfLen;
+
+  Scalar baseRadius = tanHalfAngle * length;
+  bSphereSquaredRadius = halfLen * halfLen + baseRadius * baseRadius;
+}
+
+/// \internal
+inline Vec3 segmentPlaneIntersect( Vec3 planeOrigin, Vec3 planeUnitDir, Scalar pt1SignedDist, Vec3 pt1, Vec3 pt2 ) {
+  Vec3 v = pt2-pt1;
+  Scalar d = planeUnitDir.dot(v);
+  if( abs(d) < 1.0e-12 )
+    return pt1;
+  return pt1 + v * -pt1SignedDist / d;
+}
+
+/// \internal
+function Boolean ClipSegmentWithPlane( Vec3 planeOrigin, Vec3 planeUnitDir, Vec3 seg[2], out Vec3 seg1[2] ) {
+  Scalar signedDist[3];
+  Integer sign[2];
+  for( Size i = 0; i < 2; ++i ) {
+    signedDist[i] = planeUnitDir.dot(seg[i] - planeOrigin);
+    sign[i] = signedDist[i] < 0 ? -1 : 1;
+  }
+  Integer signSum = sign[0]+sign[1];
+  if(signSum == 2) {
+    return false;
+  }
+  if(signSum == -2) {
+    seg1 = seg;
+    return true;
+  }
+  Integer idx[2];
+  if(sign[0] < 0) {
+    idx[0] = 0;
+    idx[1] = 1;
+  } else {
+    idx[0] = 1;
+    idx[1] = 0;
+  }
+  seg1[0] = seg[idx[0]];
+  seg1[1] = segmentPlaneIntersect( planeOrigin, planeUnitDir, signedDist[idx[0]], seg[idx[0]], seg[idx[1]] );
+  return true;
+}
+
+/// \internal
+struct SegmentPoints {
+  Vec3 pointPairs[][2];
+  Size count;//Don't free array for better performance
+};
+
+inline Size SegmentPoints.size() {
+  return this.count;
+}
+
+SegmentPoints.resize!( Size count ) {
+  if( count > this.pointPairs.size() )
+    this.pointPairs.resize(count);
+
+  this.count = count;
+}
+
+inline SegmentPoints.push!( Vec3 newSeg[2] ) {
+  if( this.count == this.pointPairs.size() )
+    this.pointPairs.push(newSeg);
+  else
+    this.pointPairs[this.count] = newSeg;
+  ++this.count;
+}
+
+inline SegmentPoints.set!( Size index, Vec3 newSeg[2] ) {
+  this.pointPairs[index] = newSeg;
+}
+
+inline SegmentPoints.set!( Size index, Vec3 pt1, Vec3 pt2 ) {
+  this.pointPairs[index][0] = pt1;
+  this.pointPairs[index][1] = pt2;
+}
+
+inline Vec3[2] SegmentPoints.get( Size index ) {
+  return this.pointPairs[index];
+}
+
+inline SegmentPoints.get( Size index, io Vec3 pt1, io Vec3 pt2 ) {
+  pt1 = this.pointPairs[index][0];
+  pt2 = this.pointPairs[index][1];
+}
+
+/// \internal
+function ClipSegmentsWithPlane( Vec3 origin, Vec3 unitDir, io SegmentPoints segments ) {
+  Size target = 0;
+  for( Size i = 0; i < segments.size(); ++i ) {
+    Vec3 newSeg[2];
+    if( ClipSegmentWithPlane( origin, unitDir, segments.get(i), newSeg ) )
+      segments.set( target++, newSeg );
+  }
+  segments.resize(target);
+}
+
+/// \internal
+function GetBoxSegments( Vec3 pts[8], io SegmentPoints segments ) {
+  segments.resize(12);
+  segments.set(0, pts[0], pts[1]);
+  segments.set(1, pts[1], pts[3]);
+  segments.set(2, pts[3], pts[2]);
+  segments.set(3, pts[2], pts[0]);
+  segments.set(4, pts[4], pts[6]);
+  segments.set(5, pts[6], pts[7]);
+  segments.set(6, pts[7], pts[5]);
+  segments.set(7, pts[5], pts[4]);
+  segments.set(8, pts[0], pts[4]);
+  segments.set(9, pts[1], pts[5]);
+  segments.set(10, pts[3], pts[7]);
+  segments.set(11, pts[2], pts[6]);
+}

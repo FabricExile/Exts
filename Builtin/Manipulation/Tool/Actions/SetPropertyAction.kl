@@ -1,0 +1,143 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// \internal
+  interface SetPropertyAction_virtuals {
+    Ref<PropertyContainer> getPropertyContainer();
+  };
+
+  /**
+  \versionadded 2.6.0
+
+  The SetPropertyAction sets a named property on the owner BaseTool, and can restore
+  the previous scaling upon destruction( ~SetPropertyAction ).
+
+  The action's do and undo can be linked to a BaseTool state and simplify tool's logic and data management (see :kl-ref:`Tool::BaseTool.attachAndDoStateSpecificAction` ).
+  The action can also be triggered (do + undo) by connected events; see :kl-ref:`Tool::BaseAction.connectToDo` and :kl-ref:`Tool::BaseAction.connectToUndo` .
+
+  The overriding of the property by the action is robust, since a special stack tracks overrides and maintains the right
+  order and values even if the overrides are removed in a different order.
+  See :ref:`TPG.state-actions` for more details and examples related to states and actions.
+  */
+  object SetPropertyAction : BaseAction, SetPropertyAction_virtuals{
+    String propertyName;
+    RTVal value;
+    Boolean localOnly;
+
+    Boolean wasSet;
+    Boolean restorePrevValueOnDestroyEnabled;
+
+    PropertyOverride override;
+  };
+
+  /// Connects and attaches to the eventSource.
+  SetPropertyAction( Ref<EventSource> eventSource, EventName sourceEventName, String propertyName, RTVal value, Boolean restorePrevValueOnDestroy ) {
+    this.restorePrevValueOnDestroy( restorePrevValueOnDestroy );
+    this.setProperty( propertyName, value );
+    this.connectAndAttach( eventSource, sourceEventName, propertyName, value );
+  }
+
+  SetPropertyAction( String propertyName, RTVal value, Boolean restorePrevValueOnDestroy ) {
+    this.restorePrevValueOnDestroy( restorePrevValueOnDestroy );
+    this.setProperty( propertyName, value );
+  }
+
+  SetPropertyAction.setProperty!( String propertyName, RTVal value ) {
+    this.setPropertyName( propertyName );
+    this.setValue( value );
+  }
+
+  SetPropertyAction.setPropertyName!( String propertyName ) {
+    // Auto-rename the action
+    if( this.name == this.type() || this.name == "SetPropertyAction_" + this.propertyName )
+      this.setName( "SetPropertyAction_" + propertyName );
+
+    this.propertyName = propertyName;
+  }
+
+  SetPropertyAction.setValue!( RTVal value ) {
+    this.value = value;
+    if( this.wasSet )
+      this.doAction();
+  }
+
+  /// Enable undo on delete
+  SetPropertyAction.restorePrevValueOnDestroy!( Boolean enable ) {
+    this.restorePrevValueOnDestroyEnabled = enable;
+  }
+
+  SetPropertyAction.connectAndAttach!( Ref<EventSource> eventSource, EventName sourceEventName, String propertyName, RTVal value ) {
+    this.setProperty( propertyName, value );
+    this.connectToDoAndAttach( eventSource, sourceEventName );
+  }
+
+  /// \internal
+  Ref<PropertyContainer> SetPropertyAction.getPropertyContainer() {
+    return GetParentPropertyContainer( this );
+  }
+
+  /// \internal
+  SetPropertyAction.doAction!( ) {
+    if( Boolean( this.propertyName ) && Boolean( this.value.type() ) ) {
+      Ref<PropertyContainer> propContainer = this.getPropertyContainer();
+
+      if( !propContainer ) {
+        setError( "SetPropertyAction.doAction: not attached to a PropertyContainer" );
+        return;
+      }
+
+      if( this.restorePrevValueOnDestroyEnabled ) {
+        Ref<OverridablePropertyContainer> overPropContainer = propContainer;
+
+        if( !overPropContainer ) {
+          setError( "SetPropertyAction.doAction: restorePrevValueOnDestroyEnabled == true and not attached to an OverridablePropertyContainer" );
+          return;
+        }
+
+        if( !this.override )
+          this.override = overPropContainer.createPropertyOverride( this.propertyName, this.value, this.localOnly );
+        else
+          this.override.setValue( this.value );
+
+      } else
+        propContainer.setProperty( this.propertyName, this.value );
+
+      if( ToolEventDebugTrace )
+        report( "SetPropertyAction: " + GetComponentName( propContainer ) + "." + this.propertyName + "=" + String( this.value ) );
+
+      this.wasSet = true;
+    }
+    this.parent.doAction();
+  }
+
+  /// \internal
+  /// Non-virtual version that can be safely called from the destructor
+  /// This can be removed once KL is fixed to not call specialized methods in destructors
+  SetPropertyAction.undoActionInternal!( ) {
+    this.wasSet = false;
+    if( this.override ) {
+      this.override.invalidate();
+      this.override = null;
+    }
+    this.parent.undoAction();
+  }
+
+  /// \internal
+  SetPropertyAction.undoAction!( ) {
+    this.undoActionInternal();
+  }
+
+  SetPropertyAction.invalidate!( ) {
+    if( this.restorePrevValueOnDestroyEnabled )
+      this.undoActionInternal();
+    this.parent.invalidate();
+  }
+
+  ~SetPropertyAction() {
+    if( this.restorePrevValueOnDestroyEnabled )
+      this.undoActionInternal();
+  }
+}// namespace Tool

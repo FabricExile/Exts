@@ -1,0 +1,120 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// Base object being both a Component, a EventSource and a EventListener
+  /// See :ref:`TPG.events` for more information and examples.
+  object EventListenerComponent : EventSourceComponent, EventListener{
+    BaseEventListener eventListener;
+    Boolean parentIsEventSource;// False by default
+  };
+
+  /// \internal
+  /// Optimization: create only if we have per state components
+  EventListenerComponent.createEventListenerIfNotDone() {
+    if( !this.eventListener ) {
+      Ref<EventListenerComponent> mutableThis = this;
+      mutableThis.eventListener = BaseEventListener();
+      mutableThis.eventListener.setContainer( this );
+    }
+  }
+
+  EventListenerComponent.setParentAsEventSource!( Boolean parentIsEventSource ) {
+    this.parentIsEventSource = parentIsEventSource;
+
+    Ref<EventSource> parentSource = this.getParent();
+    if( parentSource ) {
+      if( parentIsEventSource )
+        this.connect( parentSource, false );
+      else
+        this.disconnect( parentSource );
+    }
+  }
+
+  EventListenerComponent.setParent!( Ref<Object> owner ) {
+    Ref<EventSource> prevParentSource = this.getParent();
+    Ref<EventSource> newParentSource = owner;
+
+    this.parent.setParent( owner );
+
+    if( this.parentIsEventSource && prevParentSource !== newParentSource ) {
+      if( newParentSource )
+        this.connect( newParentSource, false );
+      if( prevParentSource )
+        this.disconnect( prevParentSource );
+    }
+  }
+
+  EventListenerComponent.connect!( Ref<EventSource> eventSource, Boolean ownedByEventSource ) {
+    this.createEventListenerIfNotDone();
+    this.eventListener.connect( eventSource, ownedByEventSource );
+  }
+
+  EventListenerComponent.connect!( Ref<EventSource> eventSource, Boolean ownedByEventSource, String sourceEvent ) {
+    this.createEventListenerIfNotDone();
+    this.eventListener.connect( eventSource, ownedByEventSource, sourceEvent );
+  }
+
+  EventListenerComponent.connect!( Ref<EventSource> eventSource, Boolean ownedByEventSource, String sourceEvent, String mappedListenerEvent ) {
+    this.createEventListenerIfNotDone();
+    this.eventListener.connect( eventSource, ownedByEventSource, sourceEvent, mappedListenerEvent );
+  }
+
+  EventListenerComponent.connectAndAttach!( Ref<EventSource> eventSource ) {
+    this.createEventListenerIfNotDone();
+    this.eventListener.connectAndAttach( eventSource );
+  }
+
+  EventListenerComponent.connectAndAttach!( Ref<EventSource> eventSource, String sourceEvent ) {
+    this.createEventListenerIfNotDone();
+    this.eventListener.connectAndAttach( eventSource, sourceEvent );
+  }
+
+  EventListenerComponent.connectAndAttach!( Ref<EventSource> eventSource, String sourceEvent, String mappedListenerEvent ) {
+    this.createEventListenerIfNotDone();
+    this.eventListener.connectAndAttach( eventSource, sourceEvent, mappedListenerEvent );
+  }
+
+  EventListenerComponent.disconnect!( Ref<EventSource> eventSource ) {
+    if( this.eventListener )
+      this.eventListener.disconnect( eventSource );
+  }
+
+  EventListenerComponent.disconnect!( Ref<EventSource> eventSource, String sourceEvent ) {
+    if( this.eventListener )
+      this.eventListener.disconnect( eventSource, sourceEvent );
+  }
+
+  EventListenerComponent.disconnectAll!( ) {
+    if( this.eventListener )
+      this.eventListener.disconnectAll();
+  }
+
+  /// \internal
+  EventListenerComponent.eventSourceDestroying!( Ref<EventSource> eventSource, ToolEventUserID userID ) {
+    if( this.eventListener )
+      this.eventListener.eventSourceDestroying( eventSource, userID );
+  }
+
+  /// Implementation of EventSource; to be overriden.
+  EventListenerComponent.onEvent!( ToolEvent event, ToolEventUserID userID ) {}
+
+  /// \internal
+  /// Non-virtual version that can be safely called from the destructor
+  /// This can be removed once KL is fixed to not call specialized methods in destructors
+  EventListenerComponent.invalidateInternal!( ) {
+    if( this.eventListener )
+      this.eventListener.invalidate();
+    this.parent.invalidate();
+  }
+
+  EventListenerComponent.invalidate!( ) {
+    this.invalidateInternal();
+  }
+
+  ~EventListenerComponent() {
+    this.invalidateInternal();
+  }
+}// namespace Tool

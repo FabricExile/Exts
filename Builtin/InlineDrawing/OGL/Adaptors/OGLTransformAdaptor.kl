@@ -1,0 +1,47 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+\versionadded 1.12.0
+
+The OGLTransformAdaptor implements the InlineTransformAdaptor interface. It is used to integrate InlineTransform within the OpenGL pipeline.
+
+Note: Since 2.7.0 the OGLTransformAdaptor is not longer used. The shape adaptors have the responsibility of drawing transforms themselves. This has been done to allow for hardware instancing.
+\dfgPresetOmit
+*/
+object OGLTransformAdaptor : InlineTransformAdaptor {};
+
+/// default constructor
+function OGLTransformAdaptor() {}
+
+/// returns the types this adaptor is capable of drawing
+function String[] OGLTransformAdaptor.getTransformTypes() {
+  String result[];
+  result.push('InlineTransformBase');
+  return result;
+}
+
+/// draws the lines to the screen. this is used by the 
+/// InlineInstance, and should not be called manually.
+/// \internal
+function Boolean OGLTransformAdaptor.draw!(io DrawContext context, io Ref<InlineTransform> transform, Index index, Size count) {
+
+  Mat44 modelMatrix = transform.nonLocking_getGlobalXfo(index).toMat44();
+  Ref<InlineShader> shader = context.getMetaData('currentShader');
+  return OGLTransform_draw(context, shader, modelMatrix);
+
+}
+
+function Boolean OGLTransform_draw(io DrawContext context, io Ref<InlineShader> shader, Mat44 modelMatrix)
+{
+  if(!shader.drawUniform(context, InlineUniform("u_modelMatrix", modelMatrix))) {
+    return false;
+  }
+  
+  if(!shader.drawUniform(context, InlineUniform("u_normalMatrix", context.invViewMat * modelMatrix.upperLeft()))) {
+    return false;
+  }
+
+  return true;
+}

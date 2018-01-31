@@ -1,0 +1,155 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+const Integer ImporterLight_PointLight = 0;
+const Integer ImporterLight_DirectionalLight = 1;
+const Integer ImporterLight_SpotLight = 2;
+const Integer ImporterLight_LinearLight = 3;
+const Integer ImporterLight_RectangularLight = 4;
+
+const Integer ImporterLight_Linear = 0;
+const Integer ImporterLight_Cubic = 1;
+const Integer ImporterLight_Quadratic = 2;
+
+/**
+The ImporterLight represents an imported light. The ImporterLight
+provides access to a series of properties such as the intensity, for
+example.
+\dfgPresetOmit
+*/
+object ImporterLight : ImporterTransform permits Importer
+{
+};
+
+/// \dfgPresetOmit
+function ImporterLight(String id, String path) {
+  this.initialize(id, path, 'Light');
+}
+
+/// \dfgPresetOmit
+protected function ImporterLight.initialize!(String id, String path, String type) {
+  this.parent.initialize(id, path, type);
+
+  // change default color - objects are black by default
+  this.initProperty('color', ImporterColor(Color(1.0, 1.0, 1.0, 1.0)));
+
+  // define the light specific properties
+  this.initProperty('lightEnabled', ImporterBoolean(true));
+  this.initProperty('lightType', ImporterInteger(ImporterLight_SpotLight));
+  this.initProperty('decayType', ImporterInteger(ImporterLight_Linear));
+  this.initProperty('intensity', ImporterScalar(1.0));
+  this.initProperty('castShadow', ImporterBoolean(true));
+  this.initProperty('coneAngle', ImporterScalar(70.0)); // in degrees
+  this.initProperty('penumbraAngle', ImporterScalar(0.0)); // in degrees
+  this.initProperty('nearAttenuation', ImporterScalar(0.0)); // in cm
+  this.initProperty('farAttenuation', ImporterScalar(0.0)); // in cm
+}
+
+/// \dfgPresetOmit
+function Boolean ImporterLight.getLightEnabled(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('lightEnabled', context);
+  return mutableThis.getBooleanProperty('lightEnabled');
+}
+
+/// \dfgPresetOmit
+function ImporterLight.setLightEnabled!(Boolean lightEnabled) {
+  this.setProperty('lightEnabled', lightEnabled);
+}
+
+/// \dfgPresetOmit
+function Integer ImporterLight.getLightType(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('lightType', context);
+  return mutableThis.getIntegerProperty('lightType');
+}
+
+/// \dfgPresetOmit
+function ImporterLight.setLightType!(Integer lightType) {
+  this.setProperty('lightType', lightType);
+}
+
+/// \dfgPresetOmit
+function Integer ImporterLight.getDecayType(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('decayType', context);
+  return mutableThis.getIntegerProperty('decayType');
+}
+
+/// \dfgPresetOmit
+function ImporterLight.setDecayType!(Integer decayType) {
+  this.setProperty('decayType', decayType);
+}
+
+/// \dfgPresetOmit
+function Scalar ImporterLight.getIntensity(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('intensity', context);
+  return mutableThis.getScalarProperty('intensity');
+}
+
+/// \dfgPresetOmit
+function ImporterLight.setIntensity!(Scalar intensity) {
+  this.setProperty('intensity', intensity);
+}
+
+/// \dfgPresetOmit
+function Boolean ImporterLight.getCastShadow(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('castShadow', context);
+  return mutableThis.getBooleanProperty('castShadow');
+}
+
+/// \dfgPresetOmit
+function ImporterLight.setCastShadow!(Boolean castShadow) {
+  this.setProperty('castShadow', castShadow);
+}
+
+/// \dfgPresetOmit
+function Scalar ImporterLight.getConeAngle(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('coneAngle', context);
+  return mutableThis.getScalarProperty('coneAngle');
+}
+
+/// \dfgPresetOmit
+function ImporterLight.setConeAngle!(Scalar coneAngle) {
+  this.setProperty('coneAngle', coneAngle);
+}
+
+/// \dfgPresetOmit
+function Scalar ImporterLight.getPenumbraAngle(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('penumbraAngle', context);
+  return mutableThis.getScalarProperty('penumbraAngle');
+}
+
+/// \dfgPresetOmit
+function ImporterLight.setPenumbraAngle!(Scalar penumbraAngle) {
+  this.setProperty('penumbraAngle', penumbraAngle);
+}
+
+/// \dfgPresetOmit
+function Scalar ImporterLight.getNearAttenuation(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('nearAttenuation', context);
+  return mutableThis.getScalarProperty('nearAttenuation');
+}
+
+/// \dfgPresetOmit
+function ImporterLight.setNearAttenuation!(Scalar nearAttenuation) {
+  this.setProperty('nearAttenuation', nearAttenuation);
+}
+
+/// \dfgPresetOmit
+function Scalar ImporterLight.getFarAttenuation(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('farAttenuation', context);
+  return mutableThis.getScalarProperty('farAttenuation');
+}
+
+/// \dfgPresetOmit
+function ImporterLight.setFarAttenuation!(Scalar farAttenuation) {
+  this.setProperty('farAttenuation', farAttenuation);
+}

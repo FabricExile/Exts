@@ -1,0 +1,379 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+require InlineDrawing;
+
+namespace Tool {
+  namespace InlineDrawingRender {
+
+    /// BaseSelectionDrawableItem implements SelectionDrawableItem along with base services for registering to
+    /// a SelectionManagerDrawList.
+    object InlineInstanceToSelectionDrawableItem : BaseSelectionDrawableItem, ItemReference{
+      Ref<InlineInstance> inlineInstance;// Note: use a non-owning ref, since we are stored in its meta-data (else would leak!)
+      OGLBuffer_ pointSizesLegacyBufferWrapper;// Used for InlineDebugShape to set pointSizes
+    };
+
+    /// ItemReference implementation
+    String InlineInstanceToSelectionDrawableItem.getName( SelectionManagerDrawListKey userKey ) {
+      if( this.inlineInstance ) {
+        Ref<InlineTransform> inlineTransform = this.inlineInstance.transform;
+        if( inlineTransform ) {
+          String name = inlineTransform.getPath();
+          if( inlineTransform.getGlobalCount() > 1 ) {
+            UInt32 index = userKey.userID;
+            name += "[" + index + "]";
+          }
+          return name;
+        }
+      }
+      return "<nullInlineInstance>";
+    }
+
+    /// ItemReference implementation
+    String InlineInstanceToSelectionDrawableItem.getName() {
+      return this.getName( SelectionManagerDrawListKey() );
+    }
+
+    /// ItemReference implementation
+    String InlineInstanceToSelectionDrawableItem.getDescription() {
+      return this.getName();
+    }
+
+    /// ItemReference implementation
+    String InlineInstanceToSelectionDrawableItem.getComponentsType() {
+      return ComponentType_object;
+    }
+
+    /// ItemReference implementation
+    String InlineInstanceToSelectionDrawableItem.getCategory() {
+      return ItemReferenceCategory_geometry;
+    }
+
+    /// ItemReference implementation
+    Ref<Object> InlineInstanceToSelectionDrawableItem.getReferencedObject() {
+      Ref<InlineGeometryShape> shape = this.inlineInstance.getShape();
+      if( shape )
+        return shape.geo;
+      else
+        return null;
+    }
+
+    /// ItemReference implementation
+    UInt32 InlineInstanceToSelectionDrawableItem.getItemHash() {
+      return this.inlineInstance.uid();
+    }
+
+    /// ItemReference implementation
+    Boolean InlineInstanceToSelectionDrawableItem.sameItem( Ref<ItemReference> other ) {
+      Ref<InlineInstanceToSelectionDrawableItem> otherInl = other;
+      if( !otherInl )
+        return false;
+      return this.inlineInstance === otherInl.inlineInstance;
+    }
+
+    /// ItemReference implementation
+    Boolean InlineInstanceToSelectionDrawableItem.sameItemAndComponents( Ref<ItemReference> other ) {
+      return this.sameItem( other );
+    }
+
+    /// ItemReference implementation
+    Boolean InlineInstanceToSelectionDrawableItem.includesComponents( Ref<ItemReference> other ) {
+      return true;
+    }
+
+    /// ItemReference implementation
+    Size[] InlineInstanceToSelectionDrawableItem.getComponentIndices() {
+      Size comps[];
+      comps.push( 0 );
+      return comps;
+    }
+
+    /// ItemReference implementation
+    InlineInstanceToSelectionDrawableItem.addComponents!( Ref<ItemReference> other, io Size addedComponents[] ) {}
+
+    /// ItemReference implementation
+    InlineInstanceToSelectionDrawableItem.subtractComponents!( Ref<ItemReference> other, io Size subtractedComponents[] ) {}
+
+    /// ItemReference implementation
+    InlineInstanceToSelectionDrawableItem.toggleComponents!( Ref<ItemReference> other, io Size addedComponents[], io Size removedComponents[] ) {}
+
+    /// \internal
+    Mat44 InlineInstanceToSelectionDrawableItem.getTransform( Ref<Viewport> viewport, UInt32 transformIndex ) {
+
+      Ref<InlineTransform> inlineTransform = this.inlineInstance.transform;
+      if( inlineTransform ) {
+        Mat44 modelMatrix = inlineTransform.nonLocking_getGlobalXfo( transformIndex ).toMat44();
+        Mat44 projMat = viewport.getProjectionMat();
+        Mat44 viewMat = viewport.getViewMat();
+
+        return projMat * viewMat * modelMatrix;
+      }
+      return Mat44();
+    }
+
+    /// SelectionDrawableItem interface
+    String InlineInstanceToSelectionDrawableItem.getCustomTransformShaderName() {
+
+      // Debug shape has point sizes, which must be reflected through selection
+      Ref<InlineDebugShape> debugShape = this.inlineInstance.getShape();
+      return debugShape ? "DebugShapeSelect" : String();
+    }
+
+    /// SelectionDrawableItem interface
+    InlineInstanceToSelectionDrawableItem.buildCustomTransformShader( String shaderName, io OGLProgram shader ) {
+      if( shaderName == "DebugShapeSelect" ) {
+        shader.addShader( "
+                          #version 150
+
+                          uniform mat4 transform;
+        in vec4 positions;
+        in float pointSizes;
+        flat out int instanceID;
+
+        void main() {
+          gl_Position = transform * positions;
+          gl_PointSize = pointSizes;
+          instanceID = gl_InstanceID;
+        }
+        ", GL_VERTEX_SHADER );
+      }
+    }
+
+    /// SelectionDrawableItem interface
+    InlineInstanceToSelectionDrawableItem.prepareForSelectionDraw!(
+      SelectionManagerDrawListKey userKey,
+      UInt8 selectionMode,
+      Ref<Viewport> viewport,
+      io UInt32 glInstanceCount,
+      io Mat44 transform,
+      io OGLBuffer_ positionsBuffer,
+      io OGLBuffer legacyPositionsBuffer,
+      io Ref<OGLProgramParamValues> shaderParamValues,
+      io Ref<OGLContext> context ) {
+
+      glInstanceCount = 1;// InlineDrawing doesn't use draw instancing
+      UInt32 index = userKey.userID;
+      transform = this.getTransform( viewport, index );
+
+      Ref<InlineGeometryShape> shape = this.inlineInstance.getShape();
+      if( shape ) {
+        // Curves control points is different from its sampled points
+        Ref<OGLCurvesShapeAdaptor> curvesAdaptor = shape.adaptor;
+        if( Boolean( curvesAdaptor ) && selectionMode == SelectionMode_Points ) {
+          Ref<ItemReference> itemReference = this;
+          Ref<PointsDrawData> pointsData = GetOrCreatePointsDrawData( itemReference, context );
+          positionsBuffer = pointsData.positionsBuffer;
+        } else {
+          Ref<OGLBufferDictionary> buffers = shape.getMetaData( 'buffers' );
+          if( !buffers ) {
+            //report( "HAS GL CONTEXT " + cpglHaveContext() );
+            setError( "InlineInstanceToSelectionDrawableItem.prepareForSelectionDraw: GL buffers have not been created" );
+            return;
+          }
+          if( buffers )
+            legacyPositionsBuffer = buffers.get( "positions" );
+
+          Ref<InlineDebugShape> debugShape = shape;
+          if( debugShape ) {
+
+            // set pointSizes
+            Ref<OGLBuffer> pointSizesBuffer = buffers.get( "pointSizes" );
+            if( pointSizesBuffer ) {
+              Size pointSizesKey = shaderParamValues.getProgram().getParameterKey( "pointSizes" );
+              if( pointSizesKey != InvalidIndex ) {
+                context.stateCache.enableVertexProgramPointSize( true );
+                if( !this.pointSizesLegacyBufferWrapper )
+                  this.pointSizesLegacyBufferWrapper = OGLBuffer_();
+                this.pointSizesLegacyBufferWrapper.setFromLegacyBuffer( pointSizesBuffer );
+                shaderParamValues.setVertexAttrib( pointSizesKey, this.pointSizesLegacyBufferWrapper );
+              }
+            }
+          }
+        }
+      }
+    }
+
+    Ref<Geometry> InlineInstanceToSelectionDrawableItem.getGeometry( SelectionManagerDrawListKey userKey ) {
+      return this.getReferencedObject();
+    }
+
+    /// SelectionDrawableItem interface
+    InlineInstanceToSelectionDrawableItem.drawGLPrimitivesForSelection!( SelectionManagerDrawListKey userKey, UInt8 selectionMode, Mat44 positionsTransform, UInt32 shaderPrimitiveIndex, io Ref<OGLContext> context ) {
+
+      // We draw with SelectionManager's default shader: only call drawElements with our buffer.
+
+      Ref<InlineGeometryShape> shape = this.inlineInstance.getShape();
+      if( shape ) {
+        Ref<OGLBufferDictionary> buffers = shape.getMetaData( 'buffers' );
+        if( buffers ) {
+          if( selectionMode == SelectionMode_Elements_excludePartial || selectionMode == SelectionMode_Points ) {
+
+            // For these, we draw the points only
+            Ref<InlinePointsShape> pointsShape = shape;
+            if( pointsShape )
+              context.stateCache.pointSize( pointsShape.getPointSize() );
+            else {
+              // Drawing in points mode for all geometry types
+              if( selectionMode == SelectionMode_Points )
+                context.stateCache.pointSize( GetSelectionManager().defaultPointDrawSize );// This is the size we draw the point components
+              else
+                context.stateCache.pointSize( 1 );
+            }
+
+            // Curves control points is different from its sampled points
+            Ref<Curves> curves = shape.geo;
+            if( Boolean( curves ) && selectionMode == SelectionMode_Points ) {
+              glDrawArrays( GL_POINTS, 0, curves.pointCount() );
+            } else {
+              OGLBuffer positionsBuffer = buffers.get( "positions" );
+              if( positionsBuffer )
+                glDrawArrays( GL_POINTS, 0, positionsBuffer.elementCount );
+            }
+          } else {
+            Type adaptorType = shape.adaptor.type();
+            OGLBuffer buffer = buffers.get( 'topology' );
+            Data NULL;
+            if( buffer ) {
+
+              Integer glPrimitiveType = -1;//Note: GL_POINTS == GL_NONE, so we use -1
+              if( adaptorType == OGLCurvesShapeAdaptor || adaptorType == OGLLinesShapeAdaptor )
+                glPrimitiveType = GL_LINES;
+              else if( adaptorType == OGLMeshShapeAdaptor )
+                glPrimitiveType = GL_TRIANGLES;
+              else if( adaptorType == OGLPointsShapeAdaptor ) {
+                context.stateCache.pointSize( GetSelectionManager().defaultPointDrawSize );
+                glPrimitiveType = GL_POINTS;
+              }
+
+              if( glPrimitiveType != -1 ) {
+                context.stateCache.lineWidth( 1 );
+
+                Ref<InlineLinesShape> linesShape = shape;
+                if( linesShape )
+                  context.stateCache.lineWidth( linesShape.getLineWidth() + 2 );
+
+                Ref<InlineCurvesShape> curvesShape = shape;
+                if( curvesShape )
+                  context.stateCache.lineWidth( curvesShape.getLineWidth() + 2 );
+
+                // We assume the buffers are already up-to-date (InlineDrawing.draw() was called before)
+                context.stateCache.bindBuffer( GL_ELEMENT_ARRAY_BUFFER, buffer.bufferID );
+                glDrawElements( glPrimitiveType, buffer.elementCount, buffer.bufferElementComponentType, NULL );
+
+                if( glPrimitiveType == GL_TRIANGLES ) {
+                  // Note: in order to enable selection of thin triangles, these should be drawn twice, with glPolygonMode(GL_FRONT_AND_BACK, GL_LINES)
+                  // and with glPolygonMode(GL_FRONT_AND_BACK, GL_FILL). Value should be set back to GL_FILL.
+                  glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
+                  glDrawElements( glPrimitiveType, buffer.elementCount, buffer.bufferElementComponentType, NULL );
+                  glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
+                }
+              }
+            } else if( adaptorType == OGLDebugShapeAdaptor ) {
+              // Debug shape draws multiple primitive types
+              // but doesn't support component selection (don't need to care about glPolygonMode)
+              Ref<DrawElements> elts = shape.geo;
+
+              if( elts.pointsIndicesOffset ) {
+                buffer = buffers.get( 'pointsTopology' );
+                if( buffer ) {
+                  context.stateCache.pointSize( elts.getPointSize() );
+                  context.stateCache.bindBuffer( GL_ELEMENT_ARRAY_BUFFER, buffer.bufferID );
+                  glDrawElements( GL_POINTS, buffer.elementCount, buffer.bufferElementComponentType, NULL );
+                }
+              }
+
+              if( elts.linesIndicesOffset ) {
+                buffer = buffers.get( 'linesTopology' );
+                if( buffer ) {
+                  context.stateCache.lineWidth( elts.getLineWidth() );
+                  context.stateCache.bindBuffer( GL_ELEMENT_ARRAY_BUFFER, buffer.bufferID );
+                  glDrawElements( GL_LINES, buffer.elementCount, buffer.bufferElementComponentType, NULL );
+                }
+              }
+
+              if( elts.trianglesIndicesOffset ) {
+                buffer = buffers.get( 'trianglesTopology' );
+                if( buffer ) {
+                  context.stateCache.bindBuffer( GL_ELEMENT_ARRAY_BUFFER, buffer.bufferID );
+                  glDrawElements( GL_TRIANGLES, buffer.elementCount, buffer.bufferElementComponentType, NULL );
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    /// SelectionDrawableItem interface
+    UInt32[] InlineInstanceToSelectionDrawableItem.primitiveIDsToComponents( UInt8 selectionMode, IndexSet primitiveIDs ) {
+
+      Ref<InlineGeometryShape> shape = this.inlineInstance.getShape();
+      Ref<Geometry> geo = shape.geo;
+
+      return SelectedPrimitiveIDsToComponents( geo, selectionMode, primitiveIDs );
+    }
+
+    /// SelectionDrawableItem interface
+    InlineInstanceToSelectionDrawableItem.drawGLComponents!( SelectionManagerDrawListKey userKey, io Ref<ItemReference> itemAndComponents, Ref<Viewport> viewport, io Ref<OGLContext> context ) {
+      if( itemAndComponents.getComponentsType() == ComponentType_object ) {
+        this.drawGLPrimitivesForSelection( userKey, SelectionMode_Objects, this.getTransform( viewport, userKey.userID ), InvalidIndex, context );
+      } else {
+        Ref<InlineGeometryShape> shape = this.inlineInstance.getShape();
+        Ref<Geometry> geo = shape.geo;
+        if( geo ) {
+          Ref<DrawableGeometryComponents> geomComponents = itemAndComponents;
+          Ref<ComponentDrawData> drawData = GetOrCreateComponentDrawData( geomComponents, context );
+          drawData.drawElements( this, viewport, context );
+        }
+      }
+    }
+
+    const String InlineInstanceSelectableMetaData = "selDrawable";
+
+    object InlineInstanceSelectableMetaDataContainer{
+      InlineInstanceToSelectionDrawableItem drawable;
+    };
+
+    ~InlineInstanceSelectableMetaDataContainer() {
+      // Invalidate the back ref so it doesn't keep an invalid instance ref
+      if( this.drawable )
+        this.drawable.inlineInstance = null;
+    }
+
+    /// This method attaches a InlineInstanceToSelectionDrawableItem to an InlineInstance
+    Ref<InlineInstanceToSelectionDrawableItem> GetOrCreateSelectableInlineInstance( Ref<InlineInstance> instance ) {
+      if( instance ) {
+        InlineInstanceSelectableMetaDataContainer drawableContainer = instance.metaData.get( InlineInstanceSelectableMetaData, null );
+        if( !drawableContainer ) {
+          Ref<InlineInstance> mutableInstance = instance;
+          drawableContainer = InlineInstanceSelectableMetaDataContainer();
+          drawableContainer.drawable = InlineInstanceToSelectionDrawableItem();
+          drawableContainer.drawable.inlineInstance = instance;
+          mutableInstance.metaData[InlineInstanceSelectableMetaData] = drawableContainer;
+        }
+        return drawableContainer.drawable;
+      } else
+        return null;
+    }
+
+    /// This method attaches a InlineInstanceToSelectionDrawableItem to an InlineInstance
+    Ref<InlineInstanceToSelectionDrawableItem> AddSelectableInlineInstanceToList( Ref<InlineInstance> instance, io SelectionManagerDrawList drawList ) {
+      Ref<InlineInstanceToSelectionDrawableItem> drawable = GetOrCreateSelectableInlineInstance( instance );
+      if( drawable ) {
+        drawable.registerInstanceArray( drawList, instance, instance.transform.nonLocking_getGlobalCount() );
+        return drawable;
+      } else
+        return null;
+    }
+
+    RemoveSelectableInlineInstanceFromList( io Ref<InlineInstance> instance, io SelectionManagerDrawList drawList ) {
+      if( instance ) {
+        Ref<InlineInstanceSelectableMetaDataContainer> prevDrawable = instance.metaData.get( InlineInstanceSelectableMetaData, null );
+        if( prevDrawable )
+          prevDrawable.drawable.unregister( drawList );
+      }
+    }
+
+  }// namespace InlineDrawingRender
+}// namespace Tool

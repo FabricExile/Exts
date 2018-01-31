@@ -1,0 +1,730 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+
+/**
+The :kl-ref:`Vec3_d` type represents a vector with 3 components. The :kl-ref:`Vec3_d` is also used as the row type for the :kl-ref:`Mat33`.
+
+\rst
+  .. kl-example:: Vec3_d
+
+    Vec3_d v(0.0, 0.0, 0.0);
+
+\endrst
+\note Vec3_d utilizes the KL :ref:`vector_functions`
+
+\seealso Vec2, Vec4, Xfo
+\dfgTypeColor Color(255, 242, 0)
+\dfgPresetColor Color(99, 129, 92)
+*/
+struct Vec3_d
+{
+  Float64 x;
+  Float64 y;
+  Float64 z;
+};
+
+/// Default constructor
+inline Vec3_d() {
+}
+
+/// Constructor from scalar components
+inline Vec3_d(Float64 x, Float64 y, Float64 z) {
+  this.set(x, y, z);
+}
+
+/// Constructor with same scalar for all components
+inline Vec3_d(Float64 value) {
+  this.set(value);
+}
+
+
+/// Setter from scalar components
+inline Vec3_d.set!(Float64 x, Float64 y, Float64 z) {
+  this.x = x;
+  this.y = y;
+  this.z = z;
+}
+
+/// Setter from same scalar for all components
+inline Vec3_d.set!(Float64 value) {
+  this.x = value;
+  this.y = value;
+  this.z = value;
+}
+
+/// Setter from another vector
+inline Vec3_d.set!(Vec3 v) {
+  this.x = Float64(v.x);
+  this.y = Float64(v.y);
+  this.z = Float64(v.z);
+}
+
+/// Setter from another vector
+inline Vec3_d.set!(Vec3_i v) {
+  this.x = Float64(v.x);
+  this.y = Float64(v.y);
+  this.z = Float64(v.z);
+}
+
+/// Setter from another vector
+inline Vec3_d.set!(Vec3_d v) {
+  this.x = Float64(v.x);
+  this.y = Float64(v.y);
+  this.z = Float64(v.z);
+}
+
+/// Setter from (standard/external) float32 array
+inline Vec3_d.set!(Float32 v<>) {
+  this.x = v[0];
+  this.y = v[1];
+  this.z = v[2];
+}
+
+/// Setter from (standard/external) float64 array
+inline Vec3_d.set!(Float64 v<>) {
+  this.x = Float64(v[0]);
+  this.y = Float64(v[1]);
+  this.z = Float64(v[2]);
+}
+
+/// Getter to (standard/external) float32 array
+inline Vec3_d.get?(io Float32 v<>) {
+  v[0] = Float32(this.x);
+  v[1] = Float32(this.y);
+  v[2] = Float32(this.z);
+}
+
+/// Getter to (standard/external) float64 array
+inline Vec3_d.get?(io Float64 v<>) {
+  v[0] = this.x;
+  v[1] = this.y;
+  v[2] = this.z;
+}
+
+/// Setter from (standard/external) float32 array and an offset
+inline Vec3_d.set!(Float32 v<>, UInt32 o) {
+  if(v.size() >= 3 + o) {
+    this.x = v[o + 0];
+    this.y = v[o + 1];
+    this.z = v[o + 2];
+  }
+}
+
+/// Getter as external float32 array and an offset
+inline Vec3_d.get(io Float32 v<>, UInt32 o) {
+  if(v.size() >= 3 + o) {
+    v[o + 0] = Float32(this.x);
+    v[o + 1] = Float32(this.y);
+    v[o + 2] = Float32(this.z);
+  }
+}
+
+/// Getter as float32 array and an offset
+inline Vec3_d.get(io Float32 v[], UInt32 o) {
+  if(v.size() < 3 + o)
+    v.resize(3 + o);
+  v[o + 0] = Float32(this.x);
+  v[o + 1] = Float32(this.y);
+  v[o + 2] = Float32(this.z);
+}
+
+/// Setter from (standard/external) float64 array and an offset
+inline Vec3_d.set!(Float64 v<>, UInt32 o) {
+  if(v.size() >= 3 + o) {
+    this.x = Float32(v[o + 0]);
+    this.y = Float32(v[o + 1]);
+    this.z = Float32(v[o + 2]);
+  }
+}
+
+/// Getter as external float64 array and an offset
+inline Vec3_d.get(io Float64 v<>, UInt32 o) {
+  if(v.size() >= 3 + o) {
+    v[o + 0] = this.x;
+    v[o + 1] = this.y;
+    v[o + 2] = this.z;
+  }
+}
+
+/// Getter as float64 array and an offset
+inline Vec3_d.get(io Float64 v[], UInt32 o) {
+  if(v.size() < 3 + o)
+    v.resize(3 + o);
+  v[o + 0] = this.x;
+  v[o + 1] = this.y;
+  v[o + 2] = this.z;
+}
+
+/// Getter as float32 array
+inline Vec3_d.get(io Float32 v[]) {
+  this.get(v, 0);
+}
+
+/// Getter as float64 array
+inline Vec3_d.get(io Float64 v[]) {
+  this.get(v, 0);
+}
+
+/// Sets from Vec.
+inline Vec3_d(Vec_d vec) {
+  this.set(vec);
+}
+
+/// Sets from Vec.
+inline Vec3_d.set!(Vec_d vec) {
+  this.x = vec.get(0);
+  this.y = vec.get(1);
+  this.z = vec.get(2);
+}
+
+/// Converts to Vec.
+inline Vec_d Vec3_d.toVec() {
+  Vec_d vec(3);
+  vec.set(0, this.x);
+  vec.set(1, this.y);
+  vec.set(2, this.z);
+  return vec;
+}
+
+/// Sets all components of this vec to 0.0
+inline Vec3_d.setNull!() {
+  this.x = this.y = this.z = Float64();
+}
+
+/// Returns true if this vector is the same as another one
+inline Boolean Vec3_d.equal(in Vec3_d other) {
+  return this.x == other.x && this.y == other.y && this.z == other.z;
+}
+
+/// Returns true if this vector is the same as another one
+/// (given a precision)
+inline Boolean Vec3_d.almostEqual(in Vec3_d other, in Float64 precision) {
+  return
+      (abs(this.x - other.x) < precision) &&
+      (abs(this.y - other.y) < precision) &&
+      (abs(this.z - other.z) < precision);
+}
+
+/// Returns true if this vector is the same as another one
+/// (using a default precision)
+inline Boolean Vec3_d.almostEqual(in Vec3_d other) {
+  return this.almostEqual(other, PRECISION);
+}
+
+/// Returns the component of this vector by index
+inline Float64 Vec3_d.component( Size i ) {
+  if(i == 0)
+    return this.x;
+  else if(i == 1)
+    return this.y;
+  else
+    return this.z;
+}
+
+/// Sets the component of this vector by index
+inline Vec3_d.setComponent!( Size i, Float64 v ) {
+  if(i == 0)
+    this.x = v;
+  else if(i == 1)
+    this.y = v;
+  else
+    this.z = v;
+}
+
+/// Equals operator
+inline Boolean == (Vec3_d a, Vec3_d b) {
+  return a.x == b.x && a.y == b.y && a.z == b.z;
+}
+
+/// Not equals operator
+inline Boolean != (Vec3_d a, Vec3_d b) {
+  return a.x != b.x || a.y != b.y || a.z != b.z;
+}
+
+/// Hash for this value
+inline UInt32 Vec3_d.hash() {
+  return this.x.hash() ^ this.y.hash() ^ this.z.hash();
+}
+
+/// unary -
+inline Vec3_d -Vec3_d() {
+  return Vec3_d(-this.x, -this.y, -this.z);
+}
+
+/// Adds to vectors
+inline Vec3_d + (Vec3_d a, Vec3_d b) {
+  return vecAdd(a, b);
+}
+
+/// Adds a vector to this one
+inline Vec3_d. += (Vec3_d other) {
+  this = this + other;
+}
+
+/// Subtracts two vectors
+inline Vec3_d - (Vec3_d a, Vec3_d b) {
+  return vecSub(a, b);
+}
+
+/// Subtracts a vector from this one
+inline Vec3_d. -= (Vec3_d other) {
+  this = this - other;
+}
+
+/// Multiplies a scalar and a vector
+/// \dfgPresetDefault a 1
+inline Vec3_d * (Float64 a, Vec3_d b) {
+  return vecMul(a, b);
+}
+
+/// Multiplies a vector and a scalar
+/// \dfgPresetDefault b 1
+inline Vec3_d * (Vec3_d a, Float64 b) {
+  return vecMul(a, b);
+}
+
+/// Multiplies two vectors
+/// \dfgPresetDefault b {"x": 1, "y": 1, "z": 1}
+inline Vec3_d * (Vec3_d a, Vec3_d b) {
+  return vecMul(a, b);
+}
+
+/// Multiplies this vector with a scalar
+/// \dfgPresetDefault other 1
+inline Vec3_d. *= (Float64 other) {
+  this = this * other;
+}
+
+/// Multiplies this vector with another one
+/// \dfgPresetDefault other {"x": 1, "y": 1, "z": 1}
+inline Vec3_d. *= (Vec3_d other) {
+  this = this * other;
+}
+
+/// Divides two vectors
+/// \dfgPresetDefault b {"x": 1, "y": 1, "z": 1}
+inline Vec3_d / (Vec3_d a, Vec3_d b) {
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( b.x ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( b.x, "Vec3_d.divide: b.x" );
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( b.y ) )
+    Math_reportBadDivisor( b.y, "Vec3_d.divide: b.y" );
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( b.z ) )
+    Math_reportBadDivisor( b.z, "Vec3_d.divide: b.z" );
+  return vecDiv(a, b);
+}
+
+/// Divides a vector by a scalar
+/// \dfgPresetDefault b 1
+inline Vec3_d / (Vec3_d a, Float64 b) {
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( b ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( b, "Vec3_d.divide" );
+  return vecDiv(a, b);
+}
+
+/// Divides this vector with a scalar
+/// \dfgPresetDefault other 1
+inline Vec3_d. /= (Float64 other) {
+  this = this / other;
+}
+
+/// Divides this vector with another one
+/// \dfgPresetDefault other {"x": 1, "y": 1, "z": 1}
+inline Vec3_d. /= (Vec3_d other) {
+  this = this / other;
+}
+
+/// Overload method for the add operator
+inline Vec3_d Vec3_d.add(Vec3_d other) {
+  return this + other;
+}
+
+/// Overload method for the subtract operator
+inline Vec3_d Vec3_d.subtract(Vec3_d other) {
+  return this - other;
+}
+
+/// Overload method for the multiply operator
+/// \dfgPresetDefault other {"x": 1, "y": 1, "z": 1}
+inline Vec3_d Vec3_d.multiply(Vec3_d other) {
+  return this * other;
+}
+
+/// Overload method for the divide operator
+/// \dfgPresetDefault other {"x": 1, "y": 1, "z": 1}
+inline Vec3_d Vec3_d.divide(Vec3_d other) {
+  return this / other;
+}
+
+/// Returns the product of this vector and a scalar
+/// \dfgPresetDefault other 1
+inline Vec3_d Vec3_d.multiplyFloat64(Float64 other) {
+  return this * other;
+}
+
+/// Returns the division of this vector and a scalar
+/// \dfgPresetDefault other 1
+inline Vec3_d Vec3_d.divideFloat64(Float64 other) {
+  return this / other;
+}
+
+/// Returns the negated version of this vector
+inline Vec3_d Vec3_d.negate() {
+  return Vec3_d(-this.x, -this.y, -this.z);
+}
+
+/// Returns the inversed version of this vector
+inline Vec3_d Vec3_d.inverse() {
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( this.x ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( this.x, "Vec3_d.inverse: this.x" );
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( this.y ) )
+    Math_reportBadDivisor( this.y, "Vec3_d.inverse: this.y" );
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( this.z ) )
+    Math_reportBadDivisor( this.z, "Vec3_d.inverse: this.z" );
+  return Vec3_d(1.0/this.x, 1.0/this.y, 1.0/this.z);
+}
+
+/// Returns the inversed version of this vector
+/// by correcting bad components.
+inline Vec3_d Vec3_d.safeInverse() {
+  Vec3_d res;
+  if( !Math_badDivisor( this.x ) )
+    res.x = 1.0 / this.x;
+  if( !Math_badDivisor( this.y ) )
+    res.y = 1.0 / this.y;
+  if( !Math_badDivisor( this.z ) )
+    res.z = 1.0 / this.z;
+  return res;
+}
+
+/// Returns the dot product of this vector and another one
+inline Float64 Vec3_d.dot(Vec3_d other) {
+  return this.x * other.x + this.y * other.y + this.z * other.z;
+}
+
+/// Returns the cross product of this vector and another one
+inline Vec3_d Vec3_d.cross(in Vec3_d other) {
+  return Vec3_d(
+    this.y * other.z - this.z * other.y,
+    this.z * other.x - this.x * other.z,
+    this.x * other.y - this.y * other.x
+  );
+}
+
+/// Returns the squared length of this vector
+inline Float64 Vec3_d.lengthSquared() {
+  return this.dot(this);
+}
+
+/// Returns the length of this vector
+inline Float64 Vec3_d.length() {
+  return sqrt(this.lengthSquared());
+}
+
+/// Returns the unit vector of this one, throws and exception if almost zero length
+inline Vec3_d Vec3_d.unit() {
+  Float64 n = this.length();
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( n ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( n, "Vec3_d.unit" );
+  return this / n;
+}
+
+/// Returns the unit vector of this one, with an arbitrary value if almost zero length
+inline Vec3_d Vec3_d.unit_safe() {
+  Float64 n = this.length();
+  if( !Math_badDivisor( n ) )//Perf: check first to avoid building the report string
+    return this / n;
+  else
+    return Vec3_d(0,1,0);
+}
+
+/// Sets this vector to its unit vector
+/// and returns its previous length
+inline Float64 Vec3_d.setUnit!() {
+  Float64 n = this.length();
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( n ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( n, "Vec3_d.setUnit" );
+  this /= n;
+  return n;
+}
+
+inline Vec3_d.normalize!() {
+  this.setUnit();
+}
+
+/// clamps this vector per component by 
+/// a min and max vector
+inline Vec3_d Vec3_d.clamp(in Vec3_d min, in Vec3_d max) {
+  return Vec3_d(
+    (this.x < min.x ? min.x : (this.x > max.x ? max.x : this.x)),
+    (this.y < min.y ? min.y : (this.y > max.y ? max.y : this.y)),
+    (this.z < min.z ? min.z : (this.z > max.z ? max.z : this.z))
+  );
+}
+
+/// Returns the angle (in radians) of this vector
+/// to another one
+/// \note expects both vectors to be units (else use angleTo)
+inline Float64 Vec3_d.unitsAngleTo(in Vec3_d other) {
+  Float64 acosAngle = Math_clamp(this.dot(other), -1.0, 1.0);
+  return acos(acosAngle);
+}
+
+/// Returns the angle (in radians) of this vector
+/// to another one
+inline Float64 Vec3_d.angleTo(in Vec3_d other) {
+  return this.unit().unitsAngleTo(other.unit());
+}
+
+/// Returns the distance of this vector to another one
+inline Float64 Vec3_d.distanceTo(in Vec3_d other) {
+  return (this - other).length();
+}
+
+/// Linearly interpolates this vector with another one
+/// based on a scalar blend value (0.0 to 1.0)
+inline Vec3_d Vec3_d.linearInterpolate(in Vec3_d other, in Float64 t) {
+  return this + ((other - this) * t);
+}
+
+/// Returns the line ratio for the closest line location from point P
+/// \dfgPresetOmit
+inline Float64 closestPointToLineRatio(in Vec3_d P, in Vec3_d lineP0, in Vec3_d lineP1) {
+  Vec3_d v, w, Pb;
+  Float64 c1, c2, b;
+  v = lineP1 - lineP0;
+  w = P - lineP0;
+
+  c1 = w.dot(v);
+  c2 = v.dot(v);
+  if(c2 < 1e-10)//squared epsilon
+    return 0.0;
+  return c1 / c2;
+}
+
+/// Returns the distance of this vector to a line defined
+/// by two points on the line
+/// \dfgPresetOmit
+inline Float64 distFromPointToLine(in Vec3_d P, in Vec3_d lineP0, in Vec3_d lineP1) {
+  Float64 closestRatio = closestPointToLineRatio(P, lineP0, lineP1);
+  Vec3_d Pb = lineP0 + closestRatio * (lineP1 - lineP0);
+  return P.distanceTo(Pb);
+}
+
+/// Returns the closest point this position to a line segment defined
+/// by the start and end points
+/// \dfgPresetOmit
+inline Vec3_d closestSegmentPoint(in Vec3_d P, in Vec3_d segmentP0, in Vec3_d segmentP1, out Float64 ratio) {
+  Vec3_d v, w, Pb;
+  Float64 c1, c2, b;
+  v = segmentP1 - segmentP0;
+  w = P - segmentP0;
+
+  c1 = w.dot(v);
+  if (c1 <= 0) {
+    ratio = 0;
+    return segmentP0;
+  }
+
+  c2 = v.dot(v);
+  if (c2 <= c1) {
+    ratio = 1;
+    return segmentP1;
+  }
+
+  ratio = c1 / c2;
+  Pb = segmentP0 + ratio * v;
+  return Pb;
+}
+
+/// Returns the distance of this position to a line segment defined
+/// by the start and end points
+/// \dfgPresetOmit
+inline Float64 distFromPointToSegment(in Vec3_d P, in Vec3_d segmentP0, in Vec3_d segmentP1) {
+  Float64 ratio;
+  return P.distanceTo(closestSegmentPoint(P, segmentP0, segmentP1, ratio));
+}
+
+/// dist3D_Line_to_Line():
+///    Input:  two 3D lines L1 and L2
+///    Return: the shortest distance between L1 and L2
+/// \dfgPresetOmit
+function Float64 distanceFromLineToLine(
+  in Vec3_d l1_p0, in Vec3_d l1_p1,
+  in Vec3_d l2_p0, in Vec3_d l2_p1,
+  out Float64 l1_t, out Float64 l2_t
+) {
+  Vec3_d u, v, w, dP;
+  Float64 a, b, c, d, e, D;
+  u = l1_p1 - l1_p0;
+  v = l2_p1 - l2_p0;
+  w = l1_p0 - l2_p0;
+  a = u.dot(u); // always >= 0
+  b = u.dot(v);
+  c = v.dot(v); // always >= 0
+  d = u.dot(w);
+  e = v.dot(w);
+  if(a == 0.0 && c == 0.0){
+    return l1_p0.distanceTo(l2_p0);
+  }
+  if(a == 0.0){
+    return distFromPointToLine(l1_p0, l2_p0, l2_p1);
+  }
+  if(c == 0.0){
+    return distFromPointToLine(l2_p0, l1_p0, l1_p1);
+  }
+  D = a * c - b * b; // always >= 0
+
+  // com_pute the line _parameters of the two closest points
+  if (D < 0.001) {
+    // the lines are almost parallel
+    l1_t = 0.0;
+    if (b > c) {
+      // use the largest denominator
+      l2_t = d / b;
+    }else {
+      l2_t = e / c;
+    }
+  }
+  else {
+    l1_t = (b * e - c * d) / D;
+    l2_t = (a * e - b * d) / D;
+  }
+  // get the difference of the two closest points
+  dP = w + (l1_t * u) - (l2_t * v);
+
+  return dP.length(); /// Return the closest distance
+}
+
+/// Coplanarity test for 4 moving points. 
+/// These moving points could either be a point and a triangle, or 2 edges. 
+/// The returned fraction tells us if they will be coplanar within the next time step.
+/// This algorithm is used to compute continuous collision between points and triangle, or between
+/// moving lines. 
+/// Algorithm based on the following paper.
+/// http://wscg.zcu.cz/wscg2007/Papers_2007/journal/D11-full.pdf
+/// \param x1 The first points position
+/// \param x2 The second points position
+/// \param x3 The third points position
+/// \param x4 The fourth points position
+/// \param v1 The first points displacement over a the given time step
+/// \param v2 The second points displacement over a the given time step
+/// \param v3 The third points displacement over a the given time step
+/// \param v4 The fourth points displacement over a the given time step
+/// \param outFraction The return value containing the fraction of the timestep where all 4 points became coplanar.
+/// \dfgPresetOmit
+function Boolean testCoplanarity(
+  Vec3_d x1,
+  Vec3_d x2,
+  Vec3_d x3,
+  Vec3_d x4,
+  Vec3_d v1,
+  Vec3_d v2,
+  Vec3_d v3,
+  Vec3_d v4,
+  out Float64 outFraction
+){
+  Vec3_d x21, x31, x41, v21, v31, v41;
+
+  x21 =  x2 - x1;
+  x31 =  x3 - x1;
+  x41 =  x4 - x1;
+
+  v21 =  v2 - v1;
+  v31 =  v3 - v1;
+  v41 =  v4 - v1;
+
+  // 
+  Float64 coeff[4];
+  Vec3_d v31Xv41, x31Xv21, x41Xv31, x21Xx31;
+
+  v31Xv41 = v31.cross(v41);
+  x31Xv21 = x31.cross(v21);
+  x41Xv31 = x41.cross(v31);
+  x21Xx31 = x21.cross(x31);
+
+  coeff[3] = v21.dot( v31Xv41 );
+  coeff[2] = x21.dot( v31Xv41 ) - v41.dot( x31Xv21 ) - v21.dot( x41Xv31 );
+  coeff[1] = v41.dot( x21Xx31 ) - x21.dot( x41Xv31 ) - x41.dot( x31Xv21 );
+  coeff[0] = x41.dot( x21Xx31 );
+  
+  // The points will become coplanar in the next timestep if we find at least one
+  // real root and it is between 0 and 1.
+  Float64 roots[3];
+  Integer numRoots = findCubicRoots( coeff, roots );
+  if( numRoots > 0 ){
+    // due to raounding error, we need to be a bit forgiving on the root finder. 
+    Float64 fuzzyness = 0.001;
+    if( roots[0] > (0.0 - fuzzyness) && roots[0] < (1.0 + fuzzyness) ){
+      outFraction = Math_clamp(Float64(roots[0]), 0.0, 1.0 );
+      return true;
+    }
+    if( numRoots > 1 && roots[1] >= (0.0 - fuzzyness) && roots[1] < (1.0 + fuzzyness) ){
+      outFraction = Math_clamp(Float64(roots[1]), 0.0, 1.0 );
+      return true; 
+    }
+    if( numRoots > 2 && roots[2] >= (0.0 - fuzzyness) && roots[2] < (1.0 + fuzzyness) ){
+      outFraction = Math_clamp(Float64(roots[2]), 0.0, 1.0 );
+      return true;
+    }
+  }
+  return false;
+}
+
+inline Vec3 Vec3_d.toVec3() {
+  return Vec3( Scalar(this.x), Scalar(this.y), Scalar(this.z) );
+}
+
+/// \internal
+/// Smooth Hermite interpolation of a Vec3 components between 0 and 1 when edge0 < x < edge1.
+inline Vec3_d Math_smoothstep(in Vec3_d edge0, in Vec3_d edge1, in Vec3_d x){
+  Vec3_d result;
+  result.x = Math_smoothstep(edge0.x, edge1.x, x.x);
+  result.y = Math_smoothstep(edge0.y, edge1.y, x.y);
+  result.z = Math_smoothstep(edge0.z, edge1.z, x.z);
+  return result;  
+}
+
+/// Returns the minimum of two Vec3_d values
+/// \dfgPresetColor Color(99, 129, 92)
+inline Vec3_d Math_min(in Vec3_d val1, in Vec3_d val2){
+  Vec3_d result;
+  result.x = Math_min(val1.x, val2.x);
+  result.y = Math_min(val1.y, val2.y);
+  result.z = Math_min(val1.z, val2.z);
+  return result;
+}
+
+/// Returns the minimum of two Vec3_d values
+/// \dfgPresetColor Color(99, 129, 92)
+inline Vec3_d Math_max(in Vec3_d val1, in Vec3_d val2){
+  Vec3_d result;
+  result.x = Math_max(val1.x, val2.x);
+  result.y = Math_max(val1.y, val2.y);
+  result.z = Math_max(val1.z, val2.z);
+  return result;
+}
+
+/// Clamps a Vec3_d value by min and max
+/// \dfgPresetColor Color(99, 129, 92)
+inline Vec3_d Math_clamp(in Vec3_d val, in Scalar minval, in Scalar maxval){
+  Vec3_d result;
+  result.x = Math_clamp(val.x, minval, maxval);
+  result.y = Math_clamp(val.y, minval, maxval);
+  result.z = Math_clamp(val.z, minval, maxval);
+  return result;
+}
+
+/// \dfgPresetColor Color(99, 129, 92)
+/// \dfgPresetFolder Random
+/// \dfgCreateArrayPreset false
+/// \dfgPresetDefault min 0.0
+/// \dfgPresetDefault min 1.0
+inline Vec3_d mathRandomVec3_d(Size seed, Size index, Float32 min, Float32 max) {
+  Vec3_d result;
+  result.x = mathRandomScalar(seed, index+0, min, max);
+  result.y = mathRandomScalar(seed, index+1, min, max);
+  result.z = mathRandomScalar(seed, index+2, min, max);
+  return result;
+}

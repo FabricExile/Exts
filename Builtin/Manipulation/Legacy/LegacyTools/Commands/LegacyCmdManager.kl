@@ -1,0 +1,99 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Singletons;
+
+/**
+  The command manager contains and manages the command undo-redo stack.
+  
+  The command manager follows this pattern : 
+    http://kapo-cpp.blogspot.ca/2007/10/multilevel-undo-with-command-pattern.html
+
+  \seealso :kl-ref:`LegacyHandlerDispatcher`, :kl-ref:`LegacyCmd`, :kl-ref:`BaseCmd`
+
+  \dfgPresetOmit
+*/
+object LegacyCmdManager{
+  /// Array of undo commands
+  protected LegacyCmd undoStack[];
+  /// Array of redo commands
+  protected LegacyCmd redoStack[];
+};
+
+const String LegacyCmdManager_name = "LegacyCommandManager";
+
+/// Gets the LegacyCmdManager singleton, or constructs it if it didn't exist.
+LegacyCmdManager GetOrCreateLegacyCmdManager() {
+  // check if we can get the singleton
+  Object cmdManager = Singleton_get( LegacyCmdManager_name);
+  if(cmdManager == null) 
+  {
+    cmdManager = LegacyCmdManager();
+    Singleton_set( LegacyCmdManager_name, cmdManager);
+  }
+  return cmdManager;
+}
+
+/// Gets the CmdManager singleton, or constructs it if it didn't exist.
+Ref<LegacyCmdManager> LegacyCmdManager.getOrCreateLegacyCmdManager() {
+  return GetOrCreateLegacyCmdManager();
+}
+
+/// Executes a command and adds it to the stack.
+/// \param cmd The command to execute
+Boolean LegacyCmdManager.exec!(io LegacyCmd cmd) {
+  Boolean res = cmd.doCmd();
+  if(res) this.undoStack.push(cmd);
+  return res;
+}
+
+/// Undoes the command stack.
+Boolean LegacyCmdManager.undo!() {
+  if(this.undoStack.size() == 0) return false;
+  // Execute last command in undo-stack
+  LegacyCmd cmd = this.undoStack[this.undoStack.size()-1];
+  Boolean res = cmd.undoCmd();
+  // If the command complete successfully,
+  // remove it from undo-stack and store it on redo-stack
+  if(res) 
+  {
+    this.undoStack.pop();
+    this.redoStack.push(cmd);
+  } 
+  return res;
+}
+
+/// Redoes the command stack.
+Boolean LegacyCmdManager.redo!() {
+  if(this.redoStack.size() == 0) return false;
+  // Execute last command in redo-stack
+  LegacyCmd cmd = this.redoStack[this.redoStack.size()-1];
+  Boolean res = cmd.doCmd();
+  // If the command complete successfully, 
+  // remove it from redo-stack and store it on undo-stack
+  if(res) 
+  {
+    this.redoStack.pop();
+    this.undoStack.push(cmd);
+  }
+  return res;
+}
+
+/// Gets the number of commands within the stack.
+Size LegacyCmdManager.getNumCmdInUndoStack() {
+  return this.undoStack.size();
+}
+
+/// Clear the stack.
+LegacyCmdManager.clearRedoStack!() {
+  this.redoStack.resize(0);
+}
+
+/// Gets a reference to command at index.
+/// \param index The index of the command in the stack
+Ref<LegacyCmd> LegacyCmdManager.getCmdInUndoStack(Index index) {
+  if( index >= 0 && index < this.undoStack.size())
+    return this.undoStack[index];
+  else return null;
+}

@@ -1,0 +1,1936 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+require FabricOGL, FileIO, Math, Containers;
+
+const UInt32 OGLProgram_notLinked = 0;
+const UInt32 OGLProgram_linkSucceeded = 1;
+const UInt32 OGLProgram_linkFailed = 2;
+
+const UInt32 OGLProgram_uniformParam = 0;
+const UInt32 OGLProgram_attribParam = 1;
+const UInt32 OGLProgram_fragDataParam = 2;
+const UInt32 OGLProgram_paramCount = 3;
+
+/// \param paramCategory OGLProgram_[x]Param constant
+function String OGLProgram_paramCategoryToString( UInt32 paramCategory ) {
+  if( paramCategory == OGLProgram_uniformParam )
+    return "uniform";
+  else if( paramCategory == OGLProgram_attribParam )
+    return "attrib";
+  else if( paramCategory == OGLProgram_fragDataParam )
+    return "fragData";
+  else
+    return "<Unknown>";
+}
+
+/// \param paramCategory OGLProgram_[x]Param constant
+function String OGLProgram_glTypeToString( Integer glType ) {
+  switch(glType) {
+    case GL_FLOAT: return "float";
+    case GL_FLOAT_VEC2: return "vec2";
+    case GL_FLOAT_VEC3: return "vec3";
+    case GL_FLOAT_VEC4: return "vec4";
+    case GL_DOUBLE: return "double";
+    case GL_DOUBLE_VEC2: return "dvec2";
+    case GL_DOUBLE_VEC3: return "dvec3";
+    case GL_DOUBLE_VEC4: return "dvec4";
+    case GL_INT: return "int";
+    case GL_INT_VEC2: return "ivec2";
+    case GL_INT_VEC3: return "ivec3";
+    case GL_INT_VEC4: return "ivec4";
+    case GL_UNSIGNED_INT: return "unsigned int";
+    case GL_UNSIGNED_INT_VEC2: return "uvec2";
+    case GL_UNSIGNED_INT_VEC3: return "uvec3";
+    case GL_UNSIGNED_INT_VEC4: return "uvec4";
+    case GL_BOOL: return "bool";
+    case GL_BOOL_VEC2: return "bvec2";
+    case GL_BOOL_VEC3: return "bvec3";
+    case GL_BOOL_VEC4: return "bvec4";
+    case GL_FLOAT_MAT2: return "mat2";
+    case GL_FLOAT_MAT3: return "mat3";
+    case GL_FLOAT_MAT4: return "mat4";
+    case GL_FLOAT_MAT2x3: return "mat2x3";
+    case GL_FLOAT_MAT2x4: return "mat2x4";
+    case GL_FLOAT_MAT3x2: return "mat3x2";
+    case GL_FLOAT_MAT3x4: return "mat3x4";
+    case GL_FLOAT_MAT4x2: return "mat4x2";
+    case GL_FLOAT_MAT4x3: return "mat4x3";
+    case GL_DOUBLE_MAT2: return "dmat2";
+    case GL_DOUBLE_MAT3: return "dmat3";
+    case GL_DOUBLE_MAT4: return "dmat4";
+    case GL_DOUBLE_MAT2x3: return "dmat2x3";
+    case GL_DOUBLE_MAT2x4: return "dmat2x4";
+    case GL_DOUBLE_MAT3x2: return "dmat3x2";
+    case GL_DOUBLE_MAT3x4: return "dmat3x4";
+    case GL_DOUBLE_MAT4x2: return "dmat4x2";
+    case GL_DOUBLE_MAT4x3: return "dmat4x3";
+    case GL_SAMPLER_1D: return "sampler1D";
+    case GL_SAMPLER_2D: return "sampler2D";
+    case GL_SAMPLER_3D: return "sampler3D";
+    case GL_SAMPLER_CUBE: return "samplerCube";
+    case GL_SAMPLER_CUBE_MAP_ARRAY: return "samplerCubeArray";
+    case GL_SAMPLER_1D_SHADOW: return "sampler1DShadow";
+    case GL_SAMPLER_2D_SHADOW: return "sampler2DShadow";
+    case GL_SAMPLER_1D_ARRAY: return "sampler1DArray";
+    case GL_SAMPLER_2D_ARRAY: return "sampler2DArray";
+    case GL_SAMPLER_1D_ARRAY_SHADOW: return "sampler1DArrayShadow";
+    case GL_SAMPLER_2D_ARRAY_SHADOW: return "sampler2DArrayShadow";
+    case GL_SAMPLER_2D_MULTISAMPLE: return "sampler2DMS";
+    case GL_SAMPLER_2D_MULTISAMPLE_ARRAY: return "sampler2DMSArray";
+    case GL_SAMPLER_CUBE_SHADOW: return "samplerCubeShadow";
+    case GL_SAMPLER_CUBE_MAP_ARRAY_SHADOW: return "samplerCubeArrayShadow";
+    case GL_SAMPLER_BUFFER: return "samplerBuffer";
+    case GL_SAMPLER_2D_RECT: return "sampler2DRect";
+    case GL_SAMPLER_2D_RECT_SHADOW: return "sampler2DRectShadow";
+    case GL_INT_SAMPLER_1D: return "isampler1D";
+    case GL_INT_SAMPLER_2D: return "isampler2D";
+    case GL_INT_SAMPLER_3D: return "isampler3D";
+    case GL_INT_SAMPLER_CUBE: return "isamplerCube";
+    case GL_INT_SAMPLER_1D_ARRAY: return "isampler1DArray";
+    case GL_INT_SAMPLER_2D_ARRAY: return "isampler2DArray";
+    case GL_INT_SAMPLER_2D_MULTISAMPLE: return "isampler2DMS";
+    case GL_INT_SAMPLER_2D_MULTISAMPLE_ARRAY: return "isampler2DMSArray";
+    case GL_INT_SAMPLER_BUFFER: return "isamplerBuffer";
+    case GL_INT_SAMPLER_2D_RECT: return "isampler2DRect";
+    case GL_UNSIGNED_INT_SAMPLER_1D: return "usampler1D";
+    case GL_UNSIGNED_INT_SAMPLER_2D: return "usampler2D";
+    case GL_UNSIGNED_INT_SAMPLER_3D: return "usampler3D";
+    case GL_UNSIGNED_INT_SAMPLER_CUBE: return "usamplerCube";
+    case GL_UNSIGNED_INT_SAMPLER_1D_ARRAY: return "usampler2DArray";
+    case GL_UNSIGNED_INT_SAMPLER_2D_ARRAY: return "usampler2DArray";
+    case GL_UNSIGNED_INT_SAMPLER_2D_MULTISAMPLE: return "usampler2DMS";
+    case GL_UNSIGNED_INT_SAMPLER_2D_MULTISAMPLE_ARRAY: return "usampler2DMSArray";
+    case GL_UNSIGNED_INT_SAMPLER_BUFFER: return "usamplerBuffer";
+    case GL_UNSIGNED_INT_SAMPLER_2D_RECT: return "usampler2DRect";
+  }
+  return "<unknown>";//For now we ignore GL4.0 image types
+}
+
+/// \param paramCategory OGLProgram_[x]Param constant
+function OGLProgram_glTypeInfo( Integer glType, io Integer glComponentType, io UInt32 componentPerItem, io Type klType, io Size bytes, io Boolean isSampler, io UInt32 expectedTextureType, io Boolean shadowTexture, io Boolean isMatrix ) {
+  klType = None;
+  componentPerItem = 1;
+  glComponentType = GL_INT;
+  bytes = 4;
+  isSampler = false;
+  shadowTexture = false;
+  expectedTextureType = 0;
+  isMatrix = false;
+  switch(glType) {
+    case GL_FLOAT: { glComponentType = GL_FLOAT; klType = Float32; return; }
+    case GL_FLOAT_VEC2: { glComponentType = GL_FLOAT; klType = Vec2; bytes = 4*2; componentPerItem = 2; return; }
+    case GL_FLOAT_VEC3: { glComponentType = GL_FLOAT; klType = Vec3; bytes = 4*3; componentPerItem = 3; return; }
+    case GL_FLOAT_VEC4: { glComponentType = GL_FLOAT; klType = Vec4; bytes = 4*4; componentPerItem = 4; return; }
+    case GL_DOUBLE: { glComponentType = GL_DOUBLE; klType = Float64; bytes = 8; return; }
+    case GL_DOUBLE_VEC2: { glComponentType = GL_DOUBLE; bytes = 8*2; componentPerItem = 2; return; }
+    case GL_DOUBLE_VEC3: { glComponentType = GL_DOUBLE; klType = Vec3_d; bytes = 8*3; componentPerItem = 3; return; }
+    case GL_DOUBLE_VEC4: { glComponentType = GL_DOUBLE; bytes = 8*4; componentPerItem = 4; return; }
+    case GL_INT: { klType = SInt32; return; }
+    case GL_INT_VEC2: { bytes = 4*2; componentPerItem = 2; return; }
+    case GL_INT_VEC3: { bytes = 4*3; componentPerItem = 3; return; }
+    case GL_INT_VEC4: { bytes = 4*4; componentPerItem = 4; return; }
+    case GL_UNSIGNED_INT: { glComponentType = GL_UNSIGNED_INT; klType = UInt32; return; }
+    case GL_UNSIGNED_INT_VEC2: { glComponentType = GL_UNSIGNED_INT; bytes = 4*2; componentPerItem = 2; return; }
+    case GL_UNSIGNED_INT_VEC3: { glComponentType = GL_UNSIGNED_INT; bytes = 4*3; componentPerItem = 3; return; }
+    case GL_UNSIGNED_INT_VEC4: { glComponentType = GL_UNSIGNED_INT; bytes = 4*4; componentPerItem = 4; return; }
+    case GL_BOOL: { glComponentType = GL_INT; klType = Boolean; bytes = 4; return; }
+    case GL_BOOL_VEC2: { glComponentType = GL_INT; bytes = 2*4; componentPerItem = 2; return; }
+    case GL_BOOL_VEC3: { glComponentType = GL_INT; bytes = 3*4; componentPerItem = 3; return; }
+    case GL_BOOL_VEC4: { glComponentType = GL_INT; bytes = 4*4; componentPerItem = 4; return; }
+    case GL_FLOAT_MAT2: { isMatrix = true; glComponentType = GL_FLOAT; klType = Mat22; bytes = 2*2*4; return; }
+    case GL_FLOAT_MAT3: { isMatrix = true; glComponentType = GL_FLOAT; klType = Mat33; bytes = 3*3*4; return; }
+    case GL_FLOAT_MAT4: { isMatrix = true; glComponentType = GL_FLOAT; klType = Mat44; bytes = 4*4*4; return; }
+    case GL_FLOAT_MAT2x3: { isMatrix = true; glComponentType = GL_FLOAT; klType = Mat33; bytes = 2*3*4; return; }
+    case GL_FLOAT_MAT2x4: { isMatrix = true; glComponentType = GL_FLOAT; klType = Mat44; bytes = 2*4*4; return; }
+    case GL_FLOAT_MAT3x2: { isMatrix = true; glComponentType = GL_FLOAT; klType = Mat33; bytes = 3*2*4; return; }
+    case GL_FLOAT_MAT3x4: { isMatrix = true; glComponentType = GL_FLOAT; klType = Mat44; bytes = 3*4*4; return; }
+    case GL_FLOAT_MAT4x2: { isMatrix = true; glComponentType = GL_FLOAT; klType = Mat44; bytes = 4*2*4; return; }
+    case GL_FLOAT_MAT4x3: { isMatrix = true; glComponentType = GL_FLOAT; klType = Mat44; bytes = 4*3*4; return; }
+    case GL_DOUBLE_MAT2: { isMatrix = true; glComponentType = GL_DOUBLE; bytes = 2*2*8; return; }
+    case GL_DOUBLE_MAT3: { isMatrix = true; glComponentType = GL_DOUBLE; bytes = 3*3*8; return; }
+    case GL_DOUBLE_MAT4: { isMatrix = true; glComponentType = GL_DOUBLE; bytes = 4*4*8; return; }
+    case GL_DOUBLE_MAT2x3: { isMatrix = true; glComponentType = GL_DOUBLE; bytes = 2*3*8; return; }
+    case GL_DOUBLE_MAT2x4: { isMatrix = true; glComponentType = GL_DOUBLE; bytes = 2*4*8; return; }
+    case GL_DOUBLE_MAT3x2: { isMatrix = true; glComponentType = GL_DOUBLE; bytes = 3*2*8; return; }
+    case GL_DOUBLE_MAT3x4: { isMatrix = true; glComponentType = GL_DOUBLE; bytes = 3*4*8; return; }
+    case GL_DOUBLE_MAT4x2: { isMatrix = true; glComponentType = GL_DOUBLE; bytes = 4*2*8; return; }
+    case GL_DOUBLE_MAT4x3: { isMatrix = true; glComponentType = GL_DOUBLE; bytes = 4*3*8; return; }
+    case GL_SAMPLER_1D: { isSampler = true; expectedTextureType = GL_TEXTURE_1D; return; }
+    case GL_SAMPLER_2D: { isSampler = true; expectedTextureType = GL_TEXTURE_2D; return; }
+    case GL_SAMPLER_3D: { isSampler = true;  expectedTextureType = GL_TEXTURE_3D; return; }
+    case GL_SAMPLER_CUBE: { isSampler = true; expectedTextureType = GL_TEXTURE_CUBE_MAP; return; }
+    case GL_SAMPLER_CUBE_MAP_ARRAY: { isSampler = true; expectedTextureType = GL_TEXTURE_CUBE_MAP_ARRAY; return; }
+    case GL_SAMPLER_1D_SHADOW: { isSampler = true; expectedTextureType = GL_TEXTURE_1D; shadowTexture = true; return; }
+    case GL_SAMPLER_2D_SHADOW: { isSampler = true; expectedTextureType = GL_TEXTURE_2D; shadowTexture = true; return; }
+    case GL_SAMPLER_1D_ARRAY: { isSampler = true; expectedTextureType = GL_TEXTURE_1D_ARRAY; return; }
+    case GL_SAMPLER_2D_ARRAY: { isSampler = true; expectedTextureType = GL_TEXTURE_2D_ARRAY; return; }
+    case GL_SAMPLER_1D_ARRAY_SHADOW: { isSampler = true; expectedTextureType = GL_TEXTURE_1D_ARRAY; shadowTexture = true; return; }
+    case GL_SAMPLER_2D_ARRAY_SHADOW: { isSampler = true; expectedTextureType = GL_TEXTURE_2D_ARRAY; shadowTexture = true; return; }
+    case GL_SAMPLER_2D_MULTISAMPLE: { isSampler = true; expectedTextureType = GL_TEXTURE_2D_MULTISAMPLE; return; }
+    case GL_SAMPLER_2D_MULTISAMPLE_ARRAY: { isSampler = true; expectedTextureType = GL_TEXTURE_2D_MULTISAMPLE_ARRAY; return; }
+    case GL_SAMPLER_CUBE_SHADOW: { isSampler = true; expectedTextureType = GL_TEXTURE_CUBE_MAP; shadowTexture = true; return; }
+    case GL_SAMPLER_CUBE_MAP_ARRAY_SHADOW: { isSampler = true; expectedTextureType = GL_TEXTURE_CUBE_MAP_ARRAY; shadowTexture = true; return; }
+    case GL_SAMPLER_BUFFER: { isSampler = true; expectedTextureType = GL_TEXTURE_BUFFER; return; }
+    case GL_SAMPLER_2D_RECT: { isSampler = true; expectedTextureType = GL_TEXTURE_RECTANGLE; return; }
+    case GL_SAMPLER_2D_RECT_SHADOW: { isSampler = true; expectedTextureType = GL_TEXTURE_RECTANGLE; shadowTexture = true; return; }
+    case GL_INT_SAMPLER_1D: { isSampler = true; expectedTextureType = GL_TEXTURE_1D; return; }
+    case GL_INT_SAMPLER_2D: { isSampler = true; expectedTextureType = GL_TEXTURE_2D; return; }
+    case GL_INT_SAMPLER_3D: { isSampler = true; expectedTextureType = GL_TEXTURE_3D; return; }
+    case GL_INT_SAMPLER_CUBE: { isSampler = true; expectedTextureType = GL_TEXTURE_CUBE_MAP; return; }
+    case GL_INT_SAMPLER_1D_ARRAY: { isSampler = true;  expectedTextureType = GL_TEXTURE_1D_ARRAY; return; }
+    case GL_INT_SAMPLER_2D_ARRAY: { isSampler = true; expectedTextureType = GL_TEXTURE_2D_ARRAY; return; }
+    case GL_INT_SAMPLER_2D_MULTISAMPLE: { isSampler = true; expectedTextureType = GL_TEXTURE_2D_MULTISAMPLE; return; }
+    case GL_INT_SAMPLER_2D_MULTISAMPLE_ARRAY: { isSampler = true; expectedTextureType = GL_TEXTURE_2D_MULTISAMPLE_ARRAY; return; }
+    case GL_INT_SAMPLER_BUFFER: { isSampler = true; expectedTextureType = GL_TEXTURE_BUFFER; return; }
+    case GL_INT_SAMPLER_2D_RECT: { isSampler = true; expectedTextureType = GL_TEXTURE_RECTANGLE; return; }
+    case GL_UNSIGNED_INT_SAMPLER_1D: { glComponentType = GL_UNSIGNED_INT; expectedTextureType = GL_TEXTURE_1D; isSampler = true; return; }
+    case GL_UNSIGNED_INT_SAMPLER_2D: { glComponentType = GL_UNSIGNED_INT; isSampler = true; expectedTextureType = GL_TEXTURE_2D; return; }
+    case GL_UNSIGNED_INT_SAMPLER_3D: { glComponentType = GL_UNSIGNED_INT; expectedTextureType = GL_TEXTURE_3D; isSampler = true; return; }
+    case GL_UNSIGNED_INT_SAMPLER_CUBE: { glComponentType = GL_UNSIGNED_INT; expectedTextureType = GL_TEXTURE_CUBE_MAP; isSampler = true; return; }
+    case GL_UNSIGNED_INT_SAMPLER_1D_ARRAY: { glComponentType = GL_UNSIGNED_INT; isSampler = true; expectedTextureType = GL_TEXTURE_1D_ARRAY; return; }
+    case GL_UNSIGNED_INT_SAMPLER_2D_ARRAY: { glComponentType = GL_UNSIGNED_INT; isSampler = true; expectedTextureType = GL_TEXTURE_2D_ARRAY; return; }
+    case GL_UNSIGNED_INT_SAMPLER_2D_MULTISAMPLE: { glComponentType = GL_UNSIGNED_INT; expectedTextureType = GL_TEXTURE_2D_MULTISAMPLE; isSampler = true; return; }
+    case GL_UNSIGNED_INT_SAMPLER_2D_MULTISAMPLE_ARRAY: { glComponentType = GL_UNSIGNED_INT; expectedTextureType = GL_TEXTURE_2D_MULTISAMPLE_ARRAY; isSampler = true; return; }
+    case GL_UNSIGNED_INT_SAMPLER_BUFFER: { glComponentType = GL_UNSIGNED_INT;  expectedTextureType = GL_TEXTURE_BUFFER; isSampler = true; return; }
+    case GL_UNSIGNED_INT_SAMPLER_2D_RECT: { glComponentType = GL_UNSIGNED_INT; expectedTextureType = GL_TEXTURE_RECTANGLE; isSampler = true; return; }
+  }
+}
+
+struct OGLProgram_param {
+  String name;
+  UInt32 index;
+  UInt32 location;//If InvalidIndex, then this parameter has been "artificially" added by a user
+  UInt32 paramCategory;//OGLProgram_paramX
+  Size size;//count if an array
+  UInt32 componentPerItem;
+  UInt32 samplerTextureUnit;//InvalidIndex if not a sampler
+  UInt32 expectedTextureType;
+  Integer glType;
+  Integer glComponentType;
+  Boolean isMatrix;
+  Boolean isShadowTexture;
+  Boolean isUserParameter;
+
+  Type klType;//None if undefined
+
+  Size cacheStorageOffsetOrInlineValue;//Inline value if totalWordCount == 1
+  Size defaultValueCacheStorageOffsetOrInlineValue;//Inline value if totalWordCount == 1
+  Boolean currentlyDefault;
+
+  Size wordCountPerItem;//number of 4 bytes
+  Size totalWordCount;
+};
+
+inline OGLProgram_param() {
+  this.samplerTextureUnit = InvalidIndex;
+  this.currentlyDefault = true;
+}
+
+struct OGLProgram_outFragment {
+  String name;
+  Integer location;
+};
+
+/**
+  A OGLProgram wraps a GLSL program object.
+
+  See :ref:`rtr_simple_material` for an overview of and OGLProgram
+  and its extended GLSL preprocessor syntax.
+
+*/
+object OGLProgram : OGLBaseObject {
+  OGLShader_ shaders[];
+
+  Integer linkStatus;
+  String linkLog;
+  Boolean tracingParamValues;
+
+  OGLProgram_param params[];//Packed for all OGLProgram_paramX types
+  UInt32 paramCategoryLimits[4];//per OGLProgram_paramX: [x] = first, [x+1] = last
+  UInt32 paramToKey[String];
+
+  OGLProgram_outFragment outFragments[];
+  UInt32 outFragmentToIndex[String];
+
+  UInt32 paramValueCache[];
+  UInt32 textureUnitToParamKey[];
+
+  UInt32 maxAttributeLocation;
+
+  Boolean defaultsChanged;
+};
+
+inline OGLProgram( String name ) {
+  this.name = name;
+}
+
+function ~OGLProgram() {
+  this.releaseGL();
+}
+
+inline OGLProgram.releaseGL_contextValidated!( UInt32 bufferID ) {
+  glDeleteProgram(this.bufferID);
+}
+
+function OGLProgram.addShader!( OGLShader_ shader ) {
+  for( Size i = 0; i < this.shaders.size(); ++i ) {
+    if( this.shaders[i].glShaderType == shader.glShaderType ) {
+      this.shaders[i] = shader;//Replace silently
+      return;
+    }
+  }
+  this.shaders.push( shader );
+}
+
+function OGLProgram.addShader!( String code, Integer glShaderType ) {
+  OGLShader_ shader( GLShaderTypeToString(glShaderType), code, glShaderType );
+  this.addShader( shader );
+}
+
+function OGLProgram.addShader!(String filePath, String code, Integer glShaderType, String preprocessorIncludePaths<>) {
+  OGLShader_ shader( GLShaderTypeToString(glShaderType), filePath, code, glShaderType, preprocessorIncludePaths );
+  this.addShader( shader );
+}
+
+function OGLProgram.link!( Boolean force, io Ref<OGLContext> context ) {
+  if( !force ) {
+    if( this.linkStatus == OGLProgram_linkFailed )
+      return;
+    //Note: we need to check that bufferID is 0, since 'createParameter' / 'releaseGL' might have been called
+    if( this.linkStatus == OGLProgram_linkSucceeded && this.bufferID != 0 )
+      return;
+  }
+  Boolean recompilingInAnotherContext = (this.linkStatus == OGLProgram_linkSucceeded && this.bufferID == 0) || this.linkStatus == OGLProgram_linkFailed;
+
+  //Just cache this to lower overhead
+  if( this.wrapperGlobals.tracingProgramParameterValues )
+    this.tracingParamValues = true;
+
+  this.linkStatus = OGLProgram_notLinked;
+  this.linkLog = '';
+
+  if( !CheckOGLContextValidity( context ) ) {
+    setError("OGLProgram.link: OpenGL context not bound");
+    return;
+  }
+
+  if( this.bufferID ) {
+    glDeleteProgram(this.bufferID);
+    this.bufferID = 0;
+  }
+  this.bufferID = glCreateProgram();
+  if (this.bufferID == 0) {
+    setError("OGLProgram.link " + this.getTraceName() + ": glCreateProgram failed");
+    return;
+  }
+
+  if( this.tracingEnabled() )
+    report( "OGLProgram: linking " + this.getTraceName() + " (programID=" + this.bufferID + ")" );
+
+  //Ensure shaders are compiled
+  for( Size i = 0; i < this.shaders.size(); i++ ) {
+    this.shaders[i].compile( context );
+    if( this.shaders[i].compileStatus == OGLShader_compileFailed ) {
+      this.linkStatus = OGLProgram_linkFailed;
+      return;
+    }
+  }
+
+  for( Size i = 0; i < this.shaders.size(); i++ )
+    glAttachShader(this.bufferID, this.shaders[i].bufferID);
+
+  glLinkProgram(this.bufferID);
+
+  SInt32 linked[1];
+  SInt32 linkedExt<> = linked;
+  glGetProgramiv(this.bufferID, GL_LINK_STATUS, linkedExt);
+  if (linked[0] == 0) {
+    report(this.getTraceName() + ' : Program linking failed:');
+  }
+
+  SInt32 infoLen[1];
+  SInt32 infoLenExt<> = infoLen;
+  glGetProgramiv(this.bufferID, GL_INFO_LOG_LENGTH, infoLenExt);
+
+  // jcgagnon 14/10/2014: re-enabling; to be investigated further. We need errors to be logged...
+  //   phtaylor 22/08/2013: after a failed link, these lines crash.
+  //   I've disabled error reporting after linking because of this.
+  if (linked[0] > 1 && infoLen[0] > 1) {
+    UInt32 bufferSize[];
+    UInt32 bufferTotalSize = 0;
+    for(Size i=0;i<infoLen.size();i++) {
+      bufferSize.push(infoLen[i]);
+      bufferTotalSize += bufferSize[i];
+    }
+    glGetProgramInfoLog(this.bufferID, bufferTotalSize, bufferSize, this.linkLog);
+  }
+  else if (linked[0] == 0)
+    this.linkLog = '<Unknown reason>';
+
+  //Print errors or warnings, if any
+  if (linked[0] == 0) {
+    this.linkStatus = OGLProgram_linkFailed;
+    setError( "OGLProgram.link " + this.getTraceName() + ": failed:\n" + this.linkLog );
+
+    if( ReportCodeAndMappingsOnError )
+      this.reportCodeAndMappings();
+
+  } else if(linked[0] == 1) {
+    this.linkStatus = OGLProgram_linkSucceeded;
+    if( this.linkLog ) {
+      report( "OGLProgram.link " + this.getTraceName() + ": succeeded:\n" + this.linkLog );
+    } else if( this.tracingEnabled() ) {
+      report( "OGLProgram.link " + this.getTraceName() + ": succeeded" );
+    }
+  } else {
+    this.linkStatus = OGLProgram_linkSucceeded;
+    report( "OGLProgram.link " + this.getTraceName() + ": succeeded with warnings:\n" + this.linkLog );
+  }
+
+  context.stateCache.useProgram(this.bufferID);
+
+  if( !recompilingInAnotherContext )
+    this.extractParameterInfo( context );//Assume parameters are exactly the same in the same order. Simplifies things for explicit parameters.
+
+  // Initialize texture units in parameter order
+  for (Size i = 0; i < this.paramCategoryLimits[OGLProgram_uniformParam+1]; i++) {
+    if( this.params[i].samplerTextureUnit != InvalidIndex )
+      glUniform1i( this.params[i].location, this.params[i].samplerTextureUnit );
+    else if( recompilingInAnotherContext ) {
+      this.params[i].currentlyDefault = false;
+    }
+  }
+  this.defaultsChanged = true;
+
+  context.stateCache.useProgram(0);
+
+  this.incrementStructureVersion();
+}
+
+function OGLProgram.link!( io Ref<OGLContext> context ) {
+  this.link(false, context);
+}
+
+function Boolean OGLProgram.create!( io Ref<OGLContext> context ) {
+  this.link(context);
+  return this.linkStatus == OGLProgram_linkSucceeded;
+}
+
+function Boolean OGLProgram.createParameters!( io Ref<OGLContext> context, Boolean drawSharedContext ) {
+  Boolean result = this.link(context);
+  if( !drawSharedContext ) {
+    // Don't keep the program object; we just wanted to fill the parameter definition
+    for( Size i = 0; i < this.shaders.size(); i++ )
+      this.shaders[i].releaseGL();
+    this.releaseGL();
+  }
+  return result;
+}
+
+function _RemoveGLParamNameArraySuffix( io String name ) {
+  //If array, remove the [0] at the end (redundant since we have the 'size')
+  Size nameLength = name.length();
+  if( nameLength > 3 && 
+        name[nameLength-3] == '[' 
+    && name[nameLength-2] == '0' 
+    && name[nameLength-1] == ']' ) {
+    String newName;
+    for( Size j = 0; j < nameLength-3; ++j )
+      newName += name[j];
+    name = newName;
+  }
+}
+
+/// \internal
+function OGLProgram.initUniformParam!( Size index, Size indexInCategory, String name, io OGLProgram_param param, SInt32 size, UInt32 glType, io Boolean sampler) {
+
+  this.paramToKey[name] = index;
+  param.index = indexInCategory;
+
+  param.name = name;
+  param.size = size;
+  param.glType = glType;
+  param.paramCategory = OGLProgram_uniformParam;
+
+  UInt32 bytes;
+  OGLProgram_glTypeInfo( 
+    param.glType, 
+    param.glComponentType, 
+    param.componentPerItem, 
+    param.klType, 
+    bytes, 
+    sampler,
+    param.expectedTextureType,
+    param.isShadowTexture,
+    param.isMatrix );
+
+  param.wordCountPerItem = (bytes+3)/4;
+  param.totalWordCount = param.wordCountPerItem * param.size;
+  if( param.totalWordCount > 1 ) {
+    Size storageOffset = this.paramValueCache.size();
+    param.cacheStorageOffsetOrInlineValue = storageOffset;
+    param.defaultValueCacheStorageOffsetOrInlineValue = storageOffset + param.totalWordCount;
+    this.paramValueCache.resize( storageOffset + param.totalWordCount * 2 );
+  }
+}
+
+/// \internal
+function OGLProgram.initAttributeParam!( Size index, Size indexInCategory, String name, io OGLProgram_param param, SInt32 size, UInt32 glType) {
+  this.paramToKey[name] = index;
+  param.index = indexInCategory;
+
+  param.name = name;
+  param.size = size;
+  param.glType = glType;
+  param.paramCategory = OGLProgram_attribParam;
+
+  Boolean sampler;
+  UInt32 bytes;
+  OGLProgram_glTypeInfo( 
+    param.glType, 
+    param.glComponentType, 
+    param.componentPerItem, 
+    param.klType, 
+    bytes, 
+    sampler,
+    param.expectedTextureType,
+    param.isShadowTexture,
+    param.isMatrix );
+}
+
+function OGLProgram.extractParameterInfo!( io Ref<OGLContext> context ) {
+  if( this.bufferID == 0 || this.linkStatus != OGLProgram_linkSucceeded ) {
+    setError( "OGLProgram.extractParameterInfo " + this.name + ": program is not compiled" );
+    return;
+  }
+
+  this.params.resize(0);
+  this.paramToKey.clear();
+  this.paramValueCache.resize(0);
+
+  this.textureUnitToParamKey.resize(0);
+  for( Size i = 0; i < 4; ++i)
+    this.paramCategoryLimits[i] = 0;
+
+  SInt32 size[1];
+  SInt32 sizeExt<> = size;
+  UInt32 glType[1];
+  UInt32 glTypeExt<> = glType;
+  UInt32 nbReceived[1];
+  UInt32 nbReceivedExt<> = nbReceived;
+  Integer paramCount[1];
+  Integer paramCountExt<> = paramCount;
+
+  Size current;
+
+  glGetProgramiv(this.bufferID, GL_ACTIVE_UNIFORMS, paramCountExt);
+  this.params.resize( this.params.size() + paramCount[0] );
+  this.paramCategoryLimits[OGLProgram_uniformParam+1] = this.params.size();
+
+  UInt32 textureUnitID;
+  UInt32 storageOffset;
+  for (Size i = 0; i < paramCount[0]; i++) {
+    String name;
+    glGetActiveUniform(this.bufferID, i, 1024, nbReceivedExt, sizeExt, glTypeExt, name);
+
+    this.params[current].location = glGetUniformLocation(this.bufferID, name);
+    _RemoveGLParamNameArraySuffix(name);
+
+    Boolean sampler;
+    this.initUniformParam( current, i, name, this.params[current], size[0], glType[0], sampler );
+
+    //Initialize to an arbitrary texture unit ID
+    if( sampler ) {
+      UInt32 textureUnit = textureUnitID++;
+      this.params[current].samplerTextureUnit = textureUnit;
+      this.textureUnitToParamKey.push(current);
+    }
+    ++current;
+  }
+
+  glGetProgramiv(this.bufferID, GL_ACTIVE_ATTRIBUTES, paramCountExt);
+
+  this.paramCategoryLimits[OGLProgram_attribParam+1] = this.params.size() + paramCount[0];
+  this.params.resize( this.params.size() + paramCount[0] );
+  this.paramCategoryLimits[OGLProgram_attribParam+1] = this.params.size();
+
+  for (Size i = 0; i < paramCount[0]; i++) {
+    String name;
+    glGetActiveAttrib(this.bufferID, i, 1024, nbReceivedExt, sizeExt, glTypeExt, name);
+
+    UInt32 location = glGetAttribLocation(this.bufferID, name);
+    this.params[current].location = location;
+
+    if( location != -1 && location > this.maxAttributeLocation )
+      this.maxAttributeLocation = location;
+
+    _RemoveGLParamNameArraySuffix(name);
+
+    this.initAttributeParam( current, i, name, this.params[current], size[0], glType[0] );
+      
+    ++current;
+  }
+
+  for( Size i = 0; i < this.outFragments.size(); i++ )
+    this.outFragments[i].location = glGetFragDataLocation( this.bufferID, this.outFragments[i].name );
+
+  this.paramCategoryLimits[OGLProgram_fragDataParam+1] = this.params.size();
+}
+
+/// Adds a parameter that was not created by program's compilation (optimized out).
+/// This can be useful for propagating value to other program variation which might have it.
+/// \param paramCategory One of the following: OGLProgram_uniformParam, OGLProgram_attribParam, OGLProgram_fragDataParam
+function Size OGLProgram.addUserParameter!(String name, UInt32 glType, UInt32 size, UInt32 paramCategory) {
+  Size index = this.getParameterKey(name);
+  if( index != InvalidIndex ) {
+    setError( "OGLProgram.addExplicitParameter: parameter already exists: " + name );
+    return index;
+  } else if( this.linkStatus == OGLProgram_notLinked )
+    setError("OGLProgram.addExplicitParameter: only supported for compiled programs");
+  else {
+    // Insert space for the right category
+    index = this.paramCategoryLimits[paramCategory+1];
+    Size indexInCategory = this.getParameterCount( paramCategory );
+
+    for( Size i = paramCategory + 1; i < this.paramCategoryLimits.size(); ++i )
+      ++this.paramCategoryLimits[i];
+
+    Size prevParamSize = this.params.size();
+    this.params.resize( prevParamSize + 1 );
+    for( Size i = prevParamSize; i > index; --i ) {
+      this.params[i] = this.params[i-1];
+      this.paramToKey[this.params[i].name] = i;
+    }
+
+    this.params[index] = OGLProgram_param();
+    this.params[index].location = InvalidIndex;
+    this.params[index].isUserParameter = true;
+
+    if( paramCategory == OGLProgram_uniformParam ) {
+      Boolean sampler;
+      this.initUniformParam( index, indexInCategory, name, this.params[index], size, glType, sampler );
+      if( sampler ) {
+        //Set a dummy texture unit; we use that to know if it is a texture
+        this.params[index].samplerTextureUnit = this.textureUnitToParamKey.size();
+      }
+    } else if( paramCategory == OGLProgram_attribParam ) {
+      //Find next available location, so values can be stored somewhere in the vertex buffer
+      Size location = 0;
+      while( true ) {
+        Boolean found;
+        for( Size i = this.paramCategoryLimits[paramCategory]; i < this.paramCategoryLimits[paramCategory + 1]; ++i ) {
+          if( this.params[i].location == location ) {
+            found = true;
+            break;
+          }
+        }
+        if( !found ) {
+          this.params[index].location = location;
+          break;
+        }
+        ++location;
+      }
+      this.initAttributeParam( index, indexInCategory, name, this.params[index], size, glType );
+    }
+    this.incrementStructureVersion();
+  }
+  return index;
+}
+
+OGLProgram.declareOutputFragmentName!(String name) {
+  for( Size i = 0; i < this.outFragments.size(); ++i ) {
+    if( this.outFragments[i].name == name )
+      return; // Already declared
+  }
+  OGLProgram_outFragment frag;
+  frag.name = name;
+
+  if( this.bufferID )
+    frag.location = glGetFragDataLocation( this.bufferID, name );
+  else
+    frag.location = -1;
+
+  //Sometimes the fragColor is unkown by the shader??
+  //if( frag.location == -1 )
+  //  setError( "OGLProgram.declareOutputFragmentName " + this.name + ": fragment output " + name + " not found" );
+
+  this.outFragmentToIndex[name] = this.outFragments.size();
+  this.outFragments.push(frag);
+}
+
+UInt32 OGLProgram.getOutputFragmentCount() {
+  return this.outFragments.size();
+}
+
+UInt32 OGLProgram.getOutputFragmentIndex( String name ) {
+  return this.outFragmentToIndex.get( name, InvalidIndex );
+}
+
+UInt32 OGLProgram.getOutputFragmentLocation( UInt32 index ) {
+  return this.outFragments[index].location;
+}
+
+String OGLProgram.getOutputFragmentName( UInt32 index ) {
+  return this.outFragments[index].name;
+}
+
+/// \param paramCategory OGLProgram_[x]Param constant
+inline Size OGLProgram.getParameterCount( UInt32 paramCategory ) {
+  return this.paramCategoryLimits[paramCategory+1] - this.paramCategoryLimits[paramCategory];
+}
+
+inline Size OGLProgram.getInputParameterCount() {
+  return this.paramCategoryLimits[OGLProgram_attribParam+1];
+}
+
+/// Gets a parameter key from a parameter name. Returns 'InvalidIndex' if not found.
+inline Size OGLProgram.getParameterKey( String name ) {
+  return this.paramToKey.get(name, InvalidIndex);
+}
+
+inline Size OGLProgram.getParameterKeyEnd() {
+  return this.params.size();
+}
+
+//Returns InvalidIndex if not a texture sampler parameter
+inline Size OGLProgram.getTextureUnit( Size paramKey ) {
+  return this.params[paramKey].samplerTextureUnit;
+}
+
+inline Size OGLProgram.getTextureUnitCount() {
+  return this.textureUnitToParamKey.size();
+}
+
+inline Size OGLProgram.getParamKeyForTextureUnit( Size unit ) {
+  return this.textureUnitToParamKey[unit];
+}
+
+inline Boolean OGLProgram.isUserParameter( Size paramKey ) {
+  return this.params[paramKey].isUserParameter;
+}
+
+/// \param paramCategory One of the following: OGLProgram_uniformParam, OGLProgram_attribParam, OGLProgram_fragDataParam
+/// \param index Index within that parameter category.
+inline OGLProgram.getParameterCategoryAndIndex( Size paramKey, io UInt32 paramCategory, io UInt32 index ) {
+  paramCategory = this.params[paramKey].paramCategory;
+  index = this.params[paramKey].index;
+}
+
+inline String OGLProgram.getParameterName( Size paramKey ) {
+  return this.params[paramKey].name;
+}
+
+inline Integer OGLProgram.getParameterLocation( Size paramKey ) {
+  return this.params[paramKey].location;
+}
+
+inline UInt32 OGLProgram.getParameterCategory( Size paramKey ) {
+  return this.params[paramKey].paramCategory;
+}
+
+inline Size OGLProgram.getParameterArrayCount( Size paramKey ) {
+  return this.params[paramKey].size;
+}
+
+inline Integer OGLProgram.getParameterGLType( Size paramKey ) {
+  return this.params[paramKey].glType;
+}
+
+/// Will return `None` if no direct match (use OGLProgram.getParameterGLType)
+inline Type OGLProgram.getParameterKLType( Size paramKey ) {
+  return this.params[paramKey].klType;
+}
+
+inline Size OGLProgram.getParameterWordCountPerItem( Size paramKey ) {
+  return this.params[paramKey].wordCountPerItem;
+}
+
+inline Size OGLProgram.getParameterTotalWordCount( Size paramKey ) {
+  return this.params[paramKey].totalWordCount;
+}
+
+inline UInt32 OGLProgram.getParameterExpectedTextureType( Size paramKey, io Boolean shadow ) {
+  shadow = this.params[paramKey].isShadowTexture;
+  return this.params[paramKey].expectedTextureType;
+}
+
+inline Size OGLProgram.getParameterKey( UInt32 paramCategory, UInt32 index ) {
+  return this.paramCategoryLimits[paramCategory] + index;
+}
+
+/// \param paramCategory OGLProgram_[x]Param constant
+function String OGLProgram.getParameterDesc( UInt32 paramCategory, UInt32 index ) {
+  Size internalIndex = this.getParameterKey( paramCategory, index );
+  String desc = this.params[internalIndex].name 
+              + ": index=" + index 
+              + " type=" + OGLProgram_glTypeToString( this.params[internalIndex].glType );
+
+  if( this.params[internalIndex].size != 1 )
+    desc += " arraySize=" + this.params[internalIndex].size;
+
+  if( this.params[internalIndex].samplerTextureUnit != InvalidIndex )
+    desc += " textureUnit=" + this.params[internalIndex].samplerTextureUnit;
+
+  if( this.params[internalIndex].klType != None )
+    desc += " klType=" + this.params[internalIndex].klType;
+  return desc;
+}
+
+function String OGLProgram.describe() {
+  String desc = this.name + " programID=" + this.bufferID+"\n";
+  for( Size paramCategory = 0; paramCategory < OGLProgram_paramCount; ++paramCategory ) {
+    Size count = this.getParameterCount(paramCategory);
+    if( count ) {
+      desc += "  " + OGLProgram_paramCategoryToString(paramCategory) + " parameters:\n";
+      for( Size i = 0; i < count; ++i )
+        desc += "    " + i + ": " + this.getParameterDesc(paramCategory, i) + "\n";
+    }
+  }
+  return desc;
+}
+
+/// Open a group of files following this name convention: directory/[namePrefix]_[shaderType].glsl
+function Boolean SearchGLSLShader( String directory, String namePrefix, String includePath ) {
+  FilePath directoryPath( directory );
+
+  FilePath searchPath = includePath ? FilePath(includePath) / directoryPath : directoryPath;
+
+  if( !searchPath.isDirectory() )
+    return false;
+
+  for( Size j = 0; j < OGLShaderTypes.size(); ++j ) {
+    String fileName = namePrefix + '_' + GLShaderTypeToString( OGLShaderTypes[j] ) + '.glsl';
+    FilePath file = searchPath / fileName;
+    if( file.isRegularFile() ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// Open a group of files following this name convention: directory/[namePrefix]_[shaderType].glsl
+function Boolean OGLProgram.populateFromGLSLFileGroup!( String directory, String namePrefix, String preprocessorIncludePaths<> ) {
+  FilePath directoryPath( directory );
+
+  String relativeName = directory + ":" + namePrefix;
+  if( !this.name )
+    this.name = relativeName;
+
+  Boolean found;
+  for( Size i = 0; i < preprocessorIncludePaths.size() + 1; ++i ) {
+
+    FilePath searchPath = null;
+    if( i == 0 )
+      searchPath = directoryPath;//Relative
+    else
+      searchPath = FilePath(preprocessorIncludePaths[i-1]) / directoryPath;
+
+    if( !searchPath.isDirectory() )
+      continue;
+
+    for( Size j = 0; j < OGLShaderTypes.size(); ++j ) {
+      String fileName = namePrefix + '_' + GLShaderTypeToString( OGLShaderTypes[j] ) + '.glsl';
+      FilePath file = searchPath / fileName;
+      if( file.isRegularFile() ) {
+        String filePath = file.string();
+        TextReader reader( filePath );
+        String code = reader.readAll();
+        this.addShader( filePath, code, OGLShaderTypes[j], preprocessorIncludePaths );
+        found = true;
+      }
+    }
+    if( found )
+      break;
+  }
+
+  if( !found )
+    setError( "OGLProgram.populateFromGLSLFileGroup: cannot find shaders " + relativeName + "_*" );
+  return found;
+}
+
+OGLProgram.activate!( io Ref<OGLContext> context ) {
+  if( !this.bufferID )
+    setError("OGLProgram.activate "+this.getTraceName()+": program not created");
+  context.stateCache.useProgram( this.bufferID );
+  if( this.tracingEnabled() )
+    report("OGLProgram.activate "+this.getTraceName());
+
+  if( this.defaultsChanged ) {
+    this.defaultsChanged = false;
+    for( Size i = 0; i < this.paramCategoryLimits[OGLProgram_uniformParam + 1]; i++ ) {
+      if( this.params[i].samplerTextureUnit == InvalidIndex )
+        this.resetToDefault( this.params[i] );
+    }
+  }
+}
+
+/// \internal Note: we detach this portion of the function so that loadParameter_assertUniform has more chances to be inlined
+function OGLProgram.reportUniformRequired( OGLProgram_param paramData ) {
+  setError( "OGLProgram.loadUniform: "+this.getTraceName()+": param '"+paramData.name+"' is not a uniform parameter");
+}
+
+/// \internal
+inline OGLProgram.loadParameter_assertUniform( OGLProgram_param paramData ) {
+  if( Boolean(Fabric_Guarded) && paramData.paramCategory != OGLProgram_uniformParam )
+    this.reportUniformRequired( paramData );
+}
+
+/// \internal Note: we detach this portion of the function so that loadParameter_assertUniform has more chances to be inlined
+function OGLProgram.reportTextureRequired( OGLProgram_param paramData ) {
+  setError( "OGLProgram.loadParameter: "+this.getTraceName()+": param '"+paramData.name+"' is not a texture parameter");
+}
+
+/// \internal
+inline OGLProgram.assertIsTexture( Size paramKey ) {
+  if( Boolean(Fabric_Guarded) && this.params[paramKey].expectedTextureType == 0)
+    this.reportTextureRequired( this.params[paramKey] );
+}
+
+/// \internal Note: we detach this portion of the function so that loadParameter_assertUniform has more chances to be inlined
+function OGLProgram.reportAttribRequired( OGLProgram_param paramData ) {
+  setError( "OGLProgram.loadParameter: "+this.getTraceName()+": param '"+paramData.name+"' is not an attribute parameter");
+}
+
+/// \internal
+inline OGLProgram.assertIsAttrib( Size paramKey ) {
+  if( Boolean(Fabric_Guarded) && this.params[paramKey].paramCategory != OGLProgram_attribParam)
+    this.reportAttribRequired( this.params[paramKey] );
+}
+
+/// \internal
+inline Boolean OGLProgram.tracingParameters() {
+  return Boolean(Fabric_Guarded) && this.tracingParamValues;
+}
+
+/// \internal
+inline UInt32<> OGLProgram.getCachedDataSubarray( OGLProgram_param paramData ) {
+  return CastUInt32SubArrayToUInt32Array( this.paramValueCache, paramData.cacheStorageOffsetOrInlineValue, paramData.totalWordCount );
+}
+
+/// \internal
+function OGLProgram.loadUniformFromInlineCacheData( OGLProgram_param paramData ) {
+  if( paramData.location != InvalidIndex ) {
+    if( paramData.glComponentType == GL_FLOAT ) {
+      Scalar value = bitcastUIntToFloat( paramData.cacheStorageOffsetOrInlineValue );
+      glUniform1f( paramData.location, value );
+      if( this.tracingParameters() )
+        report( "OGLProgram.loadParameter: " + this.getTraceName() + ": param " + paramData.name + ": " + value );
+    } else {
+      if( paramData.glComponentType == GL_INT )
+        glUniform1i( paramData.location, paramData.cacheStorageOffsetOrInlineValue );
+      else
+        glUniform1ui( paramData.location, paramData.cacheStorageOffsetOrInlineValue );
+      if( this.tracingParameters() )
+        report( "OGLProgram.loadParameter: " + this.getTraceName() + ": param " + paramData.name + ": " + paramData.cacheStorageOffsetOrInlineValue );
+    }
+  }
+}
+
+/// \internal
+function OGLProgram.loadUniformFromCacheData( OGLProgram_param paramData, UInt32 cacheData<> ) {
+
+  if( paramData.location == InvalidIndex )
+    return;
+
+  if( paramData.isMatrix ) {
+
+    Scalar scalarData<> = CastDataToScalarArray(cacheData.data(), cacheData.size());
+
+    if( paramData.glType == GL_FLOAT_MAT4 ) {
+      glUniformMatrix4fv( paramData.location, paramData.size, false, scalarData );
+
+      if( this.tracingParameters() ) {
+        Mat44 matData<> = CastDataToMat44Array(cacheData.data(), cacheData.size()/16);
+        report( "OGLProgram.loadParameter: "+this.getTraceName()+": param "+paramData.name+": *transposed* "+matData);
+      }
+    } else if( paramData.glType == GL_FLOAT_MAT3 ) {
+      glUniformMatrix3fv( paramData.location, paramData.size, false, scalarData );
+
+      if( this.tracingParameters() ) {
+        Mat33 matData<> = CastDataToMat33Array(cacheData.data(), cacheData.size()/9);
+        report( "OGLProgram.loadParameter: "+this.getTraceName()+": param "+paramData.name+": *transposed* "+matData);
+      }
+    } else if( paramData.glType == GL_FLOAT_MAT2 ) {
+      glUniformMatrix2fv( paramData.location, paramData.size, false, scalarData );
+
+      if( this.tracingParameters() ) {
+        Mat22 matData<> = CastDataToMat22Array(cacheData.data(), cacheData.size()/4);
+        report( "OGLProgram.loadParameter: "+this.getTraceName()+": param "+paramData.name+": *transposed* "+matData);
+      }
+    } else
+      setError( "OGLProgram.loadParameter: "+this.getTraceName()+": non-square matrix or matrix of doubles currently unsupported" );
+
+  } else if( paramData.glComponentType == GL_INT || paramData.glComponentType == GL_BOOL) {
+
+    SInt32 intData<> = CastDataToSInt32Array(cacheData.data(), cacheData.size());
+    if( paramData.componentPerItem == 1 )
+      glUniform1iv( paramData.location, paramData.size, intData );
+    else if( paramData.componentPerItem == 2 )
+      glUniform2iv( paramData.location, paramData.size, intData );
+    else if( paramData.componentPerItem == 3 )
+      glUniform3iv( paramData.location, paramData.size, intData );
+    else if( paramData.componentPerItem == 4 )
+      glUniform4iv( paramData.location, paramData.size, intData );
+
+    if( this.tracingParameters() )
+      report( "OGLProgram.loadParameter: "+this.getTraceName()+": param "+paramData.name+": "+intData);
+
+  } else if( paramData.glComponentType == GL_FLOAT ) {
+
+    Scalar scalarData<> = CastDataToScalarArray(cacheData.data(), cacheData.size());
+    if( paramData.componentPerItem == 1 ) {
+      glUniform1fv( paramData.location, paramData.size, scalarData );
+      if( this.tracingParameters() )
+        report( "OGLProgram.loadParameter: "+this.getTraceName()+": param "+paramData.name+": "+scalarData);
+    } else if( paramData.componentPerItem == 2 ) {
+      glUniform2fv( paramData.location, paramData.size, scalarData );
+      if( this.tracingParameters() ) {
+        Vec2 vecData<> = CastDataToVec2Array(cacheData.data(), cacheData.size()/2);
+        if( paramData.size == 1 )
+          report( "OGLProgram.loadParameter: "+this.getTraceName()+": param "+paramData.name+": "+vecData[0]);
+        else
+          report( "OGLProgram.loadParameter: "+this.getTraceName()+": param "+paramData.name+": "+vecData);
+      }
+    } else if( paramData.componentPerItem == 3 ) {
+      glUniform3fv( paramData.location, paramData.size, scalarData );
+      if( this.tracingParameters() ) {
+        Vec3 vecData<> = CastDataToVec3Array(cacheData.data(), cacheData.size()/3);
+        if( paramData.size == 1 )
+          report( "OGLProgram.loadParameter: "+this.getTraceName()+": param "+paramData.name+": "+vecData[0]);
+        else
+          report( "OGLProgram.loadParameter: "+this.getTraceName()+": param "+paramData.name+": "+vecData);
+      }
+    } else if( paramData.componentPerItem == 4 ) {
+      glUniform4fv( paramData.location, paramData.size, scalarData );
+      if( this.tracingParameters() ) {
+        Vec4 vecData<> = CastDataToVec4Array(cacheData.data(), cacheData.size()/4);
+        if( paramData.size == 1 )
+          report( "OGLProgram.loadParameter: "+this.getTraceName()+": param "+paramData.name+": "+vecData[0]);
+        else
+          report( "OGLProgram.loadParameter: "+this.getTraceName()+": param "+paramData.name+": "+vecData);
+      }
+    }
+  } else if( paramData.glComponentType == GL_UNSIGNED_INT ) {
+
+    if( paramData.componentPerItem == 1 )
+      glUniform1uiv( paramData.location, paramData.size, cacheData );
+    else if( paramData.componentPerItem == 2 )
+      glUniform2uiv( paramData.location, paramData.size, cacheData );
+    else if( paramData.componentPerItem == 3 )
+      glUniform3uiv( paramData.location, paramData.size, cacheData );
+    else if( paramData.componentPerItem == 4 )
+      glUniform4uiv( paramData.location, paramData.size, cacheData );
+
+    if( this.tracingParameters() )
+      report( "OGLProgram.loadParameter: "+this.getTraceName()+": param "+paramData.name+": "+cacheData);
+
+  } else
+    setError("OGLProgram.loadUniformFromCacheData: "+this.getTraceName()+": param "+paramData.name+": unsupported GL type "+paramData.glComponentType);
+}
+
+/// \internal
+inline OGLProgram.loadUniformFromCacheData( OGLProgram_param paramData ) {
+  if( paramData.totalWordCount == 1 )
+    this.loadUniformFromInlineCacheData( paramData );
+  else {
+    UInt32 cacheData<> = this.getCachedDataSubarray( paramData );
+    this.loadUniformFromCacheData( paramData, cacheData );
+  }
+}
+
+/// \internal
+inline OGLProgram.loadUniformFromData!( io OGLProgram_param paramData, UInt32 valueData ) {
+  this.loadParameter_assertUniform( paramData );
+  if( updateValue( valueData, paramData.cacheStorageOffsetOrInlineValue ) ) {
+    this.loadUniformFromInlineCacheData( paramData );
+    paramData.currentlyDefault = false;
+  }
+}
+
+/// \internal
+inline OGLProgram.loadUniformFromData!( io OGLProgram_param paramData, Data valueData, UInt64 valueDataSize ) {
+  if( paramData.wordCountPerItem == 1 ) {
+    UInt32 inlineData<> = CastDataToUInt32Array( valueData, 1 );
+    this.loadUniformFromData( paramData, inlineData[0] );
+    return;
+  }
+  this.loadParameter_assertUniform( paramData );
+  UInt32 cacheData<> = this.getCachedDataSubarray( paramData );
+  if( CompareAndUpdateBytes( cacheData.data(), valueData, valueDataSize ) || paramData.currentlyDefault ) {
+    this.loadUniformFromCacheData( paramData, cacheData );
+    paramData.currentlyDefault = false;
+  }
+}
+
+/// \internal
+function OGLProgram.resetToDefault!( io OGLProgram_param paramData ) {
+  //Note: don't compare values since this has been done when 'setDefault' into 'paramData.currentlyDefault'
+  this.loadParameter_assertUniform( paramData );
+  if( paramData.totalWordCount == 1 ) {
+    paramData.cacheStorageOffsetOrInlineValue = paramData.defaultValueCacheStorageOffsetOrInlineValue;
+    this.loadUniformFromInlineCacheData( paramData );
+  } else {
+    UInt32 cacheData<> = CastUInt32SubArrayToUInt32Array( this.paramValueCache, paramData.defaultValueCacheStorageOffsetOrInlineValue, paramData.totalWordCount );
+    this.loadUniformFromCacheData( paramData, cacheData );
+  }
+  paramData.currentlyDefault = true;
+}
+
+inline OGLProgram.resetToDefault!( Size paramKey ) {
+  if( !this.params[paramKey].currentlyDefault )
+    this.resetToDefault(this.params[paramKey]);
+}
+
+/// \internal
+/// Non-const: workaround: .data() is not const...
+function OGLProgram.getDefaultParamValue!( io OGLProgram_param paramData, io Data structData, io UInt64 structSize, UInt32 subIndex ) {
+  //Note: don't compare values since this has been done when 'setDefault' into 'paramData.currentlyDefault'
+  if( paramData.totalWordCount == 1 ) {
+    structSize = 4;
+    structData = paramData.defaultValueCacheStorageOffsetOrInlineValue.data();
+  } else {
+    UInt32 cacheData<> = CastUInt32SubArrayToUInt32Array( this.paramValueCache, paramData.defaultValueCacheStorageOffsetOrInlineValue, paramData.wordCountPerItem );
+    structData = cacheData.data();
+    structSize = cacheData.dataSize();
+  }
+}
+
+inline OGLProgram.getDefaultParamValue( Size paramKey, io Data structData, io UInt64 structSize, UInt32 subIndex ) {
+  Ref<OGLProgram> mutableThis = this;//Workaround: .data() is not const...
+  mutableThis.getDefaultParamValue( mutableThis.params[paramKey], structData, structSize, subIndex );
+}
+
+/// \internal
+/// Non-const: workaround: .data() is not const...
+function OGLProgram.getCurrentParamValue!( io OGLProgram_param paramData, io Data structData, io UInt64 structSize, UInt32 subIndex ) {
+  //Note: don't compare values since this has been done when 'setDefault' into 'paramData.currentlyDefault'
+  if( paramData.totalWordCount == 1 ) {
+    structSize = 4;
+    structData = paramData.cacheStorageOffsetOrInlineValue.data();
+  } else {
+    UInt32 cacheData<> = CastUInt32SubArrayToUInt32Array( this.paramValueCache, paramData.cacheStorageOffsetOrInlineValue, paramData.wordCountPerItem );
+    structData = cacheData.data();
+    structSize = cacheData.dataSize();
+  }
+}
+
+inline OGLProgram.getCurrentParamValue( Size paramKey, io Data structData, io UInt64 structSize, UInt32 subIndex ) {
+  Ref<OGLProgram> mutableThis = this;//Workaround: .data() is not const...
+  mutableThis.getCurrentParamValue( mutableThis.params[paramKey], structData, structSize, subIndex );
+}
+
+/// \internal
+inline OGLProgram.loadUniformFromData!( Size paramKey, UInt32 valueData ) {
+  this.loadUniformFromData( this.params[paramKey], valueData );
+}
+
+/// \internal
+inline OGLProgram.loadUniformFromData!( Size paramKey, UInt32 valueData<> ) {
+  this.loadUniformFromData( this.params[paramKey], valueData.data(), valueData.dataSize() );
+}
+
+/// \internal Note: we detach this portion of the function so that loadParameter_assertUniform has more chances to be inlined
+function OGLProgram.reportIncompatible( OGLProgram_param paramData, Type type ) {
+  setError("OGLProgram "+this.getTraceName()+": param "+paramData.name+": "+type+" not compatible with "+OGLProgram_glTypeToString(paramData.glType));
+}
+
+/// \internal Note: we detach this portion of the function so that loadParameter_assertUniform has more chances to be inlined
+function OGLProgram.reportWrongSize( OGLProgram_param paramData, Size size ) {
+  setError("OGLProgram "+this.getTraceName()+": param "+paramData.name+": expected count is "+paramData.size+", value count is "+size);
+}
+
+
+/// \internal Note: we detach this portion of the function so that loadParameter_assertUniform has more chances to be inlined
+function OGLProgram.reportWrongIndex( OGLProgram_param paramData, Size index ) {
+  setError("OGLProgram "+this.getTraceName()+": param "+paramData.name+": array size is "+paramData.size+", index is "+index);
+}
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, SInt32 value ) {
+  if( paramData.glType != GL_INT && paramData.glType != GL_BOOL && paramData.glType != GL_UNSIGNED_INT)
+    this.reportIncompatible( paramData, SInt32 );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, SInt32 value ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], value );
+}
+
+/// \note We assume that OGLProgram.activate() was previously called
+inline OGLProgram.loadUniform!( Size paramKey, SInt32 value ) {
+  this.assertCompatible( paramKey, value );
+  this.loadUniformFromData( this.params[paramKey], value );
+}
+
+OGLProgram.setDefault!( Size paramKey, SInt32 value ) {
+  this.assertCompatible( paramKey, value );
+  this.params[paramKey].currentlyDefault = false;
+  this.params[paramKey].defaultValueCacheStorageOffsetOrInlineValue = value;
+  this.defaultsChanged = true;
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, SInt32 values<> ) {
+  if( paramData.glComponentType != GL_INT && paramData.glComponentType != GL_UNSIGNED_INT )
+    this.reportIncompatible( paramData, SInt32 );
+  else if( paramData.totalWordCount != values.size() )
+    this.reportWrongSize( paramData, values.size()/paramData.componentPerItem );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, SInt32 values<> ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], values );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, SInt32 value, Size arrayIndex ) {
+  if( paramData.glComponentType != GL_INT && paramData.glComponentType != GL_UNSIGNED_INT )
+    this.reportIncompatible( paramData, SInt32 );
+  else if( paramData.totalWordCount <= arrayIndex )
+    this.reportWrongIndex( paramData, arrayIndex/paramData.componentPerItem );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, SInt32 value, Size arrayIndex ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], value, arrayIndex );
+}
+
+/// \note We assume that OGLProgram.activate() was previously called
+inline OGLProgram.loadUniform!( Size paramKey, SInt32 values<> ) {
+  this.assertCompatible( paramKey, values );
+  this.loadUniformFromData( this.params[paramKey], values.data(), values.dataSize() );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Boolean value ) {
+  this.assertCompatible( paramKey, SInt32(1) );
+}
+
+/// \note We assume that OGLProgram.activate() was previously called
+inline OGLProgram.loadUniform!( Size paramKey, Boolean value ) {
+  this.assertCompatible( paramKey, value );
+  this.loadUniformFromData( this.params[paramKey], value ? 1 : 0 );
+}
+
+OGLProgram.setDefault!( Size paramKey, Boolean value ) {
+  this.assertCompatible( paramKey, value );
+  this.params[paramKey].currentlyDefault = false;
+  this.params[paramKey].defaultValueCacheStorageOffsetOrInlineValue = value;
+  this.defaultsChanged = true;
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, UInt32 values<> ) {
+  if( paramData.glComponentType != GL_UNSIGNED_INT )
+    this.reportIncompatible( paramData, UInt32 );
+  else if( paramData.totalWordCount != values.size() )
+    this.reportWrongSize( paramData, values.size()/paramData.componentPerItem );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, UInt32 values<> ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], values );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, UInt32 value, Size arrayIndex ) {
+  if( paramData.glComponentType != GL_UNSIGNED_INT )
+    this.reportIncompatible( paramData, UInt32 );
+  else if( paramData.totalWordCount <= arrayIndex )
+    this.reportWrongIndex( paramData, arrayIndex/paramData.componentPerItem );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, UInt32 value, Size arrayIndex ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], value, arrayIndex );
+}
+
+/// \note We assume that OGLProgram.activate() was previously called
+inline OGLProgram.loadUniform!( Size paramKey, UInt32 values<> ) {
+  this.assertCompatible( paramKey, values );
+  this.loadUniformFromData( this.params[paramKey], values.data(), values.dataSize() );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, Scalar value ) {
+  if( paramData.glType != GL_FLOAT )
+    this.reportIncompatible( paramData, Scalar );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Scalar value ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], value );
+}
+
+/// \note We assume that OGLProgram.activate() was previously called
+inline OGLProgram.loadUniform!( Size paramKey, Scalar value ) {
+  this.assertCompatible( paramKey, value );
+  this.loadUniformFromData( this.params[paramKey], bitcastFloatToUInt(value) );
+}
+
+OGLProgram.setDefault!( Size paramKey, Scalar value ) {
+  this.assertCompatible( paramKey, value );
+  this.params[paramKey].currentlyDefault = false;
+  this.params[paramKey].defaultValueCacheStorageOffsetOrInlineValue = bitcastFloatToUInt(value);
+  this.defaultsChanged = true;
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, Scalar values<> ) {
+  if( paramData.glType != GL_FLOAT )
+    this.reportIncompatible( paramData, Scalar );
+  else if( paramData.totalWordCount != values.size() )
+    this.reportWrongSize( paramData, values.size() );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Scalar values<> ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], values );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, Scalar value, Size arrayIndex ) {
+  if( paramData.glComponentType != GL_FLOAT )
+    this.reportIncompatible( paramData, Scalar );
+  else if( paramData.totalWordCount <= arrayIndex )
+    this.reportWrongIndex( paramData, arrayIndex );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Scalar value, Size arrayIndex ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], value, arrayIndex );
+}
+
+/// \note We assume that OGLProgram.activate() was previously called
+inline OGLProgram.loadUniform!( Size paramKey, Scalar values<> ) {
+  this.assertCompatible( paramKey, values );
+  this.loadUniformFromData( this.params[paramKey], values.data(), values.dataSize() );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, Vec2 value ) {
+  if( paramData.glType != GL_FLOAT_VEC2 )
+    this.reportIncompatible( paramData, Vec2 );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Vec2 value ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], value );
+}
+
+/// \internal
+inline Boolean CompareAndUpdate( io UInt32 prevValues[], UInt32 offset, Vec2 value ) {
+  Boolean changed;
+  updateValue(value.x, prevValues[offset], changed);
+  updateValue(value.y, prevValues[offset+1], changed);
+  return changed;
+}
+
+/// \internal
+inline OGLProgram.loadUniform!( io OGLProgram_param paramData, Vec2 value ) {
+  this.loadParameter_assertUniform( paramData );
+  if( CompareAndUpdate( this.paramValueCache, paramData.cacheStorageOffsetOrInlineValue, value ) )
+    this.loadUniformFromCacheData( paramData );
+}
+
+/// \note We assume that OGLProgram.activate() was previously called
+inline OGLProgram.loadUniform!( Size paramKey, Vec2 value ) {
+  this.assertCompatible( paramKey, value );
+  this.loadUniform( this.params[paramKey], value );
+}
+
+OGLProgram.setDefault!( Size paramKey, Vec2 value ) {
+  this.assertCompatible( paramKey, value );
+  this.params[paramKey].currentlyDefault = false;
+  CompareAndUpdate( this.paramValueCache, this.params[paramKey].defaultValueCacheStorageOffsetOrInlineValue, value );
+  this.defaultsChanged = true;
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, Vec2 values<> ) {
+  if( paramData.glType != GL_FLOAT_VEC2 )
+    this.reportIncompatible( paramData, Vec2 );
+  else if( paramData.size != values.size() )
+    this.reportWrongSize( paramData, values.size() );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Vec2 values<> ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], values );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, Vec2 value, Size arrayIndex ) {
+  if( paramData.glType != GL_FLOAT_VEC2 )
+    this.reportIncompatible( paramData, Vec2 );
+  else if( paramData.size <= arrayIndex )
+    this.reportWrongIndex( paramData, arrayIndex );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Vec2 value, Size arrayIndex ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], value, arrayIndex );
+}
+
+/// \note We assume that OGLProgram.activate() was previously called
+inline OGLProgram.loadUniform!( Size paramKey, Vec2 values<> ) {
+  this.assertCompatible( paramKey, values );
+  this.loadUniformFromData( this.params[paramKey], values.data(), values.dataSize() );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, Vec3 value ) {
+  if( paramData.glType != GL_FLOAT_VEC3 )
+    this.reportIncompatible( paramData, Vec3 );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Vec3 value ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], value );
+}
+
+/// \internal
+inline Boolean CompareAndUpdate( io UInt32 prevValues[], UInt32 offset, Vec3 value ) {
+  Boolean changed;
+  updateValue(value.x, prevValues[offset], changed);
+  updateValue(value.y, prevValues[offset+1], changed);
+  updateValue(value.z, prevValues[offset+2], changed);
+  return changed;
+}
+
+/// \internal
+inline OGLProgram.loadUniform!( io OGLProgram_param paramData, Vec3 value ) {
+  this.loadParameter_assertUniform( paramData );
+  if( CompareAndUpdate( this.paramValueCache, paramData.cacheStorageOffsetOrInlineValue, value ) )
+    this.loadUniformFromCacheData( paramData );
+}
+
+/// \note We assume that OGLProgram.activate() was previously called
+inline OGLProgram.loadUniform!( Size paramKey, Vec3 value ) {
+  this.assertCompatible( paramKey, value );
+  this.loadUniform( this.params[paramKey], value );
+}
+
+OGLProgram.setDefault!( Size paramKey, Vec3 value ) {
+  this.assertCompatible( paramKey, value );
+  this.params[paramKey].currentlyDefault = false;
+  CompareAndUpdate( this.paramValueCache, this.params[paramKey].defaultValueCacheStorageOffsetOrInlineValue, value );
+  this.defaultsChanged = true;
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, Vec3 values<> ) {
+  if( paramData.glType != GL_FLOAT_VEC3 )
+    this.reportIncompatible( paramData, Vec3 );
+  else if( paramData.size != values.size() )
+    this.reportWrongSize( paramData, values.size() );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Vec3 values<> ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], values );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, Vec3 value, Size arrayIndex ) {
+  if( paramData.glType != GL_FLOAT_VEC3 )
+    this.reportIncompatible( paramData, Vec3 );
+  else if( paramData.size <= arrayIndex )
+    this.reportWrongIndex( paramData, arrayIndex );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Vec3 value, Size arrayIndex ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], value, arrayIndex );
+}
+
+/// \note We assume that OGLProgram.activate() was previously called
+inline OGLProgram.loadUniform!( Size paramKey, Vec3 values<> ) {
+  this.assertCompatible( paramKey, values );
+  this.loadUniformFromData( this.params[paramKey], values.data(), values.dataSize() );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, Vec4 value ) {
+  if( paramData.glType != GL_FLOAT_VEC4 )
+    this.reportIncompatible( paramData, Vec4 );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Vec4 value ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], value );
+}
+
+/// \internal
+inline Boolean CompareAndUpdate( io UInt32 prevValues[], UInt32 offset, Vec4 value ) {
+  Boolean changed;
+  updateValue(value.x, prevValues[offset], changed);
+  updateValue(value.y, prevValues[offset+1], changed);
+  updateValue(value.z, prevValues[offset+2], changed);
+  updateValue(value.t, prevValues[offset+3], changed);
+  return changed;
+}
+
+/// \internal
+inline OGLProgram.loadUniform!( io OGLProgram_param paramData, Vec4 value ) {
+  this.loadParameter_assertUniform( paramData );
+  if( CompareAndUpdate( this.paramValueCache, paramData.cacheStorageOffsetOrInlineValue, value ) )
+    this.loadUniformFromCacheData( paramData );
+}
+
+/// \note We assume that OGLProgram.activate() was previously called
+inline OGLProgram.loadUniform!( Size paramKey, Vec4 value ) {
+  this.assertCompatible( paramKey, value );
+  this.loadUniform( this.params[paramKey], value );
+}
+
+OGLProgram.setDefault!( Size paramKey, Vec4 value ) {
+  this.assertCompatible( paramKey, value );
+  this.params[paramKey].currentlyDefault = false;
+  CompareAndUpdate( this.paramValueCache, this.params[paramKey].defaultValueCacheStorageOffsetOrInlineValue, value );
+  this.defaultsChanged = true;
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, Vec4 values<> ) {
+  if( paramData.glType != GL_FLOAT_VEC4 )
+    this.reportIncompatible( paramData, Vec4 );
+  else if( paramData.size != values.size() )
+    this.reportWrongSize( paramData, values.size() );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Vec4 values<> ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], values );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, Vec4 value, Size arrayIndex ) {
+  if( paramData.glType != GL_FLOAT_VEC4 )
+    this.reportIncompatible( paramData, Vec4 );
+  else if( paramData.size <= arrayIndex )
+    this.reportWrongIndex( paramData, arrayIndex );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Vec4 value, Size arrayIndex ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], value, arrayIndex );
+}
+
+/// \note We assume that OGLProgram.activate() was previously called
+inline OGLProgram.loadUniform!( Size paramKey, Vec4 values<> ) {
+  this.assertCompatible( paramKey, values );
+  this.loadUniformFromData( this.params[paramKey], values.data(), values.dataSize() );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, Color value ) {
+  if( paramData.glType != GL_FLOAT_VEC4 )
+    this.reportIncompatible( paramData, Color );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Color value ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], value );
+}
+
+/// \internal
+inline Boolean CompareAndUpdate( io UInt32 prevValues[], UInt32 offset, Color value ) {
+  Boolean changed;
+  updateValue(value.r, prevValues[offset], changed);
+  updateValue(value.g, prevValues[offset+1], changed);
+  updateValue(value.b, prevValues[offset+2], changed);
+  updateValue(value.a, prevValues[offset+3], changed);
+  return changed;
+}
+
+/// \internal
+inline OGLProgram.loadUniform!( io OGLProgram_param paramData, Color value ) {
+  this.loadParameter_assertUniform( paramData );
+  if( CompareAndUpdate( this.paramValueCache, paramData.cacheStorageOffsetOrInlineValue, value ) )
+    this.loadUniformFromCacheData( paramData );
+}
+
+/// \note We assume that OGLProgram.activate() was previously called
+inline OGLProgram.loadUniform!( Size paramKey, Color value ) {
+  this.assertCompatible( paramKey, value );
+  this.loadUniform( this.params[paramKey], value );
+}
+
+OGLProgram.setDefault!( Size paramKey, Color value ) {
+  this.assertCompatible( paramKey, value );
+  this.params[paramKey].currentlyDefault = false;
+  CompareAndUpdate( this.paramValueCache, this.params[paramKey].defaultValueCacheStorageOffsetOrInlineValue, value );
+  this.defaultsChanged = true;
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, Color values<> ) {
+  if( paramData.glType != GL_FLOAT_VEC4 )
+    this.reportIncompatible( paramData, Color );
+  else if( paramData.size != values.size() )
+    this.reportWrongSize( paramData, values.size() );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Color values<> ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], values );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, Color value, Size arrayIndex ) {
+  if( paramData.glType != GL_FLOAT_VEC4 )
+    this.reportIncompatible( paramData, Color );
+  else if( paramData.size <= arrayIndex )
+    this.reportWrongIndex( paramData, arrayIndex );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Color value, Size arrayIndex ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], value, arrayIndex );
+}
+
+/// \note We assume that OGLProgram.activate() was previously called
+inline OGLProgram.loadUniform!( Size paramKey, Color values<> ) {
+  this.assertCompatible( paramKey, values );
+  this.loadUniformFromData( this.params[paramKey], values.data(), values.dataSize() );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, Mat22 value ) {
+  if( paramData.glType != GL_FLOAT_MAT2 )
+    this.reportIncompatible( paramData, Mat22 );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Mat22 value ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], value );
+}
+
+/// \internal
+inline Boolean CompareTransposedAndUpdate( io UInt32 prevValues[], UInt32 offset, Mat22 value ) {
+  Boolean changed;
+  updateValue(value.row0.x, prevValues[offset], changed);
+  updateValue(value.row1.x, prevValues[offset+1], changed);
+  updateValue(value.row0.y, prevValues[offset+2], changed);
+  updateValue(value.row1.y, prevValues[offset+3], changed);
+  return changed;
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, Mat22 values<> ) {
+  if( paramData.glType != GL_FLOAT_MAT2 )
+    this.reportIncompatible( paramData, Mat22 );
+  else if( paramData.size != values.size() )
+    this.reportWrongSize( paramData, values.size() );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Mat22 values<> ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], values );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, Mat22 value, Size arrayIndex ) {
+  if( paramData.glType != GL_FLOAT_MAT2 )
+    this.reportIncompatible( paramData, Mat22 );
+  else if( paramData.size <= arrayIndex )
+    this.reportWrongIndex( paramData, arrayIndex );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Mat22 value, Size arrayIndex ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], value, arrayIndex );
+}
+
+/// \internal
+inline Boolean CompareTransposedAndUpdate( io UInt32 prevValues[], UInt32 offset, Mat22 values<> ) {
+  Boolean changed;
+  Size currOffset = offset;
+  for( Size i = 0; i < values.size(); ++i ) {
+    if( CompareTransposedAndUpdate( prevValues, currOffset, values[i] ) )
+      changed = true;
+    currOffset += 4;
+  }
+  return changed;
+}
+
+/// \internal
+inline OGLProgram.loadUniform!( io OGLProgram_param paramData, Mat22 value ) {
+  this.loadParameter_assertUniform( paramData );
+  if( CompareTransposedAndUpdate( this.paramValueCache, paramData.cacheStorageOffsetOrInlineValue, value ) )
+    this.loadUniformFromCacheData( paramData );
+}
+
+/// \note We assume that OGLProgram.activate() was previously called
+inline OGLProgram.loadUniform!( Size paramKey, Mat22 value ) {
+  this.assertCompatible( paramKey, value );
+  this.loadUniform( this.params[paramKey], value );
+}
+
+OGLProgram.setDefault!( Size paramKey, Mat22 value ) {
+  this.assertCompatible( paramKey, value );
+  this.params[paramKey].currentlyDefault = false;
+  CompareTransposedAndUpdate( this.paramValueCache, this.params[paramKey].defaultValueCacheStorageOffsetOrInlineValue, value );
+  this.defaultsChanged = true;
+}
+
+/// \internal
+inline OGLProgram.loadUniform!( io OGLProgram_param paramData, Mat22 values<> ) {
+  this.loadParameter_assertUniform( paramData );
+  if( CompareTransposedAndUpdate( this.paramValueCache, paramData.cacheStorageOffsetOrInlineValue, values ) )
+    this.loadUniformFromCacheData( paramData );
+}
+
+/// \note We assume that OGLProgram.activate() was previously called
+inline OGLProgram.loadUniform!( Size paramKey, Mat22 values<> ) {
+  this.assertCompatible( paramKey, values );
+  this.loadUniform( this.params[paramKey], values );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, Mat33 value ) {
+  if( paramData.glType != GL_FLOAT_MAT3 )
+    this.reportIncompatible( paramData, Mat33 );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Mat33 value ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], value );
+}
+
+/// \internal
+inline Boolean CompareTransposedAndUpdate( io UInt32 prevValues[], UInt32 offset, Mat33 value ) {
+  Boolean changed;
+  updateValue(value.row0.x, prevValues[offset], changed);
+  updateValue(value.row1.x, prevValues[offset+1], changed);
+  updateValue(value.row2.x, prevValues[offset+2], changed);
+  updateValue(value.row0.y, prevValues[offset+3], changed);
+  updateValue(value.row1.y, prevValues[offset+4], changed);
+  updateValue(value.row2.y, prevValues[offset+5], changed);
+  updateValue(value.row0.z, prevValues[offset+6], changed);
+  updateValue(value.row1.z, prevValues[offset+7], changed);
+  updateValue(value.row2.z, prevValues[offset+8], changed);
+  return changed;
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, Mat33 values<> ) {
+  if( paramData.glType != GL_FLOAT_MAT3 )
+    this.reportIncompatible( paramData, Mat33 );
+  else if( paramData.size != values.size() )
+    this.reportWrongSize( paramData, values.size() );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Mat33 values<> ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], values );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, Mat33 value, Size arrayIndex ) {
+  if( paramData.glType != GL_FLOAT_MAT3 )
+    this.reportIncompatible( paramData, Mat33 );
+  else if( paramData.size <= arrayIndex )
+    this.reportWrongIndex( paramData, arrayIndex );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Mat33 value, Size arrayIndex ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], value, arrayIndex );
+}
+
+/// \internal
+inline Boolean CompareTransposedAndUpdate( io UInt32 prevValues[], UInt32 offset, Mat33 values<> ) {
+  Boolean changed;
+  Size currOffset = offset;
+  for( Size i = 0; i < values.size(); ++i ) {
+    if( CompareTransposedAndUpdate( prevValues, currOffset, values[i] ) )
+      changed = true;
+    currOffset += 9;
+  }
+  return changed;
+}
+
+/// \internal
+inline OGLProgram.loadUniform!( io OGLProgram_param paramData, Mat33 value ) {
+  this.loadParameter_assertUniform( paramData );
+  if( CompareTransposedAndUpdate( this.paramValueCache, paramData.cacheStorageOffsetOrInlineValue, value ) )
+    this.loadUniformFromCacheData( paramData );
+}
+
+/// \note We assume that OGLProgram.activate() was previously called
+inline OGLProgram.loadUniform!( Size paramKey, Mat33 value ) {
+  this.assertCompatible( paramKey, value );
+  this.loadUniform( this.params[paramKey], value );
+}
+
+OGLProgram.setDefault!( Size paramKey, Mat33 value ) {
+  this.assertCompatible( paramKey, value );
+  this.params[paramKey].currentlyDefault = false;
+  CompareTransposedAndUpdate( this.paramValueCache, this.params[paramKey].defaultValueCacheStorageOffsetOrInlineValue, value );
+  this.defaultsChanged = true;
+}
+
+/// \internal
+inline OGLProgram.loadUniform!( io OGLProgram_param paramData, Mat33 values<> ) {
+  this.loadParameter_assertUniform( paramData );
+  if( CompareTransposedAndUpdate( this.paramValueCache, paramData.cacheStorageOffsetOrInlineValue, values ) )
+    this.loadUniformFromCacheData( paramData );
+}
+
+/// \note We assume that OGLProgram.activate() was previously called
+inline OGLProgram.loadUniform!( Size paramKey, Mat33 values<> ) {
+  this.assertCompatible( paramKey, values );
+  this.loadUniform( this.params[paramKey], values );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, Mat44 value ) {
+  if( paramData.glType != GL_FLOAT_MAT4 )
+    this.reportIncompatible( paramData, Mat44 );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Mat44 value ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], value );
+}
+
+/// \internal
+inline Boolean CompareTransposedAndUpdate( io UInt32 prevValues[], UInt32 offset, Mat44 value ) {
+  Boolean changed;
+  updateValue(value.row0.x, prevValues[offset], changed);
+  updateValue(value.row1.x, prevValues[offset+1], changed);
+  updateValue(value.row2.x, prevValues[offset+2], changed);
+  updateValue(value.row3.x, prevValues[offset+3], changed);
+  updateValue(value.row0.y, prevValues[offset+4], changed);
+  updateValue(value.row1.y, prevValues[offset+5], changed);
+  updateValue(value.row2.y, prevValues[offset+6], changed);
+  updateValue(value.row3.y, prevValues[offset+7], changed);
+  updateValue(value.row0.z, prevValues[offset+8], changed);
+  updateValue(value.row1.z, prevValues[offset+9], changed);
+  updateValue(value.row2.z, prevValues[offset+10], changed);
+  updateValue(value.row3.z, prevValues[offset+11], changed);
+  updateValue(value.row0.t, prevValues[offset+12], changed);
+  updateValue(value.row1.t, prevValues[offset+13], changed);
+  updateValue(value.row2.t, prevValues[offset+14], changed);
+  updateValue(value.row3.t, prevValues[offset+15], changed);
+  return changed;
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, Mat44 values<> ) {
+  if( paramData.glType != GL_FLOAT_MAT4 )
+    this.reportIncompatible( paramData, Mat44 );
+  else if( paramData.size != values.size() )
+    this.reportWrongSize( paramData, values.size() );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Mat44 values<> ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], values );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( OGLProgram_param paramData, Mat44 value, Size arrayIndex ) {
+  if( paramData.glType != GL_FLOAT_MAT4 )
+    this.reportIncompatible( paramData, Mat44 );
+  else if( paramData.size <= arrayIndex )
+    this.reportWrongIndex( paramData, arrayIndex );
+}
+
+/// \internal
+inline OGLProgram.assertCompatible( Size paramKey, Mat44 value, Size arrayIndex ) {
+  if( Boolean( Fabric_Guarded ) )
+    this.assertCompatible( this.params[paramKey], value, arrayIndex );
+}
+
+/// \internal
+inline Boolean CompareTransposedAndUpdate( io UInt32 prevValues[], UInt32 offset, Mat44 values<> ) {
+  Boolean changed;
+  Size currOffset = offset;
+  for( Size i = 0; i < values.size(); ++i ) {
+    if( CompareTransposedAndUpdate( prevValues, currOffset, values[i] ) )
+      changed = true;
+    currOffset += 16;
+  }
+  return changed;
+}
+
+/// \internal
+inline OGLProgram.loadUniform!( io OGLProgram_param paramData, Mat44 value ) {
+  this.loadParameter_assertUniform( paramData );
+  if( CompareTransposedAndUpdate( this.paramValueCache, paramData.cacheStorageOffsetOrInlineValue, value ) )
+    this.loadUniformFromCacheData( paramData );
+}
+
+/// \note We assume that OGLProgram.activate() was previously called
+inline OGLProgram.loadUniform!( Size paramKey, Mat44 value ) {
+  this.assertCompatible( paramKey, value );
+  this.loadUniform( this.params[paramKey], value );
+}
+
+OGLProgram.setDefault!( Size paramKey, Mat44 value ) {
+  this.assertCompatible( paramKey, value );
+  this.params[paramKey].currentlyDefault = false;
+  CompareTransposedAndUpdate( this.paramValueCache, this.params[paramKey].defaultValueCacheStorageOffsetOrInlineValue, value );
+  this.defaultsChanged = true;
+}
+
+/// \internal
+inline OGLProgram.loadUniform!( io OGLProgram_param paramData, Mat44 values<> ) {
+  this.loadParameter_assertUniform( paramData );
+  if( CompareTransposedAndUpdate( this.paramValueCache, paramData.cacheStorageOffsetOrInlineValue, values ) )
+    this.loadUniformFromCacheData( paramData );
+}
+
+/// \note We assume that OGLProgram.activate() was previously called
+inline OGLProgram.loadUniform!( Size paramKey, Mat44 values<> ) {
+  this.assertCompatible( paramKey, values );
+  this.loadUniform( this.params[paramKey], values );
+}
+
+///Implementation of StatisticSource interface's 'getStatistics()'.
+/// \internal
+function StatisticRecord[] OGLProgram.getStatistics() {
+  StatisticRecord stats[] = this.parent.getStatistics();
+  stats.push( StatisticRecord( Statistic_MemoryUsage, 100+this.params.size()*40*4+this.paramValueCache.size()*4 ) );
+  return stats;
+}
+
+function OGLProgram.reportCodeAndMappings() {
+  report( "####### " + this.getName() );
+  for( Size i = 0; i < this.shaders.size(); ++i ) {
+    report( "################ " + GLShaderTypeToString( this.shaders[i].glShaderType ) );
+    this.shaders[i].reportCodeAndMappings();
+  }
+}

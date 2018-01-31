@@ -1,0 +1,485 @@
+//
+// Copyright 2010-2015 Fabric Software Inc. All rights reserved.
+//
+
+/// \internal
+/// Defining virtual functions for AsyncTask
+interface AsyncTask_virtuals {
+  Boolean execute!();
+  Boolean requiresMainThreadFinalizeWork();
+  Boolean mainThreadFinalizeWork!();
+  executionDone!( Boolean executeResult );
+};
+
+const UInt32 AsyncTaskState_none = 0;
+const UInt32 AsyncTaskState_queued = 1;
+const UInt32 AsyncTaskState_executing = 2;
+const UInt32 AsyncTaskState_executing_cancelRequested = 3;
+const UInt32 AsyncTaskState_mainThreadFinalizeQueued = 4;
+const UInt32 AsyncTaskState_mainThreadFinalizing = 5;
+const UInt32 AsyncTaskState_done = 6;
+const UInt32 AsyncTaskState_couldNotComplete = 7;//error or cancel requested
+
+object AsyncTaskQueue;
+
+object AsyncTask : AsyncTask_virtuals{
+  /// AsyncTaskState_X
+  UInt32 state;
+  String name;
+  UInt8 priority;
+};
+
+String AsyncTask.getDebugName() {
+  return this.name ? this.name : ( this.type() + " " + this.uid() );
+}
+
+/// This execute function will be called from the thread executing the asynchronous task.
+/// To be overriden
+/// \return True if it could complete its work.
+Boolean AsyncTask.execute!() { return true; }
+
+/// \internal
+inline UInt32 AsyncTask.getAtomicState() {
+  Ref<AsyncTask> mutableThis = this;
+  return mutableThis.state.atomicGet();
+}
+
+Boolean AsyncTask.hasExecuted() {
+  UInt32 status = this.getAtomicState();
+  return status == AsyncTaskState_done || status == AsyncTaskState_couldNotComplete;
+}
+
+Boolean AsyncTask.hasExecutedSuccessfully() {
+  UInt32 status = this.getAtomicState();
+  return status == AsyncTaskState_done;
+}
+
+/// Returns true if a "cancel" was requested for this task.
+/// This could happen at any time, including during execute().
+Boolean AsyncTask.cancelRequested() {
+  return this.getAtomicState() == AsyncTaskState_executing_cancelRequested;
+}
+
+/// If it returns true, mainThreadFinalizeWork() function will be called on the main thread
+/// after execute() was called.
+Boolean AsyncTask.requiresMainThreadFinalizeWork() {
+  return false;
+}
+
+/// This execute function will be called from the thread executing the asynchronous task,
+/// if "requiresMainThreadFinalizeWork" is true.
+/// To be overriden
+/// \return True if it could complete its work.
+Boolean AsyncTask.mainThreadFinalizeWork!( ) {
+  return true; 
+}
+
+/// This execute function will be called after the task has finished executing.
+/// To be overriden
+AsyncTask.executionDone!( Boolean executeResult ) {
+}
+
+/// \internal
+AsyncTask.mainThreadFinalizeWorkInternal!( ) {
+
+  if( this.state.atomicCAS( AsyncTaskState_mainThreadFinalizeQueued, AsyncTaskState_mainThreadFinalizing ) == AsyncTaskState_mainThreadFinalizeQueued ) {
+    if( GetLoggingLevel() )
+      LogTrace( this.getDebugName() + ": begin execute" );
+
+    if( this.mainThreadFinalizeWork() )
+      this.state.atomicCAS( AsyncTaskState_mainThreadFinalizing, AsyncTaskState_done );
+    else
+      this.state.atomicCAS( AsyncTaskState_mainThreadFinalizing, AsyncTaskState_couldNotComplete );
+
+    if( GetLoggingLevel() )
+      LogTrace( this.getDebugName() + ": end mainThreadFinalizeWork" + ( this.state == AsyncTaskState_couldNotComplete ? " (could not complete)" : "" ) );
+  }
+}
+
+/// \internal
+struct AsyncTaskCircularBuffer {
+  LightLock tasksLock;
+  AsyncTask tasks[];
+  UInt32 head, tail;
+};
+
+AsyncTaskCircularBuffer.enqueue!( Ref<AsyncTask> task ) {
+  if( !task )
+    return;
+  LightLockBracket bufferLock( this.tasksLock );
+  this.tail.atomicGet();// volatile
+  this.head.atomicGet();// volatile
+
+  Size prevSize = this.tasks.size();
+  UInt32 nextTail = this.tail + 1;
+  if( nextTail >= prevSize )
+    nextTail = 0;
+
+  if( nextTail == this.head ) {
+    // increase size & recopy
+    AsyncTask temp[];
+    temp.resize( prevSize * 2 + 2 );
+    UInt32 iter = this.head;
+    UInt32 pos;
+
+    while( iter != this.tail ) {
+      temp[pos++] = this.tasks[iter++];
+      if( iter == prevSize )
+        iter = 0;
+    }
+    this.tasks = temp;
+    this.head = 0;
+    this.tail = pos;
+    nextTail = pos + 1;
+  }
+  this.tasks[this.tail] = task;
+  this.tail = nextTail;
+}
+
+inline Boolean AsyncTaskCircularBuffer.isEmpty!() {
+  // ! : atomicGet is not "const"
+  return this.head.atomicGet() == this.tail.atomicGet();
+}
+
+AsyncTask AsyncTaskCircularBuffer.dequeue!() {
+  LightLockBracket bufferLock( this.tasksLock );
+
+  if( this.isEmpty() )// Don't set an error
+    return null;
+
+  UInt32 pos = this.head++;
+  if( this.head == this.tasks.size() )
+    this.head = 0;
+
+  AsyncTask task = this.tasks[pos];
+  this.tasks[pos] = null;
+  return task;
+}
+
+// Cancel task. If found, removes it from the queue and returns true
+Boolean AsyncTaskCircularBuffer.removeTask!( Ref<AsyncTask> task ) {
+  if( !task )
+    return true;
+
+  LightLockBracket bufferLock( this.tasksLock );
+
+  this.tail.atomicGet();// volatile
+  this.head.atomicGet();// volatile
+
+  UInt32 iter = this.head;
+  while( iter != this.tail ) {
+    if( this.tasks[iter] === task ) {
+      this.tasks[iter].state = AsyncTaskState_none;
+      this.tasks[iter] = null;
+      return true;
+    }
+    ++iter;
+    if( iter == this.tasks.size() )
+      iter = 0;
+  }
+  return false;
+}
+
+/// The AsyncTaskQueue manages asynchronous tasks by allowing these to be
+/// executed by [background] worker threads, with a notion of priority.
+/// Optionally, these tasks can request a "finalize" step to be executed
+/// on the main thread (to reduce synchronization issues).
+///
+/// Also, it allows to know if some tasks have finished executing by maintaining
+/// a completedTaskCount. It allows, too, to cancel tasks or request their cancellation
+/// if these are already executing.
+///
+object AsyncTaskQueue{
+  Size coreCount;
+  Boolean asyncEnabled;
+  AsyncTask perThreadExecutingTasks[];
+
+
+  AsyncTaskCircularBuffer tasksByPrio[10];
+  AsyncTaskCircularBuffer tasksToFinalizeOnMainThread;
+
+  UInt32 completedTaskCount;//Incremented if a task did finish
+  SInt32 activeOperatorsCount;
+  SInt32 waitingAsyncTasksCount;
+  SInt32 executingTasksCount;
+  SInt32 finalizingTasksCount;
+};
+
+AsyncTaskQueue() {
+  this.asyncEnabled = true;
+  this.coreCount = getCoreCount();
+  this.perThreadExecutingTasks.resize( getThreadCount() );
+}
+
+AsyncTaskQueue.enableAsynchronousEvaluation!( Boolean enable ) {
+  this.asyncEnabled = enable;
+}
+
+/// Adds a task to the queue.
+/// \param priority From 0 to 9, 0 beging the highest priority. Highest priority tasks will be started before lower priority ones (however they will have to wait for already executing ones)
+AsyncTaskQueue.addTask!( Ref<AsyncTask> task, UInt8 priority ) {
+  //report( "ADDTASK " + task.getDebugName() );
+  if( !task )
+    return;
+
+  if( priority > 9 ) {
+    setError( "AsyncTaskQueue.addTask: priorities must be between 0 and 9" );
+    return;
+  }
+
+  UInt32 state = task.getAtomicState();
+  if( state == AsyncTaskState_queued || state == AsyncTaskState_mainThreadFinalizeQueued ) {
+    setError( "AsyncTaskQueue.addTask: task is already queued" );
+    return;
+  } else if( state == AsyncTaskState_executing || state == AsyncTaskState_mainThreadFinalizing ) {
+    setError( "AsyncTaskQueue.addTask: task is executing" );
+    return;
+  }
+  Ref<AsyncTask> ioTask = task;
+  ioTask.state = AsyncTaskState_none;
+  ioTask.priority = priority;
+  this.waitingAsyncTasksCount.atomicInc() + 1;
+  this.tasksByPrio[priority].enqueue( ioTask );
+
+  if( this.asyncEnabled && MultithreadingEnabled() )
+    this.addWorkersIfRequired();
+  else {
+    // Execute right away
+    AsyncTaskQueue_executeTasks( this );
+  }
+  //report( "END ADDTASK " + task.getDebugName() );
+}
+
+/// Adds a task to the queue, with a default priority of 5 (middle).
+inline AsyncTaskQueue.addTask!( Ref<AsyncTask> task ) {
+  this.addTask( task, 5 );
+}
+
+/// \internal
+/// \return True if the task could be removed from the queue
+Boolean AsyncTaskQueue.removeTask!( Ref<AsyncTask> task ) {
+  if( this.tasksByPrio[task.priority].removeTask( task ) ) {
+    this.waitingAsyncTasksCount.atomicDec();
+    return true;
+  }
+  return false;
+}
+
+/// \return True if the task could be canceled before it was executed.
+Boolean AsyncTaskQueue.cancelTask!( Ref<AsyncTask> task ) {
+  AsyncTask ioTask = task;
+
+  UInt32 state = ioTask.state.atomicGet();
+  if( state == AsyncTaskState_none || state == AsyncTaskState_done || state == AsyncTaskState_couldNotComplete )
+    return false;
+
+  if( this.removeTask( ioTask ) )
+    return true;
+
+  // Check if it is currently executing: set its state as "cancel requested"
+  // if found
+  for( Size i = 0; i < this.perThreadExecutingTasks.size(); ++i ) {
+    if( ioTask === this.perThreadExecutingTasks[i] ) {
+      ioTask.state.atomicCAS( AsyncTaskState_executing, AsyncTaskState_executing_cancelRequested );
+      break;
+    }
+  }
+  return false;
+}
+
+/// \return True if the task could be executed.
+Boolean AsyncTaskQueue.tryExecuteTask!( Ref<AsyncTask> task ) {
+  AsyncTask taskRef = task;//Ensure we keep it alive
+  UInt32 state = taskRef.state.atomicGet();
+  if( state == AsyncTaskState_none || state == AsyncTaskState_done || state == AsyncTaskState_couldNotComplete )
+    return true;
+
+  if( this.removeTask( taskRef ) ) {
+    //Task could be dequeued: execute it right away
+    //Note: might not be fully done if requires to be finalized on main thread
+    this.executeTaskInternal( taskRef, getThreadIndex() );
+    report( "EXEC RIGHT AWAY" );
+  }
+  state = taskRef.state;
+  return state == AsyncTaskState_none || state == AsyncTaskState_done || state == AsyncTaskState_couldNotComplete;
+}
+
+/// Returns the number of tasks that are either queued or executing.
+UInt32 AsyncTaskQueue.getPendingTasksCount() {
+  Ref<AsyncTaskQueue> mutableThis = this;
+  return mutableThis.waitingAsyncTasksCount.atomicGet() + mutableThis.executingTasksCount.atomicGet() + mutableThis.finalizingTasksCount.atomicGet();
+}
+
+/// Returns the number of tasks that are executing.
+UInt32 AsyncTaskQueue.getExecutingTasksCount() {
+  Ref<AsyncTaskQueue> mutableThis = this;
+  return mutableThis.executingTasksCount.atomicGet() + mutableThis.finalizingTasksCount.atomicGet();
+}
+
+/// Gets the AsyncTaskQueue singleton
+Ref<AsyncTaskQueue> GetAsyncTaskQueue() {
+  return GetComputeContext().asyncTaskQueue;
+}
+
+EnableAsynchronousEvaluation( Boolean enable ) {
+  Ref<AsyncTaskQueue> queue = GetAsyncTaskQueue();
+  queue.enableAsynchronousEvaluation( true );
+}
+
+/// Returns true if the current thread is currently executing an async task. Note: 
+/// \internal
+inline Boolean AsyncTaskQueue.isCurrentThreadExecutingAsync( UInt32 currentThreadIndex ) {
+  Ref<AsyncTask> task = this.perThreadExecutingTasks[currentThreadIndex];
+  return Boolean( task ) && task.state == AsyncTaskState_executing;
+}
+
+/// Returns true if the current thread is currently executing an async task
+inline Boolean AsyncTaskQueue.isCurrentThreadExecutingAsync() {
+  Ref<AsyncTask> task = this.perThreadExecutingTasks[getThreadIndex()];
+  return Boolean( task ) && task.state == AsyncTaskState_executing;
+}
+
+inline Boolean IsCurrentThreadExecutingAsync() {
+  Ref<AsyncTaskQueue> queue = GetAsyncTaskQueue();
+  return queue.isCurrentThreadExecutingAsync();
+}
+
+/// Returns true if some tasks were done since last check, based on lastCompletedTaskCount.
+/// This should be called from the "main" thread only, as it can trigger 
+/// :kl-ref:`AsyncTask.mainThreadFinalizeWork` if required by some tasks.
+Boolean AsyncTaskQueue.checkTasksStatus( io UInt32 lastCompletedTaskCount ) {
+
+  // First, finalize tasks waiting for main thread completion
+  Ref<AsyncTaskQueue> mutableThis = this;
+  while( !mutableThis.tasksToFinalizeOnMainThread.isEmpty() ) {
+    AsyncTask task = mutableThis.tasksToFinalizeOnMainThread.dequeue();
+    if( task ) {
+      task.mainThreadFinalizeWorkInternal();
+      task.executionDone( task.state != AsyncTaskState_couldNotComplete );
+      mutableThis.completedTaskCount.atomicInc();
+      mutableThis.finalizingTasksCount.atomicDec();
+    }
+  }
+  mutableThis.addWorkersIfRequired();//In case something went through the cracks...
+
+  if( lastCompletedTaskCount != mutableThis.completedTaskCount.atomicGet() ) {
+    lastCompletedTaskCount = mutableThis.completedTaskCount;
+    return true;
+  } else
+    return false;
+}
+
+Boolean AsyncTaskQueue.waitForNextCompletion!() {
+  ActiveWaitLoopControl waitControl();
+  UInt32 lastCompletedTaskCount = this.completedTaskCount.atomicGet();
+  while( true ) {
+    if( !this.getPendingTasksCount() )
+      return false;
+
+    if( this.checkTasksStatus( lastCompletedTaskCount ) )
+      return true;
+
+    waitControl.wait();
+  }
+  return false;
+}
+
+AsyncTaskQueue.waitForAllAsyncTasks!( ) {
+  while( true ) {
+    UInt32 lastCompletedTaskCount;
+    this.checkTasksStatus( lastCompletedTaskCount );
+    //report( "WAIT " + this.waitingAsyncTasksCount.atomicGet() + " EXEC " + this.executingTasksCount.atomicGet() + " FIN " + this.finalizingTasksCount.atomicGet() );
+
+    if( !this.getPendingTasksCount() )
+      break;
+    MicroSleepWait( 1 );
+  }
+}
+
+WaitForAllAsyncTasks() {
+  Ref<AsyncTaskQueue> queue = GetAsyncTaskQueue();
+  queue.waitForAllAsyncTasks();
+}
+
+/// \internal
+AsyncTaskQueue.executeTaskInternal!( io AsyncTask task, UInt32 threadIndex ) {
+  task.state.atomicCAS( AsyncTaskState_none, AsyncTaskState_queued );
+  if( task.state.atomicCAS( AsyncTaskState_queued, AsyncTaskState_executing ) == AsyncTaskState_queued ) {
+    this.perThreadExecutingTasks[threadIndex] = task;
+
+    if( GetLoggingLevel() )
+      LogTrace( task.getDebugName() + ": begin execute" );
+
+    this.executingTasksCount.atomicInc();
+
+    if( this.waitingAsyncTasksCount.atomicDec() == 0 )
+      setError( "AsyncTaskQueue.taskExecuted: unexpected: wrong task count" );
+
+    if( task.execute() ) {
+      UInt32 nextState = task.requiresMainThreadFinalizeWork() ? AsyncTaskState_mainThreadFinalizeQueued : AsyncTaskState_done;
+      task.state.atomicCAS( AsyncTaskState_executing, nextState );
+      task.state.atomicCAS( AsyncTaskState_executing_cancelRequested, nextState );
+    } else {
+      task.state.atomicCAS( AsyncTaskState_executing, AsyncTaskState_couldNotComplete );
+      task.state.atomicCAS( AsyncTaskState_executing_cancelRequested, AsyncTaskState_couldNotComplete );
+    }
+
+    if( GetLoggingLevel() )
+      LogTrace( task.getDebugName() + ": end execute" + ( task.state == AsyncTaskState_couldNotComplete ? " (could not complete)" : "" ) );
+
+    if( !task.requiresMainThreadFinalizeWork() ) {
+      this.completedTaskCount.atomicInc();
+      task.executionDone( task.state != AsyncTaskState_couldNotComplete );
+    } else if( task.state == AsyncTaskState_mainThreadFinalizeQueued ) {
+      if( threadIndex == 0 ) {
+        // If we are main thread, execute right away
+        task.mainThreadFinalizeWorkInternal();
+        this.completedTaskCount.atomicInc();
+        task.executionDone( task.state != AsyncTaskState_couldNotComplete );
+      } else {
+        this.finalizingTasksCount.atomicInc();
+        this.tasksToFinalizeOnMainThread.enqueue( task );// Queue for finalize
+      }
+    }
+    this.executingTasksCount.atomicDec();
+    this.perThreadExecutingTasks[threadIndex] = null;
+  }
+}
+
+/// \internal
+operator AsyncTaskQueue_executeTasks( AsyncTaskQueue queue ) {
+  Ref<AsyncTaskQueue> ioQueue = queue;
+  UInt32 threadIndex = getThreadIndex();
+
+  Boolean found = true;
+  while( found ) {
+    found = false;
+    // Check for a next task, in priority order
+    for( Size i = 0; i < 10; ++i ) {
+      if( !ioQueue.tasksByPrio[i].isEmpty() ) {
+        AsyncTask task = ioQueue.tasksByPrio[i].dequeue();
+        if( task ) {
+          ioQueue.executeTaskInternal( task, threadIndex );
+          found = true;
+          break;// start again from priority 0
+        }
+      }
+    }
+  }
+  // main thread increased operator count, but we decrease it when exiting
+  ioQueue.activeOperatorsCount.atomicDec();
+}
+
+/// \internal
+/// If there are tasks to do, ensure there is enough operators working on these
+AsyncTaskQueue.addWorkersIfRequired!( ) {
+  // Now trigger new workers if required
+  UInt32 activeOperators = this.activeOperatorsCount.atomicGet();
+  if( activeOperators < this.coreCount && this.waitingAsyncTasksCount.atomicGet() > activeOperators ) {
+    activeOperators = this.activeOperatorsCount.atomicInc();//refresh...
+    if( activeOperators < this.coreCount )
+      async AsyncTaskQueue_executeTasks( this );
+    else
+      this.activeOperatorsCount.atomicDec();
+  }
+}

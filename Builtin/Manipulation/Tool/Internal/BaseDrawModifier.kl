@@ -1,0 +1,24 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// Provides basic functionality for draw modifiers.
+  /// See :ref:`TPG.tooldrawmodifier` for more information about draw modifiers.
+  object BaseDrawModifier : ToolDrawModifier{
+    Ref<BaseTool> ownerTool;//Keeps only last one if more than one
+  };
+
+  BaseDrawModifier.initialize!( Ref<BaseTool> ownerTool ) {
+    this.ownerTool = ownerTool;
+  }
+
+  BaseDrawModifier.invalidate!( Ref<BaseTool> ownerTool ) {}
+
+  String BaseDrawModifier.getName() { return this.type(); }
+
+  BaseDrawModifier.updateDrawData!( io DrawContext context, Ref<Object> target ) {
+    LogDrawModifier( this, target );
+  }
+}// namespace Tool

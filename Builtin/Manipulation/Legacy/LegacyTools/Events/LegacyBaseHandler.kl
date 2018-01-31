@@ -1,0 +1,216 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 2.0.1
+
+  :kl-ref:`LegacyBaseHandler` class allows to handle/process user events.
+  Any custom handlers should specialize this class. 
+  How handlers process events from the host application is down to the implementation of the onEvent method.
+  
+  \seealso , :kl-ref:`LegacyEventHandler`, :kl-ref:`LegacyHandlerDispatcher`, :kl-ref:`Tool`
+
+  \dfgPresetOmit
+*/
+object LegacyBaseHandler : LegacyEventHandler{
+  /// Handler is enabled.
+  protected Boolean enabled;
+  /// Enable key.
+  protected Key enableKey;
+  /// Handler exclusivity.
+  protected LegacyHandlerExclusivity handlerExclusivity;
+  /// LegacyHandlerExclusivity local override.
+  protected Boolean isIndependent;
+  /// It true, the handler takes all the events.
+  protected Boolean takeAllEvents;
+  /// It true, the handler takes all the events.
+  protected Boolean alwaysEnabled;
+  /// Checks if the handler is owned by a LegacyHandlerDispatcher.
+  /// In most of the cases, the dispatcher owns the handlers.
+  /// However, it's not true in DFG graphs where the handlers are owns by the nodes.
+  protected Boolean isOwnedByDispatcher;
+  /// Reference to the dispatcher.
+  protected Ref<LegacyHandlerDispatcher> dispatcher;
+};
+ 
+/// Initializes a LegacyBaseHandler.
+/// \param enableKey The key that enables/disables the handler.
+/// \param exclusivity Handler exclusivity.
+/// \param isIndependent If true, independent handler.
+/// \param takeAllEvents If true, force this handler to get all the events.
+/// \param isOwnedByDispatcher If true, owned by the dispatcher when registered.
+protected LegacyBaseHandler.init!(
+  Key enableKey,
+  LegacyHandlerExclusivity exclusivity,
+  Boolean isIndependent, 
+  Boolean takeAllEvents, 
+  Boolean isOwnedByDispatcher) 
+{
+  this.setEnableKey(enableKey);
+  this.setIndependent(isIndependent);
+  this.setTakeAllEvents(takeAllEvents);
+  this.setExclusivity(exclusivity);
+  this.isOwnedByDispatcher = isOwnedByDispatcher;
+  this.enabled = false;
+  this.alwaysEnabled = false;
+}
+
+/// Initializes a LegacyBaseHandler, no-independent and doesn't take all the events.
+/// \param enableKey The key that enables/disables the handler.
+/// \param exclusivity Handler exclusivity.
+/// \param isOwnedByDispatcher If true, owned by the dispatcher when registered.
+protected LegacyBaseHandler.init!(
+  Key enableKey, 
+  LegacyHandlerExclusivity exclusivity,
+  Boolean isOwnedByDispatcher) 
+{
+  this.init(
+    enableKey,
+    exclusivity,
+    false,
+    false,
+    isOwnedByDispatcher);
+}
+
+/// Constructs a LegacyBaseHandler.
+/// \param enableKey The key that enables/disables the handler.
+/// \param exclusivity Handler exclusivity.
+/// \param isIndependent If true, independent handler.
+/// \param takeAllEvents If true, force this handler to get all the events.
+/// \param isOwnedByDispatcher If true, owned by the dispatcher when registered.
+LegacyBaseHandler(
+  Key enableKey,
+  LegacyHandlerExclusivity exclusivity,
+  Boolean isIndependent, 
+  Boolean takeAllEvents, 
+  Boolean isOwnedByDispatcher) 
+{
+  this.init(
+    enableKey, 
+    exclusivity, 
+    isIndependent,
+    takeAllEvents,
+    isOwnedByDispatcher);
+}
+
+/// Destructor.
+~LegacyBaseHandler() {
+  /// When desctructed, tell the dispatcher to unregister 
+  /// the current handle if it isn't owned by the dispatcher.
+  if(!this.isOwnedByDispatcher && Boolean(this.dispatcher))
+    this.dispatcher.unregisterHandler(this);
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyBaseHandler.enable!() {
+  this.enabled = true;
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyBaseHandler.disable!() {
+  this.enabled = false;
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+Boolean LegacyBaseHandler.isEnabled() {
+  return this.enabled;
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyBaseHandler.setAlwaysEnabled!(Boolean alwaysEnabled) {
+  this.alwaysEnabled = alwaysEnabled;
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+Boolean LegacyBaseHandler.isAlwaysEnabled() {
+  return this.alwaysEnabled;
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+Key LegacyBaseHandler.getEnableKey() {
+  return this.enableKey;
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyBaseHandler.setEnableKey!(Key key) {
+  this.enableKey = key;
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+/// To override.
+Boolean LegacyBaseHandler.hasKey(Key key) {
+  return this.enableKey == key;
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyBaseHandler.setExclusivity!( LegacyHandlerExclusivity handlerExclusivity) {
+  this.handlerExclusivity = handlerExclusivity;
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyHandlerExclusivity LegacyBaseHandler.getExclusivity() {
+  return this.handlerExclusivity;
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyBaseHandler.setIndependent!(Boolean independent) {
+  this.isIndependent = independent;
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+Boolean LegacyBaseHandler.isIndependent() {
+  return this.isIndependent;
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyBaseHandler.setTakeAllEvents!(Boolean takeAllEvents) {
+  this.takeAllEvents = takeAllEvents;
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+Boolean LegacyBaseHandler.takeAllEvents() {
+  return this.takeAllEvents;
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+Boolean LegacyBaseHandler.isOwnedByDispatcher() {
+  return this.isOwnedByDispatcher;
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+/// To override.
+LegacyHandlerDescription LegacyBaseHandler.getDescription() {
+  LegacyBaseHandlerDescription desc();
+  if(this.dispatcher)
+    desc.name = this.dispatcher.getHandlerName(this);
+  else
+    desc.name = "root";
+
+  desc.isEnabled = this.isEnabled();
+  desc.enableKey = this.getEnableKey();
+  desc.handlerExclusivity = this.getExclusivity();
+  desc.isIndependent = this.isIndependent();
+  desc.takeAllEvents = this.takeAllEvents();
+  return desc;
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+LegacyBaseHandler.setDispatcher!(Ref<LegacyHandlerDispatcher> dispatcher) {
+  this.dispatcher = dispatcher;
+} 
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+Ref<LegacyHandlerDispatcher> LegacyBaseHandler.getDispatcher() {
+  return this.dispatcher;
+}
+
+/// Implementation of :kl-ref:`LegacyEventHandler`.
+/// To override.
+LegacyBaseHandler.onEvent!(io Event event) {}
+
+/// Helper to call onEvent method from a host application.
+LegacyBaseHandler.onEvent!(io BaseEvent baseEvent) {
+  Event event = baseEvent;
+  this.onEvent(event);
+}

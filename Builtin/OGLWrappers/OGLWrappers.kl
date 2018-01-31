@@ -1,0 +1,942 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+require FabricOGL;
+require OSOGL;
+
+object OGLContext;
+
+object OGLWrapperGlobals {
+
+  Boolean initialized;
+  Boolean tracingEnabled;
+  Boolean tracingProgramParameterValues;
+
+  OGLContext independantContext;
+  OGLPerThreadContexts perThreadContexts;
+
+  OGLCapabilities capabilities;
+  LockedInitialize capabilitiesLockedInit;
+
+  IndexPool contextIDs;
+  Ref<OGLContext> contexts[];
+
+  UInt32 nextGlobalFramebufferID;// Fake non-context-specific names for debugging
+  UInt32 nextGlobalVertexArrayID;// Fake non-context-specific names for debugging
+};
+
+function OGLWrapperGlobals() {
+  this.capabilities = OGLCapabilities();
+  this.nextGlobalFramebufferID = 1;
+  this.nextGlobalVertexArrayID = 1;
+  cpglSetCheckErrors( false );
+}
+
+OGLWrapperGlobals.initIfRequiredInternal!( Boolean buildIndependantContext ) {
+  if( this.initialized )
+    return;
+
+  this.initialized = true;
+
+  if( buildIndependantContext ) {
+    this.independantContext = OGLContext();
+
+    if( cpglHaveContext() ) {
+      // Create shared if there is a context
+      this.independantContext.tempCurrContext.setFromCurrent();
+      this.independantContext.context.createShared( 1, 1, this.independantContext.tempCurrContext );
+      this.independantContext.tempCurrContext.makeCurrent();
+    } else
+      this.independantContext.context.create( 1, 1 );
+
+    if( !this.independantContext.context.isValid() )
+      report( "OGLWrapperGlobals: unable to create an independant GL context" );
+    else {
+      this.getGLCapabilities();//Initialize caps
+    }
+  }
+  this.perThreadContexts = OGLPerThreadContexts();
+}
+
+/// \internal
+/// Can setup an independant GL context, and restore the previous context.
+/// However, it is not doing it automatically.
+struct OGLWrapperIndependantContextController {
+  Ref<OGLContext> context;
+};
+
+Ref<OGLContext> OGLWrapperIndependantContextController.setupIndependantContext!() {
+  if( !this.context ) {
+    this.context = GetOGLWrapperGlobals( true ).independantContext;
+
+    if( cpglHaveContext() )
+      this.context.tempCurrContext.setFromCurrent();
+    else
+      this.context.tempCurrContext.destroy();
+
+    if( this.context )
+      this.context.context.makeCurrent();
+  }
+  return this.context;
+}
+
+// Restores the previous current context and returns it
+Boolean OGLWrapperIndependantContextController.restorePreviousContext!() {
+  if( Boolean( this.context ) && this.context.tempCurrContext.isValid() ) {
+    this.context.tempCurrContext.makeCurrent();
+    this.context = null;
+    return true;
+  }
+  return false;
+}
+
+struct OGLWrapperIndependantContextBracket : OGLWrapperIndependantContextController {
+};
+
+OGLWrapperIndependantContextBracket() {
+  this.setupIndependantContext();
+}
+
+~OGLWrapperIndependantContextBracket() {
+  this.restorePreviousContext();
+}
+
+inline OGLWrapperGlobals.initIfRequired!( Boolean buildIndependantContext ) {
+  if( !this.initialized )
+    this.initIfRequiredInternal( buildIndependantContext );
+}
+
+inline Ref<OGLCapabilities> OGLWrapperGlobals.getGLCapabilities() {
+  if( this.capabilitiesLockedInit.initialized() )
+    return this.capabilities;
+
+  Ref<OGLWrapperGlobals> mutableThis = this;
+  InitializeBracket initBracket( mutableThis.capabilitiesLockedInit );
+  if( initBracket.mustInitialize() ) {
+    // Initialize OGL capabilities from current or independant context (if applicable)
+    if( mutableThis.independantContext ) {
+
+      OGLWrapperIndependantContextBracket bracket();
+      mutableThis.capabilities.initialize();
+
+    } else if( mutableThis.perThreadContexts ) {
+      if( !cpglHaveContext() ) {
+        mutableThis.perThreadContexts.preparePerThreadContexts( false, false );
+        Boolean hasExternalContext;
+        mutableThis.perThreadContexts.setupContext( true, hasExternalContext );
+      }
+      if( !cpglHaveContext() )
+        setError( "OGLWrapperGlobals.getGLCapabilities: failed to initialized capabilities" );
+      else
+        mutableThis.capabilities.initialize();
+    }
+  }
+  return this.capabilities;
+}
+
+/// \internal
+/// NOTE: a Ref<> function will leak: see EDK issue #3327...
+function Ref<OGLWrapperGlobals> _GetOGLWrapperGlobals() = "GetOGLWrapperGlobals";
+
+inline Ref<OGLWrapperGlobals> GetOGLWrapperGlobals( Boolean buildIndependantContext ) {
+  Ref<OGLWrapperGlobals> globals = _GetOGLWrapperGlobals();
+  globals.initIfRequired( buildIndependantContext );
+  return globals;
+}
+
+inline Ref<OGLWrapperGlobals> GetOGLWrapperGlobals() {
+  return GetOGLWrapperGlobals( false );
+}
+
+inline SetOGLWrappersTracing( Boolean enableTrace, Boolean tracingProgramParameterValues ) {
+  //For performance, only allow tracing if guarded
+  if( Fabric_Guarded ) {
+    Ref<OGLWrapperGlobals> globals = GetOGLWrapperGlobals();
+    globals.tracingEnabled = enableTrace;
+    globals.perThreadContexts.tracingEnabled = enableTrace;
+    globals.capabilities.tracingEnabled = enableTrace;
+    globals.tracingProgramParameterValues = globals.tracingEnabled ? tracingProgramParameterValues : false;
+    if( enableTrace )
+      cpglSetCheckErrors( true );
+  } else
+    setError("OGLWrappersTracing is only supported in KL guarded mode");
+}
+
+/// \internal
+function Boolean CompareAndUpdate( io UInt32 reference<>, UInt32 newValue<> ) = "CompareAndUpdate";
+
+/// \internal
+function UInt32<> CastUInt32SubArrayToUInt32Array( UInt32 source<>, UInt32 start, UInt32 count ) = "CastUInt32SubArrayToUInt32Array";
+
+/// \internal
+function Scalar<> CastDataToScalarArray( Data data, UInt32 count ) = "CastDataToScalarArray";
+
+/// \internal
+function Vec2<> CastDataToVec2Array( Data data, UInt32 count ) = "CastDataToVec2Array";
+
+/// \internal
+function Vec3<> CastDataToVec3Array( Data data, UInt32 count ) = "CastDataToVec3Array";
+
+/// \internal
+function Vec4<> CastDataToVec4Array( Data data, UInt32 count ) = "CastDataToVec4Array";
+
+/// \internal
+function Color<> CastDataToColorArray( Data data, UInt32 count ) = "CastDataToColorArray";
+
+/// \internal
+function Mat22<> CastDataToMat22Array( Data data, UInt32 count ) = "CastDataToMat22Array";
+
+/// \internal
+function Mat33<> CastDataToMat33Array( Data data, UInt32 count ) = "CastDataToMat33Array";
+
+/// \internal
+function Mat44<> CastDataToMat44Array( Data data, UInt32 count ) = "CastDataToMat44Array";
+
+function UInt64 _getTextureApproximateGPUMemoryUsage(UInt64 size, Integer glInternalFormat) {
+  switch(glInternalFormat) {
+    case GL_COMPRESSED_RED:
+    case GL_COMPRESSED_RED_RGTC1:
+    case GL_COMPRESSED_SIGNED_RED_RGTC1:
+      return size/2;
+    case GL_RED:
+    case GL_COMPRESSED_RG:
+    case GL_COMPRESSED_RG_RGTC2:
+    case GL_COMPRESSED_SIGNED_RG_RGTC2:
+    case GL_R8:
+    case GL_R8_SNORM:
+    case GL_R3_G3_B2:
+    case GL_RGBA2:
+    case GL_R8I:
+    case GL_R8UI:
+      return size;
+    case GL_DEPTH_COMPONENT16:
+    case GL_RG:
+    case GL_RG8:
+    case GL_RG8_SNORM:
+    case GL_R16:
+    case GL_R16_SNORM:
+    case GL_RGB4:
+    case GL_RGB5:
+    case GL_RGBA4:
+    case GL_RGB5_A1:
+    case GL_R16F:
+    case GL_R16I:
+    case GL_R16UI:
+    case GL_RG8I:
+    case GL_RG8UI:
+    case GL_COMPRESSED_RGB:
+    case GL_COMPRESSED_SRGB:
+    case GL_COMPRESSED_RGBA:
+    case GL_COMPRESSED_SRGB_ALPHA:
+    case GL_COMPRESSED_RGBA_BPTC_UNORM:
+    case GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM:
+      return size*2;
+    case GL_DEPTH_COMPONENT:
+    case GL_DEPTH_COMPONENT24:
+    case GL_RGB:
+    case GL_RGB8:
+    case GL_RGB8_SNORM:
+    case GL_SRGB8:
+    case GL_RGB8I:
+    case GL_RGB8UI:
+      return size*3;
+    case GL_DEPTH_STENCIL:
+    case GL_DEPTH24_STENCIL8:
+    case GL_DEPTH_COMPONENT32:
+    case GL_DEPTH_COMPONENT32F:
+    case GL_RGBA:
+    case GL_RGBA8:
+    case GL_RGBA8_SNORM:
+    case GL_RGB10_A2:
+    case GL_RGB10_A2UI:
+    case GL_RG16:
+    case GL_RG16_SNORM:
+    case GL_RGB10:
+    case GL_SRGB8_ALPHA8:
+    case GL_RG16F:
+    case GL_R32F:
+    case GL_R11F_G11F_B10F:
+    case GL_RGB9_E5:
+    case GL_R32I:
+    case GL_R32UI:
+    case GL_RG16I:
+    case GL_RG16UI:
+    case GL_RGBA8I:
+    case GL_RGBA8UI:
+      return size*4;
+    case GL_RGB12:
+      return size*5;
+    case GL_RGB16_SNORM:
+    case GL_RGBA12:
+    case GL_RGB16F:
+    case GL_RGB16I:
+    case GL_RGB16UI:
+    case GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT:
+    case GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT:
+      return size*6;
+    case GL_RGBA16:
+    case GL_RGBA16F:
+    case GL_RG32F:
+    case GL_RG32I:
+    case GL_RG32UI:
+    case GL_RGBA16I:
+    case GL_RGBA16UI:
+      return size*8;
+    case GL_RGB32F:
+    case GL_RGB32I:
+    case GL_RGB32UI:
+      return size*12;
+    case GL_RGBA32F:
+    case GL_RGBA32I:
+    case GL_RGBA32UI:
+      return size*16;
+  }
+  return 0;
+}
+
+function _getTextureTypeBits(UInt32 glInternalFormat, io UInt32 componentType, io UInt32 redBits, io UInt32 greenBits, io UInt32 blueBits, io UInt32 alphaBits, io UInt32 depthBits, io UInt32 stencilBits ) {
+  componentType = GL_UNSIGNED_NORMALIZED;
+  stencilBits = depthBits = redBits = greenBits = blueBits = alphaBits = 0;
+
+  switch(glInternalFormat) {
+    case GL_COMPRESSED_RED:
+    case GL_COMPRESSED_RED_RGTC1:
+    case GL_COMPRESSED_SIGNED_RED_RGTC1:
+    case GL_RED:
+    case GL_R8:
+      redBits = 8;
+      break;
+    case GL_R8I:
+      componentType = GL_INT;
+      redBits = 8;
+      break;
+    case GL_R8UI:
+      componentType = GL_UNSIGNED_INT;
+      redBits = 8;
+      break;
+    case GL_R8_SNORM:
+      redBits = 8;
+      componentType = GL_SIGNED_NORMALIZED;
+      break;
+    case GL_R16:
+      redBits = 16;
+      break;
+    case GL_R16_SNORM:
+      redBits = 16;
+      componentType = GL_SIGNED_NORMALIZED;
+      break;
+    case GL_R16F:
+      componentType = GL_FLOAT;
+      redBits = 16;
+      break;
+    case GL_R16I:
+      componentType = GL_INT;
+      redBits = 16;
+      break;
+    case GL_R16UI:
+      componentType = GL_UNSIGNED_INT;
+      redBits = 16;
+      break;
+    case GL_R32F:
+      componentType = GL_FLOAT;
+      redBits = 32;
+      break;
+    case GL_R32I:
+      componentType = GL_INT;
+      redBits = 32;
+      break;
+    case GL_R32UI:
+      componentType = GL_UNSIGNED_INT;
+      redBits = 32;
+      break;
+
+    case GL_COMPRESSED_RG:
+    case GL_COMPRESSED_RG_RGTC2:
+    case GL_RG:
+    case GL_RG8:
+      redBits = greenBits = 8;
+      break;
+    case GL_RG8_SNORM:
+    case GL_COMPRESSED_SIGNED_RG_RGTC2:
+      componentType = GL_SIGNED_NORMALIZED;
+      redBits = greenBits = 8;
+      break;
+    case GL_RG8I:
+      componentType = GL_INT;
+      redBits = greenBits = 8;
+      break;
+    case GL_RG8UI:
+      componentType = GL_UNSIGNED_INT;
+      redBits = greenBits = 8;
+      break;
+    case GL_RG16:
+      redBits = greenBits = 16;
+      break;
+    case GL_RG16_SNORM:
+      componentType = GL_SIGNED_NORMALIZED;
+      redBits = greenBits = 16;
+      break;
+    case GL_RG16F:
+      componentType = GL_FLOAT;
+      redBits = greenBits = 16;
+      break;
+    case GL_RG16I:
+      componentType = GL_INT;
+      redBits = greenBits = 16;
+      break;
+    case GL_RG16UI:
+      componentType = GL_UNSIGNED_INT;
+      redBits = greenBits = 16;
+      break;
+    case GL_RG32F:
+      componentType = GL_FLOAT;
+      redBits = greenBits = 32;
+      break;
+    case GL_RG32I:
+      componentType = GL_INT;
+      redBits = greenBits = 32;
+      break;
+    case GL_RG32UI:
+      componentType = GL_UNSIGNED_INT;
+      redBits = greenBits = 32;
+      break;
+
+    case GL_R3_G3_B2:
+      redBits = 3;
+      greenBits = 3;
+      blueBits = 2;
+      break;
+    case GL_RGB4:
+      redBits = greenBits = blueBits = 4;
+      break;
+    case GL_RGB5:
+      redBits = greenBits = blueBits = 5;
+      break;
+    case GL_COMPRESSED_RGB:
+    case GL_COMPRESSED_SRGB:
+    case GL_RGB:
+    case GL_RGB8:
+    case GL_SRGB8:
+      redBits = greenBits = blueBits = 8;
+      break;
+    case GL_RGB8_SNORM:
+      componentType = GL_SIGNED_NORMALIZED;
+      redBits = greenBits = blueBits = 8;
+      break;
+    case GL_RGB8I:
+      componentType = GL_INT;
+      redBits = greenBits = blueBits = 8;
+      break;
+    case GL_RGB8UI:
+      componentType = GL_UNSIGNED_INT;
+      redBits = greenBits = blueBits = 8;
+      break;
+    case GL_RGB10:
+      redBits = greenBits = blueBits = 10;
+      break;
+    case GL_R11F_G11F_B10F:
+      componentType = GL_FLOAT;
+      redBits = 11;
+      greenBits = 11;
+      blueBits = 10;
+      break;
+    case GL_RGB9_E5:
+      redBits = greenBits = blueBits = 9;
+      break;
+    case GL_RGB12:
+      redBits = greenBits = blueBits = 12;
+      break;
+    case GL_RGB16_SNORM:
+      componentType = GL_SIGNED_NORMALIZED;
+      redBits = greenBits = blueBits = 16;
+      break;
+    case GL_RGB16F:
+      componentType = GL_FLOAT;
+      redBits = greenBits = blueBits = 16;
+      break;
+    case GL_RGB16I:
+      componentType = GL_INT;
+      redBits = greenBits = blueBits = 16;
+      break;
+    case GL_RGB16UI:
+      componentType = GL_UNSIGNED_INT;
+      redBits = greenBits = blueBits = 16;
+      break;
+    case GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT:
+    case GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT:
+    case GL_RGB32F:
+      componentType = GL_FLOAT;
+      redBits = greenBits = blueBits = 32;
+      break;
+    case GL_RGB32I:
+      componentType = GL_INT;
+      redBits = greenBits = blueBits = 32;
+      break;
+    case GL_RGB32UI:
+      componentType = GL_UNSIGNED_INT;
+      redBits = greenBits = blueBits = 32;
+      break;
+
+    case GL_RGB5_A1:
+      redBits = greenBits = blueBits = 5;
+      alphaBits = 1;
+      break;
+    case GL_RGBA4:
+      redBits = greenBits = blueBits = alphaBits = 4;
+      break;
+    case GL_RGB10_A2:
+      redBits = greenBits = blueBits = 10;
+      alphaBits = 2;
+      break;
+    case GL_RGB10_A2UI:
+      componentType = GL_UNSIGNED_INT;
+      redBits = greenBits = blueBits = 10;
+      alphaBits = 2;
+      break;
+    case GL_RGBA2:
+      redBits = greenBits = blueBits = alphaBits = 2;
+      break;
+    case GL_COMPRESSED_RGBA:
+    case GL_COMPRESSED_SRGB_ALPHA:
+    case GL_COMPRESSED_RGBA_BPTC_UNORM:
+    case GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM:
+    case GL_SRGB8_ALPHA8:
+    case GL_RGBA:
+    case GL_RGBA8:
+      redBits = greenBits = blueBits = alphaBits = 8;
+      break;
+
+    case GL_RGBA8_SNORM:
+      componentType = GL_SIGNED_NORMALIZED;
+      redBits = greenBits = blueBits = alphaBits = 8;
+      break;
+    case GL_RGBA8I:
+      componentType = GL_INT;
+      redBits = greenBits = blueBits = alphaBits = 8;
+      break;
+    case GL_RGBA8UI:
+      componentType = GL_UNSIGNED_INT;
+      redBits = greenBits = blueBits = alphaBits = 8;
+      break;
+    case GL_RGBA12:
+      redBits = greenBits = blueBits = alphaBits = 12;
+      break;
+    case GL_RGBA16:
+      redBits = greenBits = blueBits = alphaBits = 16;
+      break;
+    case GL_RGBA16F:
+      componentType = GL_FLOAT;
+      redBits = greenBits = blueBits = alphaBits = 16;
+      break;
+    case GL_RGBA16I:
+      componentType = GL_INT;
+      redBits = greenBits = blueBits = alphaBits = 16;
+      break;
+    case GL_RGBA16UI:
+      componentType = GL_UNSIGNED_INT;
+      redBits = greenBits = blueBits = alphaBits = 16;
+      break;
+    case GL_RGBA32F:
+      componentType = GL_FLOAT;
+      redBits = greenBits = blueBits = alphaBits = 32;
+      break;
+    case GL_RGBA32I:
+      componentType = GL_INT;
+      redBits = greenBits = blueBits = alphaBits = 32;
+      alphaBits = 32;
+      break;
+    case GL_RGBA32UI:
+      componentType = GL_UNSIGNED_INT;
+      redBits = greenBits = blueBits = alphaBits = 32;
+      break;
+
+    case GL_DEPTH_COMPONENT:
+    case GL_DEPTH_COMPONENT24:
+      depthBits = 24;
+      break;
+    case GL_DEPTH_COMPONENT16:
+      depthBits = 16;
+      break;
+    case GL_DEPTH_STENCIL:
+    case GL_DEPTH24_STENCIL8:
+      depthBits = 24;
+      stencilBits = 8;
+      break;
+    case GL_DEPTH_COMPONENT32:
+      depthBits = 32;
+      break;
+    case GL_DEPTH_COMPONENT32F:
+      componentType = GL_FLOAT;
+      depthBits = 32;
+      break;
+  }
+}
+
+function _getTextureTypeFromBits( UInt32 componentType, UInt32 redBits, UInt32 greenBits, UInt32 blueBits, UInt32 alphaBits, UInt32 depthBits, UInt32 stencilBits, io UInt32 glInternalFormat, io UInt32 glFormat ) {
+  Boolean hasColor = Boolean(redBits) || Boolean(greenBits) || Boolean(blueBits) || Boolean(alphaBits);
+  Boolean hasDepth = Boolean(depthBits) || Boolean(stencilBits);
+
+  glInternalFormat = GL_NONE;
+  glFormat = GL_NONE;
+
+  if( hasColor && hasDepth )
+    return;
+
+  if( Boolean( redBits ) && !Boolean( greenBits ) && !Boolean( blueBits ) && !Boolean( alphaBits ) ) {
+    glFormat = GL_RED;
+    if( componentType == GL_UNSIGNED_NORMALIZED ) {
+      if( redBits == 8 )
+        glInternalFormat = GL_R8;
+      else if( redBits == 16 )
+        glInternalFormat = GL_R16;
+    } else if( componentType == GL_SIGNED_NORMALIZED ) {
+      if( redBits == 8 )
+        glInternalFormat = GL_R8_SNORM;
+      else if( redBits == 16 )
+        glInternalFormat = GL_R16_SNORM;
+    } else if( componentType == GL_INT ) {
+      if( redBits == 8 )
+        glInternalFormat = GL_R8I;
+      else if( redBits == 16 )
+        glInternalFormat = GL_R16I;
+      else if( redBits == 32 )
+        glInternalFormat = GL_R32I;
+    } else if( componentType == GL_UNSIGNED_INT ) {
+      if( redBits == 8 )
+        glInternalFormat = GL_R8UI;
+      else if( redBits == 16 )
+        glInternalFormat = GL_R16UI;
+      else if( redBits == 32 )
+        glInternalFormat = GL_R32UI;
+    } else if( componentType == GL_FLOAT ) {
+      if( redBits == 16 )
+        glInternalFormat = GL_R16F;
+      else if( redBits == 32 )
+        glInternalFormat = GL_R32F;
+    }
+  } else if( Boolean( redBits ) && Boolean( greenBits ) && !Boolean( blueBits ) && !Boolean( alphaBits ) ) {
+    glFormat = GL_RG;
+    if( redBits != greenBits )
+      return;//Not supported
+    if( componentType == GL_UNSIGNED_NORMALIZED ) {
+      if( redBits == 8 )
+        glInternalFormat = GL_RG8;
+      else if( redBits == 16 )
+        glInternalFormat = GL_RG16;
+    } else if( componentType == GL_SIGNED_NORMALIZED ) {
+      if( redBits == 8 )
+        glInternalFormat = GL_RG8_SNORM;
+      else if( redBits == 16 )
+        glInternalFormat = GL_RG16_SNORM;
+    } else if( componentType == GL_INT ) {
+      if( redBits == 8 )
+        glInternalFormat = GL_RG8I;
+      else if( redBits == 16 )
+        glInternalFormat = GL_RG16I;
+      else if( redBits == 32 )
+        glInternalFormat = GL_RG32I;
+    } else if( componentType == GL_UNSIGNED_INT ) {
+      if( redBits == 8 )
+        glInternalFormat = GL_RG8UI;
+      else if( redBits == 16 )
+        glInternalFormat = GL_RG16UI;
+      else if( redBits == 32 )
+        glInternalFormat = GL_RG32UI;
+    } else if( componentType == GL_FLOAT ) {
+      if( redBits == 16 )
+        glInternalFormat = GL_RG16F;
+      else if( redBits == 32 )
+        glInternalFormat = GL_RG32F;
+    }
+  } else if( Boolean( redBits ) && Boolean( greenBits ) && Boolean( blueBits ) && !Boolean( alphaBits ) ) {
+    glFormat = GL_RGB;
+    // Type with asymmetric bits
+    if( componentType == GL_UNSIGNED_NORMALIZED && redBits == 3 && greenBits == 3 && blueBits == 2 )
+      glInternalFormat = GL_R3_G3_B2;
+    else if( componentType == GL_FLOAT && redBits == 11 && greenBits == 11 && blueBits == 10 )
+      glInternalFormat = GL_R11F_G11F_B10F;
+    else if( componentType == GL_FLOAT && redBits == 11 && greenBits == 11 && blueBits == 10 )
+      glInternalFormat = GL_R11F_G11F_B10F;
+    else if( redBits == greenBits && redBits == blueBits ) {
+      if( componentType == GL_UNSIGNED_NORMALIZED ) {
+        if( redBits == 4 )
+          glInternalFormat = GL_RGB4;
+        else if( redBits == 5 )
+          glInternalFormat = GL_RGB5;
+        else if( redBits == 8 )
+          glInternalFormat = GL_RGB8;
+        else if( redBits == 16 )
+          glInternalFormat = GL_RGB16;
+      } else if( componentType == GL_SIGNED_NORMALIZED ) {
+        if( redBits == 8 )
+          glInternalFormat = GL_RGB8_SNORM;
+        else if( redBits == 16 )
+          glInternalFormat = GL_RGB16_SNORM;
+      } else if( componentType == GL_INT ) {
+        if( redBits == 8 )
+          glInternalFormat = GL_RGB8I;
+        else if( redBits == 16 )
+          glInternalFormat = GL_RGB16I;
+        else if( redBits == 32 )
+          glInternalFormat = GL_RGB32I;
+      } else if( componentType == GL_UNSIGNED_INT ) {
+        if( redBits == 8 )
+          glInternalFormat = GL_RGB8UI;
+        else if( redBits == 16 )
+          glInternalFormat = GL_RGB16UI;
+        else if( redBits == 32 )
+          glInternalFormat = GL_RGB32UI;
+      } else if( componentType == GL_FLOAT ) {
+        if( redBits == 16 )
+          glInternalFormat = GL_RGB16F;
+        else if( redBits == 32 )
+          glInternalFormat = GL_RGB32F;
+      }
+    }
+  } else if( Boolean( redBits ) && Boolean( greenBits ) && Boolean( blueBits ) && Boolean( alphaBits ) ) {
+    glFormat = GL_RGBA;
+    // Type with asymmetric bits
+    if( componentType == GL_UNSIGNED_NORMALIZED && redBits == 5 && greenBits == 5 && blueBits == 5 && alphaBits == 1 )
+      glInternalFormat = GL_RGB5_A1;
+    else if( componentType == GL_UNSIGNED_NORMALIZED && redBits == 10 && greenBits == 10 && blueBits == 10 && alphaBits == 2 )
+      glInternalFormat = GL_RGB10_A2;
+    else if( componentType == GL_UNSIGNED_INT && redBits == 10 && greenBits == 10 && blueBits == 10 && alphaBits == 2 )
+      glInternalFormat = GL_RGB10_A2;
+    else if( redBits == greenBits && redBits == blueBits && redBits == alphaBits ) {
+      if( componentType == GL_UNSIGNED_NORMALIZED ) {
+        if( redBits == 4 )
+          glInternalFormat = GL_RGBA4;
+        else if( redBits == 8 )
+          glInternalFormat = GL_RGBA8;
+        else if( redBits == 16 )
+          glInternalFormat = GL_RGBA16;
+      } else if( componentType == GL_SIGNED_NORMALIZED ) {
+        if( redBits == 8 )
+          glInternalFormat = GL_RGBA8_SNORM;
+        else if( redBits == 16 )
+          glInternalFormat = GL_RGBA16_SNORM;
+      } else if( componentType == GL_INT ) {
+        if( redBits == 8 )
+          glInternalFormat = GL_RGBA8I;
+        else if( redBits == 16 )
+          glInternalFormat = GL_RGBA16I;
+        else if( redBits == 32 )
+          glInternalFormat = GL_RGBA32I;
+      } else if( componentType == GL_UNSIGNED_INT ) {
+        if( redBits == 8 )
+          glInternalFormat = GL_RGBA8UI;
+        else if( redBits == 16 )
+          glInternalFormat = GL_RGBA16UI;
+        else if( redBits == 32 )
+          glInternalFormat = GL_RGBA32UI;
+      } else if( componentType == GL_FLOAT ) {
+        if( redBits == 16 )
+          glInternalFormat = GL_RGBA16F;
+        else if( redBits == 32 )
+          glInternalFormat = GL_RGBA32F;
+      }
+    }
+  } else if( Boolean( depthBits ) && Boolean( stencilBits ) ) {
+    glFormat = GL_DEPTH_COMPONENT;
+    glInternalFormat = GL_DEPTH24_STENCIL8;
+  } else if( Boolean( depthBits ) ) {
+    glFormat = GL_DEPTH_COMPONENT;
+    if( componentType == GL_UNSIGNED_NORMALIZED ) {
+      if( depthBits == 16 )
+        glInternalFormat = GL_DEPTH_COMPONENT16;
+      else if( depthBits == 24 )
+        glInternalFormat = GL_DEPTH_COMPONENT24;
+      else if( depthBits == 32 )
+        glInternalFormat = GL_DEPTH_COMPONENT32;
+    } else if( componentType == GL_FLOAT ) {
+      if( depthBits == 32 )
+        glInternalFormat = GL_DEPTH_COMPONENT32F;
+    }
+  }
+}
+
+UInt32 GetOpenGLColorProfileFromChannels(Size nbChannels) {
+  switch(nbChannels) {
+    case 1 : return GL_RED;
+    case 3 : return GL_RGB;
+    case 4 : return GL_RGBA;
+  }
+  return 1;
+}
+
+function SInt32 GLSLTypeNameToGLType( String typeName ) {
+  switch( typeName ) {
+    case 'float': return GL_FLOAT;
+    case 'vec2': return GL_FLOAT_VEC2;
+    case 'vec3': return GL_FLOAT_VEC3;
+    case 'vec4': return GL_FLOAT_VEC4;
+    case 'double': return GL_DOUBLE;
+    case 'dvec2': return GL_DOUBLE_VEC2;
+    case 'dvec3': return GL_DOUBLE_VEC3;
+    case 'dvec4': return GL_DOUBLE_VEC4;
+    case 'int': return GL_INT;
+    case 'ivec2': return GL_INT_VEC2;
+    case 'ivec3': return GL_INT_VEC3;
+    case 'ivec4': return GL_INT_VEC4;
+    case 'unsigned int': return GL_UNSIGNED_INT;
+    case 'uvec2': return GL_UNSIGNED_INT_VEC2;
+    case 'uvec3': return GL_UNSIGNED_INT_VEC3;
+    case 'uvec4': return GL_UNSIGNED_INT_VEC4;
+    case 'bool': return GL_BOOL;
+    case 'bvec2': return GL_BOOL_VEC2;
+    case 'bvec3': return GL_BOOL_VEC3;
+    case 'bvec4': return GL_BOOL_VEC4;
+    case 'mat2': return GL_FLOAT_MAT2;
+    case 'mat3': return GL_FLOAT_MAT3;
+    case 'mat4': return GL_FLOAT_MAT4;
+    case 'mat2x3': return GL_FLOAT_MAT2x3;
+    case 'mat2x4': return GL_FLOAT_MAT2x4;
+    case 'mat3x2': return GL_FLOAT_MAT3x2;
+    case 'mat3x4': return GL_FLOAT_MAT3x4;
+    case 'mat4x2': return GL_FLOAT_MAT4x2;
+    case 'mat4x3': return GL_FLOAT_MAT4x3;
+    case 'dmat2': return GL_DOUBLE_MAT2;
+    case 'dmat3': return GL_DOUBLE_MAT3;
+    case 'dmat4': return GL_DOUBLE_MAT4;
+    case 'dmat2x3': return GL_DOUBLE_MAT2x3;
+    case 'dmat2x4': return GL_DOUBLE_MAT2x4;
+    case 'dmat3x2': return GL_DOUBLE_MAT3x2;
+    case 'dmat3x4': return GL_DOUBLE_MAT3x4;
+    case 'dmat4x2': return GL_DOUBLE_MAT4x2;
+    case 'dmat4x3': return GL_DOUBLE_MAT4x3;
+    case 'sampler1D': return GL_SAMPLER_1D;
+    case 'sampler2D': return GL_SAMPLER_2D;
+    case 'sampler3D': return GL_SAMPLER_3D;
+    case 'samplerCube': return GL_SAMPLER_CUBE;
+    case 'sampler1DShadow': return GL_SAMPLER_1D_SHADOW;
+    case 'sampler2DShadow': return GL_SAMPLER_2D_SHADOW;
+    case 'sampler1DArray': return GL_SAMPLER_1D_ARRAY;
+    case 'sampler2DArray': return GL_SAMPLER_2D_ARRAY;
+    case 'sampler1DArrayShadow': return GL_SAMPLER_1D_ARRAY_SHADOW;
+    case 'sampler2DArrayShadow': return GL_SAMPLER_2D_ARRAY_SHADOW;
+    case 'sampler2DMS': return GL_SAMPLER_2D_MULTISAMPLE;
+    case 'sampler2DMSArray': return GL_SAMPLER_2D_MULTISAMPLE_ARRAY;
+    case 'samplerCubeShadow': return GL_SAMPLER_CUBE_SHADOW;
+    case 'samplerBuffer': return GL_SAMPLER_BUFFER;
+    case 'sampler2DRect': return GL_SAMPLER_2D_RECT;
+    case 'sampler2DRectShadow': return GL_SAMPLER_2D_RECT_SHADOW;
+    case 'isampler1D': return GL_INT_SAMPLER_1D;
+    case 'isampler2D': return GL_INT_SAMPLER_2D;
+    case 'isampler3D': return GL_INT_SAMPLER_3D;
+    case 'isamplerCube': return GL_INT_SAMPLER_CUBE;
+    case 'isampler1DArray': return GL_INT_SAMPLER_1D_ARRAY;
+    case 'isampler2DArray': return GL_INT_SAMPLER_2D_ARRAY;
+    case 'isampler2DMS': return GL_INT_SAMPLER_2D_MULTISAMPLE;
+    case 'isampler2DMSArray': return GL_INT_SAMPLER_2D_MULTISAMPLE_ARRAY;
+    case 'isamplerBuffer': return GL_INT_SAMPLER_BUFFER;
+    case 'isampler2DRect': return GL_INT_SAMPLER_2D_RECT;
+    case 'usampler1D': return GL_UNSIGNED_INT_SAMPLER_1D;
+    case 'usampler2D': return GL_UNSIGNED_INT_SAMPLER_2D;
+    case 'usampler3D': return GL_UNSIGNED_INT_SAMPLER_3D;
+    case 'usamplerCube': return GL_UNSIGNED_INT_SAMPLER_CUBE;
+    case 'usampler2DArray': return GL_UNSIGNED_INT_SAMPLER_1D_ARRAY;
+    case 'usampler2DArray': return GL_UNSIGNED_INT_SAMPLER_2D_ARRAY;
+    case 'usampler2DMS': return GL_UNSIGNED_INT_SAMPLER_2D_MULTISAMPLE;
+    case 'usampler2DMSArray': return GL_UNSIGNED_INT_SAMPLER_2D_MULTISAMPLE_ARRAY;
+    case 'usamplerBuffer': return GL_UNSIGNED_INT_SAMPLER_BUFFER;
+    case 'usampler2DRect': return GL_UNSIGNED_INT_SAMPLER_2D_RECT;
+  }
+  return GL_NONE;
+}
+
+String KLTypeToGLSLBaseType( Type type ) {
+  if( type == Boolean )
+    return 'double';
+  if( type == SInt32 )
+    return 'int';
+  if( type == UInt32 )
+    return 'uint';
+  if( type == Float32 )
+    return 'float';
+  if( type == Float64 )
+    return 'double';
+  if( type == Vec2 )
+    return 'vec2';
+  if( type == Vec3 )
+    return 'vec3';
+  if( type == Vec4 || type == Color || type == Quat )
+    return 'vec4';
+  if( type == Mat22 )
+    return 'mat2';
+  if( type == Mat33 )
+    return 'mat3';
+  if( type == Mat44 )
+    return 'mat4';
+  return String();
+}
+
+UInt32 KLTypeToOpenGLBaseType(Type type) {
+  switch(type) {
+    case UInt8 : return GL_UNSIGNED_BYTE;
+    case UInt16 : return GL_UNSIGNED_SHORT;
+    case UInt32 : return GL_UNSIGNED_INT;
+    case Float32 : return GL_FLOAT;
+  }
+  setError("Format unsupported by OpenGL : " + type);
+  return GL_UNSIGNED_BYTE;
+}
+
+Type OpenGLBaseTypeToKLType(UInt32 glType) {
+  switch(glType) {
+    case GL_UNSIGNED_BYTE : return UInt8;
+    case GL_UNSIGNED_SHORT : return UInt16;
+    case GL_UNSIGNED_INT : return UInt32;
+    case GL_FLOAT : return Float32;
+  }
+  return UInt8;
+}
+
+interface DoubleBuffer {
+  /// [from,to] can be [0,1] or [1,0]
+  copyBuffer!( Size from, Size to );
+};
+
+struct DoubleBufferState {
+  UInt32 iteration;
+  Ref<DoubleBuffer> doubleBuffer;
+
+  UInt32 index;
+  Boolean readOnly;
+  UInt32 readIndex;//Draw
+};
+
+inline DoubleBufferState() {
+  this.iteration = InvalidIndex;
+}
+
+inline DoubleBufferState.init!( Ref<DoubleBuffer> doubleBuffer ) {
+  this.doubleBuffer = doubleBuffer;
+}
+
+inline DoubleBufferState.beginIteration!( UInt32 iteration, Boolean needDoubleBuffering ) {
+  if( !needDoubleBuffering )
+    return;
+
+  if( this.iteration == InvalidIndex ) {
+    //First draw
+    this.iteration = iteration;
+    return;
+  }
+
+  this.readOnly = true;
+  this.readIndex = this.index;
+}
+
+inline Boolean DoubleBufferState.isReadOnly?() {
+  return this.readOnly;
+}
+
+
+inline DoubleBufferState.makeWritable!() {
+  if( this.readOnly ) {
+    this.index = (this.index + 1) & 1;
+    this.doubleBuffer.copyBuffer( this.readIndex, this.index );
+    this.readOnly = false;
+  }
+}

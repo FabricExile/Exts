@@ -1,0 +1,130 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Geometry;
+
+/// \internal
+/// type may be
+/// SInt32 = 0
+/// UInt32 = 1
+/// Float32 = 2
+/// Vec2 = 3
+/// Vec3 = 4
+/// Vec4 = 5
+/// Quat = 6
+/// Mat33 = 7
+/// Mat44 = 8
+/// Color = 9
+/// RGB = 10
+/// RGBA = 11
+function GeometryAttribute BaseGeometry.randomAttributeFromType!(
+  String name,
+  SInt32 mode,
+  SInt32 type,
+  UInt32 seed,
+  Vec2 range
+) {
+  GeometryAttributes attributes = this.attributes;
+  if(!attributes)
+    return null;
+
+  GeometryAttribute attr = this.createAttributeFromType(name, type, 1);
+  if(attr == null)
+    return null;
+
+  switch(attr.type())
+  {
+    case IntegerAttribute:
+    {
+      IntegerAttribute cast = attr;
+      if(!this.fillIntegerAttributeRandomly(cast, mode, seed, range))
+        return null;
+      break;
+    }
+    case UInt32Attribute:
+    {
+      UInt32Attribute cast = attr;
+      if(!this.fillUInt32AttributeRandomly(cast, mode, seed, range))
+        return null;
+      break;
+    }
+    case ScalarAttribute:
+    {
+      ScalarAttribute cast = attr;
+      if(!this.fillScalarAttributeRandomly(cast, mode, seed, range))
+        return null;
+      break;
+    }
+    case Vec2Attribute:
+    {
+      Vec2Attribute cast = attr;
+      if(!this.fillVec2AttributeRandomly(cast, mode, seed, range))
+        return null;
+      break;
+    }
+    case Vec3Attribute:
+    {
+      Vec3Attribute cast = attr;
+      if(!this.fillVec3AttributeRandomly(cast, mode, seed, range))
+        return null;
+      break;
+    }
+    case Vec4Attribute:
+    {
+      Vec4Attribute cast = attr;
+      if(!this.fillVec4AttributeRandomly(cast, mode, seed, range))
+        return null;
+      break;
+    }
+    case QuatAttribute:
+    {
+      QuatAttribute cast = attr;
+      if(!this.fillQuatAttributeRandomly(cast, mode, seed, range))
+        return null;
+      break;
+    }
+    case Mat33Attribute:
+    {
+      Mat33Attribute cast = attr;
+      if(!this.fillMat33AttributeRandomly(cast, mode, seed, range))
+        return null;
+      break;
+    }
+    case Mat44Attribute:
+    {
+      Mat44Attribute cast = attr;
+      if(!this.fillMat44AttributeRandomly(cast, mode, seed, range))
+        return null;
+      break;
+    }
+    case ColorAttribute:
+    {
+      ColorAttribute cast = attr;
+      if(!this.fillColorAttributeRandomly(cast, mode, seed, range))
+        return null;
+      break;
+    }
+    case RGBAttribute:
+    {
+      RGBAttribute cast = attr;
+      if(!this.fillRGBAttributeRandomly(cast, mode, seed, range))
+        return null;
+      break;
+    }
+    case RGBAAttribute:
+    {
+      RGBAAttribute cast = attr;
+      if(!this.fillRGBAAttributeRandomly(cast, mode, seed, range))
+        return null;
+      break;
+    }
+    default:
+    {
+      report('Error: MathRandom: Unsupported attribute type '+attr.type());
+      return null;
+    }
+  }
+
+  return attr;
+}

@@ -1,0 +1,586 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+require Containers;
+
+/// \internal
+/// The itemKey is based on the ItemReference item but not sub-components.
+struct ItemReferences_itemKey {
+  Ref<ItemReference> element;
+};
+
+inline ItemReferences_itemKey( Ref<ItemReference> element ) {
+  this.element = element;
+}
+
+inline Boolean == ( ItemReferences_itemKey a, ItemReferences_itemKey b ) {
+  return a.element.sameItem( b.element );
+}
+
+UInt32 ItemReferences_itemKey.hash() {
+  return this.element.getItemHash();
+}
+
+/**
+The ItemReferences defines a set of ItemReference that
+is versioned and associates an index to the handles.
+This can be used to represent a stable set of selected items.
+
+If itemRefences have compatible sub-items, a these will be merged to a
+single ItemReference containing the unione of the sets. Sub-items can also
+be removed.
+
+The ItemReferences also supports a custom persistance format which
+allows it to be persisted as a Canvas port default value or Canvas variable.
+*/
+object ItemReferences : BaseVersioned, RTValToJSONEncoder, RTValFromJSONDecoder{
+  String name;
+  ItemReference componentTypesPerItem[][String];
+  UInt32 elementToItemIndex[ItemReferences_itemKey];
+};
+
+ItemReferences( String name ) {
+  this.name = name;
+}
+
+/// Returns true if the element is present
+Size ItemReferences.size() {
+  return this.componentTypesPerItem.size();
+}
+
+Boolean ItemReferences.equals( Ref<ItemReferences> other ) {
+  if( this.size() != other.size() )
+    return false;
+
+  for( Size i = 0; i < this.size(); ++i ) {
+
+    UInt32 otherItemIndex = other.getIndex( this.getItem( i ) );
+    if( otherItemIndex == InvalidIndex )
+      return false;
+
+    for( key in this.componentTypesPerItem[i] ) {
+      if( !other.componentTypesPerItem[otherItemIndex].has( key ) )
+        return false;
+
+      Ref<ItemReference> thisItem = this.componentTypesPerItem[i][key];
+      Ref<ItemReference> otherItem = other.componentTypesPerItem[otherItemIndex][key];
+      if( !thisItem.includesComponents( otherItem ) || !otherItem.includesComponents( thisItem ) )
+        return false;
+    }
+  }
+  return true;
+}
+
+/// Clears the set
+ItemReferences.clear!( ) {
+  if( this.componentTypesPerItem.size() ) {
+    this.componentTypesPerItem.resize( 0 );
+    this.elementToItemIndex.clear();
+    this.incrementVersion_();
+  }
+}
+
+/// Returns the number of sub-item types for the item of this index.
+String[] ItemReferences.getComponentTypes( Size index ) {
+  String keys[];
+  for( key in this.componentTypesPerItem[index] )
+    keys.push(key);
+  return keys;
+}
+
+/// \internal
+Ref<ItemReference> ItemReferences.getItem( Size index ) {
+  for( key in this.componentTypesPerItem[index] )
+    return this.componentTypesPerItem[index][key];
+  return null;
+}
+
+/// Returns all sub-item sets for the given item.
+ItemReferences.getAllSubTypeItems( Size index, io Ref<ItemReference> items[] ) {
+  items.resize( this.componentTypesPerItem[index].size() );
+  Size target;
+  for( key in this.componentTypesPerItem[index] )
+    items[target++] = this.componentTypesPerItem[index][key];
+}
+
+String ItemReferences.getItemName( Size index ) {
+  Ref<ItemReference> item = this.getItem( index );
+  return item ? item.getName() : "<none>";
+}
+
+/// Returns the item and its sub-items for a given component type.
+/// Null is returned if there are no sub-items of that type.
+Ref<ItemReference> ItemReferences.getItem( Size index, String componentsType ) {
+  return this.componentTypesPerItem[index].get( componentsType, null );
+}
+
+/// Returns true if the element and and its sub-items, if applicable, are present.
+Boolean ItemReferences.has( Ref<ItemReference> element ) {
+  Size index = this.elementToItemIndex.get( ItemReferences_itemKey( element ), InvalidIndex );
+  if( index == InvalidIndex )
+    return false;
+
+  String componentsType = element.getComponentsType();
+  if( !this.componentTypesPerItem[index].has( componentsType ) )
+    return false;
+
+  return this.componentTypesPerItem[index][componentsType ].includesComponents( element );
+}
+
+/// Returns the index of the element, or InvalidIndex if not present.
+UInt32 ItemReferences.getIndex( Ref<ItemReference> element ) {
+  UInt32 index = this.elementToItemIndex.get( ItemReferences_itemKey( element ), InvalidIndex );
+  if( index == InvalidIndex )
+    return InvalidIndex;
+
+  return this.has(element) ? index : InvalidIndex;
+}
+
+/// Adds the element. If the element has sub-items, these will be merged if others are already present.
+/// Returns false if the element was already present.
+Boolean ItemReferences.add!( Ref<ItemReference> element, io Size addedComponents[] ) {
+  if( !element )
+    return false;
+
+  ItemReferences_itemKey key( element );
+  UInt32 index = this.elementToItemIndex.get( key, InvalidIndex );
+  if( index == InvalidIndex ) {
+    index = this.componentTypesPerItem.size();
+    this.elementToItemIndex[key] = index;
+    this.componentTypesPerItem.resize( index + 1 );
+  }
+
+  String componentsType = element.getComponentsType();
+  if( !this.componentTypesPerItem[index].has( componentsType ) ) {
+    this.componentTypesPerItem[index][componentsType] = element;
+    addedComponents = element.getComponentIndices();
+  } else {
+    // Potentially merge sub-components
+    if( this.componentTypesPerItem[index][componentsType].includesComponents( element ) )
+      return false;
+    this.componentTypesPerItem[index][componentsType].addComponents(element, addedComponents);
+  }
+  this.incrementVersion_();
+  return true;
+}
+
+Boolean ItemReferences.add!( Ref<ItemReference> element ) {
+  Size addedComponents[];
+  return this.add( element, addedComponents );
+}
+
+/// Returns false if the element, including all sub items, was not present.
+Boolean ItemReferences.remove!( Ref<ItemReference> element, io Size removedComponents[] ) {
+  ItemReferences_itemKey key( element );
+  UInt32 index = this.elementToItemIndex.get( key, InvalidIndex );
+  if( index == InvalidIndex )
+    return false;
+
+  String componentsType = element.getComponentsType();
+  Ref<ItemReference> current = this.componentTypesPerItem[index].get( componentsType, null );
+  if( current ) {
+    if( element.includesComponents( current ) ) {
+      removedComponents = current.getComponentIndices();
+      this.componentTypesPerItem[index].delete(componentsType);
+    } else
+      current.subtractComponents( element, removedComponents );
+  } else
+    return false;
+
+  if( this.componentTypesPerItem[index].size() == 0 ) {
+    this.elementToItemIndex.delete(key);
+
+    // Keep contiguous list: shuffle the last one
+    if( index != this.size() - 1 ) {
+      Size lastIndex = this.size() - 1;
+      ItemReferences_itemKey lastKey( this.getItem( lastIndex ) );
+      this.componentTypesPerItem[index] = this.componentTypesPerItem[lastIndex];
+      this.elementToItemIndex[lastKey] = index;
+    }
+    this.componentTypesPerItem.resize( this.size() - 1 );
+  }
+  this.incrementVersion_();
+  return true;
+}
+
+/// Returns false if nothing changed.
+Boolean ItemReferences.toggle!(Ref<ItemReference> element, io Size addedComponents[], io Size removedComponents[]) {
+  UInt32 index = this.elementToItemIndex.get( ItemReferences_itemKey( element ), InvalidIndex );
+  if( index == InvalidIndex )
+    return this.add( element, addedComponents );
+
+  String componentsType = element.getComponentsType();
+  Ref<ItemReference> current = this.componentTypesPerItem[index].get( componentsType, null );
+  if( !current )
+    return this.add( element, addedComponents );
+
+  if( current.includesComponents( element ) )
+    return this.remove( element, removedComponents );
+
+  // Mix of added and removed
+  current.toggleComponents( element, addedComponents, removedComponents );
+  this.incrementVersion_();
+  return true;
+}
+
+ItemReferences.add!(Ref<ItemReferences> other) {
+  Ref<ItemReference> subItems[];
+  Size dummy[];
+  for (Size i = 0; i < other.size(); ++i) {
+      other.getAllSubTypeItems(i, subItems);
+      for (Size j = 0; j < subItems.size(); ++j)
+          this.add(subItems[j], dummy);
+  }
+}
+
+ItemReferences.remove!(Ref<ItemReferences> other) {
+  Ref<ItemReference> subItems[];
+  Size dummy[];
+  for (Size i = 0; i < other.size(); ++i) {
+    other.getAllSubTypeItems(i, subItems);
+    for (Size j = 0; j < subItems.size(); ++j)
+      this.remove(subItems[j], dummy);
+  }
+}
+
+/// Prints the content of the ItemReferences
+ItemReferences.reportContent( String indent ) {
+  for( Size i = 0; i < this.size(); ++i ) {
+    if( this.componentTypesPerItem[i].size() == 1 && this.componentTypesPerItem[i].has( ComponentType_object ) )// only object
+      report( indent + i + ": " + this.getItemName( i ) );
+    else {
+
+      report( indent + i + ": " + this.getItemName( i ) + "(sub item types: " + this.getComponentTypes( i ) + ")" );
+    }
+  }
+}
+
+/// Prints the content of the ItemReferences
+ItemReferences.reportContent() {
+  this.reportContent( String() );
+}
+
+/// Returns a single-line list String.
+/// For example, getListString(", ") could return "A, B, C".
+String ItemReferences.getListString( String separator, Boolean fullDescription ) {
+  String list;
+  for( Size i = 0; i < this.size(); ++i ) {
+    if( i )
+      list += separator;
+    list += fullDescription ? this.getItem( i ).getDescription() : this.getItem( i ).getName();
+  }
+  return list;
+}
+
+/// Returns a single-line list String.
+/// For example, getListString() could return "A, B, C".
+String ItemReferences.getListString( Boolean fullDescription ) {
+  return this.getListString( ', ', fullDescription );
+}
+
+// Simple helper to set element handle set from a single one (or clear if null)
+ItemReferences.setFromSingleElement!( ItemReference element ) {
+  if( element ) {
+    if( !this.has( element ) ) {
+      this.clear();
+      Size comps[];
+      this.add( element, comps );
+    }
+  } else
+    this.clear();
+}
+
+/// If item references all have the same component type, it is returned. Else, String() is returned.
+String ItemReferences.getComponentTypeIfUnique() {
+  String compType;
+  for( Size i = 0; i < this.componentTypesPerItem.size(); ++i ) {
+    if( this.componentTypesPerItem[i].size() > 1 )
+      return String();
+    for( key in this.componentTypesPerItem[i] ) {
+      if( !compType )
+        compType = key;
+      else if( compType != key )
+        return String();
+    }
+  }
+  return compType;
+}
+
+/**
+  persistence interface
+  The format is the following:
+ 
+  - If there is more than one object, per-object data is separated by braces: { <obj1data>, <obj2data>, <obj3data> }
+  - If only the object is referenced, with no components, only the object name is printed: <obj1data> = obj1name
+  - If the object has special characters (' ', ':', ",", "{", "}", "[", "]", "\"), these are escaped with a "\"
+  - If there is some referenced component (not only the object): <obj1data> = obj1name : <compData>
+  - If there is more than one referenced component type: <compData> = {<compType1Data>, <compType2Data>, <compType3Data>}
+  - If the referenced component type is not object, it is followed by the list of elements with ranges: <compTypeData> = compType[12, 14-18, 25]
+*/
+String ItemReferences.convertToString() {
+  String s;
+
+  Boolean multipleObjects = this.componentTypesPerItem.size() > 1;
+  if( multipleObjects )
+    s += "{";
+
+  for( Size i = 0; i < this.componentTypesPerItem.size(); ++i ) {
+
+    if( i )
+      s += ", ";
+
+    Boolean singleKey = this.componentTypesPerItem[i].size() == 1;
+
+    Boolean first = true;
+    for( key, item in this.componentTypesPerItem[i] ) {
+
+      Boolean objectType = key == ComponentType_object;
+      Boolean objectTypeOnly = singleKey && objectType;
+
+      if( first ) {
+        // Put the item name
+        // Add escape chars on spaces and "\"
+        String name = item.getName();
+        if( !name )
+          name = i;
+
+        String formattedName;
+
+        for( Size j = 0; j < name.length(); ++j ) {
+          String letter = name[j];
+          if( letter == '\\' || letter == ' ' || letter == ':' || letter == ',' || letter == '{' || letter == '}' || letter == '[' || letter == ']' )
+            formattedName += '\\' + letter;
+          else
+            formattedName += letter;
+        }
+        s += formattedName;
+        if( !objectTypeOnly )
+          s += " : ";
+
+        if( !singleKey )
+          s += "{";
+      }
+      if( !objectTypeOnly ) {
+        if( !first )
+          s += ", ";
+
+        s += key;
+        if( !objectType ) {
+          Size comps[] = item.getComponentIndices();
+          IndexSet indexSet;
+          for( Size j = 0; j < comps.size(); ++j )
+            indexSet.add( comps[j] );
+          s += indexSet.toRangeListString();
+        }
+      }
+      first = false;
+    }
+    if( !singleKey )
+      s += "}";
+  }
+  if( multipleObjects )
+    s += "}";
+
+  return s;
+}
+
+/// \dfgPresetOmit
+ItemReferences.convertToJSON?(io FTL_JSONObjectEncoder encoder)
+{
+  encoder.setString( "references", this.convertToString() );
+}
+
+/// \internal
+/// Override default String conversion
+ItemReferences.appendDesc( io String string ) {
+  string += this.convertToString();
+}
+
+/// persistence interface
+/// Reads data written by :kl-ref:`ItemReferences.convertToString` ; see that method for reference on the format.
+/// This function will create non-specialized objects of type BaseObjectItemReference and BaseComponentItemReference.
+Boolean ItemReferences.convertFromString!(String data) {
+
+  this.clear();
+  Byte bytes<> = data;
+
+  Boolean lookingForOpeningBrace = true;
+  Boolean hadOpeningBrace;
+
+  for( Size i = 0; i < bytes.size(); ++i ) {
+    Byte value = bytes[i];
+    if( IsAsciiDelimiter( value ) ) {
+      continue;
+    }
+
+    if( value == asciiOpenBrace ) {
+      if( lookingForOpeningBrace ) {
+        lookingForOpeningBrace = false;
+        hadOpeningBrace = true;
+        continue;
+      } else
+        return false;//Malformed
+    }
+
+    if( value == asciiCloseBrace ) {
+      if( hadOpeningBrace )
+        break;
+      return false;//Malformed
+    }
+
+    if( value == asciiComma ) {
+      continue;//Object list separator
+    }
+
+    // Parse the object name. We need to check fo escaped chars.
+    String name;
+    while( i < bytes.size() ) {
+      value = bytes[i];
+      if( IsAsciiDelimiter( value ) || value == asciiColon || value == asciiComma )
+        break;
+
+      if( value == asciiBackslash )
+        ++i;//Escape character
+
+      name += data[i];
+      ++i;
+    }
+    //report( "name " + name );
+
+    BaseObjectItemReference itemReference( name );
+
+    // Check if there is a ":", if not, implicit object type
+    Boolean implicitObject = true;
+
+    while( i < bytes.size() ) {
+      value = bytes[i];
+      ++i;
+
+      if( IsAsciiDelimiter( value ) )
+        continue;
+
+      if( value == asciiComma )
+        break;
+
+      if( value == asciiColon ) {
+        implicitObject = false;
+        break;
+      }
+
+      return false;//malformed
+    }
+
+    if( implicitObject ) {
+      this.add( BaseObjectItemReference(name) );
+      continue;
+    }
+
+    // skip spaces and look for an open brace (optional)
+    Boolean openComponentBrace;
+    while( i < bytes.size() ) {
+      if( bytes[i] == asciiOpenBrace ) {
+        openComponentBrace = true;
+        ++i;
+        break;
+      }
+
+      if( !IsAsciiDelimiter( bytes[i] ) )
+        break;
+      ++i;
+    }
+
+    // Parse components list
+    while( i < bytes.size() ) {
+
+      // skip spaces
+      if( IsAsciiDelimiter( bytes[i] ) ) {
+        ++i;
+        continue;
+      }
+
+      // Parse component type
+      String componentType;
+      while( i < bytes.size() ) {
+        value = bytes[i];
+        if( IsAsciiDelimiter( bytes[i] ) || value == asciiColon || value == asciiComma || value == asciiOpenBracket )
+          break;
+
+        componentType += data[i];
+        ++i;
+      }
+
+      //report( "componentType " + componentType );
+      if( componentType == ComponentType_object ) {
+        // no component list
+        this.add( itemReference );
+      } else {
+        // parse components: search for close bracket, then send string to IndexSet.fromRangeListString
+        Size componentsStart = i;
+        while( i < bytes.size() ) {
+          if( bytes[i++] == asciiCloseBracket )
+            break;
+        }
+
+        String componentsString = data.subString( componentsStart, i - componentsStart );
+        //report( "componentsString " + componentsString );
+
+        IndexSet components;
+        if( !components.fromRangeListString( componentsString ) )
+          return false;//Malformed
+
+        this.add( BaseComponentItemReference( itemReference, componentType, components.getIndices() ) );
+      }
+
+      // Go to next list item, or list end
+      Boolean listEnd;
+      while( i < bytes.size() ) {
+        value = bytes[i++];
+        if( IsAsciiDelimiter( value ) )
+          continue;
+
+        if( value == asciiCloseBrace ) {
+          if( !openComponentBrace && !hadOpeningBrace )
+            return false;
+          listEnd = true;
+          break;
+        }
+
+        if( value == asciiComma ) {
+          if( !openComponentBrace )
+            listEnd = true;
+          break;
+        }
+        return false;//Malformed
+      }
+      if( listEnd )
+        break;
+    }
+  }
+  return true;
+}
+
+/// \dfgPresetOmit
+Boolean ItemReferences.convertFromJSON!(FTL_JSONObject decoder)
+{
+  String path = decoder.getString( "references" );
+  return this.convertFromString(path);
+}
+
+/// Creates a clone of the item references, but converted as simple
+/// Sting-based BaseObjectItemReference amd BaseComponentItemReference.
+/// These are safer to keep, for example, as undo/redo data.
+ItemReferences ItemReferences.cloneAsBaseItemReferenceData() {
+  ItemReferences refs();
+  for( Size i = 0; i < this.componentTypesPerItem.size(); ++i ) {
+    BaseObjectItemReference itemRef( this.getItemName( i ) );
+
+    for( componentType, subItemRef in this.componentTypesPerItem[i] ) {
+      if( componentType == ComponentType_object )
+        refs.add( itemRef );
+      else
+        refs.add( BaseComponentItemReference( itemRef, componentType, subItemRef.getComponentIndices() ) );
+    }
+  }
+  return refs;
+}

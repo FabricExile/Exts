@@ -1,0 +1,394 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  interface MovePointsXfoTarget_virtuals {
+    createCommand!( Boolean endChanges );
+    update!( Geometry geom, Xfo geomXfo, Boolean movedPointsChanged, Size movedPointIndices[], Vec3 movedPointPositions[] );
+  };
+
+  /**
+    The MovePointsXfoTarget moves a group of point associated to point indices.
+    Also, the resulting moved points is added to arrays of new positions 
+    and indices (sparse position override).
+    This is used by the :kl-ref:`Tool::MovePointsTool`.
+  */
+  object MovePointsXfoTarget : MovePointsXfoTarget_virtuals, TransformTarget, Transformed{
+    Geometry geom;
+    Xfo geomXfo;
+    Mat44 localDelta;
+
+    Size editedPointIndices[];
+    String editedPointIndicesPortPath;
+
+    Vec3 editedPointPositions[];
+    String editedPointPositionsPortPath;
+
+    Size movedPointIndices[];
+    Vec3 pointPositionsBeforeInteraction[];
+
+    Xfo initialXfo;
+    Xfo currentXfo;
+
+    Boolean active;
+    SInt32 canMergeID;
+  };
+
+  MovePointsXfoTarget() {
+    this.canMergeID = NoCanMergeID;
+  }
+
+  MovePointsXfoTarget.setPortArgs!( String editedPointIndicesPortPath, String editedPointPositionsPortPath ) {
+    this.editedPointIndicesPortPath = editedPointIndicesPortPath;
+    this.editedPointPositionsPortPath = editedPointPositionsPortPath;
+  }
+
+  MovePointsXfoTarget.update!( Geometry geom, Xfo geomXfo, Boolean movedPointsChanged, Size movedPointIndices[], Vec3 movedPointPositions[] ) {
+
+    this.movedPointIndices = movedPointIndices;
+    this.geomXfo = geomXfo;
+    this.geom = geom;
+
+    // Reset position if interaction ended, or if selection changed
+    if( !this.pointPositionsBeforeInteraction || movedPointsChanged ) {// Keep the initial values before undo
+      // Starting a new interaction
+      // Compute selection center
+      this.currentXfo.tr = Vec3();
+      if( movedPointIndices.size() ) {
+        for( Size i = 0; i < movedPointIndices.size(); ++i )
+          this.currentXfo.tr += geomXfo * movedPointPositions[i];
+        this.currentXfo.tr = this.currentXfo.tr / movedPointIndices.size();
+      }
+      this.pointPositionsBeforeInteraction = movedPointPositions.clone();
+      this.initialXfo = this.currentXfo;
+    }
+  }
+
+  String MovePointsXfoTarget.getTransformSpace() { return WorldSpace; }
+  Xfo MovePointsXfoTarget.getLocalTransform() { return this.currentXfo; }
+  Mat44 MovePointsXfoTarget.getParentTransform() { return Mat44(); }
+
+  MovePointsXfoTarget.setLocalTransform!( Xfo transform ) {
+    this.localDelta = this.geomXfo.toMat44().inverse() * transform.toMat44() * this.initialXfo.toMat44().inverse() * this.geomXfo.toMat44();
+    this.currentXfo = transform;
+    if( this.active )
+      this.createCommand( false );
+  }
+
+  MovePointsXfoTarget.beginChanges!( ) {
+    this.active = true;
+    this.canMergeID = GetCommandManager().getNewCanMergeID();
+  }
+
+  MovePointsXfoTarget.endChanges!( ) {
+    if( this.active )
+      this.createCommand( true );
+    this.active = false;
+    this.canMergeID = NoCanMergeID;
+    this.pointPositionsBeforeInteraction.resize( 0 );
+  }
+
+  Vec3[] MovePointsXfoTarget.getTransformedPointPositions() {
+    Vec3 pointPositions[];
+    pointPositions.resize( this.movedPointIndices.size() );
+    for( Size i = 0; i < this.movedPointIndices.size(); ++i )
+      pointPositions[i] = this.localDelta * this.pointPositionsBeforeInteraction[i];
+    return pointPositions;
+  }
+
+  MovePointsXfoTarget.createCommand!( Boolean endChanges ) {
+    RTVal args[String];
+    args["editedPointIndices"] = PathValue( this.editedPointIndicesPortPath );
+    args["editedPointPositions"] = PathValue( this.editedPointPositionsPortPath );
+    args["movedPointIndices"] = this.movedPointIndices;
+    args["movedPointPositions"] = this.getTransformedPointPositions();
+
+    Ref<CommandManager> commandManager = GetCommandManager();
+    AddMovePointDeltasCommand moveCommand = commandManager.createCommand(
+      "AddMovePointDeltas",
+      args,
+      false,
+      this.canMergeID );
+    if( !endChanges )
+      moveCommand.blockLog();
+    commandManager.scheduleCommand( moveCommand );
+  }
+
+  interface AddMovePointDeltasCommand_virtuals {
+    fetchPointArgs!( io UInt32Array editedPointIndices, io Vec3Array editedPointPositions, io UInt32Array movedPointIndices, io Vec3Array movedPointPositions );
+  };
+
+  object AddMovePointDeltasCommand : BaseScriptableCommand, AddMovePointDeltasCommand_virtuals{
+    // undo data
+    Vec3 undo_previousMovedPointPositions[];
+    Size undo_previousPointCount;
+  };
+
+  AddMovePointDeltasCommand() {
+    this.declareArg( "editedPointIndices", UInt32Array, CommandArgFlag_IO, RTVal() );
+    this.declareArg( "editedPointPositions", Vec3Array, CommandArgFlag_IO, RTVal() );
+
+    this.declareArg( "movedPointIndices", UInt32Array, CommandArgFlag_IN, RTVal() );
+    this.declareArg( "movedPointPositions", Vec3Array, CommandArgFlag_IN, RTVal() );
+  }
+
+  Boolean AddMovePointDeltasCommand.doIt!( io String error ) {
+    if( !this.parent.doIt( error ) )
+      return false;
+
+    // Save undo data
+    UInt32Array movedPointIndices;
+    Vec3Array movedPointPositions;
+    UInt32Array editedPointIndices;
+    Vec3Array editedPointPositions;
+    this.fetchPointArgs( editedPointIndices, editedPointPositions, movedPointIndices, movedPointPositions );
+
+    this.undo_previousPointCount = editedPointIndices.size();
+
+    // Save previous edited values, if < undo_previousPointCount
+    Size pointToEditedPointIndices[] = ComputePointToEditedPointIndices( editedPointIndices );
+    this.undo_previousMovedPointPositions.resize( movedPointIndices.size() );
+    for( Size i = 0; i < movedPointIndices.size(); ++i ) {
+      // Map to existing edited points
+      Size prevEditedPointIndex = InvalidIndex;
+      if( movedPointIndices[i] < pointToEditedPointIndices.size() )
+        prevEditedPointIndex = pointToEditedPointIndices[movedPointIndices[i]];
+
+      if( prevEditedPointIndex != InvalidIndex )
+        this.undo_previousMovedPointPositions[i] = editedPointPositions[prevEditedPointIndex];
+    }
+    // Note: we don't need to set back the data since array data is shared in KL
+    return this.redoIt();
+  }
+
+  /// \internal
+  Size[] ComputePointToEditedPointIndices( UInt32Array editedPointIndices ) {
+    // build an index mapping
+    Size pointToEditedPointIndices[];
+    pointToEditedPointIndices.reserve( editedPointIndices.size() );
+    for( Size i = 0; i < editedPointIndices.size(); ++i ) {
+      Size point = editedPointIndices[i];
+      if( point != InvalidIndex ) {
+        while( point >= pointToEditedPointIndices.size() )
+          pointToEditedPointIndices.push( InvalidIndex );
+        pointToEditedPointIndices[point] = i;
+      }
+    }
+    return pointToEditedPointIndices;
+  }
+
+  /// \internal
+  AddMovePointDeltasCommand.fetchPointArgs!( io UInt32Array editedPointIndices, io Vec3Array editedPointPositions, io UInt32Array movedPointIndices, io Vec3Array movedPointPositions ) {
+    movedPointIndices = this.getArgValue( "movedPointIndices" );
+    movedPointPositions = this.getArgValue( "movedPointPositions" );
+    editedPointIndices = this.getArgValue( "editedPointIndices" );
+    editedPointPositions = this.getArgValue( "editedPointPositions" );
+  }
+
+  Boolean AddMovePointDeltasCommand.canUndo() {
+    return true;
+  }
+
+  Boolean AddMovePointDeltasCommand.redoIt!( ) {
+    if( !this.parent.redoIt() )
+      return false;
+
+    UInt32Array movedPointIndices;
+    Vec3Array movedPointPositions;
+    UInt32Array editedPointIndices;
+    Vec3Array editedPointPositions;
+    this.fetchPointArgs( editedPointIndices, editedPointPositions, movedPointIndices, movedPointPositions );
+
+    if( editedPointIndices.size() != editedPointPositions.size() ) {
+      setError( "AddMovePointDeltasCommand: error: editedPointIndices.size() != editedPointPositions.size()" );
+      return false;
+    }
+
+    // Partial point indices
+    Size pointToEditedPointIndices[] = ComputePointToEditedPointIndices( editedPointIndices );
+
+    for( Size i = 0; i < movedPointIndices.size(); ++i ) {
+      Size point = movedPointIndices[i];
+      Size editedPointIndex = InvalidIndex;
+      if( point < pointToEditedPointIndices.size() )
+        editedPointIndex = pointToEditedPointIndices[point];
+
+      if( editedPointIndex == InvalidIndex ) {
+        // Add to edited points
+        editedPointIndex = editedPointIndices.size();
+        editedPointIndices.push( point );
+        editedPointPositions.resize( editedPointIndex + 1 );
+      }
+      editedPointPositions[editedPointIndex] = movedPointPositions[i];
+    }
+    // Note: we don't need to set back the data since array data is shared in KL
+    return true;
+  }
+
+  /// Implementation of Command.
+  /// Transfer undo data from previous command.
+  AddMovePointDeltasCommand.merge!( Command prevCmd ) {
+    this.parent.merge( prevCmd );
+    Ref<AddMovePointDeltasCommand> prevMovePtsCmd = prevCmd;
+    this.undo_previousMovedPointPositions = prevMovePtsCmd.undo_previousMovedPointPositions;
+    this.undo_previousPointCount = prevMovePtsCmd.undo_previousPointCount;
+  }
+
+  Boolean AddMovePointDeltasCommand.undoIt!( ) {
+
+    UInt32Array movedPointIndices;
+    Vec3Array movedPointPositions;
+    UInt32Array editedPointIndices;
+    Vec3Array editedPointPositions;
+    this.fetchPointArgs( editedPointIndices, editedPointPositions, movedPointIndices, movedPointPositions );
+
+    editedPointIndices.resize( this.undo_previousPointCount );
+    editedPointPositions.resize( this.undo_previousPointCount );
+
+    // Save previous edited values, if < undo_previousPointCount
+    Size pointToEditedPointIndices[] = ComputePointToEditedPointIndices( editedPointIndices );
+    for( Size i = 0; i < movedPointIndices.size(); ++i ) {
+      // Map to existing edited points
+      Size prevEditedPointIndex = InvalidIndex;
+      if( movedPointIndices[i] < pointToEditedPointIndices.size() )
+        prevEditedPointIndex = pointToEditedPointIndices[movedPointIndices[i]];
+
+      if( prevEditedPointIndex != InvalidIndex )
+        editedPointPositions[prevEditedPointIndex] = this.undo_previousMovedPointPositions[i];
+    }
+    return this.parent.undoIt();
+  }
+
+  object ResetMovePointDeltasCommand : BaseScriptableCommand {
+    // undo data
+    // trying to restore at the exact same place without cloning.. for more challenge
+    Vec3 undo_previousResetPointPositions[];
+    Size undo_previousResetPointIndices[];
+    Size undo_previousResetPointArrayIndices[];
+  };
+
+  ResetMovePointDeltasCommand() {
+    this.declareArg( "editedPointIndices", UInt32Array, CommandArgFlag_IO, RTVal() );
+    this.declareArg( "editedPointPositions", Vec3Array, CommandArgFlag_IO, RTVal() );
+    this.declareArg( "selection", ItemReferences, CommandArgFlag_IN | CommandArgFlag_OPTIONAL, RTVal() );// Clear the selection
+  }
+
+  Boolean ResetMovePointDeltasCommand.doIt!( io String error ) {
+    if( !this.parent.doIt( error ) )
+      return false;
+
+    // Save undo data
+    UInt32Array editedPointIndices;
+    Vec3Array editedPointPositions;
+    UInt32Array removedPointIndices;
+    this.fetchPointArgs( removedPointIndices, editedPointIndices, editedPointPositions );
+
+    IndexSet removedPointSet;
+    removedPointSet.add( removedPointIndices );
+
+    for( Size i = 0; i < editedPointIndices.size(); ++i ) {
+      if( removedPointSet.has( editedPointIndices[i] ) ) {
+        this.undo_previousResetPointArrayIndices.push( i );
+        this.undo_previousResetPointIndices.push( editedPointIndices[i] );
+        this.undo_previousResetPointPositions.push( editedPointPositions[i] );
+      }
+    }
+
+    // Note: we don't need to set back the data since array data is shared in KL
+    return this.redoIt();
+  }
+
+  /// \internal
+  ResetMovePointDeltasCommand.fetchPointArgs!( io UInt32Array removedPointIndices, io UInt32Array editedPointIndices, io Vec3Array editedPointPositions ) {
+    editedPointIndices = this.getArgValue( "editedPointIndices" );
+    editedPointPositions = this.getArgValue( "editedPointPositions" );
+
+    // Get the selection. None -> all points.
+    // Also, only keep what is in editedPointIndices.
+    UInt32 selectionIndices[];
+    RTVal selectionRTVal = this.getArgValue( "selection" );
+    if( selectionRTVal ) {
+      ItemReferences selection = selectionRTVal;
+      if( selection.size() ) {
+        Ref<ItemReference> compRefs = ItemReferences( selection ).getItem( 0, ComponentType_points );
+        if( compRefs )
+          selectionIndices = compRefs.getComponentIndices();
+      }
+    }
+    if( !selectionIndices )
+      selectionIndices = editedPointIndices;
+
+    // Filter; only keep indices that were actually in editedPointIndices
+    IndexSet editedPointSet;
+    editedPointSet.add( editedPointIndices );
+    for( Size i = 0; i < selectionIndices.size(); ++i ) {
+      if( editedPointSet.has( selectionIndices[i] ) )
+        removedPointIndices.push( selectionIndices[i] );
+    }
+  }
+
+  Boolean ResetMovePointDeltasCommand.canUndo() {
+    return true;
+  }
+
+  Boolean ResetMovePointDeltasCommand.redoIt!( ) {
+    if( !this.parent.redoIt() )
+      return false;
+
+    UInt32Array editedPointIndices;
+    Vec3Array editedPointPositions;
+    UInt32Array removedPointIndices;
+    this.fetchPointArgs( removedPointIndices, editedPointIndices, editedPointPositions );
+
+    IndexSet removedPointSet;
+    removedPointSet.add( removedPointIndices );
+
+    Size target;
+    for( Size i = 0; i < editedPointIndices.size(); ++i ) {
+      if( !removedPointSet.has( editedPointIndices[i] ) ) {
+        editedPointIndices[target] = editedPointIndices[i];
+        editedPointPositions[target] = editedPointPositions[i];
+        ++target;
+      }
+    }
+    editedPointIndices.resize( target );
+    editedPointPositions.resize( target );
+
+    // Note: we don't need to set back the data since array data is shared in KL
+    return true;
+  }
+
+  Boolean ResetMovePointDeltasCommand.undoIt!( ) {
+
+    UInt32Array editedPointIndices, resultPointIndices;
+    Vec3Array editedPointPositions, resultPointPositions;
+    UInt32Array removedPointIndices;
+    this.fetchPointArgs( removedPointIndices, editedPointIndices, editedPointPositions );
+
+    // Restore the exact same state as before; insert indices in the right place
+    // Zip like a merge sort
+    Size undoDataIndex, editedIndex;
+    while( true ) {
+      Size insertFromUndo = undoDataIndex < this.undo_previousResetPointArrayIndices.size() ? this.undo_previousResetPointArrayIndices[undoDataIndex] - undoDataIndex : InvalidIndex;
+      Size insertFromEdit = editedIndex < editedPointIndices.size() ? editedIndex : InvalidIndex;
+      if( insertFromUndo == InvalidIndex && insertFromEdit == InvalidIndex )
+        break;// done
+
+      if( insertFromUndo <= insertFromEdit ) {
+        resultPointIndices.push( this.undo_previousResetPointIndices[undoDataIndex] );
+        resultPointPositions.push( this.undo_previousResetPointPositions[undoDataIndex] );
+        ++undoDataIndex;
+      } else {
+        resultPointIndices.push( editedPointIndices[editedIndex] );
+        resultPointPositions.push( editedPointPositions[editedIndex] );
+        ++editedIndex;
+      }
+    }
+    this.setArgValue( "editedPointIndices", RTVal( resultPointIndices ) );
+    this.setArgValue( "editedPointPositions", RTVal( resultPointPositions ) );
+    return this.parent.undoIt();
+  }
+
+}// namespace Tool

@@ -1,0 +1,246 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Math;
+
+// Used by unit tests
+/// \internal
+object KLTestCommand : BaseCommand {
+};
+
+/// \internal
+Boolean KLTestCommand.canUndo() {
+  return true;
+}
+
+/// \internal
+Boolean KLTestCommand.doIt!( io String error ) {
+  if( !this.parent.doIt( error ) )
+    return false;
+  return true;
+}
+
+/// \internal
+Boolean KLTestCommand.undoIt!() {
+  report("Undo " + this.getName());
+  return this.parent.undoIt();
+}
+
+/// \internal
+Boolean KLTestCommand.redoIt!() {
+  if( !this.parent.redoIt() )
+    return false;
+
+  report("Redo " + this.getName());
+  return true;
+}
+
+/// \internal
+String KLTestCommand.getHelp() { 
+  return this.getName(); 
+}
+
+/// \internal
+object KLTestMetaCommand : KLTestCommand {
+};
+
+/// \internal
+Boolean KLTestMetaCommand.doIt!( io String error ) {
+  if( !this.parent.doIt( error ) )
+    return false;
+
+  RTVal args[String];
+  GetCommandManager().scheduleCommand(
+    "klTestCommand", 
+    args, 
+    error);
+
+  GetCommandManager().scheduleCommand(
+    "klTestCommand", 
+    args, 
+    error);
+
+  return true;
+}
+
+/// \internal
+object KLTestCommand_DefValNoSet : BaseScriptableCommand {};
+
+/// \internal
+KLTestCommand_DefValNoSet() {
+  this.declareArg("arg_1", String);
+}
+
+/// \internal
+Boolean KLTestCommand_DefValNoSet.canUndo() {
+  return true;
+}
+
+/// \internal
+Boolean KLTestCommand_DefValNoSet.doIt!( io String error ) {
+  if( !this.parent.doIt( error ) )
+    return false;
+  return true;
+}
+
+/// \internal
+Boolean KLTestCommand_DefValNoSet.undoIt!() {
+  report("Undo " + this.getName());
+  return this.parent.undoIt();
+}
+
+/// \internal
+Boolean KLTestCommand_DefValNoSet.redoIt!() {
+  if( !this.parent.redoIt() )
+    return false;
+
+  report("Redo " + this.getName());
+  return true;
+}
+
+/// \internal
+object KLTestScriptableCommand : BaseScriptableCommand {
+};
+
+/// \internal
+KLTestScriptableCommand() {
+  this.declareArg(
+    "arg_1",
+    String,
+    CommandArgFlag_OPTIONAL, 
+    RTVal("arg_1_default_KL"));
+
+  this.declareArg(
+    "arg_2",
+    Float64,
+    CommandArgFlag_OPTIONAL, 
+    RTVal(Float64(1.0)));
+}
+
+/// \internal
+Boolean KLTestScriptableCommand.canUndo() {
+  return true;
+}
+
+/// \internal
+Boolean KLTestScriptableCommand.doIt!( io String error ) {
+  if( !this.parent.doIt( error ) )
+    return false;
+  return true;
+}
+
+/// \internal
+Boolean KLTestScriptableCommand.undoIt!() {
+  report("Undo " + this.getName());
+  return this.parent.undoIt();
+}
+
+/// \internal
+Boolean KLTestScriptableCommand.redoIt!() {
+  if( !this.parent.redoIt() )
+    return false;
+
+  report("Redo " + this.getName());
+  return true;
+}
+
+
+/// \internal
+object KLTestScriptableMetaCommand : KLTestScriptableCommand {
+};
+
+/// \internal
+KLTestScriptableMetaCommand() {
+  this.declareArg(
+    "arg_1",
+    String,
+    CommandArgFlag_DONT_LOG,
+    RTVal("arg_1_default_KL"));
+
+  this.declareArg(
+    "arg_2",
+    Float64,
+    CommandArgFlag_DONT_LOG,
+    RTVal(Float64(1.0)));
+}
+
+/// \internal
+Boolean KLTestScriptableMetaCommand.doIt!( io String error ) {
+  if( !this.parent.doIt( error ) )
+    return false;
+  RTVal args[String];
+  args["arg_1"] = RTVal("string_KL");
+  args["arg_2"] = RTVal(Float64(2.0));
+
+  GetCommandManager().scheduleCommand(
+    "klTestScriptableCommand", 
+    args, 
+    error);
+
+  GetCommandManager().scheduleCommand(
+    "klTestScriptableCommand", 
+    args, 
+    error);
+
+  return true;
+}
+
+
+/// \internal
+object CppToKLTestCommand {
+}; 
+
+/// \internal
+CppToKLTestCommand.registerKLTestCommands() {
+   GetCommandRegistry().registerCommand(
+    "klTestCommand_DefValNoSet", 
+    KLTestCommand_DefValNoSet);
+
+  GetCommandRegistry().registerCommand(
+    "klTestCommand", 
+    KLTestCommand);
+
+  GetCommandRegistry().registerCommand(
+    "klTestScriptableCommand", 
+    KLTestScriptableCommand);
+
+  GetCommandRegistry().registerCommand(
+    "klTestMetaCommand", 
+    KLTestMetaCommand);
+
+  GetCommandRegistry().registerCommand(
+    "klTestScriptableMetaCommand", 
+    KLTestScriptableMetaCommand);
+}
+
+/// \internal
+CppToKLTestCommand.createKLTestCommands() {
+
+  String error;
+  RTVal emptyArgs[String];
+  RTVal args[String];
+  args["arg_1"] = RTVal("string_KL");
+  args["arg_2"] = RTVal(Float64(2.0));
+ 
+ 
+  GetCommandManager().scheduleCommand(
+    "klTestCommand", 
+    emptyArgs, 
+    error);
+
+  GetCommandManager().scheduleCommand(
+    "klTestScriptableCommand", 
+    args, 
+    error);
+
+  GetCommandManager().scheduleCommand(
+    "klTestMetaCommand", 
+    emptyArgs, 
+    error);
+
+  GetCommandManager().scheduleCommand(
+    "klTestScriptableMetaCommand", 
+    args, 
+    error);
+}

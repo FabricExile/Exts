@@ -1,0 +1,88 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require InlineDrawing;
+
+
+/**
+\versionadded 1.12.0
+
+The :kl-ref:`OrientationAxisGizmoManager` displays a torus as its gizmo geometry 
+and connects it to a OrientationAxisGizmoHandler for handling the manipulation
+
+\seealso OrientationAxisGizmoHandler, OrientationAxisGizmoHandler
+\dfgPresetOmit
+*/
+object OrientationAxisGizmoManager {
+  OrientationAxisGizmoHandler handler;
+  InlineMaterial gizmosMaterial;
+  InlineInstance instance;
+};
+
+/// \internal
+function ~OrientationAxisGizmoManager(){
+  // Prune the hierarchy from its parent. This will cause the hierarchy
+  // to be destroyed if no other objects maintain a reference to the nodes
+  // in the hierarchy. 
+  InlineTransform nullTranform = null;
+  if(this.instance != null)
+    this.instance.getTransform().setParent(nullTranform);
+}
+
+function OrientationAxisGizmoManager(io InlineTransform parent, Xfo offset, Color color, GizmoManipulationCallback callback){
+
+  InlineDrawing drawing = OGLInlineDrawing_GetInstance();
+  InlineShader gizmoShader = drawing.getShader('gizmos');
+  if(!gizmoShader){
+    gizmoShader = OGLSurfaceGizmoShader('gizmos');
+    drawing.registerShader(gizmoShader);
+  }
+  this.gizmosMaterial = gizmoShader.getOrCreateMaterial("gizmos");
+
+  InlineMeshShape shape = drawing.getShape('OrientationAxisGizmo_Shape');
+  if(shape == null){
+    PolygonMesh mesh();
+    Size detail = 24;
+    Scalar innerRadius = 0.02;
+    Scalar outerRadius = 0.8;
+    mesh.addTorus(Xfo(), innerRadius, outerRadius, detail, true, false);
+
+    shape = InlineMeshShape('OrientationAxisGizmo_Shape', mesh);
+    drawing.registerShape(shape);
+  }
+
+  {
+    InlineTransform transform = ConstantScreenSizeTransform('OrientationAxisGizmo_Transform', offset);
+    parent.addChild(transform);
+
+    this.instance = InlineInstance('OrientationAxisGizmoManager', transform, shape);
+    this.instance.setInstanceUniform(InlineUniform('u_diffuseColor', color));
+    // this.instance.addMaterial(gizmosMaterial); 
+
+    this.handler = OrientationAxisGizmoHandler(this.instance, Vec3(0.0, 1.0, 0.0), callback);
+    this.instance.setMetaData('gizmoHandler', this.handler);
+  }
+}
+
+/// Hide gizmos based on the current manipulation mode.
+/// \internal
+function OrientationAxisGizmoManager.hide!(){
+  if(this.instance.hasMaterial(this.gizmosMaterial))
+    this.instance.removeMaterial(this.gizmosMaterial);
+}
+
+/// Show gizmos based on the current manipulation mode.
+/// \internal
+function OrientationAxisGizmoManager.show!(){
+  if(!this.instance.hasMaterial(this.gizmosMaterial))
+    this.instance.addMaterial(this.gizmosMaterial);
+}
+
+/// Returns the set of InlineInstances used as gizmos.
+/// \internal
+function InlineInstance[] OrientationAxisGizmoManager.getGizmos(){
+  InlineInstance gizmos[];
+  gizmos.push(this.instance);
+  return gizmos;
+}

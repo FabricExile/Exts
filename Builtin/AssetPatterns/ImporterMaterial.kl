@@ -1,0 +1,102 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/**
+The ImporterMaterial represents an imported material. The ImporterMaterial
+may store any number of properties. There is no prescribed rule for the property
+names since the materials might originate in very specialized rendering engines.
+\dfgPresetOmit
+*/
+object ImporterMaterial : ImporterObject permits Importer
+{
+};
+
+/// \dfgPresetOmit
+function ImporterMaterial(String id, String path) {
+  this.initialize(id, path, 'Material');
+}
+
+/// \dfgPresetOmit
+protected function ImporterMaterial.initialize!(String id, String path, String type) {
+  this.parent.initialize(id, path, type);
+  this.initProperty('shaderName', ImporterString(''));
+  this.initProperty('baseMaterial', ImporterString(''));
+}
+
+/**
+  Returns all of the nested objects
+  \dfgPresetCreate
+  \dfgPresetTitle children
+  \dfgPresetFolder Object
+  \dfgPresetTooltip
+    Returns all of the children
+  \enddfgPresetTooltip
+*/
+function Ref<ImporterObject>[] ImporterMaterial.getNestedObjects(ImporterContext ctxt) {
+  Ref<ImporterObject> nested[] = this.parent.getNestedObjects(ctxt);
+  return nested + this.getTextures(ctxt);
+}
+
+/// \dfgPresetOmit
+function String ImporterMaterial.getShaderName(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('shaderName', context);
+  return mutableThis.getStringProperty('shaderName');
+}
+
+/// \dfgPresetOmit
+function ImporterMaterial.setShaderName!(String shaderName) {
+  this.setProperty('shaderName', shaderName);
+}
+
+/// \dfgPresetOmit
+function String ImporterMaterial.getBaseMaterial(ImporterContext context) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty('baseMaterial', context);
+  return mutableThis.getStringProperty('baseMaterial');
+}
+
+/// \dfgPresetOmit
+function ImporterMaterial.setBaseMaterial!(String baseMaterial) {
+  this.setProperty('baseMaterial', baseMaterial);
+}
+
+/// \dfgPresetOmit
+function String ImporterMaterial.getTextureID(ImporterContext context, String propertyName) {
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty(propertyName, context);
+  return mutableThis.getStringProperty(propertyName);
+}
+
+/// \dfgPresetOmit
+function Ref<ImporterObject> ImporterMaterial.getTexture(ImporterContext context, String propertyName) {
+  return this.importer.getObjectFromID(this.getTextureID(context, propertyName));
+}
+
+/// \dfgPresetOmit
+function ImporterMaterial.setTexture!(String propertyName, Ref<ImporterObject> texture) {
+  if(texture == null)
+    this.properties[propertyName] = ImporterString('');
+  else
+    this.properties[propertyName] = ImporterString(texture.getID());
+}
+
+/// \dfgPresetOmit
+function Boolean ImporterMaterial.isTextureProperty(ImporterContext context, String propertyName) {
+  return this.getTexture(context, propertyName) != null;
+}
+
+/// \dfgPresetOmit
+function Ref<ImporterObject>[] ImporterMaterial.getTextures(ImporterContext ctxt) {
+  Ref<ImporterObject> textures[];
+  for(key in this.properties) {
+    if(this.getPropertyType(key) != 'String')
+      continue;
+    Ref<ImporterObject> texture = this.getTexture(ctxt, key);
+    if(!texture)
+      continue;
+    textures.push(texture);
+  } 
+  return textures;
+}

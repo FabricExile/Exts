@@ -1,0 +1,72 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/PolygonMeshTopology.html",
+    "uiTooltip" : "Returns the size of the polygon, which is number of points connected to this polygon (== the polygonPointIndex range for this polygon)\n\n Supported by PolygonMeshTopology,PolygonMesh"
+    },
+  "title" : "GetPolygonSize[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "$TYPE$[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "polygon",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Size[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Size[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Size[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "85286B3AF8A466D19944B0E2362DC27C",
+  "code" : "require Geometry;
+
+operator Geometry_PolygonMeshTopology_getPolygonSize_task<<<index>>>(
+  io Size[] result
+, in $TYPE$[] this
+, in Size[] polygon
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].getPolygonSize(polygon[index < polygon.size() ? index : polygon.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( polygon.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < polygon.size()) task_size = polygon.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Geometry_PolygonMeshTopology_getPolygonSize_task(index, result, this, polygon);
+    }
+  } else {
+    Geometry_PolygonMeshTopology_getPolygonSize_task<<<task_size>>>(result, this, polygon);
+  }
+}
+"
+  }

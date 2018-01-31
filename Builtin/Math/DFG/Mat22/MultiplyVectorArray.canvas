@@ -1,0 +1,99 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Mat22.html",
+    "uiTooltip" : "Returns the product of this matrix and a vector\n\n Supported by Mat22"
+    },
+  "title" : "MultiplyVector[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 249,\n  \"g\" : 157,\n  \"b\" : 28\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Mat22[]" : [
+          {
+            "row0" : {
+              "x" : 1,
+              "y" : 0
+              },
+            "row1" : {
+              "x" : 0,
+              "y" : 1
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Mat22[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "other",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec2[]" : [
+          {
+            "x" : 0,
+            "y" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec2[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Vec2[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "12D4BA17DB91E44434695C501CFE3F5A",
+  "code" : "require Math;
+
+operator Math_Mat22_multiplyVector_task<<<index>>>(
+  io Vec2[] result
+, in Mat22[] this
+, in Vec2[] other
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].multiplyVector(other[index < other.size() ? index : other.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( other.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < other.size()) task_size = other.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Mat22_multiplyVector_task(index, result, this, other);
+    }
+  } else {
+    Math_Mat22_multiplyVector_task<<<task_size>>>(result, this, other);
+  }
+}
+"
+  }

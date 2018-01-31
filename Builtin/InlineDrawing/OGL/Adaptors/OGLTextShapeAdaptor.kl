@@ -1,0 +1,46 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 2.4.0
+
+    The OGLTextShapeAdaptor implements the InlineShapeAdaptor interface. 
+    It is used to draw a text within an OpenGL viewport with TextGL. 
+  
+  \dfgPresetOmit
+*/
+object OGLTextShapeAdaptor : InlineShapeAdaptor {
+};
+
+/// Default constructor
+function OGLTextShapeAdaptor() {
+}
+
+/// returns the types this adaptor is capable of drawing
+function String[] OGLTextShapeAdaptor.getShapeTypes() {
+  String result[];
+  result.push('InlineTextShape');
+  result.push('InlineGeometryAttributeTextShape');
+  return result;
+}
+
+/// \internal
+/// draws the text to the screen. this is used by the 
+/// InlineInstance, and should not be called manually.
+function Boolean OGLTextShapeAdaptor.draw!(io DrawContext context, io Ref<InlineShape> shape) {
+ 
+  // access the text shape
+  InlineBaseTextShape textShape = shape;
+  Ref<OGLText> oglText = textShape.getOGLText();
+  if(!oglText) return true;
+
+  // the text does not need to update the transform
+  // since it renders itself in world positions anyway
+
+  Ref<OGLInlineShader> shader = context.getMetaData('currentShader');
+  oglText.setProgramId(shader.shaderProgram.programId);
+  oglText.render();
+
+  return true;
+}

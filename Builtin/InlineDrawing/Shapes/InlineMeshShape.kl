@@ -1,0 +1,37 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+\versionadded 1.12.0
+
+The InlineMeshShape inherits from the InlineGeometryShape object. It provides a shape type for PolygonMesh objects. The InlineMeshShape keeps a reference to the mesh, so if the mesh changes (being deformed etc) the shape will updates its buffers automatically.
+
+\example
+    // create a mesh
+    PolygonMesh mesh = PolygonMesh();
+    mesh.addCuboid(Xfo(), 5, 5, 5, true, true);
+
+    // create a shape
+    InlineShape shape = InlineMeshShape('cube', mesh);
+\endexample
+\dfgPresetOmit
+*/
+object InlineMeshShape : InlineGeometryShape {
+};
+
+/// default constructor, taking a name and a PolygonMesh
+function InlineMeshShape(String name, PolygonMesh mesh) {
+  this.init(name, mesh);
+}
+
+/// returns the PolygonMesh used by this shape
+function Ref<PolygonMesh> InlineMeshShape.getMesh() {
+  Ref<PolygonMesh> mesh = this.geo;
+  return mesh;
+}
+
+/// sets the PolygonMesh used by this shape
+function InlineMeshShape.setMesh!(PolygonMesh mesh) {
+  this.geo = mesh;
+}

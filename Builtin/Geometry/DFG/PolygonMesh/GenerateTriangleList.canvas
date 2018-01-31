@@ -1,0 +1,44 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/PolygonMesh.html",
+    "uiTooltip" : "Generates a packed list of triangle point triplets.\n\nThe generated list has the following layout, where polygon triangles form index triplets:\n\nTODO: Use proper triangulation algo for concave polygons (and use MR since it will be more costly)\nUntil then we don't use the positions\n\n Supported by PolygonMesh"
+    },
+  "title" : "GenerateTriangleList",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 51,\n  \"g\" : 1,\n  \"b\" : 106\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "PolygonMesh"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "UInt32[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "2CE0FEF7F03C0ECC5D4341C3292F6A12",
+  "code" : "require Geometry;
+
+dfgEntry {
+  result = this.generateTriangleList();
+}
+"
+  }

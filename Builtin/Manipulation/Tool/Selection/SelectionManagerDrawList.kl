@@ -1,0 +1,117 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// \internal
+  struct SelectionManagerDrawableAndKey {
+    SelectionManagerDrawListKey key;
+    Ref<SelectionDrawableItem> drawable;
+    UInt32 drawableUID;// Use uids; refs can be recycled if delete+create
+  };
+
+  SelectionManagerDrawableAndKey.set!( Ref<SelectionDrawableItem> drawable, SelectionManagerDrawListKey key ) {
+    this.key = key;
+    this.drawable = drawable;
+    this.drawableUID = drawable.uid();
+  }
+
+  inline Boolean == ( SelectionManagerDrawableAndKey a, SelectionManagerDrawableAndKey b ) {
+    return a.key == b.key && a.drawableUID == b.drawableUID;
+  }
+
+  inline Boolean != ( SelectionManagerDrawableAndKey a, SelectionManagerDrawableAndKey b ) {
+    return !( a == b );
+  }
+
+  inline UInt32 SelectionManagerDrawableAndKey.hash() {
+    return this.key.hash() ^ this.drawableUID;
+  }
+
+  /// The SelectionManagerDrawList contains a list of
+  /// <SelectionDrawableItem, SelectionManagerDrawListKey> pairs
+  /// representing the items that can be selected by the SelectionManager.
+  ///
+  /// Note that the SelectionDrawableItem has an owner reference
+  /// to the SelectionManagerDrawList; if the SelectionDrawableItem
+  /// is released, it is automatically removed from the list.
+  ///
+  /// See :ref:`TPG.selection` for more information and examples.
+  object SelectionManagerDrawList : BaseVersioned{
+    SelectionManagerDrawableAndKey items[];// Index = HW draw ID
+
+    UInt32 keyToIndex[SelectionManagerDrawableAndKey];
+
+  };
+
+  inline Size SelectionManagerDrawList.size() {
+    return this.items.size();
+  }
+
+  inline Ref<SelectionDrawableItem> SelectionManagerDrawList.get( Size index ) {
+    return this.items[index].drawable;
+  }
+
+  inline UInt32 SelectionManagerDrawList.getIndex( Ref<SelectionDrawableItem> drawable, SelectionManagerDrawListKey key ) {
+    SelectionManagerDrawableAndKey drawAndKey;
+    drawAndKey.set( drawable, key );
+    return this.keyToIndex.get( drawAndKey, InvalidIndex );
+  }
+
+  inline SelectionManagerDrawListKey SelectionManagerDrawList.getKey( Size index ) {
+    return this.items[index].key;
+  }
+
+  inline Ref<Geometry> SelectionManagerDrawList.getGeometry( Size index ) {
+    return this.items[index].drawable.getGeometry( this.items[index].key );
+  }
+
+  inline Ref<SelectionDrawableItem> SelectionManagerDrawList.get( Size index, io SelectionManagerDrawListKey userKey ) {
+    userKey = this.items[index].key;
+    return this.items[index].drawable;
+  }
+
+  /// Adds a drawable selection item. The userKey must be uniquely defined.
+  /// Important: the drawable isn't owned by the SelectionManagerDrawList; upon destruction, it must call
+  /// :kl-ref:`Tool::SelectionManagerDrawList.removeItem`.
+  Size SelectionManagerDrawList.addItem!( Ref<SelectionDrawableItem> drawable, SelectionManagerDrawListKey userKey ) {
+    if( !drawable )
+      throw( "SelectionManagerDrawList.addItem: error: item is null" );
+
+    SelectionManagerDrawableAndKey drawableAndKey;
+    drawableAndKey.set( drawable, userKey );
+
+    if( this.keyToIndex.has( drawableAndKey ) ) {
+      return this.keyToIndex[drawableAndKey];// Already has it
+    } else {
+      Size index = this.items.size();
+      this.keyToIndex[drawableAndKey] = index;
+      this.items.push( drawableAndKey );
+      this.parent.incrementVersion();
+      return index;
+    }
+  }
+
+  SelectionManagerDrawList.removeItem!( Ref<SelectionDrawableItem> drawable, SelectionManagerDrawListKey userKey ) {
+
+    SelectionManagerDrawableAndKey drawableAndKey;
+    drawableAndKey.set( drawable, userKey );
+
+    UInt32 index = this.keyToIndex.get( drawableAndKey, InvalidIndex );
+    if( index == InvalidIndex ) {
+      setError( "SelectionManagerDrawList.removeItem: error: item not registered" );
+    } else {
+      this.keyToIndex.delete( this.items[index] );
+
+      // Shuffle last
+      UInt32 last = this.items.size() - 1;
+      if( index != last ) {
+        this.items[index] = this.items[last];
+        this.keyToIndex[this.items[index]] = index;
+      }
+      this.items.resize( last );
+      this.parent.incrementVersion();
+    }
+  }
+}// namespace Tool

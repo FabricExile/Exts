@@ -1,0 +1,62 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+\versionadded 1.12.0
+
+The InlineLinesShape inherits from the InlineGeometryShape object. It provides a shape type for Lines objects. The InlineLinesShape keeps a reference to the lines, so if the lines change (being deformed etc) the shape will updates its buffers automatically.
+
+\example
+    //Create a XYZ cross
+    Lines lines = Lines();
+    lines.addPoints( 6 );
+
+    lines.setPosition( 0, Vec3(1,0,0) );
+    lines.setPosition( 1, Vec3(-1,0,0) );
+    lines.addSegment( 0, 1 );
+
+    lines.setPosition( 2, Vec3(0,1,0) );
+    lines.setPosition( 3, Vec3(0,-1,0) );
+    lines.addSegment( 2, 3 );
+
+    lines.setPosition( 4, Vec3(0,0,1) );
+    lines.setPosition( 5, Vec3(0,0,-1) );
+    lines.addSegment( 4, 5 );
+
+    // create a shape
+    InlineShape shape = InlineLinesShape('lines', lines);
+\endexample
+\dfgPresetOmit
+*/
+object InlineLinesShape : InlineGeometryShape {
+  /// \internal
+  Scalar lineWidth;
+};
+
+/// default constructor, taking a name and a Lines
+function InlineLinesShape(String name, Lines lines) {
+  this.init(name, lines);
+  this.lineWidth = 1.0;
+}
+
+/// returns the Lines used by this shape
+function Ref<Lines> InlineLinesShape.getLines() {
+  Ref<Lines> lines = this.geo;
+  return lines;
+}
+
+/// sets the Lines used by this shape
+function InlineLinesShape.setLines!(Lines lines) {
+  this.geo = lines;
+}
+
+/// returns the point size used for rendering
+function Scalar InlineLinesShape.getLineWidth() {
+  return this.lineWidth;
+}
+
+/// sets the point size used for rendering
+function InlineLinesShape.setLineWidth!(Scalar lineWidth) {
+  this.lineWidth = lineWidth;
+}

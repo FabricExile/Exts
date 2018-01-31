@@ -1,0 +1,371 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require FabricOGL, Containers;
+
+/**
+  \versionadded 2.4.0
+    
+  FreeTypeGL extension wraps the C++ freeType-gl library in KL to draw in OpenGL 2D primitives such as text or lines. 
+  https://github.com/rougier/freetype-gl
+
+  Because the FreeTypeGL extension can be used with any OpenGL version/implementation, it doesn't expose \ 
+  freeType-gl high level api.
+  Indeed, freeType-gl relies on OpenGL 1.2, and the managment of the OpenGL buffers (insertion/push) is limited.
+  Instead, the FreeTypeGL extension exposes the low level methods, and OpenGL calls (such as buffer binding) \
+  are left to specialized classes.
+  See :kl-ref:`BaseTextGL`, :kl-ref:`BaseAtlasGL` for a complete examples.
+
+  \dfgPresetOmit
+*/
+
+/**
+  The FreeTypeAtlas class wraps a freeType-gl texture_atlas_t.
+
+  An atlas is an image on where glyps are drawn, the glyphs being the list of characters that composed the text.
+  From the image, an OpenGL texture is generated and used in the shaders to draw the text properly.
+
+  The size of the Atlas is proportional to the number of Glyphs used.
+*/
+object FreeTypeAtlas {
+  /// Path of the used font.
+  protected String fontPath;
+  /// List of glyphs character.
+  protected String glyphs;
+  /// \internal 
+  private Data pointer;
+};
+
+/// Initializes a FreeTypeAtlas (image storing the characters to draw).
+protected FreeTypeAtlas.init!() = "FreeTypeAtlas_init";
+
+/// Creates the atlas.
+/// \param width Atlas width.
+/// \param height Atlas height.
+protected FreeTypeAtlas.createAtlas!(UInt32 width, UInt32 height) = "FreeTypeAtlas_createAtlas";
+
+/// Destructor, automatically called.
+~FreeTypeAtlas() = "FreeTypeAtlas_delete";
+
+/// Checks if the altas is valid.
+Boolean FreeTypeAtlas.isValid() = "FreeTypeAtlas_isValid";
+
+/// Gets the OpenGL texture ID.
+UInt32 FreeTypeAtlas.getTextureID() = "FreeTypeAtlas_getTextureID";
+
+/// Sets the OpenGL texture ID.
+FreeTypeAtlas.setTextureID!(UInt32 id) = "FreeTypeAtlas_setTextureID";
+
+/// Gets the atlas dimensions.
+/// \param width Atlas width.
+/// \param height Atlas height.
+FreeTypeAtlas.getDimensions(io UInt32 width, io UInt32 height) = "FreeTypeAtlas_getDimensions";
+
+/// Gets the atlas content, used to generate the OpenGL texture.
+/// \param data Atlas content as a raw pointer.
+FreeTypeAtlas.getData(io Data data) = "FreeTypeAtlas_getData";
+
+/// Clears the content of the atlas.
+protected FreeTypeAtlas.clear!() = "FreeTypeAtlas_clear";
+
+/// Creates a new font.
+/// \param size Font size.
+/// \param path Atlas height.
+protected FreeTypeAtlas.createFont!(Float32 size, String path) = "FreeTypeAtlas_createFont";
+
+/// Checks if a font is valid (been set).
+Boolean FreeTypeAtlas.fontIsValid() = "FreeTypeAtlas_fontIsValid";
+
+/// Gets the font size.
+Float32 FreeTypeAtlas.getFontSize() = "FreeTypeAtlas_getFontSize";
+
+/// Gets path of the font used.
+String FreeTypeAtlas.getFontPath() { return this.fontPath; }
+
+/// Creates the glyphs (list of characters that composed the text we want to display).
+/// \param characters The list of characters (e.g 1234abdcABCD(),. )
+protected FreeTypeAtlas.createGlyphs!(String glyphs) = "FreeTypeAtlas_createGlyphs";
+
+/// Gets the glyps as String.
+String FreeTypeAtlas.getGlyphs() { return this.glyphs; }
+
+/// Gets the glyph kerning.
+/// \param current Current glyph 
+/// \param previous Previous glyph
+Float32 FreeTypeAtlas.getGlyphKerning(String current, String previous) = "FreeTypeAtlas_getGlyphKerning";
+
+/// Gets the glyph advances.
+/// \param glyph Current glyph
+Float32 FreeTypeAtlas.getGlyphAdvance(String glyph) = "FreeTypeAtlas_getGlyphAdvance";
+
+/// Gets the glyph dimensions.
+/// \param ox Horizontal offset
+/// \param oy Vertical offset
+/// \param width Glyph width
+/// \param height Glyph height
+FreeTypeAtlas.getGlyphDimension(
+  String glyph, 
+  io Float32 oX, 
+  io Float32 oY, 
+  io Float32 width, 
+  io Float32 height) 
+= "FreeTypeAtlas_getGlyphDimension";
+
+/// Gets the glyph texture indices.
+/// \param s0 Texture index
+/// \param s1 Texture index
+/// \param t0 Texture index
+/// \param t1 Texture index
+FreeTypeAtlas.getGlyphTextureIndices(
+  String glyph, 
+  io Float32 s0, 
+  io Float32 s1, 
+  io Float32 t0, 
+  io Float32 t1) 
+= "FreeTypeAtlas_getGlyphTextureIndices";
+
+/// Gets the glyph attributes.
+/// \param current Current glyph
+/// \param previous Previous glyph
+/// \param kerning Glyph kerning
+/// \param advance Glyph advance
+/// \param ox Horizontal offset
+/// \param oy Vertical offset
+/// \param width Glyph width
+/// \param height Glyph height
+/// \param s0 Texture index
+/// \param s1 Texture index
+/// \param t0 Texture index
+/// \param t1 Texture index
+Boolean FreeTypeAtlas.getGlyphAttributes(
+  String current,
+  String previous,
+  io Float32 kerning,
+  io Float32 advance,
+  io Float32 ox,
+  io Float32 oy,
+  io Float32 width,
+  io Float32 height,
+  io Float32 s0,
+  io Float32 s1,
+  io Float32 t0,
+  io Float32 t1) 
+= "FreeTypeAtlas_getGlyphAttributes";
+
+
+/**
+  The FreeTypeGL class wraps a vertex_buffer_t managing the OpenGL vertex and index buffers.
+  The vertices are constructed from the primitives to draw (text, lines).
+
+  FreeTypeGL supports both sequential and parallel insertion.
+  In sequential mode, it's not needed to allocate the buffers before pushing new primitives to draw.
+  However, it will slow down the rendering because the buffers will be allocated on the fly.
+  In parallel mode, the buffers must be allocated before inserting new primitives.
+
+  FreeTypeGL has four attributes to set the OpenGL vertex and index buffers capacities (allocated memory):
+    - indexSize : Size of the OpenGL indices.
+    - vertexSize : Size of the OpenGL vertices.
+    - maxVerticesCount : Number max of vertices per element
+    - elementCount : Number of elements to draw
+  The "elementCount" corresponds to the number of primitves to insert/add, while "maxVerticesCount" \ 
+  is the maximum number of vertices per element.
+  When drawing text, "elementCount" is the number of string and "maxVerticesCount" the maximum of characters per string.
+
+  Finally, there is a distinction between the buffers capacities (allocated memory) and their sizes, \ 
+  which are the size of drawn elements.
+  It allows to clear the buffers content whitout having to re-allocate them.
+  
+  - To push new vertices in sequential mode, these steps must be followed:
+    1. FreeTypeGL.allocVertices!(UInt32 elementCount, UInt32 maxVerticesCount)
+       Allocate the buffers (only if "elementCount" or "maxVerticesCount" changed)
+    
+    2. FreeTypeGL.clearVertices!()
+       Clear the drawing content, set the buffers size to zero
+
+    3. FreeTypeGL.setState(FreeTypeGL_FROZEN);
+       FreeTypeGL.pushVerticesList!(UInt32 verticesCount, Data vertices, Data indices)
+       FreeTypeGL.setState(FreeTypeGL_DIRTY);
+       Add new vertices to draw and update the buffer size.
+
+  - For parallel insertion, the following methods must be used:
+    1. FreeTypeGL.allocAndSetVerticesSize!(UInt32 elementCount, UInt32 maxVerticesCount)
+       Allocate the buffers (only if "elementCount" or "maxVerticesCount" changed) \
+       and set the buffers sizes equal to their capaticities (we draw all the allocated memory)
+  
+    2. FreeTypeGL.setState(FreeTypeGL_FROZEN);
+       FreeTypeGL.insertVerticesList!(UInt32 index, UInt32 verticesCount, Data vertices, Data indices)
+       FreeTypeGL.setState(FreeTypeGL_DIRTY);
+       Insert new vertices to draw at the index (< elementCount).
+*/
+
+const UInt32 FreeTypeGL_CLEAN = 0;
+const UInt32 FreeTypeGL_DIRTY = 1;
+const UInt32 FreeTypeGL_FROZEN = 2;
+
+object FreeTypeGL {
+  /// Size of the index.
+  protected UInt32 indexSize;
+  /// Size of the vertex.
+  protected UInt32 vertexSize;
+  /// Number max of vertices per element.
+  protected UInt32 maxVerticesCount;
+  /// Number of element to draw.
+  protected UInt32 elementCount;
+  /// \internal 
+  private Data pointer;
+};
+
+/// Initializes a FreeTypeGL object.
+protected FreeTypeGL.init!() = "FreeTypeGL_init";
+
+/// Deletes the FreeTypeGL object.
+protected FreeTypeGL.delete!() = "FreeTypeGL_delete";
+
+/// Destructor, automatically called.
+~FreeTypeGL() { this.delete(); }
+
+/// Gets the size of GL index.
+UInt32 FreeTypeGL.getIndexSize() { return this.indexSize; }
+
+/// Gets the size of GL vertex.
+UInt32 FreeTypeGL.getVertexSize() { return this.vertexSize; }
+
+/// Gets the maximum number of vertices per element.
+UInt32 FreeTypeGL.getMaxVerticesCount() { return this.maxVerticesCount; }
+
+/// Gets the number of elements to draw.
+UInt32 FreeTypeGL.getElementCount() { return this.elementCount; }
+
+/// Creates the OpenGL buffers.
+/// \param attributes GLSL attributes list (as a string)
+/// \param mode GL drawing mode (GL_LINES, GL_TRIANGLES, ...)
+/// \param vertexSize Vertex size
+/// \param indexSize Index size
+FreeTypeGL.createVertices!(String attributes, UInt32 mode, UInt32 vertexSize, UInt32 indexSize) = "FreeTypeGL_createVertices";
+
+/// Allocation of the vertices and indices buffers for sequential insertion.
+/// Buffers we be re-allocated if either "elementCount" or "maxVerticesCount" change.
+/// Should be called before pushing vertices to avoid on the fly memory allocation that slows down the rendering.
+/// \param elementCount Number of string to draw.
+/// \param maxVerticesCount Maximin number of character per string.
+FreeTypeGL.allocVertices!(UInt32 elementCount, UInt32 maxVerticesCount) = "FreeTypeGL_allocVertices";
+
+/// Allocation of the vertices and indices buffers for parallel insertion, and sets the size if the element to draw 
+/// Buffers we be re-allocated if either "elementCount" or "maxVerticesCount" change.
+/// Must be called before inserting new vertices.
+/// \param elementCount Number of string to draw.
+/// \param maxVerticesCount Maximin number of character per string.
+FreeTypeGL.allocAndSetVerticesSize!(UInt32 elementCount, UInt32 maxVerticesCount) = "FreeTypeGL_allocAndSetVerticesSize";
+
+/// Clears (but not delete memory) the vertices and indices buffers content.
+/// Need to be call before pushing a new set of vertices.
+FreeTypeGL.clearVertices!() = "FreeTypeGL_clearVertices";
+
+/// Pushs vertices and their indices to the buffers.
+/// \param vertices vertices raw data.
+/// \param indices Indices raw data.
+FreeTypeGL.pushVertices!(Data vertices, Data indices) = "FreeTypeGL_pushVertices";
+
+/// Pushs a list of vertices and their indices to the buffers.
+/// \param verticesCount Number of vertices to add.
+/// \param vertices vertices raw data.
+/// \param indices Indices raw data.
+FreeTypeGL.pushVerticesList!(UInt32 verticesCount, Data vertices, Data indices) = "FreeTypeGL_pushVerticesList";
+
+/// Inserts a list of vertices and their indices to the buffers, thread-safe.
+/// \param index The index of the element
+/// \param verticesCount Number of vertices to add.
+/// \param vertices vertices raw data.
+/// \param indices Indices raw data.
+FreeTypeGL.insertVerticesList!(UInt32 index, UInt32 verticesCount, Data vertices, Data indices) = "FreeTypeGL_insertVerticesList";
+
+/// Sets the OpenGL drawing mode (GL_LINES, GL_TRIANGLES, ...)
+FreeTypeGL.setMode!(UInt32 mode) = "FreeTypeGL_setMode";
+
+/// Gets the OpenGL drawing mode (GL_LINES, GL_TRIANGLES, ...)
+UInt32 FreeTypeGL.getMode() = "FreeTypeGL_getMode";
+
+/// Gets the drawing state (CLEAN, FROZEN or DIRTY).
+UInt32 FreeTypeGL.getState() = "FreeTypeGL_getState";
+
+/// Sets the drawing state (CLEAN, FROZEN or DIRTY).
+FreeTypeGL.setState!(UInt32 state) = "FreeTypeGL_setState";
+
+/// Gets the size of the allocated vertices data on the GPU.
+/// Used to load the buffers on the GPU. 
+protected UInt32 FreeTypeGL.getGPUVSize() = "FreeTypeGL_getGPUVSize";
+
+/// Gets the size of the allocated indices data on the GPU.
+/// Used to load the buffers on the GPU. 
+protected UInt32 FreeTypeGL.getGPUISize() = "FreeTypeGL_getGPUISize";
+
+/// Sets the size of the allocated vertices data on the GPU.
+/// Used to load the buffers on the GPU. 
+protected FreeTypeGL.setGPUVSize!(UInt32 size) = "FreeTypeGL_setGPUVSize";
+
+/// Sets the size of the allocated indices data on the GPU.
+/// Used to load the buffers on the GPU. 
+protected FreeTypeGL.setGPUISize!(UInt32 size) = "FreeTypeGL_setGPUISize";
+
+/// Gets the OpenGL vertices buffer ID.
+protected UInt32 FreeTypeGL.getVerticesID() = "FreeTypeGL_getVerticesID";
+
+/// Gets the OpenGL indices buffer ID.
+protected UInt32 FreeTypeGL.getIndicesID() = "FreeTypeGL_getIndicesID";
+
+/// Sets the OpenGL vertex buffer ID.
+protected FreeTypeGL.setVerticesID!(UInt32 id) = "FreeTypeGL_setVerticesID";
+
+/// Sets the OpenGL index buffer ID.
+protected FreeTypeGL.setIndicesID!(UInt32 id) = "FreeTypeGL_setIndicesID";
+
+/// Gets the number of vertices to draw.
+protected UInt32 FreeTypeGL.getNumberVertices() = "FreeTypeGL_getNumberVertices";
+
+/// Gets the number of vertices to draw.
+protected UInt32 FreeTypeGL.getNumberIndices() = "FreeTypeGL_getNumberIndices";
+
+/// Gets the number of items per vertices (OpenGL vertex attributes).
+protected UInt32 FreeTypeGL.getNumberVerticesItems() = "FreeTypeGL_getNumberVerticesItems";
+
+/// Gets the number of vertices to draw.
+protected UInt32 FreeTypeGL.getNumberIndicesItems() = "FreeTypeGL_getNumberIndicesItems";
+
+/// Gets the OpenGL vertices buffer as raw data.
+protected FreeTypeGL.getVerticesData(io Data data) = "FreeTypeGL_getVerticesData";
+
+/// Gets the OpenGL indices buffer as raw data.
+protected FreeTypeGL.getIndicesData(io Data data) = "FreeTypeGL_getIndicesData";
+
+/// Gets the GLSL attribute name.
+/// \param index The index in the attribute array.
+protected FreeTypeGL.getAttributeName(UInt32 index, io String name) = "FreeTypeGL_getAttributeName";
+
+/// Gets the GLSL attribute index.
+/// \param index The index in the attribute array.
+protected SInt32 FreeTypeGL.getAttributeIndex(UInt32 index) = "FreeTypeGL_getAttributeIndex";
+
+/// Sets the GLSL attribute index.
+/// \param index The index in the attribute array.
+/// \param attrIndex The index of the attribute in the GLSL shader.
+protected FreeTypeGL.setAttributeIndex!(UInt32 index, SInt32 attrIndex) = "FreeTypeGL_setAttributeIndex";
+
+/// Gets the GLSL attribute type.
+/// \param index The index in the attribute array.
+protected UInt32 FreeTypeGL.getAttributeType(UInt32 index) = "FreeTypeGL_getAttributeType";
+
+/// Checks if the GLSL attribute is normalized.
+/// \param index The index in the attribute array.
+protected Boolean FreeTypeGL.isAttributeNormalized(UInt32 index) = "FreeTypeGL_isAttributeNormalized";
+
+/// Gets the GLSL attribute size.
+/// \param index The index in the attribute array.
+protected UInt32 FreeTypeGL.getAttributeSize(UInt32 index) = "FreeTypeGL_getAttributeSize";
+
+/// Gets the GLSL attribute stride.
+/// \param index The index in the attribute array.
+protected UInt32 FreeTypeGL.getAttributeStride(UInt32 index) = "FreeTypeGL_getAttributeStride";
+
+/// Gets the number of string drawn.
+protected FreeTypeGL.getAttributePointer(UInt32 index, io Data data) = "FreeTypeGL_getAttributePointer";

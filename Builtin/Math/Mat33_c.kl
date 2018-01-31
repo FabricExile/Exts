@@ -1,0 +1,354 @@
+
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+/**
+The :kl-ref:`Mat33_c` represents a 3 by 3 matrix. It uses :kl-ref:`Vec3_c` types for each of the 3 rows.
+
+\rst
+  .. kl-example:: Vec4
+
+    // create a matrix 3x3
+    Vec3_c v0(1.0, 0.0, 0.0);
+    Vec3_c v1(0.0, 1.0, 0.0);
+    Vec3_c v2(0.0, 0.0, 1.0);
+    Mat33_c mat(v0, v1, v2);
+
+
+
+  Fabric Engine Matrices are column-major rather than row-major
+  --------------------------------------------------------------
+  Most DCCs follow a row-major convention for expressing their matrices which implies that
+  multiplication of matrices occurs in the opposite order to those in Fabric Engine.
+
+  In Maya, to transform a point (P) by a matrix (WM), you would post-multiply the vector by the matrix 
+  by placing it on the left side of the matrix. 
+
+   (P' = P x WM)
+
+  In Fabric Engine, to transform a point (P) by a matrix (WM), you would post-multiply it by placing it on the right hand side of the matrix.
+
+   (P' = WM x P)
+
+  When multiplying matrices together, the order of the matrices is also swapped when compared to Maya.
+
+  To Transform a Matrix (M) into the space of a another matrix (WM), you would place the L on the right hand side of WM
+
+  (M' = WM x M)
+
+  In Maya and 3dsmax, the order of the matrices in the multiplication would be swapped. 
+
+  (M' = M x WM)
+
+
+\endrst
+
+\seealso Quat, Mat44
+\dfgTypeColor Color(249, 157, 28)
+\dfgPresetColor Color(99, 129, 92)
+*/
+
+
+struct Mat33_c
+{
+  Vec3_c row0;
+  Vec3_c row1;
+  Vec3_c row2;
+};
+
+inline Mat33_c(){
+  this.setIdentity();
+}
+
+/// Constructor from scalars
+/// \dfgPresetDefault _00 1
+/// \dfgPresetDefault _11 1
+/// \dfgPresetDefault _22 1
+inline Mat33_c(
+  Complex _00, Complex _01, Complex _02,
+  Complex _10, Complex _11, Complex _12,
+  Complex _20, Complex _21, Complex _22
+) {
+  this.set(_00, _01, _02, _10, _11, _12, _20, _21, _22);
+}
+
+/// Constructor from vectors
+inline Mat33_c(
+  Vec3_c row0, Vec3_c row1, Vec3_c row2
+) {
+  this.row0 = row0;
+  this.row1 = row1;
+  this.row2 = row2;
+}
+
+
+/// Sets each component with a single scalar value.
+inline Mat33_c.set!(
+  Complex _00, Complex _01, Complex _02,
+  Complex _10, Complex _11, Complex _12,
+  Complex _20, Complex _21, Complex _22
+) {
+  this.row0 = Vec3_c(_00, _01, _02);
+  this.row1 = Vec3_c(_10, _11, _12);
+  this.row2 = Vec3_c(_20, _21, _22);
+}
+
+
+/// Setter from vectors
+inline Mat33_c.set!(in Vec3_c row0, in Vec3_c row1, in Vec3_c row2) {
+  this.setRows(row0,row1,row2);
+}
+
+/// Setter from vectors, row-wise
+inline Mat33_c.setRows!(in Vec3_c row0, in Vec3_c row1, in Vec3_c row2) {
+  this.row0 = row0;
+  this.row1 = row1;
+  this.row2 = row2;
+}
+
+/// Setter from vectors, column-wise
+inline Mat33_c.setColumns!(in Vec3_c col0, in Vec3_c col1, in Vec3_c col2) {
+  this.row0.x = col0.x; this.row0.y = col1.x; this.row0.z = col2.x;
+  this.row1.x = col0.y; this.row1.y = col1.y; this.row1.z = col2.y;
+  this.row2.x = col0.z; this.row2.y = col1.z; this.row2.z = col2.z;
+}
+
+/// setting all components of the matrix to 0.0
+inline Mat33_c.setNull!() {
+  Vec3_c nullVec3_c(Complex(), Complex(), Complex());
+  this.row0 = this.row1 = this.row2 = nullVec3_c;
+}
+
+/// setting this matrix to the identity matrix
+inline Mat33_c.setIdentity!() {
+  this.setNull();
+  this.setDiagonal(Complex(1.0));
+}
+
+/// setting the diagonal components of 
+/// this matrix to a scalar
+inline Mat33_c.setDiagonal!(in Complex v) {
+  this.row0.x = this.row1.y = this.row2.z = v;
+}
+
+/// setting the diagonal components of this
+/// matrix to the components of a vector
+inline Mat33_c.setDiagonal!(in Vec3_c v) {
+  this.row0.x = v.x;
+  this.row1.y = v.y;
+  this.row2.z = v.z;
+}
+
+/// Returns true if this matrix is the same as another one
+inline Boolean Mat33_c.equal(in Mat33_c other) {
+  return this.row0.equal( other.row0 ) && this.row1.equal( other.row1 ) && this.row2.equal( other.row2 );
+}
+
+/// Returns true if this matrix is almost equal to the given matrix within the provided precision range
+inline Boolean Mat33_c.almostEqual(
+  in Mat33_c other,
+  Float32 precision
+  ) {
+  return this.row0.almostEqual( other.row0, precision ) && this.row1.almostEqual( other.row1, precision ) && this.row2.almostEqual( other.row2, precision );
+}
+
+/// Returns true if this matrix is almost the same as another one
+/// (using a default precision)
+inline Boolean Mat33_c.almostEqual(in Mat33_c other) {
+  return this.almostEqual(other, PRECISION);
+}
+
+/// Returns true if the matrix is orthogonal (i.e. its transpose is its inverse)
+inline Boolean Mat33_c.orthogonal() {
+  Mat33_c identity; identity.setIdentity();
+  return this.multiply( this.transpose() ).almostEqual( identity );
+}
+
+/// Equals operator
+inline Boolean == (Mat33_c a, Mat33_c b) {
+  return a.equal(b);
+}
+
+/// Not equals operator
+inline Boolean != (Mat33_c a, Mat33_c b) {
+  return !a.equal(b);
+}
+
+/// Hash for this value
+inline UInt32 Mat33_c.hash() {
+  return this.row0.hash() ^ this.row1.hash() ^ this.row2.hash();
+}
+
+/// Returns the addition of two matrices
+inline Mat33_c + (Mat33_c a, Mat33_c b) {
+  return Mat33_c( a.row0 + b.row0, a.row1 + b.row1, a.row2 + b.row2 );
+}
+
+/// Adds another matrix to this one
+inline Mat33_c. += (Mat33_c other) {
+  this = this + other;
+}
+
+/// Returns the subtraction of two matrices
+inline Mat33_c - (Mat33_c a, Mat33_c b) {
+  return Mat33_c( a.row0 - b.row0, a.row1 - b.row1, a.row2 - b.row2 );
+}
+
+/// Subtracts another matrix from this one
+inline Mat33_c. -= (Mat33_c other) {
+  this = this - other;
+}
+
+/// Returns the product of two matrices
+/// \dfgPresetDefault right {"row0": {"x": 1, "y": 0, "z": 0}, "row1": { "x": 0, "y": 1, "z": 0}, "row2": { "x": 0, "y": 0, "z": 1} }
+function Mat33_c * (Mat33_c left, Mat33_c right) {
+  Mat33_c result;
+
+  result.row0.x = left.row0.x * right.row0.x + left.row0.y * right.row1.x + left.row0.z * right.row2.x;
+  result.row0.y = left.row0.x * right.row0.y + left.row0.y * right.row1.y + left.row0.z * right.row2.y;
+  result.row0.z = left.row0.x * right.row0.z + left.row0.y * right.row1.z + left.row0.z * right.row2.z;
+
+  result.row1.x = left.row1.x * right.row0.x + left.row1.y * right.row1.x + left.row1.z * right.row2.x;
+  result.row1.y = left.row1.x * right.row0.y + left.row1.y * right.row1.y + left.row1.z * right.row2.y;
+  result.row1.z = left.row1.x * right.row0.z + left.row1.y * right.row1.z + left.row1.z * right.row2.z;
+
+  result.row2.x = left.row2.x * right.row0.x + left.row2.y * right.row1.x + left.row2.z * right.row2.x;
+  result.row2.y = left.row2.x * right.row0.y + left.row2.y * right.row1.y + left.row2.z * right.row2.y;
+  result.row2.z = left.row2.x * right.row0.z + left.row2.y * right.row1.z + left.row2.z * right.row2.z;
+
+  return result;
+}
+
+/// Returns the product of a matrix and a Vec3_c
+inline Vec3_c * (Mat33_c mat33, Vec3_c vec3) {
+  return Vec3_c(
+    mat33.row0.x * vec3.x + mat33.row0.y * vec3.y + mat33.row0.z * vec3.z,
+    mat33.row1.x * vec3.x + mat33.row1.y * vec3.y + mat33.row1.z * vec3.z,
+    mat33.row2.x * vec3.x + mat33.row2.y * vec3.y + mat33.row2.z * vec3.z
+  );
+}
+
+/// Returns the product of a matrix and a scalar
+/// \dfgPresetDefault s 1
+inline Mat33_c * (Mat33_c mat33, Complex s) {
+  return Mat33_c( mat33.row0 * s, mat33.row1 * s, mat33.row2 * s );
+}
+
+/// Returns the product of a scalar and a matrix
+/// \dfgPresetDefault s 1
+inline Mat33_c * (Complex s, Mat33_c mat33) {
+  return Mat33_c( mat33.row0 * s, mat33.row1 * s, mat33.row2 * s );
+}
+
+/// Multiplies this matrix with another one
+/// \dfgPresetDefault other {"row0": {"x": 1, "y": 0, "z": 0}, "row1": { "x": 0, "y": 1, "z": 0}, "row2": { "x": 0, "y": 0, "z": 1} }
+inline Mat33_c. *= (Mat33_c other) {
+  this = this * other;
+}
+
+/// Multiplies this matrix with a scalar
+/// \dfgPresetDefault other 1
+inline Mat33_c. *= (Complex other) {
+  this = this * other;
+}
+
+/// Returns the division of a matrix and a scalar
+/// \dfgPresetDefault s 1
+inline Mat33_c / (Mat33_c mat33, Complex s) {
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( s ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( s, "Mat33_c.divide" );
+  return mat33 * (1.0 / s);
+}
+
+/// Divides this matrix by a scalar
+/// \dfgPresetDefault other 1
+inline Mat33_c. /= (Complex other) {
+  this = this / other;
+}
+
+/// Overload method for the add operator
+inline Mat33_c Mat33_c.add(Mat33_c other) {
+  return this + other;
+}
+
+/// Overload method for the subtract operator
+inline Mat33_c Mat33_c.subtract(Mat33_c other) {
+  return this - other;
+}
+
+/// Overload method for the multiply operator
+/// \dfgPresetDefault other {"row0": {"x": 1, "y": 0, "z": 0}, "row1": { "x": 0, "y": 1, "z": 0}, "row2": { "x": 0, "y": 0, "z": 1}}
+inline Mat33_c Mat33_c.multiply(Mat33_c other) {
+  return this * other;
+}
+
+/// Returns the product of this matrix and a scalar
+/// \dfgPresetDefault other 1
+inline Mat33_c Mat33_c.multiplyComplex(Complex other) {
+  return this * other;
+}
+
+/// Returns the product of this matrix and a vector
+inline Vec3_c Mat33_c.multiplyVector(Vec3_c other) {
+  return this * other;
+}
+
+/// Returns the division of this matrix and a scalar
+/// \dfgPresetDefault other 1
+inline Mat33_c Mat33_c.divideComplex(Complex other) {
+  return this / other;
+}
+
+/// Returns the determinant of this matrix
+inline Complex Mat33_c.determinant() {
+  return this.row0.x * this.row1.y * this.row2.z
+  + this.row0.y * this.row1.z * this.row2.x
+  + this.row0.z * this.row1.x * this.row2.y
+  - this.row0.x * this.row1.z * this.row2.y
+  - this.row0.y * this.row1.x * this.row2.z
+  - this.row0.z * this.row1.y * this.row2.x;
+}
+
+/// Returns the adjoint matrix of this matrix
+inline Mat33_c Mat33_c.adjoint() {
+  Mat33_c result;
+
+  result.row0.x = this.row1.y * this.row2.z - this.row1.z * this.row2.y;
+  result.row0.y = this.row0.z * this.row2.y - this.row0.y * this.row2.z;
+  result.row0.z = this.row0.y * this.row1.z - this.row0.z * this.row1.y;
+
+  result.row1.x = this.row1.z * this.row2.x - this.row1.x * this.row2.z;
+  result.row1.y = this.row0.x * this.row2.z - this.row0.z * this.row2.x;
+  result.row1.z = this.row0.z * this.row1.x - this.row0.x * this.row1.z;
+
+  result.row2.x = this.row1.x * this.row2.y - this.row1.y * this.row2.x;
+  result.row2.y = this.row0.y * this.row2.x - this.row0.x * this.row2.y;
+  result.row2.z = this.row0.x * this.row1.y - this.row0.y * this.row1.x;
+
+  return result;
+}
+
+/// Returns the inverse matrix of this matrix
+inline Mat33_c Mat33_c.inverse() {
+  Complex det = this.determinant();
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( det ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( det, "Mat33_c.inverse" );
+  return this.adjoint() / det;
+}
+inline Mat33_c Mat33_c.inverse_safe() {
+  Complex det = this.determinant();
+  if( Math_badDivisor( det ) )
+    return this.adjoint();
+  return this.adjoint() / det;
+}
+
+/// Returns the transposed matrix of this matrix
+inline Mat33_c Mat33_c.transpose() {
+  Mat33_c result(
+    this.row0.x, this.row1.x, this.row2.x,
+    this.row0.y, this.row1.y, this.row2.y,
+    this.row0.z, this.row1.z, this.row2.z);
+  return result;
+}
+
+

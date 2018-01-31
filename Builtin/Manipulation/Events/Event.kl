@@ -1,0 +1,57 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require InlineDrawing;
+
+/**
+  \versionadded 1.12.0
+
+  :kl-ref:`Event` interface declares the methods needed to access and process
+  user events from/to a host application.
+
+  \seealso BaseEvent
+
+  \dfgPresetOmit
+*/
+
+object Host;
+
+interface Event {
+  /// Gets the DCC host ('Maya', '3dsMax' etc).
+  Host getHost();
+
+  /// Gets the viewport form where the event has been emitted.
+  Viewport_Virtual getViewport();
+
+  /// Sets the viewport, used when overide a render with another.
+  /// \param viewport A Viewport_Virtual.
+  setViewport!(Viewport_Virtual viewport);
+
+  /// Sets the accept flag of the event object.
+  /// The equivalent of calling setAccepted(true).
+  accept!();
+
+  /// Clears the accept flag parameter of the event object.
+  /// It's the equivalent of calling setAccepted(false).
+  ignore!();
+
+  /// Checks if the event has been accepted by the active handler. 
+  /// The host application should then not propagate the event to other handlers. 
+  Boolean isAccepted();
+
+  /// Indicates that the event has been used by an handler.
+  /// \param accepted The boolean to accept or not the event
+  setAccepted!(Boolean accepted);
+
+  /// Gets the event type 
+  /// The list of supported Ids are defined in EventsConstants.kl.
+  EventType eventType();
+
+  /// Gets the event ModiferKey 
+  /// The list of supported ModiferKey are defined in EventsConstants.kl.
+  ModiferKey getModifiers();
+
+  /// Returns a String description of the event
+  String describe( Boolean includeContext );
+};

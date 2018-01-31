@@ -1,0 +1,83 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+function BaseGeometry.getSkinningAttributeValueArray(
+  GeometryAttribute attr,
+  SInt32 mode,
+  UInt32 indices[],
+  io String type,
+  io UInt16 skinIdValues[][],
+  io Float32 skinWeightValues[][]
+) {
+  type = "";
+
+  Size vertexCount;
+  Size faceCount;
+  Size faceCornerTotalCount;
+  Size resultSize;
+  UInt32 idxs[] = indices;
+
+  if(!this.getAttributeValueArray_CheckIndex(
+    mode,
+    vertexCount,
+    faceCount,
+    faceCornerTotalCount,
+    resultSize,
+    idxs
+    ))
+    return;
+
+  SkinningAttribute cast = attr;
+  if(cast == null)
+    return;
+
+  type = "Skinning";
+  skinIdValues.resize(resultSize);
+  skinWeightValues.resize(resultSize);
+
+  PolygonMesh mesh = null;
+  if(mode > 0)
+    mesh = this;
+
+  Index idx;
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      for(Size i=0;i<resultSize;i++)
+      {
+        idx = idxs.size() > 0 ? idxs[i] : i;
+        if(idx >= vertexCount)
+          continue;
+
+        UInt32 count = cast.getPairCount(idx);
+        skinIdValues[i].resize(count);
+        skinWeightValues[i].resize(count);
+        for(UInt32 j=0;j<count;j++)
+          cast.getPair(idx, j, skinIdValues[i][j], skinWeightValues[i][j]);
+      }
+      break;
+    }
+    case 2: // per face corner
+    {
+      for(Size i=0;i<resultSize;i++)
+      {
+        UInt32 count = cast.getPairCount(idxs[i]);
+        skinIdValues[i].resize(count);
+        skinWeightValues[i].resize(count);
+        for(UInt32 j=0;j<count;j++)
+          cast.getPair(idxs[i], j, skinIdValues[i][j], skinWeightValues[i][j]);
+      }
+      break;
+    }
+    default:
+    {
+      report("Error: Unsupport GetValueArray mode for SkinningAttribute.");
+      return;
+    }
+  }
+
+  return;
+}

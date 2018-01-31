@@ -1,0 +1,78 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/SpatialQuery.html",
+    "uiTooltip" : "Finds the closest position of a Geometry from a specified local position, returns the result as a GeometryLocation .\nA hit was found if :kl-ref:`GeometryLocation.isValid` is true.\nA scaling factor needs to be specified for proper support of non-uniform scaling, since it can influence the result.\nProperly calling :kl-ref:`SpatialQueryable.prepareForSpatialQueries` beforehand can increase significatively the performance of multiple raycasts.\n\n\n Supported by SpatialQuery"
+    },
+  "title" : "GetClosest",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "SpatialQuery"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "position",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "Vec3"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "scaling",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3" : {
+          "x" : 1,
+          "y" : 1,
+          "z" : 1
+          }
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "maxUnscaledDistance",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar" : 1
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Scalar"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "GeometryLocation"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "07D0B5500622DCD909056BA1642DEC54",
+  "code" : "require Geometry;
+
+dfgEntry {
+  result = this.getClosest(position, scaling, maxUnscaledDistance);
+}
+"
+  }

@@ -1,0 +1,56 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "returns the schema of this reader\n\nSupported types:\n  this: AlembicPolyMeshReader\n  result: AlembicIPolyMeshSchema\n"
+    },
+  "title" : "GetSchema[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "AlembicPolyMeshReader[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "AlembicIPolyMeshSchema[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "54EEF63D905A95F97F90FBD47D7E3D87",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicPolyMeshReader_getSchema_task<<<index>>>(
+  io AlembicIPolyMeshSchema[] result
+, in AlembicPolyMeshReader[] this
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].getSchema();
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  Size task_size = this.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      AlembicWrapper_AlembicPolyMeshReader_getSchema_task(index, result, this);
+    }
+  } else {
+    AlembicWrapper_AlembicPolyMeshReader_getSchema_task<<<task_size>>>(result, this);
+  }
+}
+"
+  }

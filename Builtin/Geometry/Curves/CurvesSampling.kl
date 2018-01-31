@@ -1,0 +1,908 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+/// Stores packed table data for all curve types given a specific sampling per span.
+object PerCurveSamplingTable{
+  // We use a packed array to reduce the number of buffers if we evaluate on the GPU.
+  // First [0..(curveType_maxCount*curves_maxOrder)-1]: bitcast UInt32 offset per curve type for sampling weight data, followed by the sampling weight data itself.
+
+  Float32 perCurveTypePackedCache[];// Required for GPU evaluation
+  LightReadersWriterLock rwLock;
+};
+
+PerCurveSamplingTable() {
+  this.perCurveTypePackedCache.resize( curves_maxOrder * curveType_maxCount );
+}
+
+/// \internal
+object PerCurveSamplingTables{
+  PerCurveSamplingTable perSamplingTables[UInt32];
+  LightLock dictLock;
+};
+
+Ref<PerCurveSamplingTable> GetPerCurveSamplingTable( UInt32 sampling ) {
+  Ref<PerCurveSamplingTables> tables = GetOrCreateSingleton( "CurvesSampTbs", PerCurveSamplingTables );
+  LightLockBracket bracket( tables.dictLock );
+
+  Ref<PerCurveSamplingTable> table = tables.perSamplingTables.get( sampling, null );
+  if( !table ) {
+    PerCurveSamplingTable newTable();
+    table = newTable;
+    tables.perSamplingTables[sampling] = newTable;
+  }
+  return table;
+}
+
+/// \internal
+struct Curves_samplingComputeWorkUnit {
+  UInt32 curveIndex;
+  UInt32 sampleOffset;
+  UInt32 unitIndex;
+};
+
+/// Sampling cache for curve drawing.
+/// \internal
+object Curves_samplingData{
+  UInt32 samplesPerSpan;
+  UInt32 memType; // CPU = 0, GPU = 1
+
+  UInt32 lastStructureVersion;
+  UInt32 structureVersion;
+  Boolean normalizeTangents;//False by default, since shaders renormalize anyway
+
+  GeometryAttributes sampledAttributes;
+  UInt32 lastSampledAttributesVersions[];
+  Ref<Vec3Attribute> sampledTangentAttribute;//Created on demand
+
+  UInt32 lineElements[];
+  UInt16 lineElements_16[];
+
+  Boolean multithread;
+  Curves_samplingComputeWorkUnit samplingComputeWorkUnit[];// Required for GPU evaluation
+
+  Ref<PerCurveSamplingTable> sharedTables;
+  Ref<Curves> curves;
+};
+
+Curves_samplingData() {
+  this.sampledAttributes = GeometryAttributes();
+}
+
+/// Returns the memory location id. CPU = 0, GPU = 1, VSM = 2;
+inline UInt32 Curves_samplingData.getMemType() {
+  return this.memType;
+}
+
+Ref<Vec3Attribute> Curves_samplingData.getPositionsAttribute() {
+  Ref<Curves_samplingData> mutableThis = this;
+  return mutableThis.sampledAttributes.getOrCreatePositions();
+}
+
+/// \note The tangents attribute is created only if :kl-ref:`Curves.updateSampling` was called with computeSampledTangents = true.
+Ref<Vec3Attribute> Curves_samplingData.getTangentsAttribute() {
+  return this.sampledTangentAttribute;
+}
+
+/// \internal
+/// Returns 0 if no cache
+inline UInt32 Curves_samplingData_getSharedDataOffset( Curves_data curveData, UInt32 spanIndex, UInt32 samplesPerSpan, Float32 perCurveTypePackedCache[] ) {
+  UInt32 perTypeOffset = curveData.curveType * curves_maxOrder + curveData.order;
+  UInt32 offset = bitcastFloatToUInt( perCurveTypePackedCache[perTypeOffset] );
+
+  if( curveData.curveType == curveType_NURBS ) {
+    // For NURBS, each knot combination type has its own table
+    // See comments in CurvesStructure.updateCurveTypeAndOrderSharedDataCache
+    // for more information about the knot combinations table order.
+    //
+    // How the following logic works is a bit complex, but what is important
+    // is that it computes the right combination row based on degree, minSpanIndex and maxSpanIndex.
+    //
+    UInt8 degree = curveData.order - 1;
+
+    UInt32 minSpanIndex, maxSpanIndex;
+    curveData.NURBS_getUniformEvalKnots( spanIndex, minSpanIndex, maxSpanIndex );
+    UInt32 knotsDelta = maxSpanIndex - minSpanIndex;
+
+    UInt32 knotCount = degree * 2;
+
+    if( knotsDelta != knotCount ) {//Uniform knots is at offset 0
+      Boolean mirrored = knotsDelta >= degree;
+
+      UInt32 knotsMirroredDelta = mirrored ? ( knotCount - knotsDelta ) : knotsDelta;
+      UInt32 combinationRow = (knotsMirroredDelta - 1) * knotsMirroredDelta + ( mirrored ? minSpanIndex : (knotsMirroredDelta + maxSpanIndex) - degree );
+//report( "COMB ROW " + combinationRow + " min " + minSpanIndex + " max " + maxSpanIndex + " knotsMirroredDelta " + knotsMirroredDelta + " mirrored " + mirrored );
+      UInt32 dataPerCombination = UInt32( curveData.order * 2 )*( samplesPerSpan + 1 );
+      offset += combinationRow * dataPerCombination;
+    }
+  }
+  return offset;
+}
+
+/// \internal
+CurvesStructure.sampleCurvePositionsInternal2(
+  UInt32 samplesPerSpan,
+  Boolean computeTangents,
+  Boolean normalizeTangents,
+  Curves_data curveData,
+  Curves_samplingComputeWorkUnit sampleData,
+  Float32 perCurveTypePackedCache[],
+  io Vec3 sampledPositions[],
+  io Vec3 sampledTangents[] ) {
+
+  if( curveData.curveType == curveType_linear ) {
+    if( this.smoothLinearCurveTangents ) {
+      // Just recopy source positions
+      if( this.useDoubles ) {
+        for( Size i = 0; i < curveData.pointCount; ++i )
+          sampledPositions[sampleData.sampleOffset + i] = this.positions_d[curveData.getPointIndex( i )].toVec3();
+      } else {
+        for( Size i = 0; i < curveData.pointCount; ++i )
+          sampledPositions[sampleData.sampleOffset + i] = this.positions[curveData.getPointIndex( i )];
+      }
+      if( computeTangents ) {
+        Vec3 prevTan;
+        if( curveData.isClosed() )
+          prevTan = sampledPositions[sampleData.sampleOffset] - sampledPositions[sampleData.sampleOffset + curveData.pointCount - 1];
+        else
+          prevTan = sampledPositions[sampleData.sampleOffset + 1] - sampledPositions[sampleData.sampleOffset];
+
+        for( Size i = 0; i < curveData.pointCount; ++i ) {
+          Vec3 nextTan;
+          if( i == curveData.pointCount - 1 ) {
+            if( curveData.isClosed() ) // first tan
+              nextTan = sampledPositions[sampleData.sampleOffset] - sampledPositions[sampleData.sampleOffset + curveData.pointCount - 1];
+            else
+              nextTan = prevTan;
+          } else
+            nextTan = sampledPositions[sampleData.sampleOffset + i + 1] - sampledPositions[sampleData.sampleOffset + i];
+
+          sampledTangents[sampleData.sampleOffset + i] = normalizeTangents ? ( prevTan + nextTan ).unit_safe() : prevTan + nextTan;
+          prevTan = nextTan;
+        }
+      }
+    } else {
+      // Points are duplicated because of discontinuous tangents
+      if( this.useDoubles ) {
+        for( Size i = 0; i < curveData.spanCount; ++i ) {
+          sampledPositions[sampleData.sampleOffset + i * 2] = this.positions_d[curveData.getPointIndex( i )].toVec3();
+          sampledPositions[sampleData.sampleOffset + i * 2 + 1] = this.positions_d[curveData.getPointIndex( curveData.getCurveNextPointIndex( i ) )].toVec3();
+        }
+      } else {
+        for( Size i = 0; i < curveData.spanCount; ++i ) {
+          sampledPositions[sampleData.sampleOffset + i * 2] = this.positions[curveData.getPointIndex( i )];
+          sampledPositions[sampleData.sampleOffset + i * 2 + 1] = this.positions[curveData.getPointIndex( curveData.getCurveNextPointIndex( i ) )];
+        }
+      }
+      if( computeTangents ) {
+        for( Size i = 0; i < curveData.spanCount; ++i ) {
+          Vec3 tangent = ( sampledPositions[sampleData.sampleOffset + i * 2 + 1] - sampledPositions[sampleData.sampleOffset + i * 2] );
+          if( normalizeTangents )
+            tangent = tangent.unit_safe();
+          sampledTangents[sampleData.sampleOffset + i * 2] = tangent;
+          sampledTangents[sampleData.sampleOffset + i * 2 + 1] = tangent;
+        }
+      }
+    }
+  } else {
+    // WARNING: this is similar to Curves.sampleCurveAttributeInternal2; fixes should go to both
+    UInt32 spanIndex = sampleData.unitIndex;
+    UInt32 sampleOffset = sampleData.sampleOffset;
+    UInt32 sampleCount = samplesPerSpan;
+    Boolean isLastOpenSpan = curveData.isOpen() && spanIndex == curveData.spanCount - 1;
+    if( isLastOpenSpan )
+      ++sampleCount;
+//report( "SAMPDATA " + sampleData + " SPANCOUNT " + curveData.spanCount );
+    UInt32 pointCount;
+    UInt32 pointIndices[8];
+    UInt32 pointIndicesArray<> = pointIndices;
+    this.getPoints( curveData, spanIndex, pointCount, pointIndicesArray );
+
+    if( !curveData.isRational() && curveData.NURBS_hasImplicitUniformKnots() ) {
+      // We have a weights cache
+      // This is the tight loop we optimized for.
+      UInt32 cacheOffset = Curves_samplingData_getSharedDataOffset( curveData, spanIndex, samplesPerSpan, perCurveTypePackedCache );
+      if( this.useDoubles ) {
+        for( Size i = 0; i < sampleCount; ++i ) {
+          Vec3_d pos;
+          for( Size j = 0; j < pointCount; ++j )
+            pos += this.positions_d[pointIndices[j]] * perCurveTypePackedCache[cacheOffset++];
+          sampledPositions[sampleOffset] = pos.toVec3();
+
+          if( computeTangents ) {
+            Vec3_d tangent;
+            for( Size j = 0; j < pointCount; ++j )
+              tangent += this.positions_d[pointIndices[j]] * perCurveTypePackedCache[cacheOffset++];
+            sampledTangents[sampleOffset] = normalizeTangents ? tangent.toVec3().unit_safe() : tangent.toVec3();
+          } else
+            cacheOffset += pointCount;
+
+          ++sampleOffset;
+        }
+      } else {
+        for( Size i = 0; i < sampleCount; ++i ) {
+          Vec3 pos;
+          for( Size j = 0; j < pointCount; ++j )
+            pos += this.positions[pointIndices[j]] * perCurveTypePackedCache[cacheOffset++];
+          sampledPositions[sampleOffset] = pos;
+
+          if( computeTangents ) {
+            Vec3 tangent;
+            for( Size j = 0; j < pointCount; ++j )
+              tangent += this.positions[pointIndices[j]] * perCurveTypePackedCache[cacheOffset++];
+            sampledTangents[sampleOffset] = normalizeTangents ? tangent.unit_safe() : tangent;
+          } else
+            cacheOffset += pointCount;
+
+          ++sampleOffset;
+        }
+      }
+    } else {
+      Float32 weights[8];
+      Float32 weightsArray<> = weights;
+      Float32 factor = 1.0f / samplesPerSpan;
+      Float32 floatI;
+
+      if( !computeTangents ) {
+        for( Size i = 0; i < sampleCount; ++i ) {
+          Float32 spanParam = floatI * factor;
+
+          if( curveData.curveType == curveType_NURBS )
+            spanParam = this.NURBS_getParamFromSpanParam( curveData, spanIndex, spanParam );
+
+          this.getWeights( curveData, spanIndex, spanParam, pointCount, pointIndices, weightsArray );
+
+          if( this.useDoubles ) {
+            Vec3_d pos;
+            for( Size j = 0; j < pointCount; ++j )
+              pos += this.positions_d[pointIndices[j]] * weights[j];
+            sampledPositions[sampleOffset++] = pos.toVec3();
+          } else {
+            Vec3 pos;
+            for( Size j = 0; j < pointCount; ++j )
+              pos += this.positions[pointIndices[j]] * weights[j];
+            sampledPositions[sampleOffset++] = pos;
+          }
+          floatI += 1.0f;
+        }
+      } else {
+        Float32 derWeights[8];
+        Float32 derWeightsArray<> = derWeights;
+
+        for( Size i = 0; i < sampleCount; ++i ) {
+          Float32 spanParam = floatI * factor;
+
+          if( curveData.curveType == curveType_NURBS )
+            spanParam = this.NURBS_getParamFromSpanParam( curveData, spanIndex, spanParam );
+
+          this.getWeights( curveData, spanIndex, spanParam, pointCount, pointIndices, weightsArray, derWeightsArray );
+
+          if( this.useDoubles ) {
+            Vec3_d pos;
+            for( Size j = 0; j < pointCount; ++j )
+              pos += this.positions_d[pointIndices[j]] * weights[j];
+            sampledPositions[sampleOffset] = pos.toVec3();
+
+            Vec3_d tangent;
+            for( Size j = 0; j < pointCount; ++j )
+              tangent += this.positions_d[pointIndices[j]] * derWeights[j];
+            sampledTangents[sampleOffset] = normalizeTangents ? tangent.toVec3().unit_safe() : tangent.toVec3();
+
+            ++sampleOffset;
+          } else {
+            Vec3 pos;
+            for( Size j = 0; j < pointCount; ++j )
+              pos += this.positions[pointIndices[j]] * weights[j];
+            sampledPositions[sampleOffset] = pos;
+
+            Vec3 tangent;
+            for( Size j = 0; j < pointCount; ++j )
+              tangent += this.positions[pointIndices[j]] * derWeights[j];
+            sampledTangents[sampleOffset] = normalizeTangents ? tangent.unit_safe() : tangent;
+
+            ++sampleOffset;
+          }
+          floatI += 1.0f;
+        }
+      }
+    }
+  }
+}
+
+/// \internal
+/// Access internal members for sampleCurvePositionsInternal2
+inline CurvesStructure.sampleCurvePositionsInternal(
+  UInt32 samplesPerSpan,
+  Boolean computeTangents,
+  Boolean normalizeTangents,
+  Curves_samplingComputeWorkUnit sampleData,
+  Float32 perCurveTypePackedCache[],
+  io Vec3 sampledPositions[],
+  io Vec3 sampledTangents[] ) {
+  this.sampleCurvePositionsInternal2( samplesPerSpan, computeTangents, normalizeTangents, this.curvesData[sampleData.curveIndex], sampleData, perCurveTypePackedCache, sampledPositions, sampledTangents );
+}
+
+operator SampleCurvePositions<<<index>>>(
+  UInt32 samplesPerSpan,
+  CurvesStructure curves,
+  Boolean computeTangents,
+  Boolean normalizeTangents,
+  Curves_samplingComputeWorkUnit samplingComputeWorkUnit[],
+  Float32 perCurveTypePackedCache[],
+  io Vec3 sampledPositions[],
+  io Vec3 sampledTangents[] ) {
+  curves.sampleCurvePositionsInternal( samplesPerSpan, computeTangents, normalizeTangents, samplingComputeWorkUnit[index], perCurveTypePackedCache, sampledPositions, sampledTangents );
+}
+
+/// \internal
+/// Used by CurvesStructure.updateSampling()
+/// \param multhreadedUnits Returns the number of potential multithreaded-worth compute units for this curve (usually: one per span, but we leave it as curve specific)
+CurvesStructure.getSamplingData(
+  Curves_data curveData,
+  UInt32 samplesPerSpan,
+  io UInt32 samplesCount,
+  io Boolean loopingSegments,// last sample connects to 1st one
+  io UInt32 multithreadedUnitsForCurve,
+  io Boolean curveTypeNeedsSharedDataCache ) {
+
+  loopingSegments = curveData.isClosed();
+
+  switch( curveData.curveType ) {
+    case curveType_linear:
+      if( this.smoothLinearCurveTangents )
+        samplesCount = curveData.pointCount;
+      else {
+        // Points are duplicated because of discontinuous tangents
+        samplesCount = curveData.spanCount * 2;
+      }
+      multithreadedUnitsForCurve = curveData.spanCount ? 1 : 0;// Only recopying values... should not be multithreaded internally
+      curveTypeNeedsSharedDataCache = false;// No precomputed sampling weights
+      return;
+    case curveType_bezier:
+    case curveType_NURBS:
+      samplesCount = curveData.spanCount * samplesPerSpan;
+      if( curveData.isOpen() )
+        samplesCount++;
+      multithreadedUnitsForCurve = curveData.spanCount;// Share computations per span
+      curveTypeNeedsSharedDataCache = !curveData.isRational() && curveData.NURBS_hasImplicitUniformKnots();// For now, only save weights if non-rational
+      return;
+  }
+}
+
+CurvesStructure.updateCurveTypeAndOrderSharedDataCache(
+  Curves_data curveData,
+  UInt32 samplesPerSpan,
+  io Float32 dataCacheToAppendTo[] ) {
+
+  // Check if the data exists for this curve
+  UInt32 tableEntry = curveData.curveType * curves_maxOrder + curveData.order;
+  UInt32 dataOffset = bitcastFloatToUInt( dataCacheToAppendTo[tableEntry] );
+
+  Boolean existed = dataOffset;
+  if( !existed ) {
+    dataOffset = dataCacheToAppendTo.size();
+    dataCacheToAppendTo[tableEntry] = bitcastUIntToFloat( dataOffset );
+  }
+
+  switch( curveData.curveType ) {
+    case curveType_bezier: {
+      if( existed )
+        return;
+
+      // Add weights + derWeight per sample
+      UInt32 total = ( samplesPerSpan + 1 ) * curveData.order * 2;
+      dataCacheToAppendTo.reserve( dataOffset + total );
+
+      Float32 weights[8];
+      Float32 weightsArray<> = weights;
+      Float32 factor = 1.0f / Float32( samplesPerSpan );
+      for( Size i = 0; i <= samplesPerSpan; ++i ) {
+        Float32 param = i * factor;
+        Size count;
+        this.bezier_getWeights_nonRational( curveData.order, param, count, weightsArray );
+        for( Size j = 0; j < count; ++j )
+          dataCacheToAppendTo.push( weightsArray[j] );
+
+        this.bezier_getDerWeights_nonRational( curveData.order, param, count, weightsArray );
+        for( Size j = 0; j < count; ++j )
+          dataCacheToAppendTo.push( weightsArray[j] );
+      }
+      return;
+    }
+    case curveType_NURBS: {
+      // For NURBS, this is more complex. First, we only prepare weights for curves with
+      // implicit knots (unit spans, degree multiplicity knots at start and end if not periodic).
+      // We reserve space for all possible knot intervals combination given a specific degree,
+      // which covers open/closed/periodic forms. However, we will only compute the weights
+      // required for thi specific curve.
+
+      //////////////////////////////////////////////////////
+      // In a degree 2 curve, evaluation knot vectors (required to build the
+      // NURBS weight basis), are made of 4 knots, which includes 3 knot intervals:
+      //
+      //   [knots[1]-knots[0], knots[2]-knots[1], knots[3]-knots[2]]
+      //
+      //   Open and closed curves have intervals of [0, 1, ...., 1, 0]
+      //   An open/closed curve with a single span has intervals [0, 1, 0].
+      //
+      //   Periodic curves have intervals of [1, 1, ..., 1]
+      //   An periodic curve with a single span has intervals [1, 1, 1].
+      //
+      //Possible knot span combinations knot vectors for all degree 2 curve of any number of spans:
+      //
+      //   0) [1,1,1]
+      //
+      //   1) [0,1,0]
+      //
+      //   2) [1,1,0]
+      //   3) [0,1,1]
+      //
+      //////////////////////////////////////////////////////
+      // In a degree 3 curve, evaluation knot vectors (required to build the
+      // NURBS weight basis), are made of 6 knots, which includes 5 knot intervals:
+      //
+      //   [knots[1]-knots[0], knots[2]-knots[1], knots[3]-knots[2], knots[4]-knots[3], knots[5]-knots[4]]
+      //
+      //   Open and closed curves have intervals of [0, 1, ...., 1, 0]
+      //   An open/closed curve with a single span has intervals [0, 0, 1, 0, 0].
+      //
+      //   Periodic curves have intervals of [1, 1, ..., 1]
+      //   An periodic curve with a single span has intervals [1, 1, 1, 1, 1].
+      //
+      //Possible knot span combinations knot vectors for all degree 3 curve of any number of spans:
+      //
+      //   0) [1,1,1,1,1]
+      //
+      //   1) [0,0,1,0,0]
+      //
+      //   2) [1,1,1,1,0]
+      //   3) [0,1,1,1,1]
+      //
+      //   4) [0,1,1,0,0]
+      //   5) [0,0,1,1,0]
+      //
+      //   6) [1,1,1,0,0]
+      //   7) [0,1,1,1,0]
+      //   8) [0,0,1,1,1]
+      //
+      //////////////////////////////////////////////////////
+      //Following the same logic, we have, for degree 4 curves:
+      //
+      //   0) [1,1,1,1,1,1,1]
+      //
+      //   1) [0,0,0,1,0,0,0]<<
+      //
+      //   2) [1,1,1,1,1,1,0]
+      //   3) [0,1,1,1,1,1,1]
+      //
+      //   4) [0,0,1,1,0,0,0]
+      //   5) [0,0,0,1,1,0,0]
+      //
+      //   6) [1,1,1,1,1,0,0]
+      //   7) [0,1,1,1,1,1,0]
+      //   8) [0,0,1,1,1,1,1]
+      //
+      //   9) [0,1,1,1,0,0,0]
+      //  10) [0,0,1,1,1,0,0]
+      //  11) [0,0,0,1,1,1,0]
+      //
+      //  12) [1,1,1,1,0,0,0]
+      //  13) [0,1,1,1,1,0,0]
+      //  14) [0,0,1,1,1,1,0]
+      //  15) [0,0,0,1,1,1,1]
+      //
+      //...Similar for higher degree curves (which take more and more storage space)...
+      //
+      // The number of knot span combinations required for a degree N NURBS curve with implicit knots is:
+      //  CombinationCount = Degree * Degree
+
+      if( !existed ) {
+        UInt32 knotCombinations = ( curveData.order - 1 ) * ( curveData.order - 1 ); // see comments above
+        // Each has weights + derWeight per sample
+        UInt32 weightsPerKnotCombination = curveData.order * 2;
+        UInt32 requiredDataSize = ( samplesPerSpan + 1 ) * knotCombinations * weightsPerKnotCombination;
+//report( "ORDER " + curveData.order + " comb " + knotCombinations + " weightsPerComb " + weightsPerKnotCombination + " reqSize " + requiredDataSize + " offset " + dataOffset );
+
+        // Initialize all to SCALAR_INFINITE, so we compute only what is required for requested curves.
+        dataCacheToAppendTo.reserve( dataOffset + requiredDataSize );
+        for( Size i = 0; i < requiredDataSize; ++i )
+          dataCacheToAppendTo.push( SCALAR_INFINITE );
+      }
+
+      // Check if the data for our knot combination type has been created
+      for( Size i = 0; i < curveData.spanCount; ++i ) {
+        dataOffset = Curves_samplingData_getSharedDataOffset( curveData, i, samplesPerSpan, dataCacheToAppendTo );
+//report( "NURBS SAMP=" + samplesPerSpan + " ORD= " + curveData.order + " SPANID=" + i + )
+        if( dataCacheToAppendTo[dataOffset] == SCALAR_INFINITE ) {
+
+          // Initialize that data
+          Float32 weights[8];
+          Float32 weightsArray<> = weights;
+          Float32 derWeights[8];
+          Float32 derWeightsArray<> = derWeights;
+//report( "SPAN " + i + " OFFSET " + dataOffset + " SPAN COUNT " + curveData.spanCount );
+
+          Float32 factor = 1.0f / Float32( samplesPerSpan );
+          for( Size j = 0; j <= samplesPerSpan; ++j ) {
+            Float32 param = this.NURBS_getParamFromSpanParam( curveData, i, j * factor );
+
+            Size count;
+            this.NURBS_getWeights_nonRational( curveData, i, param, count, weightsArray, true, derWeightsArray, false, weightsArray );
+//report( " param " + param + " W " + weightsArray );
+
+            for( Size k = 0; k < count; ++k )
+              dataCacheToAppendTo[dataOffset++] = weightsArray[k];
+
+            for( Size k = 0; k < count; ++k )
+              dataCacheToAppendTo[dataOffset++] = derWeightsArray[k];
+          }
+        }
+      }
+    }
+  }
+}
+
+// Number of curve samplings required so it is worth evaluating in parallel
+const UInt32 Curves_multithreadedEvaluateTreshold = 400;
+
+/// \internal
+/// \category sampling
+Curves.updateSampling( io Ref<Curves_samplingData> samplingData, UInt32 samplesPerSpan, Boolean computeSampledTangents ) {
+  Boolean structChanged;
+  updateValue( samplesPerSpan, samplingData.samplesPerSpan, structChanged );
+  if( structChanged ) {
+    // Sample per span changed: update our global tables
+    samplingData.sharedTables = GetPerCurveSamplingTable( samplesPerSpan );
+  }
+
+  updateValue( this.getStructureVersion(), samplingData.lastStructureVersion, structChanged );
+
+  if( structChanged ) {
+    ++samplingData.structureVersion;
+    samplingData.samplingComputeWorkUnit.resize( 0 );
+
+
+    UInt32 curveCount = this.curveCount();
+    UInt32 totalSamplesCount = 0;
+
+    samplingData.lineElements.resize( 0 );
+    samplingData.lineElements_16.resize( 0 );
+
+    { // Scope the LightWriteBracket
+      LightWriteBracket samplingTablesLockBracket( samplingData.sharedTables.rwLock );
+
+      for( Size i = 0; i < curveCount; ++i ) {
+        UInt32 samplesCount, segmentCount, multithreadedUnitsForCurve;
+        Boolean curveTypeNeedsSharedDataCache, loopingSegments;
+
+        this.data.getSamplingData(
+          this.data.curvesData[i], samplesPerSpan,
+          samplesCount, loopingSegments,
+          multithreadedUnitsForCurve, curveTypeNeedsSharedDataCache );
+
+        UInt32 curveSampleOffset = totalSamplesCount;
+        for( Size j = 0; j < multithreadedUnitsForCurve; ++j ) {
+          Curves_samplingComputeWorkUnit MTData;
+          MTData.curveIndex = i;
+          MTData.unitIndex = j;
+          MTData.sampleOffset = curveSampleOffset;
+
+          // Special case: for NURBS: skip empty spans,
+          // else we will sample for nothing + it will return zeroes.
+          if( this.data.isEmptyNURBSSpan( this.data.curvesData[i], MTData.unitIndex ) ) {
+            samplesCount -= samplesPerSpan;
+            continue;
+          }
+
+          samplingData.samplingComputeWorkUnit.push( MTData );
+          curveSampleOffset += samplesPerSpan;
+        }
+
+        if( samplesCount > 0 ) {
+          if( this.data.curvesData[i].curveType == curveType_linear && !this.data.smoothLinearCurveTangents ) {
+            // Points are duplicated because of discontinuous tangents
+            for( Size j = 0; j < samplesCount; ++j )
+              samplingData.lineElements.push( totalSamplesCount + j );
+          } else {
+            for( Size j = 0; j < samplesCount - 1; ++j ) {
+              samplingData.lineElements.push( totalSamplesCount + j );
+              samplingData.lineElements.push( totalSamplesCount + j + 1 );
+            }
+            if( loopingSegments ) {
+              samplingData.lineElements.push( totalSamplesCount + samplesCount - 1 );
+              samplingData.lineElements.push( totalSamplesCount );
+            }
+          }
+        }
+        totalSamplesCount += samplesCount;
+
+        if( curveTypeNeedsSharedDataCache )
+          this.data.updateCurveTypeAndOrderSharedDataCache( this.data.curvesData[i], samplesPerSpan, samplingData.sharedTables.perCurveTypePackedCache );
+      }
+    }
+    samplingData.sampledAttributes.resize( totalSamplesCount );
+
+    // Use 16 bits for indices if it fits
+    if( totalSamplesCount <= (1 << 16) ) {
+      // Use 16 bits instead
+      samplingData.lineElements_16.resize( samplingData.lineElements.size() );
+
+      for( Size i = 0; i < samplingData.lineElements.size(); ++i )
+        samplingData.lineElements_16[i] = UInt16( samplingData.lineElements[i] );
+
+      samplingData.lineElements.resize( 0 );
+    }
+
+    for( Size i = 0; i < samplingData.lastSampledAttributesVersions.size(); ++i )
+      samplingData.lastSampledAttributesVersions[i] = 0;
+  }
+
+  Boolean addedTangents;
+  if( computeSampledTangents && !samplingData.sampledTangentAttribute ) {
+    samplingData.sampledTangentAttribute = samplingData.sampledAttributes.getOrCreateVec3Attribute( "tangents" );
+    addedTangents = true;
+  }
+
+  // Positions sampling is different, because it might need to be translated from Float64 to Float32
+  Ref<Vec3Attribute> positionsAttr = samplingData.sampledAttributes.getOrCreatePositions();
+  samplingData.lastSampledAttributesVersions.resize( samplingData.sampledAttributes.attributeCount() );
+
+  if( synchronizeVersion( this.attributes.positionsAttribute.getVersion(), samplingData.lastSampledAttributesVersions[positionsAttr.getContainerIndex( samplingData.sampledAttributes )] ) || addedTangents ) {
+
+    // Update positions sampling
+    positionsAttr.incrementVersion();
+    Ref<Vec3Attribute> tangentAttr = samplingData.sampledTangentAttribute;
+    if( !tangentAttr )
+      tangentAttr = positionsAttr;//Dummy
+
+    Boolean computeTangents = samplingData.sampledTangentAttribute;
+    UInt32 computeCost = positionsAttr.size() * ( computeTangents ? 2 : 1 );
+
+    LightReadBracket samplingTablesLockBracket( samplingData.sharedTables.rwLock );
+
+    if( samplingData.memType == 0 && computeCost < Curves_multithreadedEvaluateTreshold ) {
+      for( Size i = 0; i < samplingData.samplingComputeWorkUnit.size(); ++i ) {
+        SampleCurvePositions(
+          i, samplingData.samplesPerSpan, this.data,
+          computeTangents, samplingData.normalizeTangents,
+          samplingData.samplingComputeWorkUnit,
+          samplingData.sharedTables.perCurveTypePackedCache,
+          positionsAttr.values,
+          tangentAttr.values );
+      }
+    } else {
+      SampleCurvePositions<<<samplingData.samplingComputeWorkUnit.size()>>>(
+        samplingData.samplesPerSpan, this.data,
+        computeTangents, samplingData.normalizeTangents,
+        samplingData.samplingComputeWorkUnit,
+        samplingData.sharedTables.perCurveTypePackedCache,
+        positionsAttr.values,
+        tangentAttr.values );
+    }
+    tangentAttr.incrementVersion();
+    positionsAttr.incrementVersion();
+  }
+}
+
+/// \internal
+/// Workaround; for some reason Curves_samplingData cannot access this.data...
+Curves.getSamplingData(
+  UInt32 curveIndex,
+  UInt32 samplesPerSpan,
+  io UInt32 samplesCount,
+  io Boolean loopingSegments,// last sample connects to 1st one
+  io UInt32 multithreadedUnitsForCurve,
+  io Boolean curveTypeNeedsSharedDataCache ) {
+  this.data.getSamplingData(
+    this.data.curvesData[curveIndex], samplesPerSpan,
+    samplesCount, loopingSegments,
+    multithreadedUnitsForCurve, curveTypeNeedsSharedDataCache );
+}
+
+/// \internal
+/// Workaround; for some reason Curves_samplingData cannot access this.data...
+inline Boolean Curves.isEmptySpan(
+  UInt32 curveIndex,
+  UInt32 spanIndex ) {
+  return this.data.isEmptyNURBSSpan( this.data.curvesData[curveIndex], spanIndex );
+}
+
+/// \internal
+struct Curves_curveSamplingInfo {
+  UInt32 firstSample;
+  UInt32 sampleCount;
+  UInt32 firstLineSegment;
+  UInt32 lineSegmentCount;
+};
+/// \internal
+/// \note This info is not being cached and is rebuilt at each call
+Curves_curveSamplingInfo[] Curves_samplingData.getCurvesSamplingInfo() {
+  Curves_curveSamplingInfo info[];
+
+  UInt32 totalSamplesCount = 0;
+  UInt32 totalSegmentCount = 0;
+  UInt32 curveCount = this.curves.curveCount();
+  info.resize( this.curves.curveCount() );
+
+  for( Size i = 0; i < curveCount; ++i ) {
+    UInt32 samplesCount, segmentCount, multithreadedUnitsForCurve;
+    Boolean curveTypeNeedsSharedDataCache, loopingSegments;
+
+    this.curves.getSamplingData(
+      i, this.samplesPerSpan,
+      samplesCount, loopingSegments,
+      multithreadedUnitsForCurve, curveTypeNeedsSharedDataCache );
+
+    UInt32 actualSampleCount;
+    for( Size j = 0; j < multithreadedUnitsForCurve; ++j ) {
+      // Special case: for NURBS: skip empty spans,
+      // else we will sample for nothing + it will return zeroes.
+      if( this.curves.isEmptySpan( i, j ) )
+        samplesCount -= this.samplesPerSpan;
+    }
+
+    info[i].firstSample = totalSamplesCount;
+    info[i].sampleCount = samplesCount;
+
+    info[i].firstLineSegment = totalSegmentCount;
+
+    info[i].lineSegmentCount = samplesCount - 1 + ( loopingSegments ? 1 : 0 );
+    if( this.curves.getCurveType( i ) == curveType_linear && !this.curves.smoothedLinearCurveTangents() )
+      info[i].lineSegmentCount = samplesCount/2;
+    else
+      info[i].lineSegmentCount = samplesCount - 1 + ( loopingSegments ? 1 : 0 );
+
+    totalSegmentCount += info[i].lineSegmentCount;
+    totalSamplesCount += samplesCount;
+  }
+  return info;
+}
+
+/// \category sampling
+/// Returns an updated sampling cache, based on Curves.drawSamplesPerSpan.
+/// \param computeSampledTangents If true, a 'tangents' sampled attribute will be created and updated. Once created, it will always be updated even if computeSampledTangents is passed as false.
+Ref<Curves_samplingData> Curves.getUpdatedSampling( Boolean computeSampledTangents ) {
+  Ref<Curves_samplingData> samplingData = null;//TODO: support multiple ones?
+  {
+    //Get from meta-data; add if not present
+    Ref<ThreadsafeMetaDataContainer> mutableMetaData = this.metaData;//Make non-const
+    AutoLock AL( mutableMetaData.simpleLock );
+    samplingData = mutableMetaData.lockedGet( "samplingData" );
+    if( !samplingData ) {
+      Curves_samplingData newSamplingData();
+      mutableMetaData.lockedSet( "samplingData", newSamplingData );
+      samplingData = newSamplingData;
+      samplingData.curves = this;
+    }
+  }
+  // Need lock?
+  this.updateSampling( samplingData, this.drawSamplesPerSpan, computeSampledTangents );
+  return samplingData;
+}
+
+/// \internal
+Curves.sampleCurveAttributeInternal2(
+  Curves_data curveData,
+  Ref<Curves_samplingData> samplingData,
+  Curves_samplingComputeWorkUnit sampleData,
+  Ref<GeometryAttribute> source,
+  io Ref<GeometryAttribute> sampledTarget ) {
+
+  if( curveData.curveType == curveType_linear ) {
+    // Just recopy source values
+    if( this.smoothedLinearCurveTangents() ) {
+      for( Size i = 0; i < curveData.pointCount; ++i )
+        sampledTarget.copyValue( source, curveData.getPointIndex( i ), sampleData.sampleOffset + i );
+    } else {
+      for( Size i = 0; i < curveData.spanCount; ++i ) {
+        sampledTarget.copyValue( source, curveData.getPointIndex( i ), sampleData.sampleOffset + i * 2 );
+        sampledTarget.copyValue( source, curveData.getPointIndex( curveData.getCurveNextPointIndex( i ) ), sampleData.sampleOffset + i * 2 + 1 );
+      }
+    }
+  } else {
+    // WARNING: this is similar to CurvesStructure.sampleCurvePositionsInternal2; fixes should go to both
+    UInt32 spanIndex = sampleData.unitIndex;
+    UInt32 sampleOffset = sampleData.sampleOffset;
+    UInt32 sampleCount = samplingData.samplesPerSpan;
+    Boolean isLastOpenSpan = curveData.isOpen() && spanIndex == curveData.spanCount - 1;
+    if( isLastOpenSpan )
+      ++sampleCount;
+
+    UInt32 pointCount;
+    UInt32 pointIndices[8];
+    UInt32 pointIndicesArray<> = pointIndices;
+    this.data.getPoints( curveData, spanIndex, pointCount, pointIndicesArray );
+
+    LocalL16UInt32Array sourceIndices;
+    for( Size i = 0; i < pointCount; ++i )
+      sourceIndices.push( pointIndices[i] );
+
+    LocalL16ScalarArray sourceWeights;
+    sourceWeights.resize( pointCount );
+
+    if( !curveData.isRational() && curveData.NURBS_hasImplicitUniformKnots() ) {
+      // We have a weights cache
+      // This is the tight loop we optimized for.
+      Ref<PerCurveSamplingTable> mutableTables = samplingData.sharedTables;
+      LightReadBracket samplingTablesLockBracket( mutableTables.rwLock );
+
+      UInt32 cacheOffset = Curves_samplingData_getSharedDataOffset( curveData, spanIndex, samplingData.samplesPerSpan, mutableTables.perCurveTypePackedCache );
+      for( Size i = 0; i < sampleCount; ++i ) {
+        for( Size j = 0; j < pointCount; ++j )
+          sourceWeights.set( j, mutableTables.perCurveTypePackedCache[cacheOffset++] );
+        sampledTarget.linearCombine( source, sourceIndices, sourceWeights, sampleOffset++ );
+        cacheOffset += pointCount;// Skip tangent data
+      }
+    } else {
+      Float32 weights[8];
+      Float32 weightsArray<> = weights;
+      Float32 factor = 1.0f / samplingData.samplesPerSpan;
+
+      for( Size i = 0; i < sampleCount; ++i ) {
+        Float32 spanParam = i * factor;
+        this.data.getWeights( curveData, spanIndex, spanParam, pointCount, pointIndices, weightsArray );
+        for( Size j = 0; j < pointCount; ++j )
+          sourceWeights.set( j, weights[j] );
+        sampledTarget.linearCombine( source, sourceIndices, sourceWeights, sampleOffset++ );
+      }
+    }
+  }
+}
+
+/// \internal
+/// Access internal members for sampleCurveAttributeInternal2
+inline Curves.sampleCurveAttributeInternal(
+  Ref<Curves_samplingData> samplingData,
+  Curves_samplingComputeWorkUnit sampleData,
+  Ref<GeometryAttribute> source,
+  io Ref<GeometryAttribute> sampledTarget ) {
+  this.sampleCurveAttributeInternal2( this.data.curvesData[sampleData.curveIndex], samplingData, sampleData, source, sampledTarget );
+}
+
+/// \internal
+/// Generic, non-GPU friendly version
+operator SampleCurveAttribute<<<index>>>(
+  Ref<Curves> curves,
+  Ref<Curves_samplingData> samplingData,
+  Ref<GeometryAttribute> source,
+  io Ref<GeometryAttribute> sampledTarget ) {
+  curves.sampleCurveAttributeInternal( samplingData, samplingData.samplingComputeWorkUnit[index], source, sampledTarget );
+}
+
+/// \return The sampled attribute that was updated from the input attribute.
+/// \note samplingData must be up-to-date with the Curves (see :kl-ref:`Curves.updateSampling`)
+/// \category sampling
+Ref<GeometryAttribute> Curves.updateAttributeSampling!( io Ref<Curves_samplingData> samplingData, Ref<GeometryAttribute> attribute ) {
+
+  if( attribute === this.attributes.positionsAttribute )
+    return samplingData.sampledAttributes.positionsAttribute;
+
+  // Check for an existing similar attribute
+  Ref<GeometryAttribute> targetAttr = samplingData.sampledAttributes.getAttribute( attribute.getName() );
+  if( Boolean( targetAttr ) && targetAttr.type() != attribute.type() ) {
+    samplingData.sampledAttributes.removeAttribute( attribute.getName() );
+    targetAttr = null;
+  }
+
+  if( !targetAttr ) {
+    targetAttr = samplingData.sampledAttributes.getOrCreateAttribute( attribute.getName(), attribute.type() );
+    samplingData.lastSampledAttributesVersions.resize( samplingData.sampledAttributes.attributeCount() );
+  }
+
+  if( synchronizeVersion( attribute.getVersion(), samplingData.lastSampledAttributesVersions[targetAttr.getContainerIndex( samplingData.sampledAttributes )] ) ) {
+    // Sampling must be updated
+    targetAttr.incrementVersion();
+
+    // TODO: add GPU-friendly specific versions
+
+    if( attribute.size() < Curves_multithreadedEvaluateTreshold ) {
+      for( Size i = 0; i < samplingData.samplingComputeWorkUnit.size(); ++i ) {
+        SampleCurveAttribute( i, this, samplingData, attribute, targetAttr );
+      }
+    } else
+      SampleCurveAttribute<<<samplingData.samplingComputeWorkUnit.size()>>>( this, samplingData, attribute, targetAttr );
+  }
+  return targetAttr;
+}
+

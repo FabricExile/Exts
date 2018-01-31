@@ -1,0 +1,116 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// Provides base functionality for 2D rectangle widgets.
+  object IconWidget : BaseTool, LayoutAlignment{
+    RectangleShape iconShape;
+
+    UInt8 alignment;
+    Vec2 pixelSize;
+
+    Boolean adjustToParentLayout;
+
+    RTVal color;
+    RTVal highlightColor;
+    HighlightUnderMouse highlightAction;
+
+    Text toolTip;
+    Vec2 toolTipOffset;
+  };
+
+  /// If highlightColor is null, no highlight behavior is done
+  IconWidget( Vec2 pixelSize, RTVal color, RTVal highlightColor ) {
+    this.construct( pixelSize, color, highlightColor );
+  }
+
+  /// Implementation of LayoutAlignment.
+  UInt8 IconWidget.getAlignment() {
+    return this.alignment;
+  }
+
+  /// Implementation of LayoutAlignment.
+  IconWidget.setAlignment!( UInt8 alignment ) {
+    this.alignment = alignment;
+  }
+
+  IconWidget.setToolTip!( String text ) {
+    if( !this.toolTip ) {
+      this.toolTip = Text();
+      this.addChild( "toolTip", this.toolTip );
+      this.setToolTipOffset( this.toolTipOffset );
+    }
+    this.toolTip.setText( text );
+    this.toolTip.setVisible( false );
+
+    SetPropertyAction showAction( VisibleProperty, RTVal( true ), true );
+    showAction.connect( this.highlightAction.highlightColorAction, ActionEvent_Do, ActionEvent_Undo, false );
+    this.toolTip.attachComponent( showAction );
+  }
+
+  /// Sets the tooltip offset in local space, relative to the icon space, which ranges from [-1,1]
+  IconWidget.setToolTipOffset!( Vec2 offset ) {
+    this.toolTipOffset = offset;
+    if( this.toolTip )
+      this.toolTip.setLocalTransform( Xfo( Vec3( this.toolTipOffset.x, this.toolTipOffset.y, 0 ) ) );
+  }
+
+  /// Implementation of LayoutAlignment.
+  Vec2 IconWidget.getPixelSize() {
+    return this.pixelSize;
+  }
+
+  IconWidget.construct!( Vec2 pixelSize, RTVal color, RTVal highlightColor ) {
+
+    this.pixelSize = pixelSize;
+    this.adjustToParentLayout = true;// Adjust size to parent layout
+
+    this.iconShape = RectangleShape();
+    this.addChild( "IconShape", this.iconShape );
+
+    this.setRenderPass( HUDRenderPass );
+
+    this.addDrawModifier( IconWidgetLayoutModifier(), true );
+    this.toolTipOffset = Vec2( 1, 0 );
+
+    this.setColors( color, highlightColor );
+  }
+
+  Ref<BaseTool> IconWidget.getShape() {
+    return this.iconShape;
+  }
+
+  IconWidget.setColors!( RTVal color, RTVal highlightColor ) {
+    this.color = color;
+    this.iconShape.setColor( color );
+
+    this.highlightColor = highlightColor;
+
+    if( !this.highlightAction ) {
+      // Create it in all cases, we use it also for the tooltip
+      this.highlightAction = HighlightUnderMouse();
+      this.iconShape.attachComponent( this.highlightAction );
+    }
+    this.highlightAction.setColor( this.highlightColor.type() ? this.highlightColor : this.color );
+  }
+
+  /// \internal
+  object IconWidgetLayoutModifier : BaseDrawModifier{
+  };
+
+  IconWidgetLayoutModifier.updateDrawData!( io DrawContext context, Ref<Object> target ) {
+    this.parent.updateDrawData( context, target );
+    Ref<IconWidget> iconWidget = target;
+
+    Vec2 parentUpperLeft, parentLowerRight;
+    GetScreenSpaceRectangle( context, parentUpperLeft, parentLowerRight );
+
+    Vec2 upperLeft, lowerRight;
+    AlignWithParentRectangle( GetAlignment( iconWidget ), iconWidget.pixelSize, parentUpperLeft, parentLowerRight, iconWidget.adjustToParentLayout, upperLeft, lowerRight );
+
+    iconWidget.iconShape.setPixelCoordinatesTransform( upperLeft, lowerRight, context );
+  }
+
+}// namespace Tool

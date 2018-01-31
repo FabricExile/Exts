@@ -1,0 +1,34 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /**
+  \versionadded 2.6.0
+
+  The DistanceBasedTransparency, when attached to a BaseTool (:kl-ref:`Tool::BaseTool.addDrawModifier` ),
+  will change the transparency of the BaseTool based on a max pixel distance to max transparency ratio.
+  See :ref:`TPG.tooldrawmodifier` for more information about draw modifiers.
+  */
+  object DistanceBasedTransparency : ScreenDistanceBasedBehavior{
+    Float32 maxTransparency;
+  };
+
+  DistanceBasedTransparency() {
+    this.maxTransparency = 0.3f;
+  }
+
+  DistanceBasedTransparency( Float32 maxTransparency, Float32 maxPixelDistance ) {
+    this.maxTransparency = maxTransparency;
+    this.maxPixelDistance = maxPixelDistance;
+  }
+
+  DistanceBasedTransparency.onDistanceRatio!( io Ref<BaseTool> tool, Float32 ratio, DrawContext context ) {
+    if( tool ) {
+      Float32 transparency = ( 1.0f - ratio ) * ( 1.0f - this.maxTransparency );
+      tool.setTransparency( transparency, context );
+    }
+  }
+
+}// namespace Tool

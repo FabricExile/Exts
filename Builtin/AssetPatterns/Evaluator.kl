@@ -1,0 +1,50 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+const SInt32 Evaluator_PortType_In = 0;
+const SInt32 Evaluator_PortType_IO = 1;
+const SInt32 Evaluator_PortType_Out = 2;
+
+
+/**
+The Evaluator interface is used to define delayed loading of data or
+loading of data over time for animated file formats.
+Spezialized classes such as the AlembicImporter use it
+to provide a generic mechanism for pulling animated data.
+
+\dfgPresetOmit
+*/
+interface Evaluator
+{
+  /// Returns the name of the evaluator
+  String getName!();
+
+  /// Returns the number of arguments
+  Size getArgCount!();
+
+  /// Returns the name of an argument
+  String getArgName!(Index index);
+
+  /// Returns the data type of an argument
+  String getArgDataType!(Index index);
+
+  /// Returns the data type of an argument
+  SInt32 getArgPortType!(Index index);
+
+  /// Returns the value of the argument
+  RTVal getArgValue!(Index index);
+
+  /// Returns true if this is a deformer
+  Boolean isDeformer!();
+
+  /// Returns a list of extension dependencies
+  String[] getExtDeps!();
+
+  /// Returns the KL code
+  String getKLCode!();
+
+  // updates the evaluator based on a context
+  updateDefaultContext!(ImporterContext context);
+};
+

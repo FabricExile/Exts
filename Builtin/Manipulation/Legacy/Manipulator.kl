@@ -1,0 +1,41 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  \versionadded 1.12.0
+
+  The :kl-ref:`Manipulator` interface for all manipulators. 
+  A custom manipulator supporting the Manipulator must implement the functions defined in the interface. 
+  How a manipulator interprets and processed the events from the host application is completely down to the implementation of the onEvent function.
+
+  A wide range of custom manipulators are possible with this design, and there are a collection of example manipulators provided to show how they can be implemented.
+
+  \rst
+    .. kl-example:: MyCustomManipulator
+
+    EventDispatcher dispatcher = EventDispatcher_GetInstance();
+    Manipulator manipulator = MyCustomManipulator();
+
+    // register the manipulator under the name 'MoveTool'
+    dispatcher.registerManipulator("MoveTool", manipulator);
+  \endrst
+
+  \seealso :kl-ref:`EventDispatcher`, :kl-ref:`RTREventDispatcher`, :kl-ref:`SRTManipulator` 
+  \dfgPresetOmit
+*/
+
+interface Manipulator {
+  /// Called when this manipulator is enabled. It should prepare for action. 
+  /// Some manipulators might start drawing online gizmos to indicate that they are active. 
+  onEnable!();
+
+  /// Called when this manipulator is disabled.
+  /// The manipulator can peform cleanpup, such as removeing onscreen icons, paint brushes etc...
+  onDisable!();
+
+  /// Event propagation to the active manipulator.
+  onEvent!(io Event event);
+};
+
+

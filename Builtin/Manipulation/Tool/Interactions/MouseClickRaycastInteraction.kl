@@ -1,0 +1,173 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  const String MouseClickRaycastInteraction_UnconfirmedClick = "onUnconfirmedClick";// Initial click, but might not be successful if !MouseClickRaycastInteraction.sendSuccessOnlyIfReleaseOnTarget
+  const String MouseClickRaycastInteraction_SuccessEvent = "onClickRaycastSuccess";
+  const String MouseClickRaycastInteraction_MouseReleaseEvent = "onClickRaycastRelease";
+  const String MouseClickRaycastInteraction_FirstOutsideClickEvent = "firstOutsideClick";
+
+  /**
+    The MouseClickRaycastInteraction sends events when the target shape is clicked.
+    The mouse button can be specified (MouseButton_LeftButton by default). The target
+    shape, if not specified, is the owner BaseTool. Else, an explicit shape can be specified 
+    with :kl-ref:`Tool::BaseRaycastInteraction.setRaycastShape`, :kl-ref:`Tool::BaseRaycastInteraction.addRaycastShape`,
+    :kl-ref:`Tool::BaseRaycastInteraction.setRaycastHierarchy` or :kl-ref:`Tool::BaseRaycastInteraction.addRaycastHierarchy`.
+
+    If "mouse click" conditions are matched, MouseClickRaycastInteraction will send
+    a MouseClickRaycastInteraction_SuccessEvent event if the mouse raycast succeeds,
+    and a MouseClickRaycastInteraction_FirstOutsideClickEvent the first time it fails afterward.
+
+    By default, the MouseClickRaycastInteraction_SuccessEvent will only be sent upon 
+    mouse release if the mouse release also happens while the mouse is over the target shape.
+    This behavior can be disabled with :kl-ref:`Tool::MouseClickRaycastInteraction.sendSuccessOnlyIfReleaseOnTarget`,
+    in which case MouseClickRaycastInteraction_SuccessEvent will be sent on mouse press, no matter
+    where it releases.
+
+    See :ref:`TPG.interactive-tools` for more information and examples related to tool interactions.
+  */
+  object MouseClickRaycastInteraction : BaseRaycastInteraction{
+    MouseClickRaycastEventHandler raycastHandler;
+    MouseButton mouseButtonsFilter;
+    ModiferKey allowedModifiers;
+
+    Boolean hadLastSuccessClick;// Properly send "background click" events
+
+    Boolean onlyIfReleaseOnTarget;// Properly filter mouse release events
+    Boolean clickedNotYetReleased;// Properly filter mouse release events
+  };
+
+  /// \note By default, the parent's shape hierarchy will be added as a raycast shape.
+  MouseClickRaycastInteraction() {
+    this.init( true );
+    this.mouseButtonsFilter = MouseButton_LeftButton;
+  }
+
+  /// \param parentIsShapeHierarchy If true, the parent's shape hierarchy will be added as a raycast shape.
+  MouseClickRaycastInteraction( UInt32 mouseButtonsFilter ) {
+    this.init( true );
+    this.mouseButtonsFilter = mouseButtonsFilter;
+  }
+
+  /// \param parentIsShapeHierarchy If true, the parent's shape hierarchy will be added as a raycast shape.
+  MouseClickRaycastInteraction( UInt32 mouseButtonsFilter, UInt32 allowedModifiers ) {
+    this.init( true );
+    this.mouseButtonsFilter = mouseButtonsFilter;
+    this.allowedModifiers = allowedModifiers;
+  }
+
+  /// \param parentIsShapeHierarchy If true, the parent's shape hierarchy will be added as a raycast shape.
+  MouseClickRaycastInteraction( UInt32 mouseButtonsFilter, UInt32 allowedModifiers, Boolean parentIsShapeHierarchy ) {
+    this.init( parentIsShapeHierarchy );
+    this.mouseButtonsFilter = mouseButtonsFilter;
+    this.allowedModifiers = allowedModifiers;
+  }
+
+  /// \internal
+  MouseClickRaycastInteraction.init!( Boolean parentIsShapeHierarchy ) {
+    this.parentIsShapeHierarchy = parentIsShapeHierarchy;
+    this.raycastHandler = GetMouseClickRaycastEventHandler();
+    this.onlyIfReleaseOnTarget = true;
+    this.raycastHandler.addRaycastTarget( this, true );
+    this.connect( this.raycastHandler, false, MouseClickRaycastEventHandler_ReleaseEvent );
+  }
+
+  MouseClickRaycastInteraction.sendSuccessOnlyIfReleaseOnTarget!( Boolean onlyIfReleaseOnTarget ) {
+    this.raycastHandler.removeRaycastTarget( this );
+    this.onlyIfReleaseOnTarget = onlyIfReleaseOnTarget;
+    this.raycastHandler.addRaycastTarget( this, onlyIfReleaseOnTarget );
+  }
+
+  /// \internal
+  /// Non-virtual version that can be safely called from the destructor
+  /// This can be removed once KL is fixed to not call specialized methods in destructors
+  MouseClickRaycastInteraction.invalidateInternal!( ) {
+    if( this.hadLastSuccessClick ) {
+      this.sendEventToListeners( MouseClickRaycastInteraction_FirstOutsideClickEvent );
+      this.hadLastSuccessClick = false;
+    }
+    if( this.raycastHandler ) {
+      this.raycastHandler.removeRaycastTarget( this );
+      this.raycastHandler = null;
+    }
+    this.parent.invalidate();
+  }
+
+  MouseClickRaycastInteraction.invalidate!( ) {
+    this.invalidateInternal();
+  }
+
+  ~MouseClickRaycastInteraction() {
+    this.invalidateInternal();
+  }
+
+  MouseClickRaycastInteraction.setMouseButtonsFilter!( UInt32 mouseButtonsFilter ) {
+    this.mouseButtonsFilter = mouseButtonsFilter;
+  }
+
+  MouseClickRaycastInteraction.setallowedModifiers!( ModiferKey allowedModifiers ) {
+    this.allowedModifiers = allowedModifiers;
+  }
+
+  /// \internal
+  Boolean MouseClickRaycastInteraction.allowRaycast( RaycastContext context ) {
+    // Apply button filtering logic if applicable
+    if( !this.raycastHandler.waitingForMouseRelease( this ) ) {
+      Ref<MouseEvent> mouseEvent = context.event;
+      if( Boolean( mouseEvent ) && ( ( mouseEvent.buttons | mouseEvent.button ) != this.mouseButtonsFilter || ( ( mouseEvent.getModifiers() & ~this.allowedModifiers ) != 0 ) ) )
+        return false;
+    }
+    return this.parent.allowRaycast( context );
+  }
+
+  /// \internal
+  /// Implementation of RaycastTarget
+  MouseClickRaycastInteraction.onRaycastInitiated!( io RaycastContext context, RaycastResult result ) {
+    this.clickedNotYetReleased = true;
+    BaseRaycastInteractionSendEventBracket bracket( this, context, result );
+    this.parent.onRaycastInitiated( context, result );
+    if( this.onlyIfReleaseOnTarget )
+      this.sendEventToListeners( MouseClickRaycastInteraction_UnconfirmedClick, EventPropagationType_none, String(), this );
+  }
+
+  /// \internal
+  /// Implementation of RaycastTarget
+  MouseClickRaycastInteraction.onRaycastSucceeded!( io RaycastContext context, RaycastResult result ) {
+
+    if( !this.onlyIfReleaseOnTarget )
+      this.clickedNotYetReleased = true;
+
+    BaseRaycastInteractionSendEventBracket bracket( this, context, result );
+    this.parent.onRaycastSucceeded( context, result );
+    context.event.accept();
+    this.sendEventToListeners( MouseClickRaycastInteraction_SuccessEvent, EventPropagationType_none, String(), this );
+
+    this.hadLastSuccessClick = true;
+  }
+
+  /// Send a MouseClickRaycastInteraction_FirstOutsideClickEvent first time something else is clicked, to make "setFocus" handling easier
+  MouseClickRaycastInteraction.onRaycastFail!( io RaycastContext context ) {
+    this.parent.onRaycastFail( context );
+    this.clickedNotYetReleased = false;
+    if( this.allowRaycast( context ) ) {
+      if( this.hadLastSuccessClick ) {
+        ToolChanged();// Don't accept events clicked outside; another one might use it (but would not if it was accepted already)
+        this.sendEventToListeners( MouseClickRaycastInteraction_FirstOutsideClickEvent );
+        this.hadLastSuccessClick = false;
+      }
+    }
+  }
+
+  /// \internal
+  MouseClickRaycastInteraction.onEvent!( ToolEvent event, ToolEventUserID userID ) {
+    if( event.name == MouseClickRaycastEventHandler_ReleaseEvent && this.clickedNotYetReleased ) {
+      this.clickedNotYetReleased = false;
+      Ref<MouseEvent> mouseEvent = event.customData;
+      if( Boolean( mouseEvent ) && ( ( mouseEvent.buttons | mouseEvent.button ) == this.mouseButtonsFilter ) )
+        this.sendEventToListeners( MouseClickRaycastInteraction_MouseReleaseEvent, EventPropagationType_none, String(), this );
+    } else
+      this.parent.onEvent( event, userID );
+  }
+}// namespace Tool

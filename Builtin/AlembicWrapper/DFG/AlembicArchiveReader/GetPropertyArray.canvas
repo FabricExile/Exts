@@ -1,0 +1,86 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "Supported types:\n  this: AlembicArchiveReader\n  path: String\n  key: String\n  result: AlembicPropertyReader\n"
+    },
+  "title" : "GetProperty[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicArchiveReader[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "path",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String[]" : [
+          ""
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "key",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String[]" : [
+          ""
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "AlembicPropertyReader[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "61A4069EFF11624B70A55D455B0F817E",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicArchiveReader_getProperty_task<<<index>>>(
+  io AlembicPropertyReader[] result
+, io AlembicArchiveReader[] this
+, in String[] path
+, in String[] key
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].getProperty(path[index < path.size() ? index : path.size() - 1], key[index < key.size() ? index : key.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( path.size() == 0) return;
+  if( key.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < path.size()) task_size = path.size();
+  if(task_size < key.size()) task_size = key.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      AlembicWrapper_AlembicArchiveReader_getProperty_task(index, result, this, path, key);
+    }
+  } else {
+    AlembicWrapper_AlembicArchiveReader_getProperty_task<<<task_size>>>(result, this, path, key);
+  }
+}
+"
+  }

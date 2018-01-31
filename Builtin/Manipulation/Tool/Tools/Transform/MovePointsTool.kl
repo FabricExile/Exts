@@ -1,0 +1,303 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+  const String MovePointsTool_selectingState = "mpt_selecting";
+  const String MovePointsTool_transformingState = "mpt_transformingState";
+  const String MovePointsTool_onReset = "mpt_reset";
+
+  const Size MovePointsTool_selectMode = 0;
+  const Size MovePointsTool_translateMode = 1;
+  const Size MovePointsTool_rotateMode = 2;
+  const Size MovePointsTool_scaleMode = 3;
+  const Size MovePointsTool_modeCount = 4;
+
+  /// The MovePointsTool allows to move points on a target geometry.
+  /// In order to work on geometries that are computed from the graph
+  /// (eg: Alembic loaded mesh), it doesn't modify directly the Geometry,
+  /// since in general it cannot be persisted as a port value. Instead,
+  /// it edits a sparse positions override stored as an array
+  /// of positions and indices.
+  /// In order to do this, it creates a specialized transform target (MovePointsXfoTarget)
+  /// which maps transform changes to commands that will edit these delta arrays.
+  ///
+  /// It also uses as subtools a :kl-ref:`TransformTool` and a :kl-ref:`ScriptableGeometrySelectionTool`
+  /// in order to delegate some of the interaction, depending if selecting or transforming points.
+  object MovePointsTool : BaseTool{
+
+    ScriptableGeometrySelectionTool selectionTool;
+    MovePointsXfoTarget xfoTarget;// After construction, this could be overwritten with a specialized class, if needed
+    IconShelfLayout shelf;
+    RadioButtonBehavior modeRadioButton;
+    Boolean handleKeyPressed;
+  };
+
+  MovePointsTool() {
+    this.selectionTool = ScriptableGeometrySelectionTool();
+    this.selectionTool.setSelectionMode( SelectionMode_Points, false );
+    this.selectionTool.setHideAllIfNotActive( false );// When not active, we still want to see the selection
+
+    this.addChild( "selTool", this.selectionTool );
+
+    this.xfoTarget = MovePointsXfoTarget();
+    this.enableKeyHandling( true );
+    this.setMainState( MovePointsTool_selectingState );
+  }
+
+  MovePointsTool.enableKeyHandling!( Boolean enable ) {
+    this.registerToRawEvents( true );
+    this.handleKeyPressed = enable;
+  }
+
+  Ref<Geometry> MovePointsTool.getGeometry() {
+    return this.selectionTool.getGeometry( 0 );
+  }
+
+  MovePointsTool.getSelectedPointsAndPositions( io Size selectedPoints[], io Vec3 selectedPointPositions[] ) {
+
+    Size selCount = 0;
+    if( this.selectionTool.getSelection().size() ) {
+      Ref<ItemReference> compRefs = this.selectionTool.getSelection().getItem( 0, ComponentType_points );
+      if( compRefs )
+        selectedPoints = compRefs.getComponentIndices();
+      else
+        selectedPoints.resize( 0 );
+
+      selectedPointPositions.resize( selectedPoints.size() );
+
+      // Geometry might not match indices; filter
+      Ref<Geometry> geometry = this.getGeometry();
+      Size pointCount = geometry.pointCount();
+      for( Size i = 0; i < selectedPoints.size(); ++i ) {
+        Size pointIndex = selectedPoints[i];
+        if( pointIndex < pointCount ) {
+          selectedPoints[selCount] = pointIndex;
+          selectedPointPositions[selCount] = geometry.getPointPosition( pointIndex );
+          ++selCount;
+        }
+      }
+    }
+    selectedPoints.resize( selCount );
+    selectedPointPositions.resize( selCount );
+  }
+
+  MovePointsTool.updateValues!( ItemReferences selection, Geometry geometry, Xfo xfo, Boolean drawGeometry ) {
+    Geometry geometries[];
+    geometries.push( geometry );
+    Xfo xfos[];
+    xfos.push( xfo );
+    this.selectionTool.setGeometries( geometries, xfos, drawGeometry );
+    Boolean selectionChanged = this.selectionTool.setSelection( selection );
+
+    // Get selected points, update target
+    Size selectedPoints[];
+    Vec3 selectedPointPositions[];
+    this.getSelectedPointsAndPositions( selectedPoints, selectedPointPositions );
+    this.xfoTarget.update( geometry, xfo, selectionChanged, selectedPoints, selectedPointPositions );
+  }
+
+  MovePointsTool.setPortArgs!( String selectionPortPath, String movedPointsPortPath, String movedPointPositionsPortPath ) {
+    this.selectionTool.setPortArgs( selectionPortPath, String() );
+    this.xfoTarget.setPortArgs( movedPointsPortPath, movedPointPositionsPortPath );
+  }
+
+  MovePointsTool.onEnterState!( String newState, Boolean mainState ) {
+    if( newState == MovePointsTool_transformingState ) {
+      TransformTool transformTool( this.xfoTarget, Color( 1.0, 1.0, 0 ) );
+      transformTool.enableKeyHandling( false );
+      AddChildAction addChild( "transformTool", transformTool, true );
+      this.attachAndDoStateSpecificAction( newState, addChild );
+      return;
+    }
+  }
+
+  MovePointsTool.createToolShelf!( ) {
+    if( !this.shelf ) {
+      this.shelf = IconShelfLayout();
+      this.shelf.addCollapseAllIcon( true );
+      this.shelf.setAlignment( Alignment_upperLeft );
+      this.shelf.setSpacing( 15, Vec2( 30 ), 5 );
+
+      CheckBoxWidget selectCB = CreateDefaultSelectCheckBox();
+      this.shelf.addIcon( selectCB, "selIcon" );
+      CheckBoxWidget translateCB = CreateDefaultTranslateCheckBox();
+      this.shelf.addIcon( translateCB, "trIcon" );
+      CheckBoxWidget rotateCB = CreateDefaultRotateCheckBox();
+      this.shelf.addIcon( rotateCB, "rotIcon" );
+      CheckBoxWidget scaleCB = CreateDefaultScaleCheckBox();
+      this.shelf.addIcon( scaleCB, "scIcon" );
+
+      PushButtonWidget resetPB = CreateDefaultResetPushButton();
+      resetPB.setToolTip( "Reset deltas (no selection = all)" );
+      this.shelf.addIcon( resetPB, "delIcon" );
+
+      resetPB.addListener( this, false, Tool::PushButtonWidget_onTrigger, MovePointsTool_onReset );
+
+      this.modeRadioButton = RadioButtonBehavior();
+      this.modeRadioButton.addCheckBox( selectCB );
+      this.modeRadioButton.addCheckBox( translateCB );
+      this.modeRadioButton.addCheckBox( rotateCB );
+      this.modeRadioButton.addCheckBox( scaleCB );
+
+      this.modeRadioButton.addListener( this, false, RadioButtonBehavior_onItemChanged, "MovePointsTool_modeChanged" );
+      this.addChild( "shelf", this.shelf );
+    }
+  }
+
+  /// Returns active mode: TransformTool_translateMode, TransformTool_rotateMode or TransformTool_scaleMode.
+  Size MovePointsTool.getActiveMode() {
+    String state = this.getMainState();
+    if( state == MovePointsTool_selectMode )
+      return MovePointsTool_selectMode;
+    else {
+      Ref<TransformTool> trTool = this.getChild( "transformTool" );
+      if( trTool ) {
+        Size trMode = trTool.getActiveMode();
+        if( trMode == TransformTool_translateMode )
+          return MovePointsTool_translateMode;
+        else if( trMode == TransformTool_rotateMode )
+          return MovePointsTool_rotateMode;
+        else if( trMode == TransformTool_scaleMode )
+          return MovePointsTool_scaleMode;
+      }
+    }
+    return MovePointsTool_selectMode;
+  }
+
+  /// Activates a mode among MovePointsTool_selectMode, MovePointsTool_translateMode, MovePointsTool_rotateMode and MovePointsTool_scaleMode.
+  MovePointsTool.activateMode!( Size mode ) {
+    if( mode == MovePointsTool_selectMode ) {
+      this.activate();
+      this.setMainState( MovePointsTool_selectingState );
+      if( this.shelf )
+        this.modeRadioButton.setSelectedItem( MovePointsTool_selectMode );
+
+    } else if( mode == MovePointsTool_translateMode ) {
+      this.activate();
+      this.setMainState( MovePointsTool_transformingState );
+      Ref<TransformTool> trTool = this.getChild( "transformTool" );
+      trTool.activateMode( TransformTool_translateMode );
+      if( this.shelf )
+        this.modeRadioButton.setSelectedItem( MovePointsTool_translateMode );
+
+    } else if( mode == MovePointsTool_rotateMode ) {
+      this.activate();
+      this.setMainState( MovePointsTool_transformingState );
+      Ref<TransformTool> trTool = this.getChild( "transformTool" );
+      trTool.activateMode( TransformTool_rotateMode );
+      if( this.shelf )
+        this.modeRadioButton.setSelectedItem( MovePointsTool_rotateMode );
+
+    } else if( mode == MovePointsTool_scaleMode ) {
+      this.activate();
+      this.setMainState( MovePointsTool_transformingState );
+      Ref<TransformTool> trTool = this.getChild( "transformTool" );
+      trTool.activateMode( TransformTool_scaleMode );
+      if( this.shelf )
+        this.modeRadioButton.setSelectedItem( MovePointsTool_scaleMode );
+    }
+  }
+
+  /// A parent tool can forward raw events here, and if the
+  /// key corresponds to a mode (select, translate...) then
+  /// it will activate and select the right mode.
+  MovePointsTool.onKeyPressed!( io Ref<KeyEvent> key ) {
+    if( Boolean( key ) && key.eventType == Event_KeyPress ) {
+      if( key.key == Key_W ) {
+        // TODO: use a keymap / hotkey singleton
+        key.accept();
+        this.activateMode( MovePointsTool_translateMode );
+      } else if( key.key == Key_E ) {
+        // TODO: use a keymap / hotkey singleton
+        key.accept();
+        this.activateMode( MovePointsTool_rotateMode );
+      } else if( key.key == Key_R ) {
+        // TODO: use a keymap / hotkey singleton
+        key.accept();
+        this.activateMode( MovePointsTool_scaleMode );
+      } else if( key.key == Key_Q || key.key == Key_Escape ) {
+        // TODO: use a keymap / hotkey singleton
+        key.accept();
+        this.activateMode( MovePointsTool_selectMode );
+      } else if( key.key == Key_Delete ) {
+        key.accept();
+        this.resetSelected();
+      }
+    }
+  }
+
+  /// \internal
+  MovePointsTool.onRawEvent!( io Event event ) {
+    if( this.handleKeyPressed ) {
+      if( !this.isActive() )
+        return;
+
+      // TODO: use keymap global settings for QWER
+      Ref<KeyEvent> key = event;
+      if( Boolean( key ) && key.eventType == Event_KeyPress )
+        this.onKeyPressed( key );
+    }
+    this.parent.onRawEvent( event );
+  }
+
+  /// \internal
+  MovePointsTool.onEvent!( ToolEvent event, ToolEventUserID userID ) {
+    if( event.name == Event_EnteredState ) {
+      if( event.tag == TransformTool_translateState )
+        this.activateMode( MovePointsTool_translateMode );
+      if( event.tag == TransformTool_rotateState )
+        this.activateMode( MovePointsTool_rotateMode );
+      if( event.tag == TransformTool_scaleState )
+        this.activateMode( MovePointsTool_scaleMode );
+    }
+    else if( event.name == "MovePointsTool_modeChanged" ) {
+      Size mode = this.modeRadioButton.getSelectedItem();
+      if( mode != InvalidIndex )
+        this.activateMode( mode );
+      return;
+    }
+    else if( event.name == MovePointsTool_onReset ) {
+      this.resetSelected();
+      return;
+    }
+
+    this.parent.onEvent( event, userID );
+  }
+
+  MovePointsTool.resetSelected!( ) {
+    RTVal args[String];
+    args["editedPointIndices"] = PathValue( this.xfoTarget.editedPointIndicesPortPath );
+    args["editedPointPositions"] = PathValue( this.xfoTarget.editedPointPositionsPortPath );
+    args["selection"] = PathValue( this.selectionTool.setSelectionCommandWrapper.targetPath );
+
+    Ref<CommandManager> commandManager = GetCommandManager();
+    commandManager.scheduleCommand(
+      "ResetMovePointDeltas",
+      args );
+  }
+
+  ApplyMovePointsDelta( io Geometry geom, Size movedPoints[], Vec3 movedPointPositions[], Boolean recomputeMeshNormals ) {
+    Size count = movedPoints.size();
+    if( count > movedPointPositions.size() )
+      count = movedPointPositions.size();
+
+    Size pointCount = geom.pointCount();
+    for( Size i = 0; i < count; ++i ) {
+      // guard against mesh changes
+      if( movedPoints[i] < pointCount )
+        geom.setPointPosition( movedPoints[i], movedPointPositions[i] );
+    }
+
+    if( recomputeMeshNormals ) {
+      Ref<PolygonMesh> mesh = geom;
+      if( mesh ) {
+        // Ideally normals would be transformed/deformed just like point positions instead of being recomputed
+        //TODO: at least only recompute the ones the for points that changed, but there's no methods right now for doing that on the mesh
+        mesh.recomputePointNormals( Math_degToRad( 60 ) );
+      }
+    }
+  }
+
+
+}// namespace Tool

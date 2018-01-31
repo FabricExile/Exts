@@ -1,0 +1,232 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+/brief The ``SkinningAttribute`` contains multiple pairs of id and weight per index. 
+For an index, id-weight pairs can be set one by one or in batch. It provides, too, helpers such as 
+SkinningAttribute.normalize to set weight sum to 1.0. By implementing methods such as 
+GeometryAttribute.LinearCombination, it can properly support modeling operations. 
+
+Various strategies are used to lower memory consumption and increase performance:
+
+- contiguous memory storage in a few buffers to lower memory fragmentation and minimize memory allocations
+
+- ``counts`` per index is implicit if values are appended in order (0 to N-1)
+
+- ids are stored ``UInt16``, which lowers memory usage and still allows for up to 64K deformer ids
+
+\note Changing the pair count is not thread safe
+
+\example
+  SkinningAttribute skinningAttr = SkinningAttribute();
+  
+  //Create 2 skinned items
+  skinningAttr.resize(2);
+  
+  //Item 0: 2 id-weight pairs:
+  //  pair 0 = [20:0.25]
+  //  pair 1 = [21:0.75]
+  skinningAttr.setPairCount( 0, 2 );
+  skinningAttr.setPair( 0, 0, 20, 0.25 );
+  skinningAttr.setPair( 0, 1, 21, 0.75 );
+  
+  //Item 1: set 3 id-weight pairs in batch = [30:0.5, 31:0.5, 32:0.25]
+  LocalL16UInt32Array indices;
+  indices.push(30);
+  indices.push(31);
+  indices.push(32);
+  
+  LocalL16ScalarArray weights;
+  weights.push(0.5);
+  weights.push(0.5);
+  weights.push(0.25);
+  
+  skinningAttr.setPairs(1, indices, weights);
+
+  Scalar weight;
+  UInt16 id;
+  for( Size i = 0; i < skinningAttr.getPairCount(0); ++i ) {
+    skinningAttr.getPair( 0, i, id, weight );
+    report("Item0: pair" + i + ": id="+id+" weight="+weight);
+  }
+  
+  skinningAttr.getPairs(1, indices, weights);
+  report("Item1: ids="+indices.getString()+" weights="+weights.getString());
+  
+  skinningAttr.normalize(0);
+  skinningAttr.normalize(1);
+  report("Values after normalize:");
+  report( skinningAttr.getDesc( true) );
+\endexample
+*/
+object SkinningAttribute : BaseAttribute {
+  SkinningAttributeData internalData;
+  UInt32 memoryLocation; // CPU = 0, GPU = 1, VBO_backed_GPU = 2;
+};
+
+function UInt32ArrayAllocator SkinningAttribute.weightsAllocator() {
+  return this.internalData.dataAllocator;
+}
+function UInt16[] SkinningAttribute.ids() {
+  return this.internalData.ids;
+}
+function UInt32[] SkinningAttribute.offsets() {
+  return this.internalData.offsets;
+}
+function UInt32[] SkinningAttribute.counts() {
+  return this.internalData.counts;
+}
+
+function StatisticRecord[] SkinningAttribute.getStatistics() {
+  StatisticRecord stats[] = this.parent.getStatistics();
+  stats.push( StatisticRecord( Statistic_MemoryUsage, this.weightsAllocator().memUsage() + this.ids().size()*2) );
+  return stats;
+}
+
+/// \dfgPresetOmit
+SkinningAttribute.cloneMembersTo( io SkinningAttribute that ) {
+  //The difference with default clone() is that new.parent.autoStat will point to 'new' (from constructor)
+  this.parent.cloneMembersTo(that);//Copies all but the values
+  this.internalData.cloneMembersTo( that.internalData );
+}
+
+inline Data SkinningAttribute.data() {
+  Data nullData;
+  return nullData;//Unsupported: we have 2 arrays
+}
+
+inline UInt32 SkinningAttribute.getElementsMemType( ) {
+  return this.memoryLocation;
+}
+
+inline SkinningAttribute.convertToGPU!( ) {
+  this.internalData.convertToGPU();
+  this.memoryLocation = 1;
+  this.incrementVersion();
+}
+
+inline SkinningAttribute.convertToCPU!( ) {
+  this.internalData.convertToCPU();
+  this.memoryLocation = 0;
+  this.incrementVersion();
+}
+
+function SkinningAttribute.resize!(Size count) {
+  this.parent.resize(count);
+  this.internalData.resize( count );
+}
+
+inline Boolean SkinningAttribute.checkConsistency() {
+  if( this.size() != this.internalData.size() )
+    return false;
+  return this.parent.checkConsistency();
+}
+
+
+inline SkinningAttribute.copyValue!( Size sourceIndex, Size targetIndex ) {
+  this.internalData.copyValue( sourceIndex, targetIndex );
+}
+
+inline SkinningAttribute.copyValue!( Ref<Object> sourceAttr, Size sourceIndex, Size targetIndex ) {
+  Ref<SkinningAttribute> source = sourceAttr;
+  this.internalData.copyValue( source.internalData, sourceIndex, targetIndex );
+}
+
+inline SkinningAttribute.copyFrom!( Ref<Object> otherAttr ) {
+  // [andrew 20150202] if this.internalData lives on GPU we need to first
+  // reset it before copying in the new data due to some of the checks
+  // that take place in the .copyFrom() method (even if the new data
+  // also lives on GPU)
+  if (this.getElementsMemType() == Fabric_MemType_GPU)
+    this.internalData = SkinningAttributeData();
+  this.parent.copyFrom( otherAttr );
+  Ref<SkinningAttribute> other = otherAttr;
+  this.internalData.copyFrom( other.internalData );
+}
+
+inline SkinningAttribute.setPairCount!( UInt32 index, UInt32 pairCount ) {
+  this.internalData.setPairCount( index, pairCount );
+}
+
+inline UInt32 SkinningAttribute.getPairCount( UInt32 index ) {
+  return this.internalData.getCount( index );
+}
+
+inline SkinningAttribute.setPair!( UInt32 index, UInt32 offset, UInt16 id, Scalar weight ) {
+  this.internalData.setPair( index, offset, id, weight );
+}
+
+inline SkinningAttribute.getPair( UInt32 index, UInt32 offset, out UInt16 id, out Scalar weight ) {
+  this.internalData.getPair( index, offset, id, weight );
+}
+
+inline SkinningAttribute.getPairs( UInt32 index, out LocalL16UInt32Array skinIds, out LocalL16ScalarArray skinWeights ) {
+  this.internalData.getPairs( index, skinIds, skinWeights );
+}
+
+inline SkinningAttribute.setPairs!( UInt32 index, LocalL16UInt32Array skinIds, LocalL16ScalarArray skinWeights ) {
+  this.internalData.setPairs( index, skinIds, skinWeights );
+}
+
+inline SkinningAttribute.getLinearCombination( LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights, out LocalL16UInt32Array skinIds, out LocalL16ScalarArray skinWeights ) {
+  this.internalData.getLinearCombination( sourceIndices, sourceWeights, skinIds, skinWeights );
+}
+
+inline SkinningAttribute.linearCombine!( Ref<Object> sourceAttr, LocalL16UInt32Array sourceIndices, LocalL16ScalarArray sourceWeights, Size targetIndex ) {
+  this.internalData.linearCombine( sourceAttr, sourceIndices, sourceWeights, targetIndex );
+}
+
+inline SkinningAttribute.normalize!( Size index ) {
+  this.internalData.normalize( index );
+}
+
+/// Unsupported since we have a variable size per item
+inline SkinningAttribute.setFromScalar!( Size index, LocalL16ScalarArray value ) {
+}
+
+/// Unsupported since we have a variable size per item
+inline Size SkinningAttribute.getScalarValueSize() {
+  return 0;
+}
+
+inline Boolean SkinningAttribute.equalValues( Size index1, Size index2 ) {
+  return this.internalData.equalValues( index1, index2 );
+}
+
+require Util;
+
+/// \internal
+function String SkinningAttribute._valueDesc( Size index, Boolean unitTestPrint, Boolean truncateDec, UInt32 n ) {
+  LocalL16UInt32Array skinIds;
+  LocalL16ScalarArray skinWeights;
+  this.getPairs( index, skinIds, skinWeights );
+  String result = '[';
+  for( Size i = 0; i < skinIds.size(); ++i ) {
+    if( i )
+      result += ', ';
+    result += skinIds.get(i) + ':' + (
+      unitTestPrint ? unitTestTruncate(skinWeights.get(i)) : 
+      truncateDec ? truncateDecimals(skinWeights.get(i), n) :
+      skinWeights.get(i));
+  }
+  result += ']';
+  return result;
+}
+
+inline String SkinningAttribute.valueDesc( Size index ) {
+  return this._valueDesc( index, false, false, 0 );
+}
+
+function String SkinningAttribute.unitTestPrint( Size index ) {
+  return this._valueDesc( index, true, false, 0 );
+}
+
+function String SkinningAttribute.truncateDecimalsPrint( Size index, UInt32 n ) {
+  return this._valueDesc( index, false, true, n );
+}
+
+/// If it exists, returns the attribute of that name, else creates it.
+function Ref<SkinningAttribute> GeometryAttributes.getOrCreateSkinningAttribute!( String name ) {
+  return this.getOrCreateAttribute( name, SkinningAttribute );
+}

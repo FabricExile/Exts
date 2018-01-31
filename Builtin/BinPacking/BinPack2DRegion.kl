@@ -1,0 +1,134 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/// A region inside of a BinPack2DContainer.
+/// A BinPack2DRegion describes both a coordinate as well as a size.
+struct BinPack2DRegion {
+  BinPack2DCoord coord;
+  BinPack2DSize size;
+};
+
+/// default constructor
+function BinPack2DRegion() {
+  this.coord = BinPack2DCoord(0, 0);
+  this.size = BinPack2DSize(0, 0);
+}
+
+/// constructor from coordinate and size
+function BinPack2DRegion(BinPack2DCoord coord, BinPack2DSize size) {
+  this.coord = coord;
+  this.size = size;
+}
+
+/// returns true if this region has no space
+function Boolean BinPack2DRegion.IsEmpty() {
+  return this.size.IsEmpty();
+}
+
+/// \internal
+function Boolean < (BinPack2DRegion a, BinPack2DRegion b) {
+  return a.size < b.size;
+}
+
+/// \internal
+function Boolean > (BinPack2DRegion a, BinPack2DRegion b) {
+  return a.size > b.size;
+}
+
+/// \internal
+function Boolean BinPack2DRegion.qs_less(BinPack2DRegion that) {
+  return !this.size.qs_less(that.size);
+}
+
+/// returns true if this region can contain another one.
+/// additionally it will return rotation == true if that region has to
+/// be rotated to fit.
+function Boolean BinPack2DRegion.Contains(BinPack2DRegion that, io Boolean rotated) {
+  Boolean containedNormally = this.size.Contains(that.size);
+  Boolean containedRotated = this.size.Contains(that.size.Rotated());
+  if(containedNormally && !containedRotated) {
+    rotated = false;
+    return true;
+  }
+  if(!containedNormally && containedRotated) {
+    rotated = true;
+    return true;
+  }
+  if(containedNormally && containedRotated) {
+    SInt32 wN = this.size.w - that.size.w;
+    SInt32 hN = this.size.h - that.size.h;
+    SInt32 wR = this.size.w - that.size.h;
+    SInt32 hR = this.size.h - that.size.w;
+
+    // find the longest edge in this config
+    SInt32 sN = wN > hN ? wN : hN;
+    SInt32 sR = wR > hR ? wR : hR;
+    rotated = sR > sN;
+    return true;
+  }
+  return false;
+}
+
+/// returns true if this region can contain that region
+function Boolean BinPack2DRegion.Contains(BinPack2DRegion that) {
+  Boolean rotated;
+  return this.Contains(that);
+}
+
+/// returns true if this region contains the given coordinate
+function Boolean BinPack2DRegion.Contains(BinPack2DCoord coord) {
+  return (this.coord.x <= coord.x && this.coord.x + this.size.w >= coord.x &&
+    this.coord.y <= coord.y && this.coord.y + this.size.h >= coord.y);
+}
+
+// reduces this region by another one and returns the remainder
+function BinPack2DRegion BinPack2DRegion.Consume!(BinPack2DRegion that) {
+  if(this.IsEmpty() || that.IsEmpty())
+    return BinPack2DRegion();
+
+  if(this.coord == that.coord)
+  {
+    if(this.size.w == that.size.w)
+    {
+      this.size.h -= that.size.h;
+      this.coord.y += that.size.h;
+    }
+    else if(this.size.h == that.size.h)
+    {
+      this.size.w -= that.size.w;
+      this.coord.x += that.size.w;
+    }
+    else
+    {
+      BinPack2DRegion remaining();
+      Boolean splitByWidth = false;//(this.size.w - that.size.w) > (this.size.h - that.size.h);
+      if(splitByWidth) {
+
+        remaining.coord.x = this.coord.x;
+        remaining.coord.y = this.coord.y + that.size.h;
+        remaining.size.w = that.size.w;
+        remaining.size.h = this.size.h - that.size.h;
+
+        this.size.w = this.size.w - that.size.w;
+        this.coord.x = this.coord.x + that.size.w;
+
+      } else {
+
+        remaining.coord.x = this.coord.x;
+        remaining.coord.y = this.coord.y + that.size.h;
+        remaining.size.w = this.size.w;
+        remaining.size.h = this.size.h - that.size.h;
+
+        this.size.w = this.size.w - that.size.w;
+        this.size.h = that.size.h;
+        this.coord.x = this.coord.x + that.size.w;
+
+      }
+
+      return remaining;
+    }
+  }
+
+  return BinPack2DRegion();
+}

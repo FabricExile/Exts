@@ -1,0 +1,74 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Euler.html",
+    "uiTooltip" : "Setter using a Vec3 as angles in radians, RotationOrder = XYZ\n\n Supported by Euler"
+    },
+  "title" : "SetAngles[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 0,\n  \"g\" : 191,\n  \"b\" : 232\n  }"
+        },
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Euler[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "angles",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Vec3[]" : [
+          {
+            "x" : 0,
+            "y" : 0,
+            "z" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Vec3[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "0232973324AED179D1516D2F718F9FB1",
+  "code" : "require Math;
+
+operator Math_Euler_setAngles_task<<<index>>>(
+  io Euler[] this
+, in Vec3[] angles
+) {
+  this[index < this.size() ? index : this.size() - 1].setAngles(angles[index < angles.size() ? index : angles.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( angles.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < angles.size()) task_size = angles.size();
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Euler_setAngles_task(index, this, angles);
+    }
+  } else {
+    Math_Euler_setAngles_task<<<task_size>>>(this, angles);
+  }
+}
+"
+  }

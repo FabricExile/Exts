@@ -1,0 +1,25 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+SetupTestInlineViewport( io DrawContext context, UInt32 width, UInt32 height, Float32 distanceToOrigin ) {
+  OGLInlineDrawing_GetInstance();
+  context.viewport = OGLStandaloneViewport();
+  context.viewport.setName( "testVP" );
+  context.viewport.setup( context );
+
+  // Default camera
+  InlineCamera defaultCamera( 1, 1, distanceToOrigin*10, false );
+  defaultCamera.setFromPositionAndTarget(Vec3(0,0, distanceToOrigin ), Vec3());
+  context.viewport.setCamera( defaultCamera );
+  context.viewport.resize( context, width, height );
+
+  InlineDrawing ID = OGLInlineDrawing_GetInstance();
+  ID.registerViewport( context.viewport.getName(), context.viewport );
+}
+
+DrawTestInlineViewport( io DrawContext context ) {
+  InlineDrawingScope scope();
+  glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
+  scope.draw( context );
+}

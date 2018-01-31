@@ -1,0 +1,213 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// \internal
+  interface BaseRaycastInteraction_virtuals {
+    Boolean allowRaycast( RaycastContext context );
+  };
+
+  /// \internal
+  /// Provides base functionality for raycast-triggered interactions.
+  /// See:ref:`TPG.interactive - tools` for more information and examples related to tool interactions.
+  object BaseRaycastInteraction : EventListenerComponent, RaycastTarget, BaseRaycastInteraction_virtuals, RaycastTriggered, Activable{
+
+    RaycastGroupTarget groupTarget;
+
+    Boolean parentIsShapeHierarchy;
+    Ref<HierarchyNode> prevParentHier;
+
+    Boolean onlyIfNoExclusiveInteraction;
+
+    ToolsManager manager;
+
+    RaycastResult currentRaycastResult;
+    RaycastContext currentRaycastContext;
+
+    Boolean interactionStarted;
+
+    Boolean active;
+  };
+
+  /// \note By default, the parent's shape hierarchy will be added as a raycast shape.
+  BaseRaycastInteraction() {
+    this.init();
+    this.parentIsShapeHierarchy = true;
+    this.active = true;
+  }
+
+  /// \param parentIsShapeHierarchy If true, the parent's shape hierarchy will be added as a raycast shape.
+  BaseRaycastInteraction( Boolean parentIsShapeHierarchy ) {
+    this.init();
+    this.parentIsShapeHierarchy = parentIsShapeHierarchy;
+  }
+
+  /// \internal
+  BaseRaycastInteraction.init!( ) {
+    this.groupTarget = RaycastGroupTarget();
+    this.onlyIfNoExclusiveInteraction = true;
+    this.manager = GetToolsManager();
+  }
+
+  /// Implementation of Activable
+  Boolean BaseRaycastInteraction.isActive() {
+    return this.active;
+  }
+
+  /// Implementation of Activable
+  BaseRaycastInteraction.activate!() {
+    this.active = true;
+  }
+
+  /// Implementation of Activable
+  BaseRaycastInteraction.deactivate!() {
+    this.active = false;
+  }
+
+  BaseRaycastInteraction.setConditions!( Boolean onlyIfNoExclusiveInteraction ) {
+    this.onlyIfNoExclusiveInteraction = onlyIfNoExclusiveInteraction;
+  }
+
+  /// \internal
+  BaseRaycastInteraction.parentHierarchyChanged!( ) {
+    this.parent.parentHierarchyChanged();
+
+    if( this.parentIsShapeHierarchy ) {
+      Ref<HierarchyNode> parentHier = GetParentHierarchyNode( this );
+      if( parentHier !== this.prevParentHier ) {
+        if( this.prevParentHier )
+          this.removeRaycastHierarchy( this.prevParentHier );
+
+        this.prevParentHier = parentHier;
+        if( parentHier )
+          this.addRaycastHierarchy( parentHier, false );//Not owned; we are owned (avoid cyclic ref leak)
+      }
+    }
+  }
+
+  /// Sets an explicit raycast shape. If the parent hierarchy is no longer an implicit raycast shape.
+  BaseRaycastInteraction.setRaycastShape!( Ref<RaycastTargetShape> shape, Boolean owned ) {
+    if( this.prevParentHier )
+      this.removeRaycastHierarchy( this.prevParentHier );
+    this.prevParentHier = null;
+    this.parentIsShapeHierarchy = false;
+    this.groupTarget.addRaycastShape( shape, owned );
+  }
+
+  /// \param owned If true, this object will own the shape. The shape must not own us else a cyclic leak will occur.
+  BaseRaycastInteraction.addRaycastShape!( Ref<RaycastTargetShape> shape, Boolean owned ) { this.groupTarget.addRaycastShape( shape, owned ); }
+  BaseRaycastInteraction.removeRaycastShape!( Ref<RaycastTargetShape> shape ) { this.groupTarget.removeRaycastShape( shape ); }
+
+  /// Sets an explicit raycast hierarchy. If the parent hierarchy is no longer an implicit raycast hierarchy.
+  BaseRaycastInteraction.setRaycastHierarchy!( Ref<HierarchyNode> hier, Boolean owned ) {
+    if( this.prevParentHier )
+      this.removeRaycastHierarchy( this.prevParentHier );
+    this.prevParentHier = null;
+    this.parentIsShapeHierarchy = false;
+    this.groupTarget.addRaycastHierarchy( hier, owned );
+  }
+
+  /// \param owned If true, this object will own the shape. The shape must not own us else a cyclic leak will occur.
+  BaseRaycastInteraction.addRaycastHierarchy!( Ref<HierarchyNode> hier, Boolean owned ) { this.groupTarget.addRaycastHierarchy( hier, owned ); }
+  BaseRaycastInteraction.removeRaycastHierarchy!( Ref<HierarchyNode> hier ) { this.groupTarget.removeRaycastHierarchy( hier ); }
+
+  /// \internal
+  /// Non-virtual version that can be safely called from the destructor
+  /// This can be removed once KL is fixed to not call specialized methods in destructors
+  BaseRaycastInteraction.invalidateInternal!( ) {
+    this.groupTarget.invalidate();
+    this.parent.invalidate();
+  }
+
+  BaseRaycastInteraction.invalidate!( ) {
+    this.invalidateInternal();
+  }
+
+  ~BaseRaycastInteraction() {
+    this.invalidateInternal();
+  }
+
+  Boolean BaseRaycastInteraction.allowRaycast( RaycastContext context ) {
+    if( !this.active )
+      return false;
+
+    // Check conditions first
+    if( this.onlyIfNoExclusiveInteraction ) {
+      if( this.manager.hasExclusiveInteractions() )
+        return false;
+    }
+    return true;
+  }
+
+  /// \internal
+  /// Implementation of RaycastTarget
+  SelectionManagerDrawList BaseRaycastInteraction.getSelectionDrawList( RaycastContext context ) {
+    if( !this.allowRaycast( context ) )
+      return null;
+    return this.groupTarget.getSelectionDrawList( context );
+  }
+
+  /// \internal
+  /// Implementation of RaycastTarget
+  BaseRaycastInteraction.onRaycastInitiated!( io RaycastContext context, RaycastResult result ) {}
+
+  /// \internal
+  /// Implementation of RaycastTarget
+  /// Only logs the event.
+  BaseRaycastInteraction.onRaycastSucceeded!( io RaycastContext context, RaycastResult result ) {
+    if( ToolEventDebugTrace ) {
+      String ownerName;
+      if( result.owner ) {
+        ownerName = " owner=" + GetComponentName( result.owner );
+        if( result.leafOwner )
+          ownerName += " leaf=" + GetComponentName( result.leafOwner );
+      }
+      report( this.getPath() + ": onRaycastSucceeded" + ownerName );
+    }
+  }
+
+  /// \internal
+  /// Implementation of RaycastTarget
+  BaseRaycastInteraction.onRaycastFail!( io RaycastContext context ) {}
+
+  /// \internal
+  /// Should be set so the contextual raycast can be found from the event source (this)
+  /// Note: these cannot be stacked (only one)
+  struct BaseRaycastInteractionSendEventBracket {
+    Ref<BaseRaycastInteraction> interaction;
+  };
+
+  BaseRaycastInteractionSendEventBracket( Ref<BaseRaycastInteraction> interaction, RaycastContext context, RaycastResult result ) {
+    this.interaction = interaction;
+    this.interaction.currentRaycastContext = context;
+    this.interaction.currentRaycastResult = result;
+  }
+
+  ~BaseRaycastInteractionSendEventBracket() {
+    if( this.interaction ) {
+      this.interaction.currentRaycastContext = RaycastContext();
+      this.interaction.currentRaycastResult = RaycastResult();
+    }
+  }
+
+  /// \internal
+  /// Implementation of RaycastTriggered
+  /// Specialized class should create a BaseRaycastInteractionSendEventBracket before sending a raycast triggered event.
+  Boolean BaseRaycastInteraction.hasCurrentRaycast() {
+    return this.currentRaycastResult.isValid();
+  }
+
+  /// \internal
+  /// Implementation of RaycastTriggered
+  RaycastResult BaseRaycastInteraction.getCurrentRaycastResult() {
+    return this.currentRaycastResult;
+  }
+
+  /// \internal
+  /// Implementation of RaycastTriggered
+  RaycastContext BaseRaycastInteraction.getCurrentRaycastContext() {
+    return this.currentRaycastContext;
+  }
+}// namespace Tool

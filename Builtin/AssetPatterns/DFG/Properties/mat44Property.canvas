@@ -1,0 +1,76 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+    "uiNodeColor" : "{\n  \"r\" : 132,\n  \"g\" : 106,\n  \"b\" : 97\n  }",
+    "uiTooltip" : "Returns a Mat44 property value. If the key is set to \"custom\" the custom port is used instead."
+    },
+  "title" : "mat44Property",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Execute" : {}
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "ImporterObject" : null
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Ref<ImporterObject>"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiCombo" : "(\"localTransform\", \"custom\")"
+        },
+      "name" : "key",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String" : "localTransform"
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "custom",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "String" : ""
+        },
+      "execPortType" : "In",
+      "typeSpec" : "String"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Mat44"
+      }
+    ],
+  "extDeps" : {
+    "AssetPatterns" : "*"
+    },
+  "presetGUID" : "AE64CEA0BBA7A6F4A0CA684F2D636CCE",
+  "code" : "dfgEntry {
+  String k = key;
+  if(k == 'custom')
+    k = custom;
+  if(!this.hasProperty(k))
+    return;
+  Ref<ImporterObject> mutableThis = this;
+  mutableThis.updateProperty(k, this.defaultContext);
+  result = mutableThis.getMat44Property(k);
+}
+"
+  }

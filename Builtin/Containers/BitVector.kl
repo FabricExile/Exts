@@ -1,0 +1,478 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Util;
+
+/**
+  The BitVector is a memory-efficient Boolean array, where each element uses a single bit.
+  \example
+    BitVector b;
+    b.resize(4);
+    b.set(0, true);
+    b.set(1, false);
+    b.set(2, false);
+    b.set(3, true);
+    report(b.getString());    
+  \endexample
+  \note Setting different bits in parallel might lead to unexpected results, in which case methods such as BitVector.atomicSet should be used.
+*/
+struct BitVector {
+  /// \internal
+  UInt32 data[];
+  /// \internal
+  UInt32 size;
+};
+
+/// copy constructor.
+inline BitVector.copy!( BitVector src ) {
+  this.size = src.size;
+  src.data.copyTo(this.data);
+}
+
+/// returns the number bit array size
+inline UInt32 BitVector.size() {
+  return this.size;
+}
+
+/// resizes the BitVector for a given number of bits
+function BitVector.resize!( UInt32 size ) {
+
+  Size nbRequiredUInt32 = SubBitVectorArray_getNbRequiredUInt32( size );
+  if( size < this.size ) {
+    //clear last entry's upper bits if we resize down
+    UInt32 lastBit = size & 31;
+    if( lastBit ) {
+      UInt32 mask = (1 << lastBit)-1;
+      this.data[nbRequiredUInt32-1] &= mask;
+    }
+  }
+
+  this.size = size;
+  this.data.resize( nbRequiredUInt32 );
+}
+
+/// returns true if the bit is set
+inline Boolean BitVector.get?( UInt32 index ) {
+  return SubBitVectorArray_getBit( this.data, 0, index );
+}
+
+/// sets a single bit from the Boolean value
+inline BitVector.set!( UInt32 index, Boolean value ) {
+  SubBitVectorArray_setBit( this.data, 0, index, value );
+}
+
+/// performs an atomic set with a known value.
+/// \note atomic calls are threadsafe but slower since they cause cache synchronization across CPUs.
+inline BitVector.atomicSet!( UInt32 index, Boolean value ) {
+  SubBitVectorArray_atomicSetBit( this.data, 0, index, value );
+}
+
+/// sets a single bit to true
+inline BitVector.set!( UInt32 index ) {
+  SubBitVectorArray_setBit( this.data, 0, index );
+}
+
+/// performs an atomic set with true.
+/// \note atomic calls are threadsafe but slower since they cause cache synchronization across CPUs.
+inline BitVector.atomicSet!( UInt32 index ) {
+  SubBitVectorArray_atomicSetBit( this.data, 0, index );
+}
+
+/// clears a bit
+inline BitVector.clear!( UInt32 index ) {
+  SubBitVectorArray_clearBit( this.data, 0, index );
+}
+
+/// performs an atomic clear of a bit.
+/// \note atomic calls are threadsafe but slower since they cause cache synchronization across CPUs.
+inline BitVector.atomicClear!( UInt32 index ) {
+  SubBitVectorArray_atomicClearBit( this.data, 0, index );
+}
+
+/// performs a set with true for a known value and returns the previous value
+inline Boolean BitVector.getThenSet!( UInt32 index ) {
+  return SubBitVectorArray_getThenSetBit( this.data, 0, index );
+}
+
+/// clears the bit and returns the previous value
+inline Boolean BitVector.getThenClear!( UInt32 index ) {
+  return SubBitVectorArray_getThenClearBit( this.data, 0, index );
+}
+
+/// sets the bit to a known value and returns the previous value
+inline Boolean BitVector.getThenSet!( UInt32 index, Boolean value ) {
+  return SubBitVectorArray_getThenSetBit( this.data, 0, index, value );
+}
+
+/// clears all bits in this vector
+function BitVector.clearAll!() {
+  for( UInt32 i = 0; i < this.data.size(); ++i )
+    this.data[i] = 0;
+}
+
+/// sets all bits in this vector to true
+function BitVector.setAll!() {
+  for( UInt32 i = 0; i < this.data.size(); ++i )
+    this.data[i] = -UInt32(1);
+}
+
+/// appends another bit vector to this one
+function BitVector. += (BitVector other) {
+
+  Size prevSize = this.size;
+  this.resize( this.size + other.size );
+
+  for( Size i = 0; i < other.size; ++i )
+    this.set( i + prevSize, other.get(i) );
+}
+
+/// returns a description of the bit values
+function String BitVector.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i < this.size; ++i ) {
+    if(i)
+      str += ",";
+    str += this.get(i) ? "1" : "0";
+  }
+  str += "]";
+  return str;
+}
+
+/// \internal returns the memory usage of this vector
+function Size BitVector.memUsage() {
+  return 4 * this.data.size() + 4;
+}
+
+/// a helper structure to perform iteration on a BitVector
+/// \seealso BitVector.begin
+struct BitVectorIterator {
+  Integer index;
+};
+
+/** returns an iterator at the start of the vector.
+    This method is particularly efficient for traversing sparse bits, where only a small portion are set to true.
+    \seealso BitVector.getNext
+  \example
+  BitVector v;
+  v.resize(4);
+  v.set(0, true);
+  v.set(1, true);
+  v.set(2, false);
+  v.set(3, true);
+  BitVectorIterator it = v.begin();
+  while(v.getNext(it)) {
+    report(it.index + ' : ' + v.get(it.index));
+  }
+  \endexample
+*/
+inline BitVectorIterator BitVector.begin() {
+  BitVectorIterator iter;
+  iter.index = -1;
+  return iter;
+}
+
+/// returns the next BitVectorIterator on this vector based on the previous one
+/// This method is particularly efficient for traversing sparse bits, where only a small portion are set to true.
+/// \seealso BitVector.begin
+inline Boolean BitVector.getNext( io BitVectorIterator iter ) {
+  Integer size = this.size;
+  ++iter.index;
+
+  while( iter.index < size ) {
+
+    UInt32 bit = iter.index & 31;
+
+    UInt32 index = iter.index >> 5;
+    UInt32 data = this.data[index] >> bit;
+
+    if( data & 1 )//First test for bit set (frequent)
+      return true;
+
+    if( data == 0 ) {//Then test for no bit set (sparse)
+      iter.index = (index+1) << 5;
+      continue;
+    }
+
+    if( (data & 65535) == 0 ) {
+      iter.index += 16;
+      data = data >> 16;
+    }
+    if( (data & 255) == 0 ) {
+      iter.index += 8;
+      data = data >> 8;
+    }
+    if( (data & 15) == 0 ) {
+      iter.index += 4;
+      data = data >> 4;
+    }
+    if( (data & 3) == 0 ) {
+      iter.index += 2;
+      data = data >> 2;
+    }
+    if( (data & 1) == 0 ) {
+      iter.index += 1;
+      //(not required)data = data >> 1;
+    }
+    return true;
+  }
+  return false;
+}
+
+/// \internal returns the memory usage of this vector
+/// (obsolete, matches memUsage)
+function Size BitVector.getMemUsage?() {
+  return this.data.size()*4 + 4;
+}
+
+/**
+  Same as a BitVector, but the first 256 bits will not require memory allocation (local).
+*/
+struct LocalL256BitVector {
+  /// \internal
+  UInt32 local[8];
+  /// \internal
+  UInt32 data[];
+  /// \internal
+  UInt32 size;
+};
+
+/// copy constructor.
+inline LocalL256BitVector.copy!( LocalL256BitVector src ) {
+  this.size = src.size;
+  this.local = src.local;
+  UInt32 srcDataSize = src.data.size();
+  this.data.resize( srcDataSize );
+  for( Size i = 0; i < srcDataSize; ++i )
+    this.data[i] = src.data[i];
+}
+
+/// returns the number bit array size
+inline UInt32 LocalL256BitVector.size() {
+  return this.size;
+}
+
+/// resizes the LocalL256BitVector for a given number of bits
+function LocalL256BitVector.resize!( UInt32 size ) {
+
+  Size nbRequiredUInt32 = SubBitVectorArray_getNbRequiredUInt32( size );
+  if( size < this.size ) {
+    for( Size i = size; i < 8; ++i )
+      this.local[i] = 0;
+
+    //clear last entry's upper bits if we resize down
+    UInt32 lastBit = size & 31;
+    if( lastBit ) {
+      UInt32 mask = (1 << lastBit)-1;
+      UInt32 index = nbRequiredUInt32-1;
+      if( index < 8 )
+        this.local[index] &= mask;
+      else
+        this.data[index+8] &= mask;
+    }
+  }
+
+  this.size = size;
+  if( nbRequiredUInt32 <= 8 )
+    this.data.resize( 0 );
+  else
+    this.data.resize( nbRequiredUInt32-8 );
+}
+
+/// returns true if the bit is set
+inline Boolean LocalL256BitVector.get?( UInt32 index ) {
+  if( index < 256 )
+    return SubBitVectorArray_getBit( this.local, 0, index );
+  else
+    return SubBitVectorArray_getBit( this.data, 0, index-256 );
+}
+
+/// sets a single bit from the Boolean value
+inline LocalL256BitVector.set!( UInt32 index, Boolean value ) {
+  if( index < 256 ) {
+    UInt32 local<> = this.local;
+    SubBitVectorArray_setBit( local, 0, index, value );
+  } else
+    SubBitVectorArray_setBit( this.data, 0, index-256, value );
+}
+
+/// performs an atomic set with a known value.
+/// \note atomic calls are threadsafe but slower since they cause cache synchronization across CPUs.
+inline LocalL256BitVector.atomicSet!( UInt32 index, Boolean value ) {
+  if( index < 256 ) {
+    UInt32 local<> = this.local;
+    SubBitVectorArray_atomicSetBit( local, 0, index, value );
+  } else
+    SubBitVectorArray_atomicSetBit( this.data, 0, index-256, value );
+}
+
+/// sets a single bit to true
+inline LocalL256BitVector.set!( UInt32 index ) {
+  if( index < 256 ) {
+    UInt32 local<> = this.local;
+    SubBitVectorArray_setBit( local, 0, index );
+  } else
+    SubBitVectorArray_setBit( this.data, 0, index-256 );
+}
+
+/// performs an atomic set with true.
+/// \note atomic calls are threadsafe but slower since they cause cache synchronization across CPUs.
+inline LocalL256BitVector.atomicSet!( UInt32 index ) {
+  if( index < 256 ) {
+    UInt32 local<> = this.local;
+    SubBitVectorArray_atomicSetBit( local, 0, index );
+  } else
+    SubBitVectorArray_atomicSetBit( this.data, 0, index-256 );
+}
+
+/// clears a bit
+inline LocalL256BitVector.clear!( UInt32 index ) {
+  if( index < 256 ) {
+    UInt32 local<> = this.local;
+    SubBitVectorArray_clearBit( local, 0, index );
+  } else
+    SubBitVectorArray_clearBit( this.data, 0, index-256 );
+}
+
+/// performs an atomic clear of a bit.
+/// \note atomic calls are threadsafe but slower since they cause cache synchronization across CPUs.
+inline LocalL256BitVector.atomicClear!( UInt32 index ) {
+  if( index < 256 ) {
+    UInt32 local<> = this.local;
+    SubBitVectorArray_atomicClearBit( local, 0, index );
+  } else
+    SubBitVectorArray_atomicClearBit( this.data, 0, index-256 );
+}
+
+/// performs a set with true for a known value and returns the previous value
+inline Boolean LocalL256BitVector.getThenSet!( UInt32 index ) {
+  if( index < 256 ) {
+    UInt32 local<> = this.local;
+    return SubBitVectorArray_getThenSetBit( local, 0, index );
+  } else
+    return SubBitVectorArray_getThenSetBit( this.data, 0, index-256 );
+}
+
+/// clears the bit and returns the previous value
+inline Boolean LocalL256BitVector.getThenClear!( UInt32 index ) {
+  if( index < 256 ) {
+    UInt32 local<> = this.local;
+    return SubBitVectorArray_getThenClearBit( local, 0, index );
+  } else
+    return SubBitVectorArray_getThenClearBit( this.data, 0, index-256 );
+}
+
+/// sets the bit to a known value and returns the previous value
+inline Boolean LocalL256BitVector.getThenSet!( UInt32 index, Boolean value ) {
+  if( index < 256 ) {
+    UInt32 local<> = this.local;
+    return SubBitVectorArray_getThenSetBit( local, 0, index, value );
+  } else
+    return SubBitVectorArray_getThenSetBit( this.data, 0, index-256, value );
+}
+
+/// clears all bits in this vector
+function LocalL256BitVector.clearAll!() {
+  for( UInt32 i = 0; i < 8; ++i )
+    this.local[i] = 0;
+  for( UInt32 i = 0; i < this.data.size(); ++i )
+    this.data[i] = 0;
+}
+
+/// sets all bits in this vector to true
+function LocalL256BitVector.setAll!() {
+  for( UInt32 i = 0; i < 8; ++i )
+    this.local[i] = -UInt32(1);
+  for( UInt32 i = 0; i < this.data.size(); ++i )
+    this.data[i] = -UInt32(1);
+}
+
+/// returns a description of the bit values
+function String LocalL256BitVector.getString() {
+  String str = "[";
+  for( UInt32 i = 0; i < this.size; ++i ) {
+    if(i)
+      str += ",";
+    str += this.get(i) ? "1" : "0";
+  }
+  str += "]";
+  return str;
+}
+
+/// \internal returns the memory usage of this vector
+function Size LocalL256BitVector.memUsage() {
+  return 4 * this.data.size() + 4 + 4*8;
+}
+
+/** returns an iterator at the start of the vector.
+    This method is particularly efficient for traversing sparse bits, where only a small portion are set to true.
+    \seealso LocalL256BitVector.getNext
+  \example
+  LocalL256BitVector v;
+  v.resize(4);
+  v.set(0, true);
+  v.set(1, true);
+  v.set(2, false);
+  v.set(3, true);
+  LocalL256BitVectorIterator it = v.begin();
+  while(v.getNext(it)) {
+    report(it.index + ' : ' + v.get(it.index));
+  }
+  \endexample
+*/
+inline BitVectorIterator LocalL256BitVector.begin() {
+  BitVectorIterator iter;
+  iter.index = -1;
+  return iter;
+}
+
+/// returns the next BitVectorIterator on this vector based on the previous one
+/// This method is particularly efficient for traversing sparse bits, where only a small portion are set to true.
+/// \seealso BitVector.begin
+inline Boolean LocalL256BitVector.getNext( io BitVectorIterator iter ) {
+  Integer size = this.size;
+  ++iter.index;
+
+  while( iter.index < size ) {
+
+    UInt32 bit = iter.index & 31;
+
+    UInt32 index = iter.index >> 5;
+    UInt32 data;
+    if( index < 8 )
+      data = this.local[index] >> bit;
+    else
+      data = this.data[index-8] >> bit;
+
+    if( data & 1 )//First test for bit set (frequent)
+      return true;
+
+    if( data == 0 ) {//Then test for no bit set (sparse)
+      iter.index = (index+1) << 5;
+      continue;
+    }
+
+    if( (data & 65535) == 0 ) {
+      iter.index += 16;
+      data = data >> 16;
+    }
+    if( (data & 255) == 0 ) {
+      iter.index += 8;
+      data = data >> 8;
+    }
+    if( (data & 15) == 0 ) {
+      iter.index += 4;
+      data = data >> 4;
+    }
+    if( (data & 3) == 0 ) {
+      iter.index += 2;
+      data = data >> 2;
+    }
+    if( (data & 1) == 0 ) {
+      iter.index += 1;
+      //(not required)data = data >> 1;
+    }
+    return true;
+  }
+  return false;
+}

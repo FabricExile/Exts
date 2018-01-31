@@ -1,0 +1,234 @@
+require Bullet;
+
+
+object Box2dDemo
+{ 
+  // TODO: once we have interfaces working, this should be a pointer to a BulletDynamicsWorld instead;
+  BulletDiscreteDynamicsWorld dynamicsWorld;
+  
+  //keep the collision shapes, for deletion/cleanup
+  BulletCollisionShape collisionShapes[];
+
+  BulletRigidBody bodies[];
+
+  BulletBroadphaseInterface  broadphase;
+
+  BulletCollisionDispatcher  dispatcher;
+
+  BulletConstraintSolver solver;
+
+  BulletDefaultCollisionConfiguration collisionConfiguration;
+};
+
+
+function Box2dDemo.stepDemo()
+{
+
+	// glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); 
+	
+	///step the simulation
+	if (this.dynamicsWorld)
+	{
+		this.dynamicsWorld.stepSimulation(1.0 / 60.0);
+		//optional but useful: debug drawing
+		// this.dynamicsWorld.debugDrawWorld();
+	}
+
+	// if (this.dialogDynamicsWorld)
+	// 	this.dialogDynamicsWorld.draw(ms / 1000000.0);
+
+  report(this.bodies[2].getWorldTransform().tr);
+}
+
+function Box2dDemo()
+{
+	///create 125 (5x5x5) dynamic object
+	const Integer ARRAY_SIZE_X = 2;
+	const Integer ARRAY_SIZE_Y = 2;
+	const Integer ARRAY_SIZE_Z = 1;
+
+	//maximum number of objects (and allow user to shoot additional boxes)
+	const Integer MAX_PROXIES = (ARRAY_SIZE_X*ARRAY_SIZE_Y*ARRAY_SIZE_Z + 1024);
+
+	///scaling of the objects (0.1 = 20 centimeter boxes )
+	const Integer SCALING = 1;
+	const Integer START_POS_X = -5;
+	const Integer START_POS_Y = -5;
+	const Integer START_POS_Z = -3;
+
+	
+
+	///collision configuration contains default setup for memory, collision setup
+	this.collisionConfiguration = BulletDefaultCollisionConfiguration();
+	//this.collisionConfiguration.setConvexConvexMultipointIterations();
+
+	///use the default collision dispatcher. For parallel processing you can use a diffent dispatcher (see Extras/BulletMultiThreaded)
+	this.dispatcher = BulletCollisionDispatcher(this.collisionConfiguration);
+
+	BulletVoronoiSimplexSolver simplex = BulletVoronoiSimplexSolver();
+
+	BulletMinkowskiPenetrationDepthSolver pdSolver = BulletMinkowskiPenetrationDepthSolver();
+
+
+	BulletConvex2dConvex2dAlgorithm_CreateFunc convexAlgo2d = BulletConvex2dConvex2dAlgorithm_CreateFunc(simplex,pdSolver);
+	
+	this.dispatcher.registerCollisionCreateFunc(CONVEX_2D_SHAPE_PROXYTYPE, CONVEX_2D_SHAPE_PROXYTYPE, convexAlgo2d);
+	this.dispatcher.registerCollisionCreateFunc(BOX_2D_SHAPE_PROXYTYPE, CONVEX_2D_SHAPE_PROXYTYPE, convexAlgo2d);
+	this.dispatcher.registerCollisionCreateFunc(CONVEX_2D_SHAPE_PROXYTYPE, BOX_2D_SHAPE_PROXYTYPE, convexAlgo2d);
+	this.dispatcher.registerCollisionCreateFunc(BOX_2D_SHAPE_PROXYTYPE, BOX_2D_SHAPE_PROXYTYPE, BulletBox2dBox2dCollisionAlgorithm_CreateFunc());
+
+	this.broadphase = BulletDbvtBroadphase();
+	//this.broadphase = BulletSimpleBroadphase();
+
+	///the default constraint solver. For parallel processing you can use a different solver (see Extras/BulletMultiThreaded)
+	this.solver = BulletSequentialImpulseConstraintSolver();
+
+	this.dynamicsWorld = BulletDiscreteDynamicsWorld(this.dispatcher, this.broadphase, this.solver, this.collisionConfiguration);
+	//this.dynamicsWorld.getSolverInfo().this.erp = 1.0;
+	//this.dynamicsWorld.getSolverInfo().this.numIterations = 4;
+	
+
+
+	this.dynamicsWorld.setGravity(Vec3(0.0, -10.0, 0.0));
+
+	///create a few basic rigid bodies
+	BulletCollisionShape groundShape = BulletBoxShape(Vec3(150.0, 50.0, 150.0));
+//	BulletCollisionShape groundShape = BulletStaticPlaneShape(Vec3(0, 1, 0),50);
+	
+	this.collisionShapes.push(groundShape);
+
+	Xfo groundTransform;
+	groundTransform.setIdentity();
+	groundTransform.tr = Vec3(0, -43, 0);
+
+	//We can also use DemoApplication::localCreateRigidBody, but for clarity it is provided here:
+	{
+		Scalar mass(0.0);
+
+		//rigidbody is dynamic if and only if mass is non zero, otherwise static
+		Boolean isDynamic = (mass != 0.0);
+
+		Vec3 localInertia(0,0,0);
+		if (isDynamic)
+			groundShape.calculateLocalInertia(mass,localInertia);
+
+		//using motionstate is recommended, it provides interpolation capabilities, and only synchronizes 'active' objects
+		BulletDefaultMotionState myMotionState = BulletDefaultMotionState(groundTransform);
+		BulletRigidBodyConstructionInfo rbInfo(mass,myMotionState,groundShape,localInertia);
+		BulletRigidBody body = BulletRigidBody(rbInfo);
+
+		//add the body to the dynamics world
+		this.dynamicsWorld.addRigidBody(body);
+	}
+
+	{
+		//create a few dynamic rigidbodies
+		// Re-using the same collision is better for memory usage and performance
+
+		Scalar u = Scalar(1*SCALING-0.04);
+		Vec3 points[];
+		points.push(Vec3(0, u, 0));
+		points.push(Vec3(-u, -u, 0));
+		points.push(Vec3(u, -u, 0));
+		BulletBoxShape childShape0 = BulletBoxShape(Vec3(SCALING*1.0, SCALING*1.0, 0.04));
+        BulletConvex2dShape colShape = BulletConvex2dShape(childShape0);
+		//BulletBox2dShape colShape = BulletBox2dShape(Vec3(SCALING*1.0, SCALING*1.0,0.04));
+        BulletConvexHullShape childShape1 = BulletConvexHullShape(points);
+		BulletConvex2dShape colShape2 = BulletConvex2dShape(childShape1);
+        BulletCylinderShape childShape2 = BulletCylinderShape(Vec3(SCALING*1.0, SCALING*1.0, 0.04));
+		BulletConvex2dShape colShape3 = BulletConvex2dShape(childShape2);
+		
+        this.collisionShapes.push(colShape);
+		this.collisionShapes.push(colShape2);
+		this.collisionShapes.push(colShape3);
+
+        this.collisionShapes.push(childShape0);
+        this.collisionShapes.push(childShape1);
+        this.collisionShapes.push(childShape2);
+        
+
+		//BulletUniformScalingShape colShape = BulletUniformScalingShape(convexColShape,1.0);
+		colShape.setMargin(0.03);
+		//BulletCollisionShape colShape = BulletSphereShape(Scalar(1.0));
+
+		/// Create Dynamic Objects
+		Xfo startTransform;
+		startTransform.setIdentity();
+
+		Scalar	mass = 1.0;
+
+		//rigidbody is dynamic if and only if mass is non zero, otherwise static
+		Boolean isDynamic = (mass != 0.0);
+
+		Vec3 localInertia(0,0,0);
+		if (isDynamic)
+			colShape.calculateLocalInertia(mass, localInertia);
+
+//		float start_x = START_POS_X - ARRAY_SIZE_X/2;
+//		float start_y = START_POS_Y;
+//		float start_z = START_POS_Z - ARRAY_SIZE_Z/2;
+
+		Vec3 x(-ARRAY_SIZE_X, 8.0, -20.0);
+		Vec3 y;
+		Vec3 deltaX(SCALING*1, SCALING*2.0, 0.0);
+		Vec3 deltaY(SCALING*2, 0.0,0.0);
+
+		for (Integer i = 0; i < ARRAY_SIZE_X; ++i)
+		{
+			y = x;
+
+			for (Integer  j = i; j < ARRAY_SIZE_Y; ++j)
+			{
+				startTransform.tr = y-Vec3(-10,0,0);
+		
+				//using motionstate is recommended, it provides interpolation capabilities, and only synchronizes 'active' objects
+				BulletDefaultMotionState myMotionState = BulletDefaultMotionState(startTransform);
+				BulletRigidBodyConstructionInfo rbInfo;//(0, null, null);
+				switch (j%3)
+				{
+				case 0: 
+					rbInfo = BulletRigidBodyConstructionInfo(mass, myMotionState, colShape, localInertia);
+					break;
+				case 1:
+					rbInfo = BulletRigidBodyConstructionInfo(mass, myMotionState, colShape3, localInertia);
+					break;
+				default:
+					rbInfo = BulletRigidBodyConstructionInfo(mass, myMotionState, colShape2, localInertia);
+				}
+
+				BulletRigidBody body = BulletRigidBody(rbInfo);
+				//body.setContactProcessingThreshold(colShape.getContactBreakingThreshold());
+				body.setActivationState(AS_ISLAND_SLEEPING);
+				body.setLinearFactor(Vec3(1, 1, 0));
+				body.setAngularFactor(Vec3(0, 0, 1));
+
+				this.dynamicsWorld.addRigidBody(body);
+				// body.setActivationState(AS_ISLAND_SLEEPING);
+				
+				this.bodies.push(body);
+
+
+			//	y += -0.8*deltaY;
+				y += deltaY;
+			}
+
+			x += deltaX;
+		}
+	}
+
+	// clientResetScene();
+}
+
+
+operator entry(){
+
+  Box2dDemo demo();
+
+  for(Integer i=0; i<300; i++){
+    demo.stepDemo();
+  }
+ 
+
+  // Force the destruction of the demo object earl.
+  demo = null;
+}

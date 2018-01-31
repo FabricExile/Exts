@@ -1,0 +1,47 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Alembic;
+
+/// forward declaration
+object AlembicArchiveReader;
+ 
+/**
+  The AlembicObjectReader interface is used for any AlembicIObject based reader. It provides the base functionality required.
+*/
+interface AlembicObjectReader {
+
+  /// returns the full path of the wrapped AlembicIObject
+  String getPath();
+
+  /// returns true if this reader wraps a valid AlembicIObject
+  Boolean valid();
+
+  /// clears all pointers and releases all alembic containers
+  reset!();
+
+  /// returns the wrapped AlembicIObject
+  Ref<AlembicIObject> getIObject();
+
+  /// returns the number of samples this reader provides
+  SInt32 getNumSamples();
+
+  /// returns the bounds of all children (without this Xform, if any)
+  Box3 getChildBounds!(Float64 time, io Boolean isConstant);
+
+  /// returns true if the bounds of all children are constant (without this Xform, if any)
+  Boolean areChildBoundsConstant();
+
+  /// returns the bounds of this object, excluding the children
+  Box3 getSelfBounds!(Float64 time, io Boolean isConstant);
+
+  /// returns true if the bounds of this object, excluding the children, are constant
+  Boolean areSelfBoundsConstant();
+
+  /// returns the bounds of this object, including all children and this Xform, if any
+  Box3 getBounds!(Float64 time, io Boolean isConstant);
+
+  /// returns true if the bounds of this object, including all children and this Xform, if any, are constant
+  Boolean areBoundsConstant();
+};

@@ -1,0 +1,93 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/RGBA.html"
+    },
+  "title" : "RGBA[] ->",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 0,\n  \"b\" : 0\n  }"
+        },
+      "name" : "value",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "RGBA[]" : [
+          {
+            "r" : 0,
+            "g" : 0,
+            "b" : 0,
+            "a" : 0
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "RGBA[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "r",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Byte[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "g",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Byte[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "b",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Byte[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "a",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Byte[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "38E431F065060789BA17F555BB68A764",
+  "code" : "require Math;
+
+operator Math_RGBA_decompose_task<<<index>>>(in RGBA[] value, io Byte[] r, io Byte[] g, io Byte[] b, io Byte[] a) {
+  r[index] = value[index].r;
+  g[index] = value[index].g;
+  b[index] = value[index].b;
+  a[index] = value[index].a;
+}
+
+dfgEntry {
+  Size task_size = value.size();
+  r.resize(task_size);
+  g.resize(task_size);
+  b.resize(task_size);
+  a.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size i = 0; i < task_size; i++) {
+      Math_RGBA_decompose_task(i, value, r, g, b, a);
+    }
+  } else {
+    Math_RGBA_decompose_task<<<task_size>>>(value, r, g, b, a);
+  }
+}
+"
+  }

@@ -1,0 +1,116 @@
+{
+  "objectType" : "Func",
+  "title" : "AlembicSampleInfo[] ->",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "value",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "AlembicSampleInfo[]" : [
+          {
+            "indexA" : -1,
+            "indexB" : -1,
+            "time" : -100000,
+            "timeA" : -100000,
+            "timeB" : -100000,
+            "fraction" : 0,
+            "ifraction" : 1
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "AlembicSampleInfo[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "indexA",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "UInt32[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "indexB",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "UInt32[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "time",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Float64[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "timeA",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Float64[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "timeB",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Float64[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "fraction",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Float64[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "ifraction",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Float64[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "697B4CDC9A649ECE0C89635BAFF89748",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicSampleInfo_decompose_task<<<index>>>(in AlembicSampleInfo[] value, io UInt32[] indexA, io UInt32[] indexB, io Float64[] time, io Float64[] timeA, io Float64[] timeB, io Float64[] fraction, io Float64[] ifraction) {
+  indexA[index] = value[index].indexA;
+  indexB[index] = value[index].indexB;
+  time[index] = value[index].time;
+  timeA[index] = value[index].timeA;
+  timeB[index] = value[index].timeB;
+  fraction[index] = value[index].fraction;
+  ifraction[index] = value[index].ifraction;
+}
+
+dfgEntry {
+  Size task_size = value.size();
+  indexA.resize(task_size);
+  indexB.resize(task_size);
+  time.resize(task_size);
+  timeA.resize(task_size);
+  timeB.resize(task_size);
+  fraction.resize(task_size);
+  ifraction.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size i = 0; i < task_size; i++) {
+      AlembicWrapper_AlembicSampleInfo_decompose_task(i, value, indexA, indexB, time, timeA, timeB, fraction, ifraction);
+    }
+  } else {
+    AlembicWrapper_AlembicSampleInfo_decompose_task<<<task_size>>>(value, indexA, indexB, time, timeA, timeB, fraction, ifraction);
+  }
+}
+"
+  }

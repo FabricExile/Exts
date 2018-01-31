@@ -1,0 +1,196 @@
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+private function Boolean BaseGeometry.fillScalarAttributeWithTurbulence(
+  io ScalarAttribute attr,
+  Vec3Attribute positionsAttr,
+  SInt32 mode,
+  Float32 time,
+  Vec3 center,
+  Vec3 amplitude,
+  Vec3 timeFrequency,
+  Vec3 spaceFrequency
+) {
+
+  Vec3 positions[] = positionsAttr.values;
+
+  PolygonMesh mesh = this;
+
+  Ref<ScalarAttribute> attrRef = attr;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      if(mesh == null)
+      {
+        for(Size i=0;i<attr.size();i++)
+        {
+          Vec3 pos = positions[i];
+          attr.values[i] = perlinTurbulenceFloat32(pos, time, center, amplitude, timeFrequency, spaceFrequency);
+        }
+      }
+      else
+      {
+        for(Size i=0;i<mesh.pointCount();i++)
+        {
+          Vec3 pos = positions[i];
+          Float32 v = perlinTurbulenceFloat32(pos, time, center, amplitude, timeFrequency, spaceFrequency);
+          mesh.setPointAttribute(i, attrRef, v);
+        }
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      if(mesh == null)
+      {
+        report('Error: Turbulence: Mode 1 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Size count = mesh.getPolygonSize(i);
+        
+        Vec3 pos;
+        for(Size j=0;j<count;j++)
+          pos += positions[mesh.getPolygonAttributeIndex(i, j)];
+        pos *= 1.0 / Float32(count);
+
+        Float32 v = perlinTurbulenceFloat32(pos, time, center, amplitude, timeFrequency, spaceFrequency);
+
+        for(Size j=0;j<count;j++)
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+      }
+      break;
+    }
+    case 2: // per face corner!
+    {
+      if(mesh == null)
+      {
+        report('Error: Turbulence: Mode 2 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+        {
+          Vec3 pos = positions[mesh.getPolygonAttributeIndex(i, j)];
+          Float32 v = perlinTurbulenceFloat32(pos, time, center, amplitude, timeFrequency, spaceFrequency);
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+        }
+      }
+      break;
+    }
+    default:
+    {
+      report('Error: Turbulence: Unsupported mode '+mode+'.');
+      return false;
+    }
+  }
+
+  attr.incrementVersion();
+  return true;
+}
+
+/// \internal
+private function Boolean BaseGeometry.fillVec3AttributeWithTurbulence(
+  io Vec3Attribute attr,
+  Vec3Attribute positionsAttr,
+  SInt32 mode,
+  Float32 time,
+  Vec3 center,
+  Vec3 amplitude,
+  Vec3 timeFrequency,
+  Vec3 spaceFrequency
+) {
+
+  Vec3 positions[] = positionsAttr.values;
+
+  PolygonMesh mesh = this;
+
+  Ref<Vec3Attribute> attrRef = attr;
+
+  switch(mode)
+  {
+    case 0: // per vertex
+    {
+      if(mesh == null)
+      {
+        for(Size i=0;i<attr.size();i++)
+        {
+          Vec3 pos = positions[i];
+          attr.values[i] = perlinTurbulenceVec3(pos, time, center, amplitude, timeFrequency, spaceFrequency);
+        }
+      }
+      else
+      {
+        for(Size i=0;i<mesh.pointCount();i++)
+        {
+          Vec3 pos = positions[i];
+          Vec3 v = perlinTurbulenceVec3(pos, time, center, amplitude, timeFrequency, spaceFrequency);
+          mesh.setPointAttribute(i, attrRef, v);
+        }
+      }
+      break;
+    }
+    case 1: // per face
+    {
+      if(mesh == null)
+      {
+        report('Error: Turbulence: Mode 1 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Size count = mesh.getPolygonSize(i);
+        
+        Vec3 pos;
+        for(Size j=0;j<count;j++)
+          pos += positions[mesh.getPolygonAttributeIndex(i, j)];
+        pos *= 1.0 / Float32(count);
+
+        Vec3 v = perlinTurbulenceVec3(pos, time, center, amplitude, timeFrequency, spaceFrequency);
+
+        for(Size j=0;j<count;j++)
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+      }
+      break;
+    }
+    case 2: // per face corner!
+    {
+      if(mesh == null)
+      {
+        report('Error: Turbulence: Mode 2 only supported by PolygonMesh.');
+        return false;
+      }
+
+      for(Size i=0;i<mesh.polygonCount();i++)
+      {
+        Size count = mesh.getPolygonSize(i);
+        for(Size j=0;j<count;j++)
+        {
+          Vec3 pos = positions[mesh.getPolygonAttributeIndex(i, j)];
+          Vec3 v = perlinTurbulenceVec3(pos, time, center, amplitude, timeFrequency, spaceFrequency);
+          mesh.setPolygonAttribute(i, j, attrRef, v);
+        }
+      }
+      break;
+    }
+    default:
+    {
+      report('Error: Turbulence: Unsupported mode '+mode+'.');
+      return false;
+    }
+  }
+
+  attr.incrementVersion();
+  return true;
+}

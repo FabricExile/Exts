@@ -1,0 +1,77 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+///
+/// Cholesky decomposition
+/// See https://en.wikipedia.org/wiki/Cholesky_decomposition
+///
+
+require Math;
+
+///
+/// Compute the Cholesky decomposition of a square positive-definite matrix.
+///
+/// Upon successful completion, A will store both the lower and upper
+/// components of the decomposition
+///
+LA_Cholesky_Decompose(io Mat A) {
+  Integer n = A.rows();
+  if (A.cols() != n)
+    throw FUNC + ": matrix must be square";
+  for (Integer i = 0; i < n; ++i) {
+    for (Integer j = i; j < n; ++j ) {
+      Scalar sum = A.get(i, j);
+      for (Integer k = i-1; k >= 0; --k)
+        sum -= A.get(i, k) * A.get(j, k);
+      if (i == j) {
+        if (sum <= 0)
+          throw FUNC + ": error in decomposition";
+        A.set(i, i, sqrt(sum));
+      }
+      else A.set(j, i, sum / A.get(i, i));
+    }
+    for (Integer k = i+1; k < n; ++k )
+      A.set(i, k, A.get(k, i));
+  }
+}
+
+///
+/// Solve the linear equation Ax=b where A has already been decomposed by
+/// LA_Cholesky_Decompose as C
+///
+LA_Cholesky_Solve(Mat C, io Vec x, Vec b) {
+  Vec y;
+  LA_Elimination_Forward(C, y, b);
+  LA_Elimination_Backward(C, x, y);
+}
+
+///
+/// Solve the linear equation Ax=b 
+///
+LA_Cholesky_DecomposeAndSolve(io Mat A, io Vec x, Vec b) {
+  LA_Cholesky_Decompose(A);
+  LA_Cholesky_Solve(A, x, b);
+}
+
+/// \internal
+operator LA_Cholesky_Solve_task(
+  Index index, 
+  Mat C, 
+  io Mat X,
+  Mat B) 
+{
+  Vec b(B.rows()), x(X.rows());
+  B.getCol(index, b);
+  LA_Cholesky_Solve(C, x, b);
+  X.setCol(index, x);
+}
+
+///
+/// Solve the linear equation AX=B 
+///
+LA_Cholesky_DecomposeAndSolve(io Mat A, io Mat X, Mat B) {
+  LA_Cholesky_Decompose(A);
+  X = Mat(B.rows(), B.cols());
+  LA_Cholesky_Solve_task<<<B.cols()>>>(A, X, B);
+}

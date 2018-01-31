@@ -1,0 +1,73 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Color.html",
+    "uiTooltip" : "Returns the Color's component given an index (0 to 3)\n\n Supported by Color,Vec2,Vec3,Vec4"
+    },
+  "title" : "Component[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "$TYPE$[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "i",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Size[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Size[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Scalar[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "A114087171B09EA5E29ADBA092BC4DE6",
+  "code" : "require Math;
+
+operator Math_Color_component_task<<<index>>>(
+  io Scalar[] result
+, in $TYPE$[] this
+, in Size[] i
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].component(i[index < i.size() ? index : i.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( i.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < i.size()) task_size = i.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Color_component_task(index, result, this, i);
+    }
+  } else {
+    Math_Color_component_task<<<task_size>>>(result, this, i);
+  }
+}
+"
+  }

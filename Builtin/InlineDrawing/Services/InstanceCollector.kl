@@ -1,0 +1,86 @@
+
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+The InstanceCollectorTester interface defines a single virtual function that can 
+be overridden in specialized implementations of the InstanceCollector
+\note: when the 'virtual' keyword is introduced into KL, we can eliminate this interface and simply decorate the :kl-ref:`InstanceCollector.isCollectable` method with the virtual keyword.
+\dfgPresetOmit
+*/
+interface InstanceCollectorTester {
+  Boolean isCollectable!(InlineInstance instance);
+};
+
+/*
+The InstanceCollector is a base class for objects that collect InlineInstances 
+from the inline drawing system. You can use the 
+\example
+require InlineDrawing;
+
+object PointsCollector : InstanceCollector {
+};
+
+// Provide a custom test method.
+function Boolean PointsCollector.isCollectable!(InlineInstance instance){
+  Points points = instance.getShape().getGeometry();
+  return points != null;
+}
+
+operator entry() {
+  // Now the instance collector can be used to collect geometries from the scene.
+  PointsCollector collector();
+  InlineInstance pointsGeometries[] = collector.collect();
+}
+\endexample
+\seealso GizmoCollector
+\dfgPresetOmit
+*/
+object InstanceCollector : InstanceCollectorTester {
+  /// \internal
+  UInt32 sceneHierarchyVersion;
+  /// \internal
+  InlineInstance collection[];
+};
+
+/// The default implementation. Objects inheriting from 
+/// :kl-ref:`InstanceCollector` can provide more specialized implementations.
+/// \dfgPresetOmit
+function Boolean InstanceCollector.isCollectable!(InlineInstance instance){
+  return true;
+}
+
+/// \internal
+function InstanceCollector.traverseTransform!(InlineTransform transform){
+  Ref<InstanceCollectorTester> tester = this;
+  for(Integer i=0; i<transform.getChildCount(); i++){
+    Object child = transform.getChild(i);
+    InlineTransform childTransform = child;
+    if(childTransform != null)
+      this.traverseTransform(childTransform);
+    else{
+      InlineInstance instance = child;
+      if(instance != null && tester.isCollectable(instance)){
+        this.collection.push(instance);
+      }
+    }
+  }
+}
+
+/// perform collection, invoke callback and return an array of collected InlineInstance objects
+/// \dfgPresetOmit
+function InlineInstance[] InstanceCollector.collect!(){
+
+    // TODO: the collector should cache its collection and 
+    // only re-collect if the hierarchy has changed in some way. 
+    // if(this.sceneHierarchyVersion != drawing.getSceneHierarchyVersion())
+    {
+        this.collection.resize(0);
+        InlineDrawing drawing = Singleton_get('InlineDrawing');
+        this.traverseTransform(drawing.getRoot());
+        //this.sceneHierarchyVersion != drawing.getSceneHierarchyVersion();
+    }
+    return this.collection;
+}

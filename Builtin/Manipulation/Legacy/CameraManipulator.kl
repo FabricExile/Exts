@@ -1,0 +1,286 @@
+
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Singletons;
+require InlineDrawing;
+
+
+alias UInt32 CameraManipulator_State;
+const CameraManipulator_State CameraManipulator_State_Active =  0;
+const CameraManipulator_State CameraManipulator_State_Orbiting = 1;
+const CameraManipulator_State CameraManipulator_State_Panning = 2;
+const CameraManipulator_State CameraManipulator_State_Dolly = 3;
+
+
+/**
+\versionadded 1.14.0
+
+The :kl-ref:`CameraManipulator` provides camera manpulations services for the Camera interface.
+
+The CameraManipulator can only be used with standalone tools and cannot be used within the DCC Splice integrations.
+
+Usage:
+ - Hold the Left mouse button and drag with the mouse to cause camera orbiting.
+ - Hold the Middle mouse button and drag with the mouse to cause camera panning.
+ - Hold the Left mouse button, the Alt key, and drag with the mouse to cause camera dollying.
+ - Use the mouse wheel to cause camera dollying.
+
+\seealso Camera
+\dfgPresetOmit
+*/
+object CameraManipulator : Manipulator {
+
+  /// The camera that is the subject of this manipulator.
+  Camera camera;
+
+  /// The current state of the manipulator. (see definitions above)
+  /// \internal
+  CameraManipulator_State state;
+
+  /// \internal
+  /// The previous mouse position during a mouse drag. 
+  Vec2 prevMousePos;
+  
+  /// The rate at which the mouse drag correlates to orbit velocity of the camera.  
+  Scalar orbitRate;
+
+  /// The factor at which mouse wheel actions are converted to dolly motion.
+  Scalar mouseWheelDollySpeed;
+
+  /// \internal
+  Float32 moveSpeed;
+  /// \internal
+  Float32 turnSpeed;
+};
+
+/// Default constructor for the CameraManipulator.
+function CameraManipulator(){
+  this.init();
+}
+
+/// Constructing taking the Camera object that will be the subject of the interaction.
+function CameraManipulator(Camera camera){
+  this.camera = camera;
+  this.init();
+}
+
+
+/// Initialize the default values of the CameraManipulator.
+function CameraManipulator.init!(){
+  this.state = CameraManipulator_State_Active;
+
+  this.orbitRate = 0.01;
+  this.mouseWheelDollySpeed = 0.0007;
+
+  this.moveSpeed = 0.7;
+  this.turnSpeed = 2.0 * 3.14 / 180.0;
+}
+
+/// Set a new camera to be used by the manipulator.
+function CameraManipulator.setCamera!(Camera camera){
+  this.camera = camera;
+}
+
+/// When the manipulator is enabled, this callback function is invoked.
+function CameraManipulator.onEnable!(){
+}
+
+/// When the manipulator is disabled, this callback function is invoked.
+function CameraManipulator.onDisable!(){
+}
+
+/// When the manipulator is disabled, this callback function is invoked.
+function CameraManipulator.orbit!(Vec2 mouseDelta){
+  Xfo newcameraXfo = this.camera.getMat44();
+  Vec3 cameraTargetOffset = newcameraXfo.ori.getZaxis() * -this.camera.getFocalDistance();
+  Vec3 cameraTarget = newcameraXfo.tr + cameraTargetOffset;
+  Quat orbit();
+  orbit.setFromAxisAndAngle(Vec3(0, 1, 0), mouseDelta.x * -this.orbitRate);
+  newcameraXfo.ori = orbit * newcameraXfo.ori;
+  Quat pitch();
+  pitch.setFromAxisAndAngle(newcameraXfo.ori.getXaxis(), mouseDelta.y * -this.orbitRate);
+  newcameraXfo.ori = pitch * newcameraXfo.ori;
+  cameraTargetOffset = orbit.rotateVector(cameraTargetOffset);
+  cameraTargetOffset = pitch.rotateVector(cameraTargetOffset);
+  newcameraXfo.tr = cameraTarget - cameraTargetOffset;
+  this.camera.setFromMat44(newcameraXfo.toMat44());
+}
+
+function CameraManipulator.pan!(Vec2 mouseDelta, Viewport viewport){
+  Xfo camXfo = this.camera.getMat44();
+  Vec3 xAxis = camXfo.ori.getXaxis();
+  Vec3 yAxis = camXfo.ori.getYaxis();
+  Vec2 viewportDim = viewport.getDimensions();
+  Scalar cameraPlaneHeight = 2.0 * this.camera.getFocalDistance() * tan(0.5 * this.camera.getFovY());
+  Scalar cameraPlaneWidth = cameraPlaneHeight * (viewportDim.x/viewportDim.y);
+  Vec3 delta();
+  delta += xAxis * -(mouseDelta.x/viewportDim.x) * cameraPlaneWidth;
+  delta += yAxis *  (mouseDelta.y/viewportDim.y) * cameraPlaneHeight;
+
+  camXfo.tr += delta;
+  this.camera.setFromMat44(camXfo.toMat44());
+}
+
+
+function CameraManipulator.dolly!(Scalar delta){
+  // Stop the camera from dollying through the target. 
+  if(delta > 0.0 && this.camera.getFocalDistance() < 0.001)
+    return;
+  
+  Xfo camXfo = this.camera.getMat44();
+  Vec3 zAxis = camXfo.ori.getZaxis();
+  Vec3 cameraTarget = camXfo.tr + (zAxis * -this.camera.getFocalDistance());
+
+  // Apply the dolly to the focal distance and recompute the camera xfo.
+  this.camera.setFocalDistance(this.camera.getFocalDistance() - Scalar(delta) * this.camera.getFocalDistance());
+
+  camXfo.tr = cameraTarget - (zAxis * -this.camera.getFocalDistance());
+  this.camera.setFromMat44(camXfo.toMat44());
+}
+
+
+
+/// The event handler function for the CameraManipulator
+/// \param event The event propagated from the host DCC application
+function CameraManipulator.onEvent!(io Event event){
+
+  if(event.eventType() == Event_MouseButtonPress){
+    MouseEvent mouseEvent = event;
+    switch(this.state){
+    case CameraManipulator_State_Active:
+      if(mouseEvent.buttons & MouseButton_LeftButton)
+        this.state = CameraManipulator_State_Orbiting;
+      else if(mouseEvent.buttons & MouseButton_MiddleButton)
+        this.state = CameraManipulator_State_Panning;
+      else if(mouseEvent.buttons & MouseButton_RightButton && mouseEvent.modifiers & ModiferKey_Alt)
+        this.state = CameraManipulator_State_Dolly;
+      this.prevMousePos = mouseEvent.pos;
+      event.accept();
+      break;
+    }
+  }
+
+  else if(event.eventType() == Event_MouseMove){
+    // suspend event handling while manipulating the camera. 
+    MouseEvent mouseEvent = event;
+    switch(this.state){
+      case CameraManipulator_State_Orbiting:{
+        Vec2 mouseDelta = mouseEvent.pos - this.prevMousePos;
+        this.orbit(mouseDelta);
+        this.prevMousePos = mouseEvent.pos;
+        event.getHost().requestRedraw();
+        event.accept();
+        break;
+      }
+      case CameraManipulator_State_Panning:{
+        Vec2 mouseDelta = mouseEvent.pos - this.prevMousePos;
+        this.pan(mouseDelta, event.getViewport());
+        this.prevMousePos = mouseEvent.pos;
+        event.getHost().requestRedraw();
+        event.accept();
+        break;
+      }
+      case CameraManipulator_State_Dolly:
+        Scalar drag = mouseEvent.pos.x - this.prevMousePos.x;
+        this.prevMousePos = mouseEvent.pos;
+        this.dolly(drag * this.mouseWheelDollySpeed * 2.0);
+        event.getHost().requestRedraw();
+        event.accept();
+        break;
+    }
+  }
+  else if(event.eventType() == Event_MouseButtonRelease){
+    MouseEvent mouseEvent = event;
+    this.state = CameraManipulator_State_Active;
+    event.getHost().requestRedraw();
+    event.accept();
+  }
+  else if(event.eventType() == Event_Wheel){
+    MouseWheelEvent mouseWheelEvent = event;
+    this.dolly(Scalar(mouseWheelEvent.delta) * this.mouseWheelDollySpeed);
+    event.getHost().requestRedraw();
+    event.accept();
+  }
+  else if(event.eventType() == Event_KeyPress){
+    KeyEvent keyEvent = event;
+    if(keyEvent.isAutoRepeat)
+      return;
+    InlineCamera cam = this.camera;
+    if(!cam)
+      return;
+    switch(keyEvent.key){
+    case Key_W:
+      cam.goalLinearVelocity.z = -this.moveSpeed;
+      break;
+    case Key_S:
+      cam.goalLinearVelocity.z = this.moveSpeed;
+      break;
+    case Key_A:
+      if(keyEvent.modifiers & ModiferKey_Shift)
+        cam.goalAngularVelocity.x = -this.turnSpeed;
+      else
+        cam.goalLinearVelocity.x = -this.moveSpeed;
+      break;
+    case Key_D:
+      if(keyEvent.modifiers & ModiferKey_Shift)
+        cam.goalAngularVelocity.x = this.turnSpeed;
+      else
+        cam.goalLinearVelocity.x = this.moveSpeed;
+      break;
+    case Key_PageUp:
+      cam.goalLinearVelocity.y = this.moveSpeed;
+      break;
+    case Key_PageDown:
+      cam.goalLinearVelocity.y = -this.moveSpeed;
+      break;
+    }
+  }
+  else if(event.eventType() == Event_KeyRelease){
+    KeyEvent keyEvent = event;
+    if(keyEvent.isAutoRepeat)
+      return;
+    InlineCamera cam = this.camera;
+    if(!cam)
+      return;
+    switch(keyEvent.key){
+    case Key_W:
+      cam.goalLinearVelocity.z = 0.0;
+      break;
+    case Key_S:
+      cam.goalLinearVelocity.z = 0.0;
+      break;
+    case Key_A:
+      cam.goalAngularVelocity.x = 0.0;
+      cam.goalLinearVelocity.x = 0.0;
+      break;
+    case Key_D:
+      cam.goalAngularVelocity.x = 0.0;
+      cam.goalLinearVelocity.x = 0.0;
+      break;
+    case Key_PageUp:
+      cam.goalLinearVelocity.y = 0.0;
+      break;
+    case Key_PageDown:
+      cam.goalLinearVelocity.y = 0.0;
+      break;
+    }
+  }
+}
+
+function CameraManipulator.onEvent!(io MouseEvent mouseEvent){
+  Event event = mouseEvent;
+  this.onEvent(event);
+}
+
+function CameraManipulator.onEvent!(io MouseWheelEvent mouseWheelEvent){
+  Event event = mouseWheelEvent;
+  this.onEvent(event);
+}
+
+function CameraManipulator.onEvent!(io KeyEvent keyEvent){
+  Event event = keyEvent;
+  this.onEvent(event);
+}

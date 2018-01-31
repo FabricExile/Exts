@@ -1,0 +1,58 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+using namespace Tool;
+
+object LowLevelTool : BaseTool{
+  Boolean drawLine;
+};
+
+LowLevelTool() {
+  // Register to raw UI events (this is disabled by default to avoid overhead)
+  this.registerToRawEvents( true );
+}
+
+LowLevelTool.onRawEvent!( io Event event ) {
+  report( "Raw event:" , event.describe(false) );
+  MouseEvent mouseEvent = event;
+
+  // We draw a line if a mouse button is pressed
+  this.drawLine = Boolean( mouseEvent ) && mouseEvent.buttons != 0;
+  if( this.drawLine )
+    ToolChanged(); // Tell the tool manager that we need to redraw
+}
+
+LowLevelTool.postDraw!( Tool::DrawContext context, String drawPass, io Boolean drawChildren ) {
+
+  // We draw in the "OnTopNoDepthTestRenderPass" pass; see pass definitions in Manipulation/Tool/Defines.kl
+  if( this.drawLine && drawPass == OnTopNoDepthTestRenderPass ) {
+    // The tool manager records the last mouse position (we could have recorded it too as a member)
+    Vec2 lastMousePosition = this.getManager().getLastMousePosition();
+    report( "Drawing line to", lastMousePosition );
+
+    // Convert from screen space to normalized viewport space (OpenGL)
+    Vec2 normMousePos = PixelToNormalizedScreenSpace( context.viewport, lastMousePosition );
+
+    // This is a "low level" example with direct drawing, however it is recommended to
+    // use built-in Tool shapes such as Tool::GeometryShape
+
+    // Draw from the middle of the viewport to the mouse
+    // Note: this is old OpenGL that's no longer supported in Core profiles
+    // We could also create some InlineDrawing instances or DrawingHandle to draw directly.
+    glPushMatrix();
+    glMatrixMode( GL_PROJECTION );
+    glLoadIdentity();
+    glMatrixMode( GL_MODELVIEW );
+    glLoadIdentity();
+
+    glBegin( GL_LINES );
+    glVertex2f( 0, 0 );
+    glVertex2f( normMousePos.x, normMousePos.y );
+    glEnd();
+
+    glPopMatrix();
+  }
+
+  this.parent.postDraw( context, drawPass, drawChildren );
+}

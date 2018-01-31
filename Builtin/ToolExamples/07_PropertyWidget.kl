@@ -1,0 +1,84 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+using namespace Tool;
+
+object PropertyWidgetExample : BaseTool{};
+
+PropertyWidgetExample() {
+
+  // Create a test property widget
+  PropertyWidgetsLayout props();
+  props.setAlignment( Alignment_upperLeft );
+
+  props.addDrawModifier( DistanceBasedTransparency(), false );
+
+  this.addChild( "props", props );
+
+  Image2DColor handleImg = ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/SliderHandle.png" );
+  Image2DColor handleDraggingImg = ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/SliderHandleDragging.png" );
+  Image2DColor handleHighlightImg = ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/SliderHandleHighlight.png" );
+  Image2DColor barRightImg = ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/SliderBar.png" );
+  Image2DColor barLeftImg = ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/SliderBarLeft.png" );
+
+  Image2DColor checkboxImg = ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/CheckBox.png" );
+  Image2DColor checkboxHImg = ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/CheckBoxHighlight.png" );
+  Image2DColor checkboxCImg = ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/CheckBoxChecked.png" );
+  Image2DColor checkboxCHImg = ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/CheckBoxCheckedHighlight.png" );
+
+  Image2DColor buttonImg = ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/PushButton.png" );
+  Image2DColor buttonHImg = ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/PushButtonHighlight.png" );
+  Image2DColor buttonTImg = ReadImageFromFile( "${FABRIC_DIR}/Resources/ManipSamples/PushButtonToggled.png" );
+
+  SliderWidget slider1( null, Vec2( 200, props.widgetsRowHeightPixels / 2 ), barLeftImg, barRightImg, Vec2( 10, props.widgetsRowHeightPixels ), handleImg, handleHighlightImg, handleDraggingImg );
+  props.addWidget( slider1, "test slider 1" );
+
+  SliderWidget slider2( null, Vec2( 200, props.widgetsRowHeightPixels / 2 ), barLeftImg, barRightImg, Vec2( 10, props.widgetsRowHeightPixels ), handleImg, handleHighlightImg, handleDraggingImg );
+  props.addWidget( slider2, "test slider 2" );
+
+  CheckBoxWidget checkbox1( null, Vec2( 30 ), checkboxImg, checkboxHImg, checkboxCImg, checkboxCHImg );
+  props.addWidget( checkbox1, "test checkbox 1" );
+
+  PushButtonWidget button1( Vec2( 30 ), buttonImg, buttonHImg, buttonTImg );
+  props.addWidget( button1, "test button 1" );
+
+  // Test with colors
+  SliderWidget slider3( null, Vec2( 200, props.widgetsRowHeightPixels / 2 ), Color( 1.0, 0.0, 0.0, 0.8 ), Color( 1.0, 0.0, 0.0, 0.4 ), Vec2( 10, props.widgetsRowHeightPixels ), Color( 0.3 ), Color( 0.5 ), Color( 1.0 ) );
+  props.addWidget( slider3, "test slider 3" );
+
+  CheckBoxWidget checkbox2( null, Vec2( 30 ), Color(0.1), Color(0.3), Color(1.0,0,0), Color(1,0.5,0.5) );
+  props.addWidget( checkbox2, "test checkbox 2" );
+
+  PushButtonWidget button2( Vec2( 30 ), Color(0.5,0,0), Color(1,0.5,0.5), Color(0,0.8,0) );
+  props.addWidget( button2, "test button 2" );
+
+  // Connect to events
+  checkbox1.addListener( this, false, CheckBoxWidget_onChecked );
+  checkbox1.addListener( this, false, CheckBoxWidget_onUnchecked );
+  checkbox2.addListener( this, false, CheckBoxWidget_onChecked );
+  checkbox2.addListener( this, false, CheckBoxWidget_onUnchecked );
+
+  button1.addListener( this, false, PushButtonWidget_onTrigger );
+  button2.addListener( this, false, PushButtonWidget_onTrigger );
+
+  slider1.addListener( this, false, SliderWidget_onValueChange );
+  slider2.addListener( this, false, SliderWidget_onValueChange );
+  slider3.addListener( this, false, SliderWidget_onValueChange );
+}
+
+/// \internal
+PropertyWidgetExample.onEvent!( ToolEvent event, ToolEventUserID userID ) {
+  Ref<BaseTool> sender = event.sender;
+  if( event.name == CheckBoxWidget_onChecked )
+    report( "Checked " + sender.getPath() );
+  else if( event.name == CheckBoxWidget_onUnchecked )
+    report( "Unchecked " + sender.getPath() );
+  else if( event.name == PushButtonWidget_onTrigger )
+    report( "Pushed " + sender.getPath() );
+  else if( event.name == SliderWidget_onValueChange ) {
+    Ref<SliderWidget> slider = sender;
+    report( "Slider = " + slider.getSliderRatio() + ": " + sender.getPath() );
+  }
+  this.parent.onEvent( event, userID );
+}

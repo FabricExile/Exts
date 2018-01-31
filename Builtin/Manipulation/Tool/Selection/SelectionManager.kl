@@ -1,0 +1,632 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+require OSOGL;
+require OGLWrappers;
+
+namespace Tool {
+
+  /// \internal
+  object SelectionManager_shaderData{
+    Boolean isDefault;
+    OGLProgram shader;
+    OGLProgramParamValues shaderValues;
+    Size shaderPositionsKey;
+    Size shaderTransformKey;
+    Size shaderIDKey;
+    Size shaderPrevDepthKey;
+    Size shaderPrimitiveMaskKey;
+    Size shaderOffsetPointsKey;
+  };
+
+  /// \internal
+  object SelectionManager_glContextData{
+    OGLContext context;
+    OGLFramebuffer selFBO;
+    OGLFramebuffer selPrevDepthFBO;
+  };
+
+  /// The SelectionManager provides a global and generic service
+  /// for performing selection (OpenGL picking) for the drawn primitives.
+  ///
+  /// See :ref:`TPG.selection` for more information and examples.
+  object SelectionManager{
+    Size defaultPointDrawSize;
+
+    SelectionManager_shaderData shaderData[String];
+    OGLHostState glStateBackup;
+
+    Boolean needsGLIndependantContext;
+    SelectionManager_glContextData glContextData[];
+    OGLContext tempContext;
+    OGLViewport viewportState;
+
+    OGLImageObject fboDepth;// Shared between contexts if many
+    OGLImageObject fboPrevDepth;// Shared between contexts if many
+    OGLImageObject fboIndices;// Shared between contexts if many
+
+    OGLTexture defaultPrimitiveMask;
+    OGLBuffer_ positionsLegacyBufferWrapper;
+
+    SelectionManagerDrawList defaultList;
+  };
+
+  SelectionManager() {
+    this.defaultList = SelectionManagerDrawList();
+    this.defaultPointDrawSize = 5;
+    this.viewportState = OGLViewport();
+    this.glStateBackup = OGLHostState();
+    this.tempContext = OGLContext();
+  }
+
+  Ref<SelectionManagerDrawList> SelectionManager.getDefaultList() {
+    return this.defaultList;
+  }
+
+  const UInt8 SelectedGroupType_closest = 1;
+  const UInt8 SelectedGroupType_front = 2;
+  const UInt8 SelectedGroupType_all = 3;
+
+  /// \internal
+  inline UInt32[] SelectionManager.select!( Ref<SelectionManagerDrawList> drawList, Ref<Viewport> viewport, Vec2 pixelUpperLeft, Vec2 pixelLowerRight, UInt8 selectionMode, UInt8 selectedGroupType, Boolean objectMaskIfClosestPoints, Boolean withPrimitiveIndices, io UInt32 primitiveIndices[][] ) {
+    Scalar dummy;
+    return this.select( drawList, viewport, pixelUpperLeft, pixelLowerRight, selectionMode, selectedGroupType, objectMaskIfClosestPoints, withPrimitiveIndices, primitiveIndices, false, dummy );
+  }
+
+  /// Selects drawList items that are in the region [pixelUpperLeft .. pixelLowerRight], and returns selected list item indices.
+  /// \param selectedGroupType SelectedGroupType_closest: select only one, based on distance to the rectangle center. SelectedGroupType_front: only visible ones. SelectedGroupType_all: all including those behind.
+  inline UInt32[] SelectionManager.selectObjects!( Ref<SelectionManagerDrawList> drawList, Ref<Viewport> viewport, Vec2 pixelUpperLeft, Vec2 pixelLowerRight, UInt8 selectedGroupType ) {
+    UInt32 primitiveIndices[][];
+    return this.select( drawList, viewport, pixelUpperLeft, pixelLowerRight, SelectionMode_Objects, selectedGroupType, false, false, primitiveIndices );
+  }
+
+  /// Selects drawList items and primitives that are in the region [pixelUpperLeft .. pixelLowerRight].
+  /// \param selectionMode Type of selection SelectionMode_Objects, SelectionMode_Elements_includePartial, SelectionMode_Elements_excludePartial, SelectionMode_Points
+  /// \param selectedGroupType SelectedGroupType_closest select only one, based on distance to the rectangle center. SelectedGroupType_front: only visible ones. SelectedGroupType_all: all including those behind.
+  /// \param objectMaskIfClosestPoints if selecting closest point(s) (selectionMode == SelectionMode_Points and selectedGroupType == SelectedGroupType_closest or SelectedGroupType_front), a first pass be made to mask with the object geometry (eg: in shaded mode)
+  /// \param itemIndices Item indices relative to drawList
+  /// \param primitivesPerItem Per element of itemIndices, an IndexSet containing the selected primitives.
+  inline SelectionManager.select!( Ref<SelectionManagerDrawList> drawList, Ref<Viewport> viewport, Vec2 pixelUpperLeft, Vec2 pixelLowerRight, UInt8 selectionMode, UInt8 selectedGroupType, Boolean objectMaskIfClosestPoints, io UInt32 itemIndices[], io UInt32 primitivesPerItem[][] ) {
+    itemIndices = this.select( drawList, viewport, pixelUpperLeft, pixelLowerRight, selectionMode, selectedGroupType, objectMaskIfClosestPoints, true, primitivesPerItem );
+  }
+
+  /// \internal
+  SelectionManager_select_updatePrimitiveMask( io OGLTexture texture, io UInt32 primitiveMaskBits[], io Ref<OGLContext> context ) {
+    if( !texture )
+      texture = OGLTexture();
+
+    UInt32 w = 512;
+    UInt32 h = primitiveMaskBits.size() / 512 + 1;
+    primitiveMaskBits.resize( w*h );// Ensure to have the right size else could read bad memory
+    texture.setSize( w, h, 1 );
+    texture.setType( GL_TEXTURE_2D, GL_RED_INTEGER, GL_R32UI, false );
+    texture.setTextureParameters( GL_NEAREST, GL_NEAREST, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE );
+    texture.loadTexture2D( w, h, GL_UNSIGNED_INT, primitiveMaskBits.data(), context );
+  }
+
+  /// \internal
+  struct SelectionManager_prepareGLBracket {
+    OGLWrapperIndependantContextController independantContextController;
+    Ref<SelectionManager_glContextData> contextData;
+    Ref<Viewport> viewport;
+    Ref<OGLHostState> stateToRestore;
+  };
+
+  /// \internal
+  SelectionManager_prepareGLBracket( io Ref<SelectionManager> manager, Vec2 dimensions, Ref<Viewport> viewport ) {
+
+    this.viewport = viewport;
+
+    // Build context. This is not easy because of OSX limitations; in OSX, we have
+    // a GL 2.1 context that can't handle the GL 3.2 operations we need.
+    // So we have to create another GL context to allow this.
+    Boolean buildingFirstContext = manager.glContextData.size() == 0;
+
+    if( buildingFirstContext ) {
+      // First determine if we need an independant context
+      manager.needsGLIndependantContext = true;
+      if( cpglHaveContext() ) {
+        OGLCapabilities caps();
+        caps.initialize();
+
+        // We're fine if the viewport context is already 
+        if( caps.GLMajorVersion > 3 || ( caps.GLMajorVersion == 3 && caps.GLMinorVersion >= 2 ) )
+          manager.needsGLIndependantContext = false;
+      }
+    }
+    SelectionManager_glContextData contextData = null;
+    if( manager.needsGLIndependantContext ) {
+      if( manager.glContextData )
+        contextData = manager.glContextData[0];
+    } else {
+      //find context
+      manager.tempContext.initializeFromCurrentContext();
+      for( Size i = 0; i < manager.glContextData.size(); ++i ) {
+        if( manager.tempContext.context.isSameContext( manager.glContextData[i].context.context ) )
+          contextData = manager.glContextData[i];
+      }
+    }
+
+    Ref<OGLContext> context = null;
+
+    if( !contextData ) {
+      // Create a OGLContext object and framebuffers
+      contextData = SelectionManager_glContextData();
+      manager.glContextData.push( contextData );
+
+      if( manager.needsGLIndependantContext ) {
+        this.independantContextController.setupIndependantContext();
+        contextData.context = this.independantContextController.context;
+      } else {
+        contextData.context = OGLContext();
+        contextData.context.initializeFromCurrentContext();
+      }
+      context = contextData.context;
+
+      if( !cpglHaveContext() )
+        return;
+
+      // Create selection FBOs (FBOs are context specific)
+      contextData.selFBO = OGLFramebuffer();
+      contextData.selPrevDepthFBO = OGLFramebuffer();
+
+      if( buildingFirstContext ) {
+        // Create attachments, textures to be shared with other contexts
+        contextData.selFBO.setDepthTextureAttachment( false, GL_TEXTURE_2D, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT24 );
+        contextData.selFBO.pushColorRenderbufferAttachment( "IDs", GL_RGB32UI );
+        contextData.selPrevDepthFBO.setDepthTextureAttachment( false, GL_TEXTURE_2D, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT24 );
+
+        manager.fboDepth = contextData.selFBO.getDepthAttachment();
+        manager.fboIndices = contextData.selFBO.getColorAttachment( 0 );
+        manager.fboPrevDepth = contextData.selPrevDepthFBO.getDepthAttachment();
+
+        UInt32 dummy[];
+        SelectionManager_select_updatePrimitiveMask( manager.defaultPrimitiveMask, dummy, context );
+      } else {
+        // Attach shared
+        contextData.selFBO.setSharedDepthAttachment( manager.fboDepth );
+        contextData.selFBO.setColorAttachmentCount( 1 );
+        contextData.selFBO.setSharedColorAttachment( 0, "IDs", manager.fboIndices );
+        contextData.selPrevDepthFBO.setSharedDepthAttachment( manager.fboPrevDepth );
+      }
+
+      contextData.selFBO.setSize( Size( dimensions.x ), Size( dimensions.y ), 1 );
+      contextData.selPrevDepthFBO.setSize( Size( dimensions.x ), Size( dimensions.y ), 1 );
+
+      contextData.selFBO.create( context );
+      contextData.selPrevDepthFBO.create( context );
+    } else {
+      if( manager.needsGLIndependantContext ) {
+        this.independantContextController.setupIndependantContext();
+        contextData.context = this.independantContextController.context;
+      }
+      context = contextData.context;
+      contextData.selFBO.setSize( Size( dimensions.x ), Size( dimensions.y ), 1 );
+      contextData.selPrevDepthFBO.setSize( Size( dimensions.x ), Size( dimensions.y ), 1 );
+    }
+
+    this.contextData = contextData;
+    context.stateCache.reset();
+    //cpglSetCheckErrors( true );
+
+    if( !manager.needsGLIndependantContext ) {
+      this.stateToRestore = manager.glStateBackup;
+      this.stateToRestore.saveStates();
+    }
+
+    // Clear buffers
+    contextData.selPrevDepthFBO.activateAllDefinedColors( context );
+
+    // Prev: init as nearest = 0
+    contextData.selPrevDepthFBO.clearDepth( 0, true, context );
+
+    contextData.selFBO.activateAllDefinedColors( context );
+    contextData.selFBO.clearDepth( 1, true, context );
+
+    context.stateCache.enableCullFace( false );
+    context.stateCache.depthMask( true );
+    context.stateCache.enableDepthTest( true );
+    context.stateCache.depthFunc( GL_LESS );
+  }
+
+  ~SelectionManager_prepareGLBracket() {
+    this.independantContextController.restorePreviousContext();
+
+    if( !cpglHaveContext() )
+      return;
+
+    if( this.stateToRestore )
+      this.stateToRestore.restoreStates();
+
+    // restore vewport params
+    Vec2 size = this.viewport.getDimensions();
+    glBindFramebuffer( GL_FRAMEBUFFER, 0 );
+    glReadBuffer( GL_BACK );
+    glDrawBuffer( GL_BACK );
+    glViewport( 0, 0, Size( size.x ), Size( size.y ) );
+  }
+
+  /// \internal
+  Ref<SelectionManager_shaderData> SelectionManager.getOrCreateShader!( Ref<SelectionDrawableItem> drawable, io Ref<OGLContext> context ) {
+    String customShaderName = drawable.getCustomTransformShaderName();
+    Ref<SelectionManager_shaderData> shaderData = this.shaderData.get( customShaderName, null );
+    if( !shaderData ) {
+      SelectionManager_shaderData newShaderData();
+      shaderData = newShaderData;
+      this.shaderData[customShaderName] = newShaderData;
+
+      shaderData.isDefault = Boolean( customShaderName );
+
+      // Create the default shader
+      shaderData.shader = OGLProgram( customShaderName ? "SelectionShader_" + customShaderName : "SelectionShader" );
+
+      shaderData.shader.addShader( "
+      #version 150
+
+      uniform mat4 transform;
+      in vec4 positions;
+      flat out int instanceID;
+      uniform int offsetPoints;// If 1: match SelectionSharedDrawData's shader behavior (offset components in the shader)
+
+      void main() {
+        gl_Position = transform * positions;
+
+        if( offsetPoints == 1 ) {
+          // If 1: match SelectionSharedDrawData's shader behavior (offset components in the shader)
+          float z = 1.0f - gl_Position.z / gl_Position.w;
+          z = z * 1.0011;//Hacked polygon offset since it can't work for GL_LINES and GL_POINTS
+          gl_Position.z = ( 1.0 - z ) * gl_Position.w;
+        }
+
+        instanceID = gl_InstanceID;
+      }
+      ", GL_VERTEX_SHADER );
+
+      shaderData.shader.addShader( "
+      #version 150
+
+      uniform int ID;
+      uniform sampler2D prevDepth;// For peeling to next layer
+      flat in int instanceID;
+
+      uniform usampler2D primitiveMask;
+
+      out uvec3 IDs;
+
+      void main() {
+        // Discard if closer than previous depth pass (peeling front to back)
+        float prevDepth = texelFetch( prevDepth, ivec2( gl_FragCoord.xy ), 0 ).r;
+        if( gl_FragCoord.z < prevDepth ) //only greater: we won't redraw the same object
+          discard;
+
+        // Check the primitive bit mask; discard if it is set
+        // NOTE: primitiveID isn't ok if there is a tesselation shader; in that case it will have to be a shader input in a specialized shader
+        int primPixel = gl_PrimitiveID >> 5;
+        uint primBit = uint( 1 << ( gl_PrimitiveID & 0x1F ) );
+
+        ivec2 primitiveMaskSize = textureSize( primitiveMask, 0 );
+
+        ivec2 primitiveMaskTexelCoord;
+        primitiveMaskTexelCoord.y = primPixel / primitiveMaskSize.x;
+
+        uint primMaskTexel;
+        if( primitiveMaskTexelCoord.y < primitiveMaskSize.y ) { // Don't go out of texture size since it is clamping -> would give wrong results
+
+          primitiveMaskTexelCoord.x = primPixel - primitiveMaskTexelCoord.y * primitiveMaskSize.x;
+
+          primMaskTexel = texelFetch( primitiveMask, primitiveMaskTexelCoord, 0 ).r;
+          if( ( int( primMaskTexel ) & int( primBit ) ) != 0 )
+            discard;
+        }
+
+        IDs.r = uint( ID );
+        IDs.g = uint( instanceID );
+        IDs.b = uint( gl_PrimitiveID );
+      }
+      ", GL_FRAGMENT_SHADER);
+
+        // If custom shader, allow to change the code
+        if( customShaderName )
+          drawable.buildCustomTransformShader( customShaderName, shaderData.shader );
+
+      if( !shaderData.shader.create( context ) )
+        throw( "SelectionManager.prepareGL: Error creating shader " + customShaderName );
+
+      shaderData.shaderPositionsKey = shaderData.shader.getParameterKey( "positions" );
+      shaderData.shaderTransformKey = shaderData.shader.getParameterKey( "transform" );
+
+      shaderData.shaderIDKey = shaderData.shader.getParameterKey( "ID" );
+      shaderData.shaderPrevDepthKey = shaderData.shader.getParameterKey( "prevDepth" );
+      shaderData.shaderPrimitiveMaskKey = shaderData.shader.getParameterKey( "primitiveMask" );
+      shaderData.shaderOffsetPointsKey = shaderData.shader.getParameterKey( "offsetPoints" );
+
+      // Create program param values container
+      shaderData.shaderValues = OGLProgramParamValues();
+      shaderData.shaderValues.initialize( shaderData.shader, null );
+    }
+    return shaderData;
+  }
+
+  Ref<SelectionManager> GetSelectionManager() {
+    return GetOrCreateSingleton( "SelectionMgr", SelectionManager );
+  }
+
+  /// \internal
+  struct SelectionManagerSelect_perItemData {
+    IndexSet primitives;
+    OGLTexture primitivesMaskTexture;
+  };
+
+  /// \internal
+  OGLBuffer_.setFromLegacyBuffer!( Ref<OGLBuffer> legacyBuffer ) {
+    // Convert from legacy buffer
+    this.bufferID = legacyBuffer.bufferID;
+    this.externallyOwned = true;
+    this.componentsPerElement = legacyBuffer.numBufferElementComponents;
+    this.normalize = legacyBuffer.normalize;
+    this.bufferType = legacyBuffer.bufferType;
+    this.elementGLType = legacyBuffer.bufferElementComponentType;
+    this.bufferUsage = legacyBuffer.bufferUsage;
+    this.elementCount = legacyBuffer.elementCount;
+    this.incrementStructureVersion();
+  }
+
+  /// \internal
+  UInt32[] SelectionManager.select!( Ref<SelectionManagerDrawList> drawList, Ref<Viewport> viewport,
+                                     Vec2 pixelUpperLeft, Vec2 pixelLowerRight,
+                                     UInt8 selectionMode, UInt8 selectedGroupType,
+                                     Boolean objectMaskIfClosestPoints,
+                                     Boolean withPrimitiveIndices, io UInt32 primitiveIndices[][],
+                                     Boolean selectClosest_getDepth, io Float32 selectClosest_depth ) {
+
+    IndexSet result;
+    Boolean closestOnly = selectedGroupType == SelectedGroupType_closest || selectedGroupType == SelectedGroupType_front;
+
+    Vec2 actualPixelUpperLeft = pixelUpperLeft;
+    Vec2 actualPixelLowerRight = pixelLowerRight;
+
+    if( actualPixelUpperLeft == actualPixelLowerRight ) {
+      actualPixelLowerRight += Vec2( 1 );
+    }
+
+    Vec2 dimensions( actualPixelLowerRight - actualPixelUpperLeft );
+
+    SelectionManager_prepareGLBracket bracket( this, dimensions, viewport );
+
+    if( !cpglHaveContext() ) {
+      setError( "SelectionManager.select: no current OpenGL context" );
+      return result.indices;
+    }
+
+    {
+      Ref<SelectionManager_glContextData> contextData = bracket.contextData;
+      Ref<OGLContext> context = contextData.context;
+
+      Vec2 upperLeft = PixelToNormalizedScreenSpace( viewport, actualPixelUpperLeft );
+      Vec2 lowerRight = PixelToNormalizedScreenSpace( viewport, actualPixelLowerRight );
+
+      // Build a matrix for applying that transformation
+      Xfo xfo;
+      xfo.sc = Vec3( ( lowerRight.x - upperLeft.x )*0.5f, ( upperLeft.y - lowerRight.y )*0.5f, 1 );
+      xfo.tr = Vec3( lowerRight.x + upperLeft.x, upperLeft.y + lowerRight.y, 0 ) * 0.5f;
+
+      Mat44 alignMat = xfo.toMat44().inverse();
+
+      OGLTexture prevDepth = contextData.selPrevDepthFBO.getDepthAttachment();
+
+      Boolean maskPointsWithObjects = closestOnly && objectMaskIfClosestPoints && selectionMode == SelectionMode_Points;
+
+      OGLTexture currDepth = contextData.selFBO.getDepthAttachment();
+
+      UInt32 clearIntValues[4];
+      clearIntValues[0] = clearIntValues[1] = clearIntValues[2] = clearIntValues[3] = -1;
+      UInt32 loopIndex;
+
+      SelectionManagerSelect_perItemData primitiveDataPerItem[];
+
+      if( withPrimitiveIndices )
+        primitiveDataPerItem.resize( drawList.size() );
+
+      while( true ) {
+        Boolean lastLoop = true;
+        contextData.selPrevDepthFBO.setSharedDepthAttachment( prevDepth );
+        contextData.selFBO.setSharedDepthAttachment( currDepth );
+
+        contextData.selFBO.activate( GL_FRAMEBUFFER, context );
+
+        contextData.selFBO.clearUnsignedInteger( 0, clearIntValues, true, context );
+
+        contextData.selFBO.clearDepth( 1, true, context );
+
+        if( maskPointsWithObjects ) {
+          // Only write depth
+          LocalL16UInt32Array buffers;
+          context.stateCache.drawBuffers( buffers );
+
+          for( Size i = 0; i < drawList.size(); ++i ) {
+            Ref<SelectionDrawableItem> drawable = drawList.items[i].drawable;
+            if( !drawable )
+              continue;
+
+            // Draw in object mode (not in points mode)
+            Ref<SelectionManager_shaderData> shaderData = this.getOrCreateShader( drawable, context );
+            shaderData.shaderValues.setTexture( shaderData.shaderPrevDepthKey, prevDepth );
+            shaderData.shaderValues.setTexture( shaderData.shaderPrimitiveMaskKey, this.defaultPrimitiveMask );
+
+            UInt32 glInstanceCount = 1;
+            OGLBuffer_ buffer = null;
+            OGLBuffer legacyBuffer = null;
+            Ref<OGLProgramParamValues> shaderParamValues = shaderData.shaderValues;
+            Mat44 transfo;
+            drawable.prepareForSelectionDraw( drawList.items[i].key, selectionMode, viewport, glInstanceCount, transfo, buffer, legacyBuffer, shaderParamValues, context );
+            Mat44 alignedTransfo = alignMat * transfo;
+
+            if( shaderData.shaderOffsetPointsKey != InvalidIndex )
+              shaderData.shaderValues.setUniform( shaderData.shaderOffsetPointsKey, 0 );
+            if( shaderData.shaderTransformKey != InvalidIndex )
+              shaderData.shaderValues.setUniform( shaderData.shaderTransformKey, alignedTransfo );
+
+            shaderData.shaderValues.setVertexAttrib( shaderData.shaderPositionsKey, buffer, legacyBuffer, this.positionsLegacyBufferWrapper );
+            shaderData.shaderValues.setTexture( shaderData.shaderPrimitiveMaskKey, this.defaultPrimitiveMask );
+            shaderData.shaderValues.activate( context );
+
+            context.stateCache.enableVertexProgramPointSize( false );
+            drawable.drawGLPrimitivesForSelection( drawList.items[i].key, SelectionMode_Objects, alignedTransfo, i, context );
+          }
+          // Write color again
+          contextData.selFBO.activateAllDefinedColors( context );
+        }
+
+        for( Size i = 0; i < drawList.size(); ++i ) {
+          if( !withPrimitiveIndices && result.has( i ) )
+            continue;
+
+          Ref<SelectionDrawableItem> drawable = drawList.items[i].drawable;
+          if( !drawable )
+            continue;
+
+          Ref<SelectionManager_shaderData> shaderData = this.getOrCreateShader( drawable, context );
+
+          shaderData.shaderValues.setTexture( shaderData.shaderPrevDepthKey, prevDepth );
+          shaderData.shaderValues.setTexture( shaderData.shaderPrimitiveMaskKey, this.defaultPrimitiveMask );
+
+          UInt32 glInstanceCount = 1;
+          OGLBuffer_ buffer = null;
+          OGLBuffer legacyBuffer = null;
+          Ref<OGLProgramParamValues> shaderParamValues = shaderData.shaderValues;
+
+          Mat44 transfo;
+          drawable.prepareForSelectionDraw( drawList.items[i].key, selectionMode, viewport, glInstanceCount, transfo, buffer, legacyBuffer, shaderParamValues, context );
+          Mat44 alignedTransfo = alignMat * transfo;
+
+          shaderData.shaderValues.setUniform( shaderData.shaderIDKey, i );
+          if( shaderData.shaderOffsetPointsKey != InvalidIndex )
+            shaderData.shaderValues.setUniform( shaderData.shaderOffsetPointsKey, maskPointsWithObjects ? 1 : 0 );
+
+          if( shaderData.shaderTransformKey != InvalidIndex )
+            shaderData.shaderValues.setUniform( shaderData.shaderTransformKey, alignedTransfo );
+
+          shaderData.shaderValues.setVertexAttrib( shaderData.shaderPositionsKey, buffer, legacyBuffer, this.positionsLegacyBufferWrapper );
+
+          if( withPrimitiveIndices ) {
+            if( primitiveDataPerItem[i].primitivesMaskTexture )
+              shaderData.shaderValues.setTexture( shaderData.shaderPrimitiveMaskKey, primitiveDataPerItem[i].primitivesMaskTexture );
+            else
+              shaderData.shaderValues.setTexture( shaderData.shaderPrimitiveMaskKey, this.defaultPrimitiveMask );
+          }
+
+          shaderData.shaderValues.activate( context );
+          context.stateCache.enableVertexProgramPointSize( false );
+
+          drawable.drawGLPrimitivesForSelection( drawList.items[i].key, selectionMode, alignedTransfo, i, context );
+        }
+
+        UInt32 pixelData[];
+        pixelData.resize( Size( dimensions.x ) * Size( dimensions.y ) * 3 );
+        Data data = pixelData.data();
+
+        glReadBuffer( GL_COLOR_ATTACHMENT0 );
+        glReadPixels( 0, 0, Size( dimensions.x ), Size( dimensions.y ), GL_RGB_INTEGER, GL_UNSIGNED_INT, data );
+
+        IndexSet primitiveMasksToUpdate;
+
+        Vec2 regionCenter = dimensions * 0.5f;
+        Float32 closestSqDistance = SCALAR_INFINITE;
+
+        Float32 depthRead[1];
+        Data depthReadData = depthRead.data();
+
+        for( Size i = 0; i < pixelData.size(); i += 3 ) {
+          UInt32 itemIndex = pixelData[i];
+          if( itemIndex != -1 && itemIndex < drawList.size() ) {
+
+            if( selectedGroupType == SelectedGroupType_closest ) {
+              // Keep only the closest to the selected region
+              Size y = i / Size( dimensions.x );
+              Size x = i - Size( dimensions.x ) * y;
+              Vec2 coord = Vec2( x, y ) + Vec2( 0.5 );
+              Float32 sqDistance = ( coord - regionCenter ).lengthSquared();
+              if( sqDistance >= closestSqDistance )
+                continue;
+
+              if( selectClosest_getDepth ) {
+                glReadPixels( x, y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, depthReadData );
+                selectClosest_depth = depthRead[0];
+              }
+
+              closestSqDistance = sqDistance;
+              if( result.size() ) {
+                UInt32 prevIndex = result.indices[0];
+                result.clear();
+                if( withPrimitiveIndices )
+                  primitiveDataPerItem[prevIndex].primitives.clear();
+              }
+            }
+
+            result.add( itemIndex );
+            if( withPrimitiveIndices ) {
+              // Add primitiveIDs to the primitives mask.
+              // If new primitives are added, the primitive mask has to be updated in a 2nd loop
+              UInt32 primitiveID = pixelData[i + 2];
+              if( primitiveDataPerItem[itemIndex].primitives.add( primitiveID ) && !closestOnly ) {
+
+                // A new primitive was added for this item; another loop will be required
+                primitiveMasksToUpdate.add( itemIndex );
+                lastLoop = false;
+              }
+            } else if( !closestOnly )
+              lastLoop = false;// A new item was added; another loop will be required
+          }
+        }
+        if( lastLoop )
+          break;
+
+        for( Size i = 0; i < primitiveMasksToUpdate.size(); ++i ) {
+          UInt32 itemIndex = primitiveMasksToUpdate.get( i );
+          SelectionManager_select_updatePrimitiveMask( primitiveDataPerItem[itemIndex].primitivesMaskTexture, primitiveDataPerItem[itemIndex].primitives.memberBits.data, context );
+        }
+
+        OGLTexture tempDepth = prevDepth;
+        prevDepth = currDepth;
+        currDepth = tempDepth;
+        ++loopIndex;
+      }
+
+      if( withPrimitiveIndices ) {
+        primitiveIndices.resize( result.size() );
+
+        for( Size i = 0; i < result.size(); ++i ) {
+          UInt32 itemIndex = result.get( i );
+          Ref<SelectionDrawableItem> drawable = drawList.items[itemIndex].drawable;
+          primitiveIndices[i] = drawable.primitiveIDsToComponents( selectionMode, primitiveDataPerItem[itemIndex].primitives );
+        }
+      }
+    }
+    return result.indices;
+  }
+
+  /// \internal
+  /// Sets shader's position attribute buffer param from OGLBuffer (legacy) or OGLBuffer_ (new)
+  /// Returns the buffer size (point count)
+  Size OGLProgramParamValues.setVertexAttrib!( UInt32 key, Ref<OGLBuffer_> buffer, Ref<OGLBuffer> legacyBuffer, io OGLBuffer_ tempLegacyBufferWrapper ) {
+    Size pointCount;
+    if( key != InvalidIndex ) {
+      if( buffer ) {
+        this.setVertexAttrib( key, buffer );
+        pointCount = buffer.elementCount;
+      } else if( legacyBuffer ) {
+        // Convert from legacy buffer
+        if( !tempLegacyBufferWrapper )
+          tempLegacyBufferWrapper = OGLBuffer_();
+        tempLegacyBufferWrapper.setFromLegacyBuffer( legacyBuffer );
+        this.setVertexAttrib( key, tempLegacyBufferWrapper );
+        pointCount = tempLegacyBufferWrapper.elementCount;
+      } else
+        this.setVertexAttrib( key, null );
+    }
+    return pointCount;
+  }
+
+  /// TODO: add services to convert Viewport + pixel + selected component to GeometryLocation
+}// namespace Tool

@@ -1,0 +1,84 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Math/Box3.html"
+    },
+  "title" : "Box3[] ->",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "value",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Box3[]" : [
+          {
+            "min" : {
+              "x" : null,
+              "y" : null,
+              "z" : null
+              },
+            "max" : {
+              "x" : null,
+              "y" : null,
+              "z" : null
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Box3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "min",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Vec3[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "metadata" : {
+        "uiColor" : "{\n  \"r\" : 255,\n  \"g\" : 242,\n  \"b\" : 0\n  }"
+        },
+      "name" : "max",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Vec3[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "BBAF6A669349B1FC80CC695D87106BA3",
+  "code" : "require Math;
+
+operator Math_Box3_decompose_task<<<index>>>(in Box3[] value, io Vec3[] min, io Vec3[] max) {
+  min[index] = value[index].min;
+  max[index] = value[index].max;
+}
+
+dfgEntry {
+  Size task_size = value.size();
+  min.resize(task_size);
+  max.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size i = 0; i < task_size; i++) {
+      Math_Box3_decompose_task(i, value, min, max);
+    }
+  } else {
+    Math_Box3_decompose_task<<<task_size>>>(value, min, max);
+  }
+}
+"
+  }

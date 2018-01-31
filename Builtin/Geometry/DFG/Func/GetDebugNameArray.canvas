@@ -1,0 +1,44 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/Geometry.html",
+    "uiTooltip" : "Returns the debug name used when constructing the geometry.\n\n Supported by Geometry[],Points[],Lines[],PolygonMesh[]"
+    },
+  "title" : "GetDebugName[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "execPortType" : "In",
+      "typeSpec" : "$TYPE$"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "String[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "42C088973CCDDA0485D8433B4EE8C4DE",
+  "code" : "
+require Geometry;
+
+dfgEntry {
+  result.resize(this.size());
+  for(Size i=0;i<this.size();i++)
+    result[i] = this[i].getDebugName();
+}
+"
+  }

@@ -1,0 +1,47 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+/// coordinate of a package
+struct BinPack2DCoord {
+  SInt32 x;
+  SInt32 y;
+};
+
+/// default constructor from x and y
+function BinPack2DCoord(SInt32 x, SInt32 y) {
+  this.x = x;
+  this.y = y;
+}
+
+/// \internal
+function Boolean == (BinPack2DCoord a, BinPack2DCoord b) {
+  return a.x == b.x && a.y == b.y;
+}
+
+/// \internal
+function Boolean < (BinPack2DCoord a, BinPack2DCoord b) {
+  if(a.x != b.x) return a.x < b.x;
+  if(a.y != b.y) return a.y < b.y;
+  return false;
+}
+
+/// \internal
+function BinPack2DCoord + (BinPack2DCoord a, BinPack2DCoord b) {
+  return BinPack2DCoord(a.x + b.x, a.y + b.y);
+}
+
+/// \internal
+function BinPack2DCoord + (BinPack2DCoord a, BinPack2DSize b) {
+  return BinPack2DCoord(a.x + b.w, a.y + b.h);
+}
+
+/// \internal
+function BinPack2DCoord / (BinPack2DCoord a, SInt32 b) {
+  return BinPack2DCoord(a.x / b, a.y / b);
+}
+
+/// \internal
+function Boolean BinPack2DCoord.qs_less(BinPack2DCoord that) {
+  return ( this.x * this.x + this.y * this.y ) < ( that.x * that.x + that.y * that.y );
+}

@@ -1,0 +1,324 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+require FabricInterfaces;
+require FTL;
+
+namespace AnimX
+{
+  object AnimClip : RTValToJSONEncoder, RTValFromJSONDecoder
+  {
+    private String name;
+    private AnimCurve curves[];
+    private SInt32 curveIdx[String];
+  };
+
+  /// \dfgPresetOmit
+  AnimClip()
+  {
+    this.init('Clip');
+  }
+
+  AnimClip(String name)
+  {
+    this.init(name);
+  }
+
+  private AnimClip.init!(String name)
+  {
+    this.name = name;
+  }
+
+  /// \dfgPresetOmit
+  String AnimClip.getName()
+  {
+    return this.name;
+  }
+
+  /// \dfgPresetOmit
+  AnimClip.clear!()
+  {
+    this.curves.resize(0);
+    this.curveIdx.clear();
+  }
+
+  /// \dfgPresetOmit
+  Ref<AnimCurve> AnimClip.addCurve!(String name, Boolean weighted, Color color)
+  {
+    if(this.curveIdx.has(name))
+    {
+      setError("AnimClip '"+this.name+"' already contains a curve called '"+name+"'.");
+      return null;
+    }
+    AnimCurve curve(weighted, name, color);
+    this.curveIdx[name] = this.curves.size();
+    this.curves.push(curve);
+    return curve;
+  }
+
+  AnimClip.addCurve!(Ref<AnimCurve> curve)
+  {
+    if(this.curveIdx.has(curve.getName()))
+    {
+      setError("AnimClip '"+this.name+"' already contains a curve called '"+curve.getName()+"'.");
+      return;
+    }
+    this.curveIdx[curve.getName()] = this.curves.size();
+    this.curves.push(curve);
+  }
+
+  /// \dfgPresetOmit
+  AnimClip.removeCurve!(String name)
+  {
+    SInt32 idx = this.curveIdx.get(name, -1);
+    if(idx < 1)
+    {
+      setError("AnimClip '"+this.name+"' does not contain a curve called '"+name+"'.");
+      return;
+    }
+    this.curveIdx.delete(name);
+    for(key in this.curveIdx)
+    {
+      if(this.curveIdx[key] > idx)
+        this.curveIdx[key]--;
+    }
+
+    for(Size i=idx;i<this.curves.size()-1;i++)
+      this.curves[i] = this.curves[i+1];
+    this.curves.resize(this.curves.size()-1);
+  }
+
+  /// \dfgPresetOmit
+  inline Ref<AnimCurve> AnimClip.curve(String name)
+  {
+    SInt32 idx = this.curveIdx.get(name, -1);
+    return this.curve(idx);
+  }
+
+  /// \dfgPresetOmit
+  inline Ref<AnimCurve> AnimClip.curve(SInt32 idx)
+  {
+    if(idx < 0 || idx >= this.curves.size())
+      return null;
+    return this.curves[idx];
+  }
+
+  /// \dfgPresetOmit
+  AnimCurve[] AnimClip.allCurves()
+  {
+    return this.curves;
+  }
+
+  /// \dfgPresetOmit
+  SInt32 AnimClip.curveCount()
+  {
+    return SInt32(this.curves.size());
+  }
+
+  inline Float64 AnimClip.evaluate(String name, Float64 time)
+  {
+    Ref<AnimCurve> curve = this.curve(name);
+    if(curve)
+      return curve.evaluate(time);
+    return 0.0;
+  }
+
+  /// \dfgPresetOmit
+  inline Float64 AnimClip.evaluate(SInt32 idx, Float64 time)
+  {
+    Ref<AnimCurve> curve = this.curve(idx);
+    if(curve)
+      return curve.evaluate(time);
+    return 0.0;
+  }
+
+  inline Boolean AnimClip.evaluateVec2(String name, Float64 time, io Vec2 result)
+  {
+    Ref<AnimCurve> curveX = this.curve(name+'.x');
+    Ref<AnimCurve> curveY = this.curve(name+'.y');
+    if((curveX == null) && (curveY == null))
+      return false;
+    if(curveX) result.x = Float32(curveX.evaluate(time));
+    if(curveY) result.y = Float32(curveY.evaluate(time));
+    return true;
+  }
+
+  /// \dfgPresetOmit
+  inline Boolean AnimClip.evaluateVec2(SInt32 idx, Float64 time, io Vec2 result)
+  {
+    Ref<AnimCurve> curveX = this.curve(idx);
+    Ref<AnimCurve> curveY = this.curve(idx+1);
+    if((curveX == null) && (curveY == null))
+      return false;
+    if(curveX) result.x = Float32(curveX.evaluate(time));
+    if(curveY) result.y = Float32(curveY.evaluate(time));
+    return true;
+  }
+
+  inline Boolean AnimClip.evaluateVec3(String name, Float64 time, io Vec3 result)
+  {
+    Ref<AnimCurve> curveX = this.curve(name+'.x');
+    Ref<AnimCurve> curveY = this.curve(name+'.y');
+    Ref<AnimCurve> curveZ = this.curve(name+'.z');
+    if((curveX == null) && (curveY == null) && (curveZ == null))
+      return false;
+    if(curveX) result.x = Float32(curveX.evaluate(time));
+    if(curveY) result.y = Float32(curveY.evaluate(time));
+    if(curveZ) result.z = Float32(curveZ.evaluate(time));
+    return true;
+  }
+
+  /// \dfgPresetOmit
+  inline Boolean AnimClip.evaluateVec3(SInt32 idx, Float64 time, io Vec3 result)
+  {
+    Ref<AnimCurve> curveX = this.curve(idx);
+    Ref<AnimCurve> curveY = this.curve(idx+1);
+    Ref<AnimCurve> curveZ = this.curve(idx+2);
+    if((curveX == null) && (curveY == null) && (curveZ == null))
+      return false;
+    if(curveX) result.x = Float32(curveX.evaluate(time));
+    if(curveY) result.y = Float32(curveY.evaluate(time));
+    if(curveZ) result.z = Float32(curveZ.evaluate(time));
+    return true;
+  }
+
+  /// \dfgPresetOmit
+  inline Boolean AnimClip.evaluateEuler(String name, Float64 time, RotationOrder ro, io Euler result)
+  {
+    Ref<AnimCurve> curveX = this.curve(name+'.x');
+    Ref<AnimCurve> curveY = this.curve(name+'.y');
+    Ref<AnimCurve> curveZ = this.curve(name+'.z');
+    if((curveX == null) && (curveY == null) && (curveZ == null))
+      return false;
+    Vec3 angles;
+    if(curveX) angles.x = Float32(curveX.evaluate(time));
+    if(curveY) angles.y = Float32(curveY.evaluate(time));
+    if(curveZ) angles.z = Float32(curveZ.evaluate(time));
+    result = Euler(angles, ro);
+    return true;
+  }
+
+  /// \dfgPresetOmit
+  inline Boolean AnimClip.evaluateEuler(SInt32 idx, Float64 time, RotationOrder ro, io Euler result)
+  {
+    Ref<AnimCurve> curveX = this.curve(idx);
+    Ref<AnimCurve> curveY = this.curve(idx+1);
+    Ref<AnimCurve> curveZ = this.curve(idx+2);
+    if((curveX == null) && (curveY == null) && (curveZ == null))
+      return false;
+    Vec3 angles;
+    if(curveX) angles.x = Float32(curveX.evaluate(time));
+    if(curveY) angles.y = Float32(curveY.evaluate(time));
+    if(curveZ) angles.z = Float32(curveZ.evaluate(time));
+    result = Euler(angles, ro);
+    return true;
+  }
+
+  /// \dfgPresetDefault interpMethod 2
+  /// \dfgPresetCombo interpMethod ("None", "Euler", "Slerp", "Quaternion", "Squad")
+  inline Boolean AnimClip.evaluateQuat(String name, Float64 time, CurveRotationInterpolationMethod interpMethod, io Quat result)
+  {
+    Ref<AnimCurve> curveX = this.curve(name+'.x');
+    Ref<AnimCurve> curveY = this.curve(name+'.y');
+    Ref<AnimCurve> curveZ = this.curve(name+'.z');
+    if(curveX && curveY && curveZ)
+    {
+      Quat_d q = evaluateQuaternionCurve(time, curveX, curveY, curveZ, interpMethod);
+      result = Quat(Float32(q.v.x), Float32(q.v.y), Float32(q.v.z), Float32(q.w));
+      return true;
+    }
+    return false;
+  }
+
+  /// \dfgPresetOmit
+  inline Boolean AnimClip.evaluateQuat(SInt32 idx, Float64 time, CurveRotationInterpolationMethod interpMethod, io Quat result)
+  {
+    Ref<AnimCurve> curveX = this.curve(idx);
+    Ref<AnimCurve> curveY = this.curve(idx+1);
+    Ref<AnimCurve> curveZ = this.curve(idx+2);
+    if(curveX && curveY && curveZ)
+    {
+      Quat_d q = evaluateQuaternionCurve(time, curveX, curveY, curveZ, interpMethod);
+      result = Quat(Float32(q.v.x), Float32(q.v.y), Float32(q.v.z), Float32(q.w));
+      return true;
+    }
+    return false;
+  }  
+
+  /// \dfgPresetDefault interpMethod 2
+  /// \dfgPresetCombo interpMethod ("None", "Euler", "Slerp", "Quaternion", "Squad")
+  inline Boolean AnimClip.evaluateXfo(String name, Float64 time, CurveRotationInterpolationMethod interpMethod, io Xfo result)
+  {
+    Boolean success = this.evaluateVec3(name+'.tr', time, result.tr);
+    if(this.evaluateQuat(name+'.ori', time, interpMethod, result.ori))
+      success = true;
+    else
+    {
+      Euler euler;
+      if(this.evaluateEuler(name+'.euler', time, RotationOrder('xyz'), euler))
+      {
+        result.ori.setFromEuler(euler);
+        success = true;
+      }
+    }
+    if(this.evaluateVec3(name+'.sc', time, result.sc))
+      success = true;
+    return success;
+  }
+
+  /// \dfgPresetOmit
+  AnimClip.convertToJSON?(io FTL_JSONObjectEncoder encoder)
+  {
+    encoder.setString('name', this.name);
+    {
+      FTL_JSONArrayEncoder curveArrayEncoder = encoder.setArray('curves');
+      for(SInt32 i=0;i<this.curveCount();i++)
+      {
+        Ref<AnimCurve> curve = this.curve(i);
+        FTL_JSONObjectEncoder curveEncoder = curveArrayEncoder.pushObject();
+        curve.convertToJSON(curveEncoder);
+      }
+    }
+  }
+
+  /// \dfgPresetOmit
+  Boolean AnimClip.convertFromJSON!(FTL_JSONObject decoder)
+  {
+    this.clear();
+
+    this.name = decoder.getString('name').string();
+    FTL_JSONArray curveArrayDecoder = decoder.getArray('curves');
+    for(Size i=0;i<curveArrayDecoder.size();i++)
+    {
+      FTL_JSONObject curveDecoder = curveArrayDecoder.getObject(i);
+
+      AnimCurve curve();
+      if(!curve.convertFromJSON(curveDecoder))
+        return false;
+      this.curveIdx[curve.getName()] = this.curves.size();
+      this.curves.push(curve);
+    }
+
+    return true;
+  }
+
+  /// \dfgPresetOmit
+  String AnimClip.convertToString?()
+  {
+    FTL_JSONEncoder encoder;
+    {
+      FTL_JSONObjectEncoder rootEncoder = encoder.getObject();
+      this.convertToJSON(rootEncoder);
+    }
+    return encoder.encode();
+  }
+
+  /// \dfgPresetOmit
+  Boolean AnimClip.convertFromString!(String data)
+  {
+    FTL_JSONDecoder decoder = FTL_JSONDecoder(data);
+    FTL_JSONObject rootDecoder = decoder.decode();
+    return this.convertFromJSON(rootDecoder);
+  }
+}

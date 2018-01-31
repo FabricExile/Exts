@@ -1,0 +1,258 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+/// Base class for representing a single object item reference (no components)
+/// By default, only the name is used as the item key; if it is not sufficient, it must be specialized.
+object BaseObjectItemReference : ItemReference{
+  String name;
+};
+
+BaseObjectItemReference( String name ) {
+  this.name = name;
+}
+
+String BaseObjectItemReference.getName() {
+  return this.name;
+}
+
+String BaseObjectItemReference.getComponentsType() {
+  return ComponentType_object;
+}
+
+String BaseObjectItemReference.getCategory() {
+  return "<unknown category>";
+}
+
+String BaseObjectItemReference.getDescription() {
+  return this.name;
+}
+
+Ref<Object> BaseObjectItemReference.getReferencedObject() {
+  return null;
+}
+
+UInt32 BaseObjectItemReference.getItemHash() {
+  return this.name.hash();
+}
+
+Boolean BaseObjectItemReference.sameItem( Ref<ItemReference> other ) {
+  Ref<BaseObjectItemReference> otherRef = other;
+  if(!otherRef)
+    return other.sameItem(this);
+  return otherRef.name == this.name;
+}
+
+Boolean BaseObjectItemReference.sameItemAndComponents( Ref<ItemReference> other ) {
+  return this.sameItem( other );
+}
+
+Size[] BaseObjectItemReference.getComponentIndices() {
+  Size components[];
+  components.push( 0 );// by convention, have component 0
+  return components;
+}
+
+Boolean BaseObjectItemReference.includesComponents( Ref<ItemReference> other ) {
+  return other.getComponentsType() == ComponentType_object;
+}
+
+BaseObjectItemReference.addComponents!(Ref<ItemReference> other, io Size addedComponents[]) {
+  // not required for objects
+}
+
+BaseObjectItemReference.subtractComponents!(Ref<ItemReference> other, io Size subtractedComponents[]) {
+  // not required for objects
+}
+
+BaseObjectItemReference.toggleComponents!(Ref<ItemReference> other, io Size addedComponents[], io Size removedComponents[]) {
+  // not required for objects
+}
+
+
+/// The BaseComponentItemReference implements components references associated with
+/// a container ItemReference (eg: geometry).
+object BaseComponentItemReference : BaseVersioned, ItemReference{
+  ItemReference itemReference;// The container reference (eg: geometry)
+  String componentType;//ComponentType_X
+  IndexSet componentIndices;
+};
+
+BaseComponentItemReference( Ref<ItemReference> itemReference, String componentType, Size componentIndices<> ) {
+  this.setItemReference( itemReference );
+  this.setComponents( componentType, componentIndices );
+}
+
+BaseComponentItemReference.setItemReference!( Ref<ItemReference> itemReference ) {
+  this.itemReference = itemReference;
+}
+
+BaseComponentItemReference.setComponents!( String componentType, Size componentIndices<> ) {
+  this.componentType = componentType;
+  this.componentIndices.clear();
+  for( Size i = 0; i < componentIndices.size(); ++i )
+    this.componentIndices.add( componentIndices[i] );
+}
+
+String BaseComponentItemReference.getName() {
+  if(this.itemReference)
+    return this.itemReference.getName();
+  return "<unnamed>_" + this.uid();
+}
+
+String BaseComponentItemReference.getComponentsType() {
+  return this.componentType;
+}
+
+String BaseComponentItemReference.getDescription() {
+  String name = this.getName();
+
+  if(this.componentType == ComponentType_points)
+    name += ".points" + this.componentIndices.getIndices();
+  else if(this.componentType == ComponentType_elements)
+    name += ".elements" + this.componentIndices.getIndices();
+
+  return name;
+}
+
+String BaseComponentItemReference.getCategory() {
+  return ItemReferenceCategory_geometry;
+}
+
+UInt32 BaseComponentItemReference.getItemHash() {
+  return this.itemReference.getItemHash();
+}
+
+Ref<Object> BaseComponentItemReference.getReferencedObject() {
+  return this.itemReference.getReferencedObject();
+}
+
+Boolean BaseComponentItemReference.sameItem( Ref<ItemReference> other ) {
+  Ref<BaseComponentItemReference> otherSel = other;
+  if(!otherSel)
+    return this.itemReference.sameItem( other );
+
+  if(Boolean( this.itemReference ) != Boolean( otherSel.itemReference ) )
+    return false;
+
+  if(Boolean( this.itemReference )) {
+    if(!this.itemReference.sameItem( otherSel.itemReference ))
+      return false;
+  }
+
+  return true;
+}
+
+Boolean BaseComponentItemReference.sameItemAndComponents( Ref<ItemReference> other ) {
+  if(!this.sameItem( other ))
+    return false;
+
+  Ref<BaseComponentItemReference> otherSel = other;
+  if(otherSel.componentType != this.componentType)
+    return false;
+
+  return this.componentIndices.isEquivalent( otherSel.componentIndices );
+}
+
+Size[] BaseComponentItemReference.getComponentIndices() {
+
+  Size components[];
+
+  if(this.componentType == ComponentType_object) {
+    // Add "0" to make generic algorithms work
+    components.push( 0 );
+    return components;
+  }
+
+  Size srcComponents<> = this.componentIndices.getIndices();
+  components.resize( srcComponents.size() );
+  for(Size i = 0; i < srcComponents.size(); ++i)
+    components[i] = srcComponents[i];
+  return components;
+}
+
+Boolean BaseComponentItemReference.includesComponents( Ref<ItemReference> other ) {
+  Ref<BaseComponentItemReference> otherSel = other;
+  if(!otherSel)
+    return false;
+
+  if(otherSel.componentType != this.componentType)
+    return false;
+
+  for(Size i = 0; i < otherSel.componentIndices.size(); ++i) {
+    if(!this.componentIndices.has( otherSel.componentIndices.get( i ) ))
+      return false;
+  }
+  return true;
+}
+
+BaseComponentItemReference.addComponents!(Ref<ItemReference> other, io Size addedComponents[]) {
+  Ref<BaseComponentItemReference> otherSel = other;
+  if(!otherSel)
+    return;
+
+  if(otherSel.componentType != this.componentType)
+    return;
+
+  for(Size i = 0; i < otherSel.componentIndices.size(); ++i) {
+    Size comp = otherSel.componentIndices.get( i );
+    if(!this.componentIndices.has( comp )) {
+      this.componentIndices.add( comp );
+      addedComponents.push( comp );
+    }
+  }
+  if(addedComponents)
+    this.incrementVersion();
+}
+
+BaseComponentItemReference.subtractComponents!(Ref<ItemReference> other, io Size subtractedComponents[]) {
+  Ref<BaseComponentItemReference> otherSel = other;
+  if(!otherSel)
+    return;
+
+  if(otherSel.componentType != this.componentType)
+    return;
+
+  IndexSet prevIndices = this.componentIndices.clone();
+  this.componentIndices.clear();
+
+  for(Size i = 0; i < prevIndices.size(); ++i) {
+    Size comp = prevIndices.get( i );
+    if(!otherSel.componentIndices.has( comp ))
+      this.componentIndices.add( comp );
+    else
+      subtractedComponents.push( comp );
+  }
+  if(subtractedComponents)
+    this.incrementVersion();
+}
+
+BaseComponentItemReference.toggleComponents!(Ref<ItemReference> other, io Size addedComponents[], io Size removedComponents[]) {
+  Ref<BaseComponentItemReference> otherSel = other;
+  if(!otherSel)
+    return;
+
+  if(otherSel.componentType != this.componentType)
+    return;
+
+  IndexSet prevIndices = this.componentIndices.clone();
+  this.componentIndices.clear();
+
+  for(Size i = 0; i < prevIndices.size(); ++i) {
+    Size comp = prevIndices.get( i );
+    if(!otherSel.componentIndices.has( comp ))
+      this.componentIndices.add( comp );//Untouched: keep
+  }
+
+  for(Size i = 0; i < otherSel.componentIndices.size(); ++i) {
+    Size comp = otherSel.componentIndices.get( i );
+    if(!prevIndices.has( comp )) {
+      this.componentIndices.add( comp );
+      addedComponents.push( comp );
+    } else
+      removedComponents.push( comp );
+  }
+  if(Boolean( removedComponents ) || Boolean( addedComponents ))
+    this.incrementVersion();
+}
+

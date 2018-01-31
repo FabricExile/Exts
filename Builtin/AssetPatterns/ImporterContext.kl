@@ -1,0 +1,47 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+require Math;
+
+/**
+The ImporterContext represents the context at which a value is 
+pulled for an import operation. Most of the getter methods on the 
+ImporterObject will require the ImporterContext to be provided.
+\dfgTypeColor Color(206, 165, 151)
+\dfgPresetColor Color(132, 106, 97)
+*/
+struct ImporterContext
+{
+  Float32 time;
+  SInt32 lod;
+  String variation;
+  ImporterHost host;
+};
+
+/// \dfgPresetOmit
+function ImporterContext() {
+  this.time = -SCALAR_INFINITE;
+  this.lod = 0;
+  this.variation = 'default';
+}
+
+/// \dfgPresetOmit
+function ImporterContext(Float32 time) {
+  this.time = time;
+  this.lod = 0;
+  this.variation = 'default';
+}
+
+/// \dfgPresetOmit
+function Boolean ImporterContext.equals(ImporterContext other) {
+  if(this.time != other.time)
+    return false;
+  if(this.time.isNaN() != other.time.isNaN())
+    return false;
+  if(this.lod != other.lod)
+    return false;
+  if(this.variation != other.variation)
+    return false;
+  return true;
+}

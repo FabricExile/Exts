@@ -1,0 +1,98 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+/// mode values can be:
+///    Angle = 0
+///    Distance = 1
+///    Dot = 2
+function Boolean BaseGeometry.performMathVectors!(
+  SInt32 mode,
+  String a,
+  String b,
+  String result,
+  Boolean normalize,
+  Vec2 range,
+  Boolean useSingleValue,
+  Vec2 vec2Value,
+  Vec3 vec3Value
+) {
+
+  GeometryAttributes attributes = this.attributes;
+  GeometryAttribute attrA = attributes.getAttribute(a);
+  if(attrA == null)
+  {
+    report("MathVectors: Error: Attribute '"+a+"'' not found.");
+    return false;
+  }
+
+  // ensure the second attribute exists for the given cases
+  GeometryAttribute attrB = null;
+  if(!useSingleValue)
+  {
+    if(b == "")
+      return false;
+    attrB = attributes.getAttribute(b);
+    if(attrB == null)
+    {
+      report("MathVectors: Error: Attribute '"+b+"'' not found.");
+      return false;
+    }
+  }
+
+  if(result == "")
+    return false;
+
+  GeometryAttribute attrResult = attributes.getAttribute(result);
+  if(attrB != null)
+  {
+    if(attrResult.type() != ScalarAttribute) 
+    {
+      report("MathVectors: Error: Result already exists, but it's not a ScalarAttribute.");
+      return false;
+    }
+  }
+  else
+  {
+    attrResult = attributes.getOrCreateScalarAttribute(result);
+  }
+  ScalarAttribute castResult = attrResult;
+
+  switch(attrA.type())
+  {
+    case Vec2Attribute:
+    {
+      return this.performMathVectorsVec2Attribute(
+        mode,
+        attributes,
+        attrA,
+        attrB,
+        castResult,
+        normalize,
+        range,
+        useSingleValue,
+        vec2Value
+      );
+    }
+    case Vec3Attribute:
+    {
+      return this.performMathVectorsVec3Attribute(
+        mode,
+        attributes,
+        attrA,
+        attrB,
+        castResult,
+        normalize,
+        range,
+        useSingleValue,
+        vec3Value
+      );
+    }
+    default:
+    {
+      report("MathVectors: Error: Unsupported attribute type '"+attrA.type()+"'.");
+      return false;
+    }
+  }
+}

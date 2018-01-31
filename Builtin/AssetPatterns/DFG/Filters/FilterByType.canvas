@@ -1,0 +1,210 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTextColor" : "{\n  \"r\" : 20,\n  \"g\" : 20,\n  \"b\" : 20\n  }",
+    "uiNodeColor" : "{\n  \"r\" : 132,\n  \"g\" : 106,\n  \"b\" : 97\n  }"
+    },
+  "title" : "FilterByType",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "defaultValues" : {
+        "Execute" : {}
+        },
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "objects",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Ref<ImporterObject>[]" : []
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Ref<ImporterObject>[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "accepted",
+      "nodePortType" : "In",
+      "defaultValues" : {
+        "Ref<ImporterObject>[]" : []
+        },
+      "execPortType" : "Out",
+      "typeSpec" : "Ref<ImporterObject>[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "rejected",
+      "nodePortType" : "In",
+      "defaultValues" : {
+        "Ref<ImporterObject>[]" : []
+        },
+      "execPortType" : "Out",
+      "typeSpec" : "Ref<ImporterObject>[]"
+      }
+    ],
+  "priorPortNameMap" : {
+    "result" : 2
+    },
+  "blocks" : [
+    {
+      "objectType" : "ExecBlock",
+      "metadata" : {
+        "uiGraphPos" : "{\"x\":0.0,\"y\":0.0}"
+        },
+      "name" : "filter",
+      "ports" : [
+        {
+          "objectType" : "ExecBlockPort",
+          "name" : "inedx",
+          "nodePortType" : "In",
+          "outsidePortType" : "In",
+          "typeSpec" : "Index"
+          },
+        {
+          "objectType" : "ExecBlockPort",
+          "name" : "inObject",
+          "nodePortType" : "In",
+          "outsidePortType" : "In",
+          "typeSpec" : "Ref<ImporterObject>"
+          },
+        {
+          "objectType" : "ExecBlockPort",
+          "name" : "filter",
+          "nodePortType" : "Out",
+          "outsidePortType" : "Out",
+          "typeSpec" : "Boolean"
+          }
+        ],
+      "defaultExec" : {
+        "objectType" : "Graph",
+        "title" : "",
+        "ports" : [
+          {
+            "objectType" : "ExecPort",
+            "metadata" : {
+              "uiCombo" : "(\"AnimCurve\", \"Behavior\", \"Camera\", \"Instance\", \"Layer\", \"Light\", \"Material\", \"Shape\", \"Texture\", \"Transform\")"
+              },
+            "name" : "type",
+            "nodePortType" : "Out",
+            "execPortType" : "In",
+            "typeSpec" : "String"
+            }
+          ],
+        "fixedPorts" : [
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "inedx",
+            "nodePortType" : "Out",
+            "outsidePortType" : "In"
+            },
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "inObject",
+            "nodePortType" : "Out",
+            "outsidePortType" : "In"
+            },
+          {
+            "objectType" : "ExecFixedPort",
+            "name" : "filter",
+            "nodePortType" : "In",
+            "outsidePortType" : "Out"
+            }
+          ],
+        "extDeps" : {},
+        "nodes" : [
+          {
+            "objectType" : "Inst",
+            "metadata" : {
+              "uiGraphPos" : "{\"x\":354.0,\"y\":108.0}"
+              },
+            "name" : "type_1",
+            "ports" : [
+              {
+                "objectType" : "InstPort",
+                "name" : "exec",
+                "nodePortType" : "IO"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "this",
+                "nodePortType" : "In"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "result",
+                "nodePortType" : "Out"
+                }
+              ],
+            "executable" : "Fabric.Compounds.IO.Importer.Object.type",
+            "presetGUID" : "05BDEC389D78F7AEC8A39F12ED5A00DC"
+            },
+          {
+            "objectType" : "Inst",
+            "metadata" : {
+              "uiGraphPos" : "{\"x\":538.0,\"y\":212.0}"
+              },
+            "name" : "Eq_1",
+            "ports" : [
+              {
+                "objectType" : "InstPort",
+                "name" : "exec",
+                "nodePortType" : "IO"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "lhs",
+                "nodePortType" : "In"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "rhs",
+                "nodePortType" : "In"
+                },
+              {
+                "objectType" : "InstPort",
+                "name" : "result",
+                "nodePortType" : "Out"
+                }
+              ],
+            "executable" : "Fabric.Core.Comparison.Equal To",
+            "presetGUID" : "EE5CD58CD54E7460D6011FA855D8C6EB"
+            }
+          ],
+        "connections" : {
+          "inObject" : [
+            "type_1.this"
+            ],
+          "type" : [
+            "Eq_1.rhs"
+            ],
+          "type_1.result" : [
+            "Eq_1.lhs"
+            ],
+          "Eq_1.result" : [
+            "filter"
+            ]
+          }
+        }
+      }
+    ],
+  "extDeps" : {
+    "AssetPatterns" : "*"
+    },
+  "presetGUID" : "49AE75D5F5CD1F9D06C12F6DB09D9496",
+  "code" : "dfgEntry {
+  for(Size i=0;i<objects.size();i++)
+  {
+    Boolean filter = dfgPullBlockPort(\"filter.filter\", i, objects[i]);
+    if(filter)
+      accepted.push(objects[i]);
+    else
+      rejected.push(objects[i]);
+  }
+}
+"
+  }

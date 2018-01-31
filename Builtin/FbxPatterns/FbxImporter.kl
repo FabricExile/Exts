@@ -1,0 +1,300 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+
+require AssetPatterns;
+require Fbx:">=2.0.0";
+require FbxWrapper:">=2.0.0";
+require FileIO;
+require Util;
+
+// \dfgPresetOmit
+object FbxGenImporter : BaseImporter, ImporterCallback {
+  FbxArchive archive;
+  FbxNode nodes[String];
+};
+
+/// \dfgPresetOmit
+function FbxGenImporter.cloneMembersTo(io FbxGenImporter other) {
+  this.parent.cloneMembersTo(other);
+  other.archive = this.archive;
+}
+
+/// \dfgPresetOmit
+function FbxGenImporter(String filePath) {
+
+  FilePath fpath = filePath;
+  fpath = fpath.makePreferred().expandEnvVars();
+  if(!fpath.exists()) {
+    if(filePath)
+      report("FbxGenImporter: filePath '"+filePath+"' does not exist.");
+    return;
+  }
+  
+  FilePath ffolder = fpath.parentPath().makePreferred();
+
+  this.archive = FbxArchive();
+  this.archive.ReadFromFile(filePath);
+
+  FbxNode rootNode = this.archive.GetRootNode();
+  this.traverseNode(rootNode, '/', true);
+}
+
+/// \dfgPresetOmit
+private function FbxGenImporter.traverseNode!(io FbxNode node, String prevPrefix, Boolean isRoot)
+{
+  String name = node.GetName();
+  String typeName = node.GetTypeName();
+
+  String path = name;
+  String prefix = prevPrefix;
+  if(!isRoot)
+  {
+    if(prefix == '/')
+      path = '/' + path;
+    else
+      path = prefix + '/' + path;
+    prefix = path;
+    // report(typeName);
+
+    Ref<ImporterTransform> transform = null;
+    switch(typeName)
+    {
+      case "Null":
+      case "Bone":
+      case "Marker":
+      {
+        transform = this.getOrCreateObject("Transform", path, path);
+        break;
+      }
+      case "Mesh":
+      case "NuSkin":
+      {
+        ImporterShape shape = this.getOrCreateObject("Shape", path, path);
+        transform = shape;
+
+        // setup lazy eval
+        shape.callback = this;
+        break;
+      }
+      case "Camera":
+      {
+        ImporterCamera camera = this.getOrCreateObject("Camera", path, path);
+        transform = camera;
+
+        FbxCamera cam = node.GetCamera();
+        camera.setProperty("fovY", Float32(cam.get_FieldOfViewY().Get()) * DEG_TO_RAD);
+        camera.setProperty("near", Float32(cam.GetNearPlane()));
+        camera.setProperty("far", Float32(cam.GetFarPlane()));
+        break;
+      }
+      case "Light":
+      case "PointLight":
+      case "DirectionalLight":
+      case "SpotLight":
+      {
+        ImporterLight light = this.getOrCreateObject('Light', path, path);
+        transform = light;
+
+        FbxLight lig = node.GetLight();
+        switch(lig.get_LightType().Get())
+        {
+          case FbxLight_ePoint:
+          {
+            light.setLightType(ImporterLight_PointLight);
+            break;
+          }
+          case FbxLight_eDirectional:
+          {
+            light.setLightType(ImporterLight_DirectionalLight);
+            break;
+          }
+          case FbxLight_eSpot:
+          {
+            light.setLightType(ImporterLight_SpotLight);
+            break;
+          }
+        }
+
+        switch(lig.get_DecayType().Get())
+        {
+          case FbxLight_eLinear:
+          {
+            light.setDecayType(ImporterLight_Linear);
+            break;
+          }
+          case FbxLight_eQuadratic:
+          {
+            light.setDecayType(ImporterLight_Quadratic);
+            break;
+          }
+          case FbxLight_eCubic:
+          {
+            light.setDecayType(ImporterLight_Cubic);
+            break;
+          }
+        }
+
+        light.setIntensity(Float32(lig.get_Intensity().Get()) * 0.01); // why this number?
+        light.setConeAngle(Float32(lig.get_InnerAngle().Get()));
+        light.setPenumbraAngle(Float32(lig.get_OuterAngle().Get()));
+        light.setCastShadow(lig.get_CastShadows().Get());
+
+        FbxNodeAttribute nodeAttribute = node.GetNodeAttribute();
+        Vec3 colorV = nodeAttribute.get_Color().Get();
+        light.setColor(colorV);
+        break;        
+      }
+    }
+    if(transform)
+    {
+      this.nodes[path] = node;
+      transform.setLocalTransform(node.GetLocalTransformAsXfo(0.0).toMat44());
+
+      String materialIDs[];
+      for(Size materialIdx=0;materialIdx<node.GetMaterialCount();materialIdx++)
+      {
+        FbxSurfaceMaterial material = node.GetMaterial(materialIdx);
+        String materialID = this.traverseMaterial(material);
+        if(materialID)
+          materialIDs.push(materialID);
+      }
+      if(materialIDs.size() > 0)
+      {
+        ImporterShape shape = transform;
+        if(shape)
+        {
+          shape.setMaterials(materialIDs);
+        }
+      }
+    }
+  }
+
+  for(Size i=0;i<node.GetChildCount(false /* recursive */);i++)
+  {
+    FbxNode child = node.GetChild(i);
+    this.traverseNode(child, prefix, false);
+  }  
+}
+
+private String FbxGenImporter.traverseTexture!(io FbxTexture tex, String channel)
+{
+  if(!tex.GetClassId().Is(FbxFileTexture_ClassId()))
+    return '';
+
+  FbxFileTexture fileTex = tex;
+  FilePath filePath = fileTex.GetFileName();
+  String fileName = filePath.fileName().string();
+
+  String path = '/__textures__/'+fileName;
+  if(this.getObjectFromPath(path) != null)
+    return path;
+
+  // try to find the texture in the right path
+  FilePath realPath = filePath;
+  if(!realPath.exists())
+  {
+    realPath = FilePath(this.archive.GetFilePath()).parentPath() / filePath;
+    if(realPath.exists())
+      filePath = realPath;
+  }
+
+  ImporterTexture texture = this.getOrCreateObject('Texture', path, path);
+  texture.setFilePath(filePath.string());
+
+  texture.setSwapUV(fileTex.GetSwapUV());
+  Vec3 scl = fileTex.get_Scaling().Get();
+  texture.setScale(Vec2(scl.x, scl.y));
+  Vec3 tr = fileTex.get_Translation().Get();
+  texture.setScale(Vec2(tr.x, tr.y));
+  Vec3 rot = fileTex.get_Rotation().Get();
+  texture.setRotation(rot.z);
+  texture.setCropL(fileTex.GetCroppingLeft());
+  texture.setCropR(fileTex.GetCroppingRight());
+  texture.setCropT(fileTex.GetCroppingTop());
+  texture.setCropB(fileTex.GetCroppingBottom());
+
+  return path;
+}
+
+private String FbxGenImporter.traverseColorAndTexture!(io ImporterMaterial material, FbxDouble3Property prop, String channel, Boolean justTexture)
+{
+  if(!justTexture)
+    material.setProperty(channel, Color(Vec3(prop.Get())));
+
+  SInt32 textureCount = prop.GetSrcObjectCount(FbxTexture_ClassId());
+  if(textureCount == 0)
+    return '';
+  FbxTexture texture = prop.GetSrcObject(FbxTexture_ClassId(), 0);
+  return this.traverseTexture(texture, channel);
+}
+
+private String FbxGenImporter.traverseScalarAndTexture!(io ImporterMaterial material, FbxDoubleProperty prop, String channel)
+{
+  material.setProperty(channel, Float32(prop.Get()));
+
+  SInt32 textureCount = prop.GetSrcObjectCount(FbxTexture_ClassId());
+  if(textureCount == 0)
+    return '';
+  FbxTexture texture = prop.GetSrcObject(FbxTexture_ClassId(), 0);
+  return this.traverseTexture(texture, channel);
+}
+
+private String FbxGenImporter.traverseMaterial!(io FbxSurfaceMaterial mat)
+{
+  String path = '/__materials__/'+mat.GetName();
+  if(this.getObjectFromPath(path) != null)
+    return path;
+
+  ImporterMaterial material = this.getOrCreateObject('Material', path, path);
+
+  FbxClassId matClassId = mat.GetClassId();
+
+  if(matClassId.Is(FbxSurfaceLambert_ClassId()) || matClassId.Is(FbxSurfacePhong_ClassId()) )
+  {
+    FbxSurfaceLambert lambert = mat;
+
+    this.traverseColorAndTexture(material, lambert.get_Ambient(), 'ambient', false);
+    this.traverseColorAndTexture(material, lambert.get_Diffuse(), 'diffuse', false);
+    this.traverseColorAndTexture(material, lambert.get_Diffuse(), 'color', false);
+    this.traverseColorAndTexture(material, lambert.get_Emissive(), 'emissive', false);
+    this.traverseScalarAndTexture(material, lambert.get_EmissiveFactor(), 'emissiveFactor');
+    // this.traverseScalarAndTexture(material, lambert.get_TransparencyFactor(), 'opacity');
+    this.traverseColorAndTexture(material, lambert.get_TransparentColor(), 'opacity', false);
+    this.traverseColorAndTexture(material, lambert.get_NormalMap(), 'normal', true);
+    this.traverseColorAndTexture(material, lambert.get_Bump(), 'bump', true);
+
+  }
+
+  return path;
+}
+
+// \dfgPresetOmit
+function Boolean FbxGenImporter.updateProperty!(ImporterContext context, io Ref<ImporterObject> subject, String prop) {
+
+  String path = subject.getPath();
+  if(!this.nodes.has(path))
+    return false;
+
+  FbxNode node = this.nodes[path];
+
+  switch(prop)
+  {
+    case "bounds":
+    {
+      subject.setProperty(prop, node.GetLocalBoundsAsBox3());
+      break;
+    }
+    case "geometry":
+    {
+      Geometry geometry = node.GetKLGeometry();
+      subject.setProperty(prop, geometry);
+      break;
+    }
+    default:
+    {
+      return false;
+    }
+  }
+  return true;
+}

@@ -1,0 +1,78 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiNodeColor" : "{\n  \"r\" : 99,\n  \"g\" : 129,\n  \"b\" : 92\n  }",
+    "uiTooltip" : "Returns the minimum of two scalar values\n\n Supported by Scalar,Float64"
+    },
+  "title" : "Min[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "val1",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "$TYPE$[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "val2",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Scalar[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "$TYPE$[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "$TYPE$[]"
+      }
+    ],
+  "extDeps" : {
+    "Math" : "*"
+    },
+  "presetGUID" : "E8843C07E3BB00274F80AD003FC24350",
+  "code" : "require Math;
+
+operator Math_Math_min_task<<<index>>>(
+  io $TYPE$[] result
+, in $TYPE$[] val1
+, in $TYPE$[] val2
+) {
+  result[index] = Math_min(val1[index < val1.size() ? index : val1.size() - 1], val2[index < val2.size() ? index : val2.size() - 1]);
+}
+
+dfgEntry {
+  if( val1.size() == 0) return;
+  if( val2.size() == 0) return;
+  Size task_size = 0;
+  if(task_size < val1.size()) task_size = val1.size();
+  if(task_size < val2.size()) task_size = val2.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Math_Math_min_task(index, result, val1, val2);
+    }
+  } else {
+    Math_Math_min_task<<<task_size>>>(result, val1, val2);
+  }
+}
+"
+  }

@@ -1,0 +1,118 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+using namespace Tool;
+
+const String StatesAndActions_draggingState = "SA_dragging";
+const String StatesAndActions_waitingState = "SA_waiting";
+const String StatesAndActions_draggingMoveEvent = "SA_dragMoveEvent";
+
+object StatesAndActionsExample : BaseTool{
+  PathValueXfoTarget xfoTarget;
+};
+
+// targetPath: the path of the driven external data / canvas port (to be used by the command system)
+// This has to be passed by the Canvas node, and have the following form: dfgBindingID + "." + dfgPortPath("portname")
+StatesAndActionsExample( String targetPath ) {
+
+  // **************** BEGIN - code identical to 02_BasicXfoManipulator ***************************
+
+  // Create an Xfo target wrapper which drives a canvas Xfo port from the manipulated Xfo
+  this.xfoTarget = PathValueXfoTarget( targetPath );
+
+  // Create a sphere gizmo shape
+  SphereShape gizmo( 0.1 );
+
+  // Initiate an interaction when the gizmo is clicked
+  MouseClickDragRaycastInteraction clickAndDragInteraction();
+  clickAndDragInteraction.addRaycastShape( gizmo, false );
+
+  // When dragging, translate the Xfo in a viewport-aligned plane
+  TranslateDragInteraction translateDragInteraction( clickAndDragInteraction, this.xfoTarget );
+
+  // Create a XfoTargetAlignedGizmo, which will constraint the gizmo transform to the manipulated Xfo, 
+  // and will attach the translateDragInteraction to it. It also attaches a 'highlight under cursor' behavior.
+  XfoTargetAlignedGizmo gizmoAndXfo( this.xfoTarget, // driven target
+                                     Color( 1.0, 1.0, 0.0 ), // highlight under cursor color (yellow)
+                                     gizmo, // gizmo shape
+                                     translateDragInteraction ); // gizmo drag interaction
+  this.addChild( "gizmoAndXfo", gizmoAndXfo );
+
+  // **************** END - code identical to 02_BasicXfoManipulator ***************************
+
+  // Start in 'waiting' state (not dragging)
+  this.setMainState( StatesAndActions_waitingState );
+
+  // Connect interaction's begin and end event to a 
+  // SetMainStateAction that will change our state to StatesAndActions_draggingState
+  // while dragging, and restore the previous state (StatesAndActions_waitingState)
+  // when dragging ends
+
+  SetMainStateAction setStateAction( translateDragInteraction, // source of the event that will trigger the state change
+                                     ToolEvent_DragBegin, // event that will trigger the state change
+                                     translateDragInteraction, // source of the event that will restore the previous state
+                                     ToolEvent_DragEnd,// event that will restore the state change
+                                     StatesAndActions_draggingState ); // state to be set on "this"
+
+  // Attach setStateAction to "this", so it targets our tool, and also so it is kept alive
+  this.attachComponent( setStateAction );
+
+  // Connect translateDragInteraction's drag move to a specific event
+  translateDragInteraction.addListener( this, false, ToolEvent_DragMove, StatesAndActions_draggingMoveEvent );
+}
+
+// Update tool's value from last Canvas port value
+StatesAndActionsExample.update!( Xfo xfo ) {
+  this.xfoTarget.updateValue( xfo );
+}
+
+// Do special work when entering the dragging state
+StatesAndActionsExample.onEnterState!( String state, Boolean mainState ) {
+  if( state == StatesAndActions_draggingState ) {
+    report( "Begin drag!" );
+
+    // Create a text label, and add it as a child of "gizmoAndXfo" (so it follows the gizmo).
+    // To do this, we create a state-specific action that will add the child,
+    // but remove it once the state changes (drag end).
+    // Also, we will parent the child to "gizmoAndXfo" so it follows the gizmo.
+    Tool::Text positionText( "test" );
+    positionText.setColor( Color( 0.2, 1.0, 0.2 ) );
+    positionText.setFontSize( 20 );
+    AddChildAction addTextPosition( "positionText", positionText, true );
+    this.attachAndDoStateSpecificChildAction( StatesAndActions_draggingState, addTextPosition, "gizmoAndXfo" );
+
+    // Create a hint showing the position at drag begin
+    DrawElements drawAxis();
+    drawAxis.drawAxes( Xfo(), true );
+    GeometricShape axisHint( drawAxis );
+    axisHint.constraintTransformToParent( false );// Don't inherit parent transform
+    axisHint.setLocalTransform( this.xfoTarget.getParentTransform() * this.xfoTarget.getLocalTransform().toMat44() );
+    this.attachAndDoStateSpecificAction( StatesAndActions_draggingState, AddChildAction( "axisHint", axisHint, true ) );
+    
+    // Hide the gizmo shape while we drag. This has to be attached to the gizmo shape itself;
+    // attaching to its parent would also hide the positionText...
+    SetPropertyAction setVisibilityToFalseAction( VisibleProperty, RTVal( false ), true );
+    this.attachAndDoStateSpecificChildAction( StatesAndActions_draggingState, setVisibilityToFalseAction, "gizmoAndXfo/shape" );
+  }
+  this.parent.onEnterState( state, mainState );
+}
+
+StatesAndActionsExample.onLeaveState!( String state, Boolean mainState ) {
+  if( state == StatesAndActions_draggingState ) {
+    report( "End drag!" );
+    // Nothing to do: since actions are state-specific, they will be automatically
+    // invalidated.
+  }
+  this.parent.onLeaveState( state, mainState );
+}
+
+StatesAndActionsExample.onEvent!( ToolEvent event, ToolEventUserID userID ) {
+  if( event.name == StatesAndActions_draggingMoveEvent ) {
+    // Update the text of the label with the current position
+    Tool::Text positionText = this.getChild("gizmoAndXfo/positionText");
+    if( positionText )
+      positionText.setText( String( this.xfoTarget.getLocalTransform().tr ) );
+  }
+  this.parent.onEvent( event, userID );
+}

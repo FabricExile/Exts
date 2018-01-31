@@ -1,0 +1,581 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Singletons;
+
+const SInt32 NoCanMergeID = -1;
+
+interface CommandManager_virtual {
+
+  /// Schedules the command.
+  /// In general (AppCommandManager specialization), the command will be executed only after the control returns to the app.
+  /// If an error occurs, the string 'error' describes the error.
+  scheduleCommand!( Ref<Command> command, io String error );
+
+  /// \internal
+  /// Reset the commands
+  clear!();
+};
+
+/// internal
+struct _CommandManagerStackedCommand {
+  Boolean succeeded;//If the command was stopped by an exception, this will be false
+  String error;
+  Command topLevelCommand;//For printing
+  Command lowLevelCommands[];//For undo/redo
+};
+
+/**
+  \versionadded 2.6.0
+
+  CommandManager singleton is used to create commands, execute and undo-redo them.
+  While the CommandManager defines some basic functionality, the AppCommandManager (which specializes
+  CommandManager) is actually used for scheduling commands and allowing proper synchronization with the app.
+  
+  Two types of commands can be created, pure KL commands (BaseScriptableCommand) but also C++/Python commands so they 
+  can be created from KL (AppCommand). Because there is no KL to C++ callback, the scheduled commands are only
+  executed later, once the control returns to the app. A C++ command manager ensures the synchronization between
+  app commands (C++/Python) and KL commands.
+    
+  See Command for more information about how to merge commands of a same interaction loop so only the last one is logged.
+  See :ref:`TPG.scriptable_command` for more context and examples.
+
+  Usages:
+    - Get the manager: Ref<CommandManager> cmdManager = GetCommandManager();
+
+    - Create a kl-command: Ref<Command> cmd = cmdManager.createCommand(cmdName, args, doIt, error);
+
+    - Schedules a command (kl or app): cmdManager.scheduleCommand(cmd, error);
+*/
+object CommandManager : CommandManager_virtual, AppEventCallback{
+  /// Undo-redo stacks.
+  private _CommandManagerStackedCommand undoStack[];
+  private _CommandManagerStackedCommand redoStack[];
+  private SInt32 canMergeIDCounter;
+};
+
+CommandManager() {
+  this.canMergeIDCounter = 0;
+  RegisterToAppEvent( AppEvent_newScene, this );
+}
+
+~CommandManager() {
+  UnregisterFromAppEvent( AppEvent_newScene, this );
+}
+
+/// Creates and optionally schedules a command named "cmdName" with arguments.
+/// In general (AppCommandManager specialization), a scheduled command will be executed only after the control returns to the app.
+Command CommandManager.createCommand!( String commandName, RTVal args[String], Boolean schedule, SInt32 canMergeID, io String error ) {
+  Command c = GetCommandRegistry().createCommand( commandName, error );
+  this.createCommand(c, commandName, args, schedule, canMergeID, error);
+  return c;
+}
+
+/// Creates and optionally schedules a command named "cmdName" with arguments.
+/// In general (AppCommandManager specialization), a scheduled command will be executed only after the control returns to the app.
+/// If an error occurs, the error and stack will be logged.
+Command CommandManager.createCommand!( String commandName, RTVal args[String], Boolean schedule, SInt32 canMergeID ) {
+  String error;
+  Command c = this.createCommand( commandName, args, schedule, canMergeID, error );
+  if( error )
+    setError( "CommandManager.createCommand: " + error );
+  return c;
+}
+
+/// Creates and schedules a command named "cmdName" with arguments.
+/// In general (AppCommandManager specialization), a scheduled command will be executed only after the control returns to the app.
+Command CommandManager.scheduleCommand!( String commandName, RTVal args[String], SInt32 canMergeID, io String error ) {
+  return this.createCommand(commandName, args, true, canMergeID, error);
+}
+
+/// Creates and schedules a command named "cmdName" with arguments.
+/// In general (AppCommandManager specialization), a scheduled command will be executed only after the control returns to the app.
+/// If an error occurs, the error and stack will be logged.
+Command CommandManager.scheduleCommand!( String commandName, RTVal args[String], SInt32 canMergeID ) {
+  return this.createCommand( commandName, args, true, canMergeID );
+}
+
+/// Creates and optionally schedules a command named "cmdName" with arguments.
+/// In general (AppCommandManager specialization), a scheduled command will be executed only after the control returns to the app.
+Command CommandManager.createCommand!( String commandName, RTVal args[String], Boolean schedule, io String error ) {
+  return this.createCommand(commandName, args, schedule, NoCanMergeID, error);
+}
+
+/// Creates and optionally schedules a command named "cmdName" with arguments.
+/// In general (AppCommandManager specialization), a scheduled command will be executed only after the control returns to the app.
+/// If an error occurs, the error and stack will be logged.
+Command CommandManager.createCommand!( String commandName, RTVal args[String], Boolean schedule ) {
+  return this.createCommand( commandName, args, schedule, NoCanMergeID );
+}
+
+/// Creates and schedules a command named "cmdName" with arguments.
+/// In general (AppCommandManager specialization), a scheduled command will be executed only after the control returns to the app.
+Command CommandManager.scheduleCommand!( String commandName, RTVal args[String], io String error ) {
+  return this.createCommand(commandName, args, true, NoCanMergeID, error);
+}
+
+/// Creates and schedules a command named "cmdName" with arguments.
+/// In general (AppCommandManager specialization), a scheduled command will be executed only after the control returns to the app.
+/// If an error occurs, the error and stack will be logged.
+Command CommandManager.scheduleCommand!( String commandName, RTVal args[String] ) {
+  return this.createCommand( commandName, args, true, NoCanMergeID );
+}
+
+/// Creates and optionally schedules a command named "cmdName".
+/// In general (AppCommandManager specialization), a scheduled command will be executed only after the control returns to the app.
+Command CommandManager.createCommand!( String commandName, Boolean schedule, SInt32 canMergeID, io String error ) {
+  RTVal args[String];
+  return this.createCommand(commandName, args, schedule, canMergeID, error);
+}
+
+/// Creates and optionally schedules a command named "cmdName".
+/// In general (AppCommandManager specialization), a scheduled command will be executed only after the control returns to the app.
+/// If an error occurs, the error and stack will be logged.
+Command CommandManager.createCommand!( String commandName, Boolean schedule, SInt32 canMergeID ) {
+  RTVal args[String];
+  return this.createCommand( commandName, args, schedule, canMergeID );
+}
+
+/// Creates and schedules a command named "cmdName".
+/// In general (AppCommandManager specialization), a scheduled command will be executed only after the control returns to the app.
+Command CommandManager.scheduleCommand!( String commandName, SInt32 canMergeID, io String error ) {
+  return this.createCommand(commandName, true, canMergeID, error);
+}
+
+/// Creates and schedules a command named "cmdName".
+/// In general (AppCommandManager specialization), a scheduled command will be executed only after the control returns to the app.
+/// If an error occurs, the error and stack will be logged.
+Command CommandManager.scheduleCommand!( String commandName, SInt32 canMergeID ) {
+  return this.createCommand( commandName, true, canMergeID );
+}
+
+/// Creates and optionally schedules a command named "cmdName".
+/// In general (AppCommandManager specialization), a scheduled command will be executed only after the control returns to the app.
+Command CommandManager.createCommand!( String commandName, Boolean schedule, io String error ) {
+  return this.createCommand(commandName, schedule, NoCanMergeID, error);
+}
+
+/// Creates and optionally schedules a command named "cmdName".
+/// In general (AppCommandManager specialization), a scheduled command will be executed only after the control returns to the app.
+/// If an error occurs, the error and stack will be logged.
+Command CommandManager.createCommand!( String commandName, Boolean schedule ) {
+  return this.createCommand( commandName, schedule, NoCanMergeID );
+}
+
+/// Creates and schedules a command named "cmdName".
+/// In general (AppCommandManager specialization), a scheduled command will be executed only after the control returns to the app.
+Command CommandManager.scheduleCommand!( String commandName, io String error ) {
+  return this.createCommand(commandName, true, NoCanMergeID, error);
+}
+
+/// Creates and schedules a command named "cmdName".
+/// In general (AppCommandManager specialization), a scheduled command will be executed only after the control returns to the app.
+/// If an error occurs, the error and stack will be logged.
+Command CommandManager.scheduleCommand!( String commandName ) {
+  return this.createCommand( commandName, true, NoCanMergeID );
+}
+
+/// Interaction ID server: helper to creates a new, unique interaction ID.
+/// The interaction ID can then be used for :kl-ref:`Command.canMerge`.
+UInt32 CommandManager.getNewCanMergeID!( ) {
+  this.canMergeIDCounter++;
+  return this.canMergeIDCounter;
+}
+
+//************************************************************************************************************
+//**
+//** INTERNAL METHODS (methods that are not meant to be called directly)
+//**
+//************************************************************************************************************
+
+/// \internal
+/// Creates and optionally schedules a command named "cmdName" with arguments.
+/// In general (AppCommandManager specialization), a scheduled command will be executed only after the control returns to the app.
+/// \return The created command, or null if it couldn't be created, in which case 'error' will describe the error.
+protected CommandManager.createCommand!( io Command c, String commandName, RTVal args[String], Boolean schedule, SInt32 canMergeID, io String error ) {
+
+  if( !c )
+    return;
+
+  error = String();
+
+  if( args ) {
+    Ref<ScriptableCommand> sC = c;
+    if( !sC ) {
+      error = "Command '" + commandName + "' is created with args, but is not implementing the ScriptableCommand interface";
+      c = null;
+      return;
+    }
+
+    for( key, arg in args ) {
+      // Try to set the arg even if not part of the specs, some commands might require this
+      String argError;
+
+      if( arg.type() == PathValue )
+        sC.setArg( key, PathValue( arg ), argError );
+      else
+        sC.setArgValue( key, arg, argError );
+
+      if( argError )
+        error += ( error ? '\n' : '' ) + "Arg '" + key + "': error setting arg: " + argError;
+    }
+
+    if( !error ) {
+      String argsError;
+      sC.validateSetArgs( argsError );
+      if( argsError )
+        error += ( error ? '\n' : '' ) + "error with args: " + argsError;
+    }
+
+    if( error ) {
+      error = "Error parsing args for command '" + c.getName() + "': " + error;
+      String helpString = c.getHelp();
+      if( helpString )
+        error += "\nUsage: " + helpString;
+    }
+
+    if( error ) {
+      c = null;
+      return;
+    }
+  }
+
+  if( canMergeID != NoCanMergeID ) {
+    Ref<BaseCommand> baseCmd = c;
+    if( baseCmd )
+      baseCmd.setCanMergeID( canMergeID );
+  }
+
+  if( Boolean( c ) && schedule )
+  {
+    Boolean subCommand = this.currentlyDoingCommand();
+    if( subCommand )
+      this._doCommand( c, error, false );// Sub command: execute right away, we are already running a scheduled command
+    else
+      this.scheduleCommand( c, error );
+  }
+
+  if( error )
+    c = null;
+}
+
+/// \internal
+/// Clears the commands stack. This should be called by the app only.
+CommandManager.clear!() {
+  this.clearCommandStack(this.undoStack);
+  this.clearRedoStack();
+}
+
+/// \internal
+CommandManager.onAppEvent!( String eventName ) {
+  if( eventName == AppEvent_newScene )
+    this.clear();
+}
+
+/// \internal
+/// Gets the number of commands in the stack. This should be called by the app only.
+UInt32 CommandManager.count() {
+  return this.redoStack.size() + this.undoStack.size();
+}
+
+/// \internal
+/// Gets the current index (next command to undo). This should be called by the app only.
+/// If NoCanMergeID is returned, there is no command to undo anymore.
+SInt32 CommandManager.getStackIndex() {
+  return this.undoStack.size() - 1;
+}
+
+/// \internal
+/// Cleans the command stack if errors occur when doing a command.
+private CommandManager.cleanupUnfinishedCommands!( ) {
+  if( Boolean( this.undoStack.size() ) && !this.undoStack[this.undoStack.size() - 1].succeeded ) {
+    _CommandManagerStackedCommand top = this.undoStack[this.undoStack.size() - 1];
+    this.undoStack.resize( this.undoStack.size() - 1 );
+
+    for( Size i = top.lowLevelCommands.size(); i--; ) {
+      if( !top.lowLevelCommands[i].undoIt() ) {
+        setError( "Error while reverting command " + top.lowLevelCommands[i].getName() );
+        // Break? Things will get unstable any case at this point...
+      }
+    }
+  }
+}
+
+/// \internal
+Boolean CommandManager.currentlyDoingCommand() {
+  return Boolean( this.undoStack.size() ) && !this.undoStack[this.undoStack.size() - 1].succeeded;
+}
+
+/// \internal
+/// Does (executes) the command right away. Normally, this should be called by the app only.
+/// If an error occurs, the string 'error' describes the error.
+///
+/// Note: if alreadyMergedByAppIfApplicable is true, don't merge the command since it might have been
+/// done already. But if it can merge, replace previous command in the stack (else it is out of synch with the app)
+CommandManager._doCommand!( Ref<Command> command, io String error, Boolean alreadyMergedByAppIfApplicable ) {
+  error = String();
+
+  if( !command ) {
+    error = "CommandManager._doCommand: null command";
+    return;
+  }
+
+  Ref<ScriptableCommand> sC = command;
+  if( sC ) {
+    sC.validateSetArgs( error );
+    if( error )
+      return;
+  }
+  Ref<Command> mutableCommand = command;
+
+  // Note: exceptions can't be catched in KL which might make this
+  // system more fragile. When an exception is thrown, "cleanupUnfinishedCommands()" should be called
+  // by the app.
+  Boolean undoPrevBeforeMerge;
+  Boolean canMerge = this.undoStack.size() > 0 &&
+    command.canMerge(this.undoStack[this.undoStack.size() - 1].topLevelCommand, undoPrevBeforeMerge);
+
+  // Detect if we are a top level command, else it's a sub-command
+  Boolean subCommand = this.currentlyDoingCommand();
+  if( subCommand && Boolean( sC ) ) {
+    // Validate that args have no path values, as this is currently not supported
+    String argKeys[] = sC.getArgKeys();
+    for( Size i = 0; i < argKeys.size(); ++i ) {
+      if( sC.getArgPath( argKeys[i] ) )
+        setError( "CommandManager._doCommand: command " + command.getName() + ": arg " + argKeys[i] + ": sub-commands cannot have arg paths, only values are suported" );
+    }
+  }
+
+  if( !subCommand && canMerge && mutableCommand.canUndo() && undoPrevBeforeMerge && !alreadyMergedByAppIfApplicable ) {
+    // In this case, we first merge and undo the previous command
+    // before calling doIt().
+    Command top = this.undoStack[this.undoStack.size() - 1].topLevelCommand;
+
+    mutableCommand.merge( top );
+    if( !top.undoIt() ) {
+      report( "Unexpected error while merging previous command" );
+      dumpstack();
+      return;
+    }
+  }
+
+  if( command.canUndo() && !subCommand && !canMerge ) {
+    // Clear all the redo-able commands
+    this.clearRedoStack();
+
+    // push a new one
+    _CommandManagerStackedCommand stackedCmd;
+    stackedCmd.topLevelCommand = command;
+    this.undoStack.push( stackedCmd );
+  }
+
+  if( !mutableCommand.doIt( error ) ) {
+    Ref<Command> commandForErrorLog = null;
+    if( subCommand )
+      commandForErrorLog = mutableCommand;
+    else
+    {
+      if(this.undoStack.size() > 0)
+        commandForErrorLog = this.undoStack[this.undoStack.size() - 1].topLevelCommand;//Use the name of the top-level cmd
+      else
+        commandForErrorLog = mutableCommand;
+    }
+
+    String commandName = commandForErrorLog.getName();
+
+    error = "Error executing command '" + commandName + "': " + error;
+
+    this.cleanupUnfinishedCommands();
+
+    // Should we throw or just return? Return for now; throw crashes the app
+    // NOTE: setError causes a crash without logging the message...
+    report( error );
+    dumpstack();
+    return;
+  } 
+
+  if( mutableCommand.canUndo() )
+  {
+    if( subCommand )
+      this.undoStack[this.undoStack.size() - 1].lowLevelCommands.push( mutableCommand );
+    
+    else if(!subCommand && !canMerge)
+      this.undoStack[this.undoStack.size() - 1].succeeded = true;
+  }
+
+  if(canMerge)
+  {
+    if( !undoPrevBeforeMerge && !alreadyMergedByAppIfApplicable )
+      mutableCommand.merge( this.undoStack[this.undoStack.size() - 1].topLevelCommand );
+    this.undoStack[this.undoStack.size() - 1].topLevelCommand = mutableCommand;
+  }
+}
+
+/// \internal
+/// Default implementtion of CommandManager_virtual.
+/// This method executes the command right away, however it is used only for unit tests.
+CommandManager.scheduleCommand!( Ref<Command> command, io String error ) {
+  this._doCommand( command, error, false );
+}
+
+/// \internal
+/// This method executes the command right away, however it is used only for unit tests.
+/// If an error occurs, the error and stack will be logged.
+CommandManager.scheduleCommand!( Ref<Command> command ) {
+  String error;
+  this.scheduleCommand( command, error );
+  if( error )
+    setError("CommandManager.scheduleCommand: " + error );
+}
+
+/// \internal
+/// Undoes the current command. This should be called by the app only.
+/// Returns false if an error occurs, the string 'error' describes the error.
+Boolean CommandManager.undoCommand!( io String error ) {
+
+  if(this.undoStack.size() == 0)
+  {
+    report("CommandManager.undoCommand: nothing to undo");
+    return true;
+  }
+
+  _CommandManagerStackedCommand stackedCmd = this.undoStack.pop();
+  Ref<Command> top = stackedCmd.topLevelCommand;
+
+  Size lowLevelCmdsCount = stackedCmd.lowLevelCommands.size();
+  if(lowLevelCmdsCount > 0)
+  {
+    for( Size i = stackedCmd.lowLevelCommands.size(); i--; )
+    {
+      Ref<Command> low = stackedCmd.lowLevelCommands[i];
+      if(!low.undoIt())
+      {
+        for(Size j = i+1; j<lowLevelCmdsCount; ++j)
+        {
+          Ref<Command> low_ = stackedCmd.lowLevelCommands[j];
+          low_.redoIt();
+        }
+
+        error =  "Error while undoing command : Top "+ top.getName() + ", Low " + low.getName();
+        return false;
+      }
+    }
+  }
+  
+  else if(!top.undoIt())
+  {
+    error =  "Error while undoing command " + top.getName();
+    return false;
+  }
+
+  this.redoStack.push(stackedCmd);
+  return true;
+}
+
+/// \internal
+/// Redoes the next command. This should be called by the app only.
+/// Returns false if an error occurs, the string 'error' describes the error.
+Boolean CommandManager.redoCommand!( io String error ) {
+
+  if(this.redoStack.size() == 0)
+  {
+    report("CommandManager.redoCommand: nothing to redo");
+    return true;
+  }
+
+  _CommandManagerStackedCommand stackedCmd = this.redoStack.pop();
+  Ref<Command> top = stackedCmd.topLevelCommand;
+
+  Size lowLevelCmdsCount = stackedCmd.lowLevelCommands.size();
+  if(lowLevelCmdsCount > 0) 
+  {
+    for (Size i = 0; i < lowLevelCmdsCount; ++i)
+    {
+      Ref<Command> low = stackedCmd.lowLevelCommands[i]; 
+      if(!low.redoIt())
+      {
+        for(Size j = i; j--;)
+        {
+          Ref<Command> low_ = stackedCmd.lowLevelCommands[j];
+          low_.undoIt();
+        }
+
+        error =  "Error while redoing command : Top "+ top.getName() + ", Low " + low.getName();
+        return false;
+      }
+    }
+  }
+  else if(!top.redoIt())
+  {
+    error =  "Error while redoing command " + top.getName();
+    return false;
+  }
+ 
+  this.undoStack.push(stackedCmd);
+  return true;
+}
+
+/// \internal
+/// Clears the redo stack. This should be called by the app only.
+CommandManager.clearRedoStack!() {
+  this.clearCommandStack(this.redoStack);
+}
+
+/// \internal
+/// Clears a specific stack. This should be called by the app only.
+private CommandManager.clearCommandStack!( io _CommandManagerStackedCommand stackedCommands[] ) {
+  stackedCommands.resize(0);
+}
+
+/// \internal
+/// Gets the content of a stack (undo or redo), used for debugging.
+private String CommandManager.getStackContent(String stackName, _CommandManagerStackedCommand stack[]) {
+  UInt32 offset = stackName == "Redo" ? this.undoStack.size() : 0;
+  String inf = stackName == "Redo" ? "-" : "+";
+
+  String res;
+  for (UInt32 i = 0; i < stack.size(); ++i)
+  {
+    _CommandManagerStackedCommand stackedCmd = stack[i];
+   
+    Ref<Command> top = stackedCmd.topLevelCommand;
+    Ref<ScriptableCommand> scriptableTop = top;
+
+    String desc = Boolean(scriptableTop) 
+      ? top.getName() + "\n" + scriptableTop.getArgsDescription() 
+      : top.getName();
+
+    res +=  inf + "[" +  String(offset + i) +  "] " + desc;
+    res += "\n";
+    
+    for (UInt32 j = 0; j < stackedCmd.lowLevelCommands.size(); ++j)
+    {
+      Ref<Command> low = stackedCmd.lowLevelCommands[j];
+      Ref<ScriptableCommand> scriptableLow = low;
+
+      desc = Boolean(scriptableLow) 
+        ? low.getName() + "\n" + scriptableLow.getArgsDescription() 
+        : low.getName();
+
+      res += "  "+ inf + "[" +  String(j) +  "] " + desc;
+      res += "\n";
+    }
+  }
+
+  return res;
+}
+
+/// \internal
+/// Gets the content of the manager, used for debugging.
+String CommandManager.getContent() {
+
+  String res = 
+    "--> KL Command Manager - size:" + String(this.count()) + ", index:" + String(this.getStackIndex()) + 
+    ", undo:" +  String(this.undoStack.size()) +  ", redo:" +  String(this.redoStack.size()) + "\n";
+
+  res += this.getStackContent("Undo", this.undoStack);
+  res += this.getStackContent("Redo", this.redoStack);
+  return res;
+}
+ 

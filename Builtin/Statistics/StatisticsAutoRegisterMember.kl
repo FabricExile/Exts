@@ -1,0 +1,103 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/**
+  The StatisticSourceWithAutoRegisterMember interface is a simplified interface for supporting the StatisticSource interface
+  while delegating most implementation details to a member of type StatisticsAutoRegisterMember. 
+  The StatisticsAutoRegisterMember member then manages the registration and unregistration, and the storage of the private key.
+
+  An object implementing the :ref:`StatisticSourceWithAutoRegisterMember` interface must have a StatisticsAutoRegisterMember member, 
+  and must construct it in its constructor if :kl-ref:`FabricStatisticsEnabled` (passing `this` as construction argument).
+  The object then only needs to implement the StatisticSourceWithAutoRegisterMember simplified interface.
+
+  Important: for a good behavior, the StatisticsAutoRegisterMember member should not be cloned, which requires a custom implementation of .clone() by owner objects.
+
+  See :ref:`fabricstatistics` for an example of usage.
+*/
+interface StatisticSourceWithAutoRegisterMember {
+  /// Returns statistics related to this object. The `Name` should be included, but the `Type` will be automatically generated.
+  StatisticRecord[] getStatistics();
+};
+
+/// Member that needs to be defined within objects implementing the StatisticSourceWithAutoRegisterMember interface.
+/// See StatisticSourceWithAutoRegisterMember for more details.
+object StatisticsAutoRegisterMember : StatisticSource {
+  /// \internal
+  Ref<StatisticSourceWithAutoRegisterMember> source;
+  /// \internal
+  Size key;
+};
+
+/// Initializes from the actual source.
+/// See :ref:`fabricstatistics` for an example of usage.
+function StatisticsAutoRegisterMember(Ref<StatisticSourceWithAutoRegisterMember> source) {
+  if(!source)
+    setError("StatisticsAutoRegisterMember: null source");
+  this.source = source;
+  RegisterToFabricStatistics(this);
+}
+
+/// \internal
+function ~StatisticsAutoRegisterMember() {
+  //CAREFUL: at this point, this.source points to garbage memory!
+  if(!this.source)
+    return;
+  this.unregister();
+}
+
+/// \internal
+function StatisticsAutoRegisterMember.unregister!() {
+  //Set to null: ensure that we don't call 'getStatistics' on garbage
+  Ref<StatisticSourceWithAutoRegisterMember> nullSource = null;
+  this.source = nullSource;
+  UnregisterFromFabricStatistics(this);
+}
+
+/// \internal
+function StatisticRecord[] StatisticsAutoRegisterMember.getStatistics() {
+  if( this.source ) {
+    StatisticRecord stats[] = this.source.getStatistics();
+    //Since we defer the real source, push the 'Type' from it
+    stats.push(StatisticRecord("Type", this.source.type()));
+    return stats;
+  } else {
+    setError("StatisticsAutoRegisterMember.getStatistics: null source (uninitialized or in destructor)");
+    StatisticRecord empty[];
+    return empty;
+  }
+}
+
+/// \internal
+function StatisticsAutoRegisterMember.setStatisticsKey!( Size key ) {
+  this.key = key;
+}
+
+/// \internal
+function Size StatisticsAutoRegisterMember.getStatisticsKey() {
+  return this.key;
+}
+
+/// \internal
+StatisticsAutoRegisterMember.cloneMembersTo(io StatisticsAutoRegisterMember that) {
+  //We can't really clone ourselves since we don't know the new owner, however at least don't copy the 'source'
+  //else it would corrupt the statistics database. So we set it to 'null' and expect the owner to call postCloneRefresh();
+  that = null;
+}
+
+/// \internal
+function StatisticsAutoRegisterMember._init!(Ref<StatisticSourceWithAutoRegisterMember> source) {
+  if( this.source !== source ) {
+    this.source = source;
+    this.key = 0;
+    RegisterToFabricStatistics(this);
+  }
+}
+
+/// \internal
+/// Will patch the StatisticsAutoRegisterMember in case the source object was cloned.
+/// In that case, the StatisticsAutoRegisterMember member was cloned too but its `source` member 
+/// is no longer valid.
+function StatisticsAutoRegisterMember.postCloneRefresh!(Ref<StatisticSourceWithAutoRegisterMember> source) {
+  this._init(source);
+}

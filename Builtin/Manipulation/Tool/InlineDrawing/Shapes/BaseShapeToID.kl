@@ -1,0 +1,214 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+  namespace InlineDrawingRender {
+
+    object DummyObject{};
+
+    /// \internal
+    interface BaseShapeToID_virtuals {
+      updateShape!( io Ref<InlineDrawing> inlineDrawing, DrawContext context );
+      InlineMaterial getMaterial!( io Ref<InlineDrawing> inlineDrawing, Ref<IDRenderEngineMaterial> IDMaterial, DrawContext context );
+    };
+
+    object BaseShapeToIDSelectionDrawableItem;
+
+    /// \internal
+    object BaseShapeToID : BaseShapeToID_virtuals, IDRenderEngineInstance{
+      Ref<BaseShape> shapeTool;
+
+      InlineInstance instance;
+      InlineTransform transform;
+      InlineShape shape;
+
+      BaseShapeToIDSelectionDrawableItem selectionDrawableItem;
+
+      InlineMaterial lastMaterial;
+    };
+
+    BaseShapeToID() {
+      this.transform = InlineTransformBase();
+      this.instance = InlineInstance( this.uid(), this.transform, null );
+    }
+
+    BaseShapeToID.invalidate!( ) {
+      if( this.lastMaterial ) {
+        Ref<InlineInstance> instanceRef = this.instance;
+        this.lastMaterial.removeInstance( instanceRef );
+      }
+      this.lastMaterial = null;
+      this.shape = null;
+    }
+
+    ~BaseShapeToID() {
+      this.invalidate();
+    }
+
+    Ref<InlineInstance> BaseShapeToID.update!( io Ref<InlineDrawing> inlineDrawing, Boolean visible, Ref<Object> sourceInstance, DrawContext context, Ref<IDRenderEngineMaterial> IDMaterial ) {
+
+      // Update the shape if the geometry changes
+      this.shapeTool = sourceInstance;
+
+      String debugName;
+      if( SetPropertyDebugTrace ) {
+        Ref<HierarchyNode> tool = sourceInstance;
+        debugName = GetComponentName( tool );
+        report( "BaseShapeToID.update " + debugName + ", visible = " + visible + ( context.viewport ? ", viewport = " + context.viewport.getName() : "" ) );
+      }
+
+      this.instance.setActive( visible );
+
+      if( !visible )
+        return null;
+
+      Ref<InlineShape> prevShape = this.shape;
+      this.updateShape( inlineDrawing, context );
+      if( prevShape !== this.shape )
+        this.instance.setShape( this.shape );
+      InlineMaterial material = this.getMaterial( inlineDrawing, IDMaterial, context );
+
+      // First, set the material. Note: the material is already up-to-date.
+      if( material !== this.lastMaterial ) {
+        if( this.lastMaterial ) {
+          Ref<InlineInstance> instanceRef = this.instance;
+          this.lastMaterial.removeInstance( instanceRef );
+          this.lastMaterial.removeFromInstance( instanceRef );
+        }
+        if( material )
+          material.addInstance( this.instance );
+
+        this.lastMaterial = material;
+      }
+
+      if( !material )
+        return null;
+
+      Ref<InlineShader> IDShader = material.shader;
+      // Update instance-specific parameters, if any
+      // TODO: use versions to avoid this very costly loop if nothing changed!
+
+      Size uniformCount = IDShader.getUniformCount();
+      for( Size i = 0; i < uniformCount; ++i ) {
+        String name = IDShader.getUniformName( i );
+        RTVal value = context.contextualProperties.getProperty( name );
+        Type type = value.type();
+
+        if( type ) {
+          if( type.isA( Image2D ) ) {
+            Image2D image( value );
+            if( image ) {
+
+              if( DrawDebugTrace && SetPropertyDebugTrace )
+                report( "  BaseShapeToID.update: update " + debugName + " param: " + name + " = " + image.name );
+
+              InlineTexture inlineTexture = GetInlineDrawingTextureFromImage( inlineDrawing, image );
+              this.instance.setInstanceUniform( InlineUniform( name, inlineTexture ) );
+            }
+          } else {
+            if( DrawDebugTrace && SetPropertyDebugTrace )
+              report( "  BaseShapeToID.update: update " + debugName + " param: " + name + " = " + value + " CTX " + GetComponentName( context.contextualProperties ) );
+
+            switch( type ) {
+              // TODO: support textures (images)
+              case Integer: case UInt32: this.instance.setInstanceUniform( InlineUniform( name, Integer( value ) ) ); break;
+              case Float32: this.instance.setInstanceUniform( InlineUniform( name, Float32( value ) ) ); break;
+              case Vec2: this.instance.setInstanceUniform( InlineUniform( name, Vec2( value ) ) ); break;
+              case Vec3: this.instance.setInstanceUniform( InlineUniform( name, Vec3( value ) ) ); break;
+              case Quat: this.instance.setInstanceUniform( InlineUniform( name, Quat( value ) ) ); break;
+              case Color: this.instance.setInstanceUniform( InlineUniform( name, Color( value ) ) ); break;
+              case Mat33: this.instance.setInstanceUniform( InlineUniform( name, Mat33( value ) ) ); break;
+              case Mat44: this.instance.setInstanceUniform( InlineUniform( name, Mat44( value ) ) ); break;
+            }
+          }
+        }
+      }
+
+      Size attributeCount = IDShader.getAttributeCount();
+      for( Size i = 0; i < attributeCount; ++i ) {
+        String name = IDShader.getAttributeName( i );
+        RTVal value = context.contextualProperties.getProperty( name );
+        Type type = value.type();
+
+        if( type.isA( GeometryAttribute ) ) {
+          // Set param from geom attr
+          Ref<GeometryAttribute> attr = value;
+          this.instance.setMappedAttributeName( name, attr.getName() );
+        }
+      }
+
+      // Get special values; set as meta data
+      if( IsDrawCullFront( context.contextualProperties ) )
+        this.instance.setMetaData( "cullFront", DummyObject() );
+      else
+        this.instance.setMetaData( "cullFront", null );
+
+      if( IsDrawCullBack( context.contextualProperties ) )
+        this.instance.setMetaData( "cullBack", DummyObject() );
+      else
+        this.instance.setMetaData( "cullBack", null );
+
+      this.instance.setActive( false );// Will draw it explicitly
+
+      return this.instance;
+    }
+
+    /// By default, just returns the material associated with IDMaterial.
+    InlineMaterial BaseShapeToID.getMaterial!( io Ref<InlineDrawing> inlineDrawing, Ref<IDRenderEngineMaterial> IDMaterial, DrawContext context ) {
+      return IDMaterial.getIDMaterial( inlineDrawing, context, this.shape );
+    }
+
+    /// To be overriden
+    BaseShapeToID.updateShape!( io Ref<InlineDrawing> inlineDrawing, DrawContext context ) {}
+
+    object BaseShapeToIDSelectionDrawableItem : InlineInstanceToSelectionDrawableItem{
+      Ref<BaseShapeToID> shapeToID;// Don't own; the InlineInstanceToSelectionDrawableItem is owned by the InlineInstance (avoid leaks!)
+      DrawContext context;
+    };
+
+    BaseShapeToIDSelectionDrawableItem.prepareForSelectionDraw!( SelectionManagerDrawListKey userKey, UInt8 selectionType, Ref<Viewport> viewport, io UInt32 glInstanceCount, io Mat44 transform, io OGLBuffer_ positionsBuffer, io OGLBuffer legacyPositionsBuffer, io Ref<OGLProgramParamValues> shaderParamValues, io Ref<OGLContext> context ) {
+      Ref<BaseShapeToIDSelectionDrawableItem> mutableThis = this;
+
+      // update inline instance
+      mutableThis.inlineInstance = mutableThis.shapeToID.instance;
+
+      //Some manips use the userID; reset to 0
+      SelectionManagerDrawListKey userKeyOverride = userKey;
+      userKeyOverride.userID = 0;
+
+      mutableThis.parent.prepareForSelectionDraw( userKeyOverride, selectionType, viewport, glInstanceCount, transform, positionsBuffer, legacyPositionsBuffer, shaderParamValues, context );
+
+      // Override the transform, since we are not using the InlineDrawing naming convention
+      transform = mutableThis.shapeToID.shapeTool.getRenderTransform( mutableThis.context );
+    }
+
+    BaseShapeToIDSelectionDrawableItem.drawGLComponents!( SelectionManagerDrawListKey userKey, io Ref<ItemReference> itemAndComponents, Ref<Viewport> viewport, io Ref<OGLContext> context ) {
+      //Some manips use the userID; reset to 0
+      SelectionManagerDrawListKey userKeyOverride = userKey;
+      userKeyOverride.userID = 0;
+
+      this.parent.drawGLComponents( userKeyOverride, itemAndComponents, viewport, context );
+    }
+
+    Ref<SelectionDrawableItem> BaseShapeToID.getUpdatedSelectionDrawableItem!( io Ref<InlineDrawing> inlineDrawing, Ref<Object> sourceInstance, DrawContext context, Ref<IDRenderEngineMaterial> IDMaterial ) {
+      if( !this.selectionDrawableItem ) {
+        this.selectionDrawableItem = BaseShapeToIDSelectionDrawableItem();
+        this.selectionDrawableItem.shapeToID = this;
+      }
+      // Ensure that shape buffers exist
+      this.update( inlineDrawing, true, sourceInstance, context, IDMaterial );
+      this.selectionDrawableItem.inlineInstance = this.instance;
+
+      Ref<InlineGeometryShape> shape = this.instance.getShape();
+      if( shape ) {
+        Ref<OGLBufferDictionary> buffers = shape.getMetaData( 'buffers' );
+        if( !buffers )
+          return null;//Buffers not created yet; don't make selectable
+      }
+
+      this.selectionDrawableItem.context = context;
+      return this.selectionDrawableItem;
+    }
+  }// namespace InlineDrawingRender
+}// namespace Tool

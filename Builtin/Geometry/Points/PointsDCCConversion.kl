@@ -1,0 +1,115 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+ 
+ /// \internal
+operator Points_getPointsAsExternalArrayTask(Index index, io Float32 values<>, Size components, Vec3Attribute positionsAttribute) {
+  Index offset = index * components;
+  Vec3 pos = positionsAttribute.values[index];  
+  values[offset++] = pos.x;
+  values[offset++] = pos.y;
+  values[offset++] = pos.z;
+}
+
+/// Gets the point positions as a Float32 array.
+/// \category ImportExportHelpers
+function Points._getPointsAsExternalArray(io Float32 values<>, Size components) {
+  Points foo = this;
+  GeometryAttributes attributes = this.getAttributes();
+  Vec3Attribute positionsAttribute = attributes.getAttribute('positions', Vec3Attribute);
+  if(values.size() / components >= positionsAttribute.size()) {
+    if(this.pointCount() >= PolygonMesh_ExecuteParallel_Count) {
+      Points_getPointsAsExternalArrayTask<<<this.pointCount()>>>(values, components, positionsAttribute);
+    } else {
+      for(Size i=0;i<this.pointCount();i++) {
+        Points_getPointsAsExternalArrayTask(i, values, components, positionsAttribute);
+      }
+    }
+  }
+}
+
+
+ /// \internal
+operator Points_getPointsAsExternalArrayTask_d(Index index, io Float64 values<>, Size components, Vec3Attribute positionsAttribute) {
+  Index offset = index * components;
+  Vec3 pos = positionsAttribute.values[index];  
+  values[offset++] = pos.x;
+  values[offset++] = pos.y;
+  values[offset++] = pos.z;
+}
+
+/// Gets the point positions as a Float64 array.
+/// \category ImportExportHelpers
+function Points._getPointsAsExternalArray_d(io Float64 values<>, Size components) {
+  Points foo = this;
+  GeometryAttributes attributes = this.getAttributes();
+  Vec3Attribute positionsAttribute = attributes.getAttribute('positions', Vec3Attribute);
+  if(values.size() / components >= positionsAttribute.size()) {
+    if(this.pointCount() >= PolygonMesh_ExecuteParallel_Count) {
+      Points_getPointsAsExternalArrayTask_d<<<this.pointCount()>>>(values, components, positionsAttribute);
+    } else {
+      for(Size i=0;i<this.pointCount();i++) {
+        Points_getPointsAsExternalArrayTask_d(i, values, components, positionsAttribute);
+      }
+    }
+  }
+}
+
+/// \internal
+operator Points_setPointsFromExternalArrayTask(Index index, Float32 values<>, Size components, io Vec3Attribute positionsAttribute) {
+  Index offset = index * components;
+  positionsAttribute.values[index].x = values[offset++];
+  positionsAttribute.values[index].y = values[offset++];
+  positionsAttribute.values[index].z = values[offset++];
+}
+
+/// Sets the point positions from a Float32 array.
+
+function Points._setPointsFromExternalArray!(Float32 values<>, Size components) {
+  Points foo = this;
+  Size newSize = values.size() / components;
+  GeometryAttributes attributes = this.getAttributes();
+  Vec3Attribute positionsAttribute = attributes.getAttribute('positions', Vec3Attribute);
+  if(newSize != positionsAttribute.size()) {
+    attributes.resize(newSize);
+  }
+
+  if(positionsAttribute.size() >= PolygonMesh_ExecuteParallel_Count) {
+    Points_setPointsFromExternalArrayTask<<<positionsAttribute.size()>>>(values, components, positionsAttribute);
+  } else {
+    for(Size i=0;i<this.pointCount();i++) {
+      Points_setPointsFromExternalArrayTask(i, values, components, positionsAttribute);
+    }
+  }
+  positionsAttribute.incrementVersion();
+}
+
+
+/// \internal
+operator Points_setPointsFromExternalArrayTask_d(Index index, Float64 values<>, Size components, io Vec3Attribute positionsAttribute) {
+  Index offset = index * components;
+  positionsAttribute.values[index].x = Float32(values[offset++]);
+  positionsAttribute.values[index].y = Float32(values[offset++]);
+  positionsAttribute.values[index].z = Float32(values[offset++]);
+}
+
+/// Sets the point positions from a Float64 array.
+
+function Points._setPointsFromExternalArray_d!(Float64 values<>, Size components) {
+  Points foo = this;
+  Size newSize = values.size() / components;
+  GeometryAttributes attributes = this.getAttributes();
+  Vec3Attribute positionsAttribute = attributes.getAttribute('positions', Vec3Attribute);
+  if(newSize != positionsAttribute.size()) {
+    attributes.resize(newSize);
+  }
+
+  if(positionsAttribute.size() >= PolygonMesh_ExecuteParallel_Count) {
+    Points_setPointsFromExternalArrayTask_d<<<positionsAttribute.size()>>>(values, components, positionsAttribute);
+  } else {
+    for(Size i=0;i<this.pointCount();i++) {
+      Points_setPointsFromExternalArrayTask_d(i, values, components, positionsAttribute);
+    }
+  }
+  positionsAttribute.incrementVersion();
+}

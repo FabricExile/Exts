@@ -1,0 +1,81 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+require Util;
+/**
+  \versionadded 2.6.0
+
+  The PathValue is a pair representing a command argument path and the associated value.
+  Normally, the PathValue has either a path, a value, or both.
+
+  If the path is specified, before executing a command, the CommandManager will fetch the actual value 
+  corresponding to that path before executing it; see BaseScriptableCommand.
+  Also, see :ref:`TPG.path_value` for examples and general usage.
+*/
+struct PathValue {
+  String path;
+  RTVal value;
+};
+
+private PathValue.init!( String path, RTVal value ) {
+	this.path = path;
+  this.value = value;
+}
+
+PathValue() {
+  // TO FIX!!! This is a workaround because null RTVal don't convert properly from/to JSON
+  this.init("", RTVal());
+}
+
+PathValue( String path ) {
+  // TO FIX!!! This is a workaround because null RTVal don't convert properly from/to JSON
+  this.init(path, RTVal());
+}
+
+Boolean PathValue.isEmpty() {
+  return !this.path
+    && ( !this.value.type() );
+}
+
+PathValue( String path, RTVal value ) {
+  this.init(path, value);
+}
+
+
+/// \internal
+struct SetPathValueCommandWrapper {
+  String targetPath;
+};
+
+SetPathValueCommandWrapper(String targetPath) {
+  this.setTargetPath(targetPath);
+}
+
+SetPathValueCommandWrapper.setTargetPath!(String targetPath) {
+  this.targetPath = targetPath;
+}
+
+String SetPathValueCommandWrapper.getTargetPath() {
+  return this.targetPath;
+}
+ 
+SetPathValueCommandWrapper.setValue!( RTVal newValue, SInt32 canMergeID, Boolean blockLog ) {
+  RTVal args[String];
+  args["target"] = PathValue(this.targetPath); 
+  args["newValue"] = newValue;
+
+  Ref<CommandManager> manager = GetCommandManager();
+  BaseCommand c = manager.createCommand(
+    "setPathValue", 
+    args, 
+    false,
+    canMergeID);
+  if( Boolean( c ) && blockLog )
+    c.blockLog();
+  manager.scheduleCommand(c);
+}
+
+SetPathValueCommandWrapper.setValue!( RTVal newValue ) {
+  this.setValue(newValue, NoCanMergeID, false );
+}

@@ -1,0 +1,73 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+require InlineDrawing;
+
+/**
+\versionadded 1.12.0
+
+The :kl-ref:`TransformManipulationCommand` is used to store a manipulation in 3d and enable the change to be sotred in an undo stack to be undone later. 
+\dfgPresetOmit
+
+*/
+
+require InlineDrawing;
+
+/// \dfgPresetOmit
+object TransformManipulationCommand : UndoRedoCommand {
+  Ref<InlineTransform> targets[];
+  Xfo oldValues[][];
+  Xfo newValues[][];
+};
+
+function TransformManipulationCommand(Ref<InlineTransform> targets[]){
+  this.targets = targets;
+  this.oldValues.resize(this.targets.size());
+  this.newValues.resize(this.targets.size());
+  for(Integer i=0; i<this.targets.size(); i++){
+    if(!targets[i])
+      continue;
+    InlineTransform target = targets[i];
+    this.oldValues[i].resize(target.getGlobalCount());
+    this.newValues[i].resize(target.getGlobalCount());
+    for(Integer j=0; j<target.getGlobalCount(); j++){
+      this.oldValues[i][j] = target.getGlobalXfo(j);
+    }
+  }
+}
+
+function String TransformManipulationCommand.getDesc(){
+  String desc;
+  for(Integer i=0; i<this.targets.size(); i++){
+    if(!this.targets[i])
+      continue;
+    if(desc != "")
+      desc += ", ";
+    InlineTransform target = this.targets[i];
+    desc += target.getPath();
+  }
+  return "Manipulate Transforms:" + desc;
+}
+
+
+function TransformManipulationCommand.doAction!(){
+  for(Integer i=0; i<this.targets.size(); i++){
+    if(!this.targets[i])
+      continue;
+    InlineTransform target = this.targets[i];
+    for(Integer j=0; j<target.getGlobalCount(); j++){
+      target.setGlobalXfo(j, this.newValues[i][j]);
+    }
+  }
+}
+
+function TransformManipulationCommand.undoAction!(){
+  for(Integer i=0; i<this.targets.size(); i++){
+    if(!this.targets[i])
+      continue;
+    InlineTransform target = this.targets[i];
+    for(Integer j=0; j<target.getGlobalCount(); j++){
+      target.setGlobalXfo(j, this.oldValues[i][j]);
+    }
+  }
+}

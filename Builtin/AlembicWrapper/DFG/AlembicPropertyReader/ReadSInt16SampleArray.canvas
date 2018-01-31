@@ -1,0 +1,71 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "returns the value in the property as a SInt16.\nthis method interpolates values between frames.\n\nSupported types:\n  this: AlembicPropertyReader\n  time: Float64\n  result: SInt16\n"
+    },
+  "title" : "ReadSInt16Sample[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicPropertyReader[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "time",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Float64[]" : [
+          0
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Float64[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "SInt16[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "4BAA0CC60C2EC60C3A729CF64B953149",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicPropertyReader_readSInt16Sample_task<<<index>>>(
+  io SInt16[] result
+, io AlembicPropertyReader[] this
+, in Float64[] time
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].readSInt16Sample(time[index < time.size() ? index : time.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( time.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < time.size()) task_size = time.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      AlembicWrapper_AlembicPropertyReader_readSInt16Sample_task(index, result, this, time);
+    }
+  } else {
+    AlembicWrapper_AlembicPropertyReader_readSInt16Sample_task<<<task_size>>>(result, this, time);
+  }
+}
+"
+  }

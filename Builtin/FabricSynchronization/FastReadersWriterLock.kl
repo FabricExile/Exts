@@ -1,0 +1,600 @@
+//
+// Copyright 2010-2015 Fabric Software Inc. All rights reserved.
+//
+
+const UInt32 FastReadersWriterLock_someMightReadBit = 0x80000000;
+const UInt32 FastReadersWriterLock_writeCountMask = 0x7FFFFFFF;
+
+const UInt32 FastReadersWriterLock_readingBit = 0x80000000;
+const UInt32 FastReadersWriterLock_priorityReaderBit = 0x40000000;
+const UInt32 FastReadersWriterLock_readDepthMask = 0x7FFFFFFF;
+
+const UInt32 FastReadersWriterLock_asyncPrioritiesBitMask = 0xAAAAAAAA;
+
+/// \internal
+struct FastReadersWriterLock_perThreadStates {
+  UInt32 readDepth;//Plus reading bit
+  UInt32 writeDepth;
+//  UInt64 readStartTick;
+};
+
+/**
+
+Implement a readers-writer lock, with active waiting and priority management (0 = highest .. 3 = lowest).
+In order to be active, priority management must be initially enabled with :kl-ref:`FastReadersWriterLock.enableWritePriorities`.
+
+Guaranties are as follow:
+
+- Locks are reentrant: a reader can nest a writer or reader lock, and vice versa
+
+- Readers will wait for writers to finish, unless they have been waiting longer than these, or reader's thread has higher priority than writers (synchronous VS asynchronous - AsyncTaskQueue)
+
+- Writers will wait for readers to finish
+
+- Writers will let yield to other queued writers with higher priority
+
+- If an active reader requests a write lock, this write will happen before any other writes of lower priority
+
+- If a reader requests a write of lower priority, other writes of equal or higher priority could happen first
+
+The logic is read-biased for speed of access when no writers, but write-biased for access priority.
+Going from read to write is allowed, but it doesn't garantee that other writes might 
+happen in-between (which is the case anyway since all readers could in theory ask to upgrade to write at the same time).
+
+For the control, we're using one main atomic UInt32 which as 2 parts:
+
+A) "how many are waiting to write or currently writing" 
+
+B) "some reads might be happening or have happened recently" (one bit)
+
+Then, we use a "readDepth" and "writeDepth" per thread (allows, too, reentrency within a same thread).
+
+This allows the following optimizations.
+
+- New readers set their "readDepth" to 1. Then, in one atomic operation, the readers get A) and set B). 
+  If no A), they go straight to their reading.
+  If there is some A), they yield (set put back their "readDepth" to 0 and wait for no writers).
+
+- In one atomic operation, new writers increment A) and get B). They then wait to get the write lock.
+  Once a writer has the write lock, they check if there might be concurrent readers by fetching B) 
+  (and it clears B at the same time). If not, they go straight to write. Otherwise, it will 
+  actively wait for readers to finish by looping over their "readDepth", until they are all done.
+
+*/
+object FastReadersWriterLock {
+
+  FastReadersWriterLock_perThreadStates perThreadStates[];
+  UInt32 waitingWritersCountAndSomeMightReadBit;
+  Ref<AsyncTaskQueue> asyncTaskQueue;
+
+  // Under very specific conditions, one allowed for parallel writing
+  // (through MultithreadReadWriteAdvisorBracket)
+  UInt32 parallelWritingAllowedDepth;
+
+  LightLock writeLock;
+  String name;
+
+
+  //stats (not exact since we don't increase with atomics)
+//  UInt32 quickReadsAppoxCount;
+//  UInt32 readsAppoxCount;
+//  UInt32 quickWritesCount;
+//  UInt32 writesCount;
+
+  UInt32 nextRequestOrder;// not atomic controlled
+
+  UInt32 nextWaitingReaderOrder;
+  UInt32 nextWaitingWriterOrder;
+
+  Boolean prioritiesEnabled;
+  UInt32 waitingPrioritiesBits;
+  UInt32 perPriorityCounts[8];//Async VS sync threads
+  UInt8 writerWaitingWriterForReaders;
+
+  //UInt64 writeStartTick;
+
+  UInt32 debugCount;
+};
+
+FastReadersWriterLock( String name ) {
+  this.init(name);
+}
+
+FastReadersWriterLock() {
+  this.init("FastReadersWriterLock");
+}
+
+FastReadersWriterLock.init!( String name ) {
+  this.asyncTaskQueue = GetAsyncTaskQueue();
+  this.perThreadStates.resize( getThreadCount() );
+  this.name = name;
+
+  this.nextWaitingReaderOrder = -1;//UInt32Max
+  this.nextWaitingWriterOrder = -1;//UInt32Max
+}
+
+FastReadersWriterLock.enableWritePriorities!() {
+  this.prioritiesEnabled = true;
+}
+
+inline Boolean FastReadersWriterLock.writeLocked() {
+  return this.writeLock.locked();
+}
+
+inline Boolean FastReadersWriterLock.writeLocked_fetch() {
+  Ref<FastReadersWriterLock> mutableThis = this;
+  return mutableThis.writeLock.locked_fetch();
+}
+
+inline Boolean FastReadersWriterLock.writeLockedByCurrentThread() {
+  return this.perThreadStates[getThreadIndex()].writeDepth;
+}
+
+inline Boolean FastReadersWriterLock.readLockedByCurrentThread() {
+  return this.perThreadStates[getThreadIndex()].readDepth;
+}
+
+/// Parallel writing can only be allowed explicitly through
+/// a MultithreadReadersWriterLockBracket / ThreadReadersWriterLockBracket construct
+inline Boolean FastReadersWriterLock.isParallelWritingAllowed() {
+  return this.parallelWritingAllowedDepth;
+}
+
+Boolean FastReadersWriterLock.readLocked_slow( Boolean excludeThisThread ) {
+  if( this.writeLock.locked() && !excludeThisThread )
+    return true;
+  Ref<FastReadersWriterLock> mutableThis = this;
+  UInt32 threadIndex = getThreadIndex();
+  for( Size i = 0; i < this.perThreadStates.size(); ++i ) {
+    if( excludeThisThread && i == threadIndex )
+      continue;
+    if( mutableThis.perThreadStates[i].readDepth.atomicGet() & FastReadersWriterLock_readingBit )
+      return true;
+  }
+  return false;
+}
+
+Boolean FastReadersWriterLock.readLocked_slow( Boolean excludeThisThread, io FastReadersWriterLock_perThreadStates offending, io UInt32 offendingIndex ) {
+  if( this.writeLock.locked() && !excludeThisThread )
+    return true;
+  Ref<FastReadersWriterLock> mutableThis = this;
+  UInt32 threadIndex = getThreadIndex();
+  for( Size i = 0; i < this.perThreadStates.size(); ++i ) {
+    if( excludeThisThread && i == threadIndex )
+      continue;
+
+    if( mutableThis.perThreadStates[i].readDepth.atomicGet() & FastReadersWriterLock_readingBit ) {
+      offendingIndex = i;
+      offending = mutableThis.perThreadStates[i];
+      return true;
+    }
+  }
+  return false;
+}
+
+FastReadersWriterLock.releaseLocksBeforeThrow( ) {
+  Ref<FastReadersWriterLock> mutableThis = this;
+  while( mutableThis.perThreadStates[getThreadIndex()].writeDepth )
+    mutableThis.releaseWrite();
+  while( mutableThis.perThreadStates[getThreadIndex()].readDepth )
+    mutableThis.releaseRead();
+}
+
+/// \internal
+Boolean FastReadersWriterLock.syncReaderProbablyWaitsForAsyncWriters( UInt32 threadIndex ) {
+
+  Ref<FastReadersWriterLock> mutableThis = this;
+  if( mutableThis.asyncTaskQueue.isCurrentThreadExecutingAsync( threadIndex ) )
+    return false;
+
+  // Check if all waiting writers are async
+  UInt32 waitingPriorities = mutableThis.waitingPrioritiesBits.atomicGet();
+
+  if( !waitingPriorities || waitingPriorities != ( waitingPriorities & FastReadersWriterLock_asyncPrioritiesBitMask ) )
+    return false;
+
+  return true;
+}
+
+// Returns true if some writes might have happened
+Boolean FastReadersWriterLock.acquireRead( UInt32 threadIndex ) {
+  Ref<FastReadersWriterLock> mutableThis = this;
+  UInt32 prevDepth = mutableThis.perThreadStates[threadIndex].readDepth;
+  if( prevDepth ) {
+    mutableThis.perThreadStates[threadIndex].readDepth = prevDepth + 1;//just augment bracket
+    return false;
+  } else {
+//report("try read");
+    mutableThis.perThreadStates[threadIndex].readDepth = 1;
+    UInt32 requestOrder = mutableThis.nextRequestOrder++;//Don't do an atomic inc; we don't care about close race conditions here
+    Boolean tryToPassBeforeWriters;
+    Boolean looped;
+
+    ActiveWaitLoopControl waitControl;
+
+    while( true ) {
+      UInt32 prevGlobalStates = mutableThis.waitingWritersCountAndSomeMightReadBit.atomicOr( FastReadersWriterLock_someMightReadBit );
+      if( prevGlobalStates & FastReadersWriterLock_writeCountMask ) {
+
+        Boolean writersAreWaiting = Boolean( mutableThis.writerWaitingWriterForReaders.atomicGet() );
+        Boolean syncWaitingForAsync = this.syncReaderProbablyWaitsForAsyncWriters( threadIndex );
+
+        if( writersAreWaiting && ( tryToPassBeforeWriters || syncWaitingForAsync ) )
+          break;
+
+        looped = true;
+        // Others are waiting to write.
+        // Release our "read" state (force a flush), let them write
+        mutableThis.perThreadStates[threadIndex].readDepth.atomicCAS( 1, 0 );
+        waitControl.setPriority( syncWaitingForAsync );
+
+        // Wait for the writes to finish
+        while( true ) {
+          waitControl.wait();
+
+          if( mutableThis.nextWaitingReaderOrder.atomicGet() > requestOrder )
+            mutableThis.nextWaitingReaderOrder = requestOrder;
+
+          UInt32 nextWriterOrder = mutableThis.nextWaitingWriterOrder.atomicGet();
+
+//          if( waitControl.getWaitTime() > 0.05 ) {
+//            report( "LONG WAIT " + requestOrder + " " + nextWriterOrder + " " + waitControl.getWaitTime() );
+//          }
+
+          tryToPassBeforeWriters = ( nextWriterOrder != -1 && nextWriterOrder > requestOrder ) || this.syncReaderProbablyWaitsForAsyncWriters( threadIndex );
+
+          if( tryToPassBeforeWriters )
+            break;
+
+          //Force a volatile get
+          UInt32 prevValue = mutableThis.waitingWritersCountAndSomeMightReadBit.atomicGet();
+          if( (prevValue & FastReadersWriterLock_writeCountMask) == 0 ) {
+            break;// Writers are **probably** done for now, but might not be
+          }
+        }
+        mutableThis.perThreadStates[threadIndex].readDepth.atomicCAS( 0, 1 );
+      } else
+        break;
+    }
+    mutableThis.perThreadStates[threadIndex].readDepth = FastReadersWriterLock_readingBit | 1;
+//    if( !looped )
+//      ++mutableThis.quickReadsAppoxCount;
+//    ++mutableThis.readsAppoxCount;
+    // Ok, safe to do our reads now
+    // since the writers will wait for 'readDepth' to be 0 (since we set mutableThis.waitingWritersCountAndSomeMightReadBit)
+//report("Begin read");
+
+//    mutableThis.perThreadStates[threadIndex].readStartTick = getCurrentTicks();
+
+    return looped;
+  }
+}
+
+inline Boolean FastReadersWriterLock.acquireRead() {
+  return this.acquireRead( getThreadIndex() );
+}
+
+FastReadersWriterLock.releaseRead( UInt32 threadIndex ) {
+  Ref<FastReadersWriterLock> mutableThis = this;
+  UInt32 prevDepth = mutableThis.perThreadStates[threadIndex].readDepth;
+  if( prevDepth & FastReadersWriterLock_readDepthMask ) {
+
+    Boolean releasing = ( prevDepth & FastReadersWriterLock_readDepthMask ) == 1;
+    if( releasing ) {
+      //  report("End read");
+      mutableThis.nextWaitingReaderOrder = -1;//UInt32Max
+
+//      Float32 waitTime = Float32( getSecondsBetweenTicks( mutableThis.perThreadStates[threadIndex].readStartTick, getCurrentTicks() ) );
+//      if( waitTime > 0.05 ) {
+//        report( "LONG READ " + waitTime );
+//        dumpstack();
+//      }
+    }
+
+    // Clear FastReadersWriterLock_readingBit too
+    mutableThis.perThreadStates[threadIndex].readDepth = releasing ? 0 : ( prevDepth - 1 );//Keep the mask only if !releasing
+  }
+  else // Don't throw; would cause a deadlock
+    setError( "Unexpected: unbalanced reads on " + this.name );
+}
+
+inline FastReadersWriterLock.releaseRead() {
+  this.releaseRead( getThreadIndex() );
+}
+
+// Returns true if other writes might have happened
+Boolean FastReadersWriterLock.acquireWrite( UInt32 threadIndex, UInt32 priority ) {
+  Ref<FastReadersWriterLock> mutableThis = this;
+  UInt32 prevDepth = mutableThis.perThreadStates[threadIndex].writeDepth;
+  if( prevDepth ) {
+    mutableThis.perThreadStates[threadIndex].writeDepth = prevDepth + 1;//just augment bracket
+    ++mutableThis.perThreadStates[threadIndex].readDepth;
+    return false;
+  } else {
+//report("try write "+priority+" rdep "+mutableThis.perThreadStates[threadIndex].readDepth);
+    UInt32 actualPriority = priority;
+    if( this.prioritiesEnabled ) {
+      // Make async tasks less of a priority. They can starve before main thread.
+      actualPriority = priority * 2 + (this.asyncTaskQueue.isCurrentThreadExecutingAsync( threadIndex ) ? 1 : 0);
+      // Add our priority so others can yield if required
+      if( mutableThis.perPriorityCounts[actualPriority].atomicInc() == 0 )
+        mutableThis.waitingPrioritiesBits.atomicOr( 1 << actualPriority );
+    } else if( actualPriority )
+      setError("FastReadersWriterLock.acquireWrite: priority is not 0 but priorities were not enabled");
+
+    UInt32 prevReadDepth = mutableThis.perThreadStates[threadIndex].readDepth;
+    if( prevReadDepth ) {
+      // Remove our prev read depth so we don't deadlock with other reads that
+      // want to upgrade to write
+      mutableThis.perThreadStates[threadIndex].readDepth = 0;
+    }
+
+    ActiveWaitLoopControl waitControl();
+    UInt32 requestOrder = mutableThis.nextRequestOrder++;//Don't do an atomic inc; we don't care about close race conditions here
+
+    Boolean looped;
+    while( true ) {
+      // Signal our intention to write so readers finish or yield
+      mutableThis.waitingWritersCountAndSomeMightReadBit.atomicInc();
+
+      if( mutableThis.nextWaitingWriterOrder.atomicGet() > requestOrder )
+        mutableThis.nextWaitingWriterOrder = requestOrder;
+
+      // Grab the write lock, but yield if we don't have the highest proprity after all readers are done
+      mutableThis.writeLock.acquire();
+
+      //if(this.prioritiesEnabled)report("WL acquired prio="+actualPriority);
+      mutableThis.perThreadStates[threadIndex].writeDepth = 1;
+      mutableThis.perThreadStates[threadIndex].readDepth = prevReadDepth + 1;
+
+      // Ensure all readers are done (get and clear FastReadersWriterLock_someMightReadBit bit)
+      Boolean mightHaveWaitingReaders;
+      while( true ) {
+        mightHaveWaitingReaders = mutableThis.waitingWritersCountAndSomeMightReadBit.atomicAnd( FastReadersWriterLock_writeCountMask ) & FastReadersWriterLock_someMightReadBit;
+        if( mightHaveWaitingReaders ) {
+          mutableThis.writerWaitingWriterForReaders.atomicCAS( 0, 1 );
+
+          // Wait for readers to finish (other than ourselve)
+          UInt32 threadCount = mutableThis.perThreadStates.size();
+
+          while( true ) {
+
+            Boolean hasReaders;
+            for( Size i = 0; i < threadCount; ++i ) {
+              if( i != threadIndex ) {
+                //Force a volatile get
+                UInt32 readDepth = mutableThis.perThreadStates[i].readDepth.atomicGet();
+                if( mutableThis.perThreadStates[i].readDepth.atomicGet() ) {
+                  hasReaders = true;
+                  break;
+                }
+              }
+            }
+            if( !hasReaders ) {
+              mutableThis.writerWaitingWriterForReaders.atomicCAS( 1, 0 );
+              break;
+            }
+
+            waitControl.wait();
+
+//            if( waitControl.getWaitTime() > 0.05 ) {
+//              report( "LONG WAIT FOR WRITING " + waitControl.getWaitTime() );
+//              if( getThreadIndex() == 0 )dumpstack();
+//            }
+
+            if( mutableThis.nextWaitingWriterOrder.atomicGet() > requestOrder )
+              mutableThis.nextWaitingWriterOrder = requestOrder;
+
+            looped = true;
+          }
+        } else
+          break;
+      }
+
+      // Readers are all done, or these have yield because they now want to upgrade to writers.
+      // Check if we have the highest actualPriority
+      if( mutableThis.prioritiesEnabled ) {
+        // Get most recent priorities
+        // Force a volatile get
+        UInt32 waitingPriorities = mutableThis.waitingPrioritiesBits.atomicGet();
+        UInt32 priorityMask = ( 1 << actualPriority ) - 1;
+        if( waitingPriorities & priorityMask ) {
+
+          // There are higher priority clients waiting
+          // Release the lock, wait a bit and test again
+          ///("Release lock prio="+priority+" mask="+priorityMask+" current="+(waitingPriorities & priorityMask));
+          // Remove our prev read depth so we don't deadlock with other reads that
+          // want to upgrade to write
+          mutableThis.perThreadStates[threadIndex].readDepth = 0;
+
+          // Decrease our "writer" count so readers can go first (readers have the highest priority)
+          mutableThis.waitingWritersCountAndSomeMightReadBit.atomicDec();
+
+          mutableThis.writeLock.release();
+
+          waitControl.wait();
+
+//        if( waitControl.getWaitTime() > 0.05 && getThreadIndex() == 0 )
+//          report( "LONG WAIT WAIT FOR WRITING PRIORITY " + waitControl.getWaitTime() );
+        } else
+          break;
+      } else
+        break;
+
+      looped = true;
+    }
+//report("begin write "+priority);
+    
+    //mutableThis.writeStartTick = getCurrentTicks();
+
+    if( this.prioritiesEnabled ) {
+      // Clear priority mask if required
+      if( mutableThis.perPriorityCounts[actualPriority].atomicDec() == 1 )
+        mutableThis.waitingPrioritiesBits.atomicAnd( ~( 1 << actualPriority ) );
+    }
+
+//    if( !looped )
+//      ++mutableThis.quickWritesCount;
+//    ++mutableThis.writesCount;
+
+    // safe to do our writes:
+    // there are no readers and we are the only writer
+
+    //We could know if there were other writes (fetching mutableThis.writesCount before/after)
+    //but we don't want to spend an atomic op just for that, so just return true.
+//report( "ACQUIRE WRITE" );
+
+    return true;
+  }
+}
+
+/// Returns true if the current thread has a write lock.
+inline Boolean FastReadersWriterLock.currentThreadHasWriteLock() {
+  // Note: since we are asking for current thread, we don't need to force a volatile fetch
+  return this.perThreadStates[getThreadIndex()].writeDepth;
+}
+
+inline Boolean FastReadersWriterLock.acquireWrite() {
+  return this.acquireWrite( getThreadIndex(), 0 );
+}
+
+inline Boolean FastReadersWriterLock.acquireWrite( UInt32 priority ) {
+  return this.acquireWrite( getThreadIndex(), priority );
+}
+
+FastReadersWriterLock.releaseWrite( UInt32 threadIndex ) {
+  Ref<FastReadersWriterLock> mutableThis = this;
+  UInt32 writeDepth = mutableThis.perThreadStates[threadIndex].writeDepth;
+  if( writeDepth ) {
+    mutableThis.perThreadStates[threadIndex].writeDepth = writeDepth - 1;
+    UInt32 readDepth = mutableThis.perThreadStates[threadIndex].readDepth;
+    mutableThis.perThreadStates[threadIndex].readDepth = readDepth-1;
+
+    if( writeDepth == 1 ) {// Release the write lock
+
+//      Float32 waitTime = Float32( getSecondsBetweenTicks( this.writeStartTick, getCurrentTicks() ) );
+//      if( waitTime > 0.05 )
+//        report( "LONG WRITE " + waitTime );
+//report("end write ");
+
+      mutableThis.waitingWritersCountAndSomeMightReadBit.atomicDec();
+      mutableThis.nextWaitingWriterOrder = -1;//UInt32Max
+
+      if( readDepth > 1 ) {
+        // We become a "reader" again: we should have priority; signal ourselves with
+        // the reader flag.
+        mutableThis.waitingWritersCountAndSomeMightReadBit.atomicOr( FastReadersWriterLock_someMightReadBit );
+      }
+
+      mutableThis.writeLock.release();
+    }
+  } else // Don't throw: could cause a deadlock
+    setError("Unexpected: unbalanced writes on " + this.name);
+}
+
+inline FastReadersWriterLock.releaseWrite() {
+  this.releaseWrite( getThreadIndex() );
+}
+
+struct ReadersWriterLock_readLock {
+  Ref<FastReadersWriterLock> rwLock;
+  UInt32 threadIndex;
+};
+
+inline ReadersWriterLock_readLock( Ref<FastReadersWriterLock> rwLock ) {
+  this.init(rwLock);
+}
+
+/// \internal
+inline ReadersWriterLock_readLock.init!( Ref<FastReadersWriterLock> rwLock ) {
+  this.rwLock = rwLock;
+  this.threadIndex = getThreadIndex();
+  rwLock.acquireRead( this.threadIndex );
+}
+
+inline ~ReadersWriterLock_readLock() {
+  this.rwLock.releaseRead( this.threadIndex );
+}
+
+struct ReadersWriterLock_writeLock {
+  Ref<FastReadersWriterLock> rwLock;
+  UInt32 threadIndex;
+};
+
+inline ReadersWriterLock_writeLock( Ref<FastReadersWriterLock> rwLock ) {
+  this.init(rwLock, 0);
+}
+
+inline ReadersWriterLock_writeLock( Ref<FastReadersWriterLock> rwLock, UInt32 priority ) {
+  this.init(rwLock, priority);
+}
+
+inline ReadersWriterLock_writeLock.init!( Ref<FastReadersWriterLock> rwLock, UInt32 priority ) {
+  this.rwLock = rwLock;
+  this.threadIndex = getThreadIndex();
+  rwLock.acquireWrite( this.threadIndex, priority );
+}
+
+inline ~ReadersWriterLock_writeLock() {
+  this.rwLock.releaseWrite( this.threadIndex );
+}
+
+
+/// Brackets for propagating permissions to children threads under ParallelExecute.
+/// If a multithreading is started from an already locked FastReadersWriterLock
+/// this must be used to properly preserve the states.
+/// The MultithreadReadersWriterLockBracket must be built by the thread starting the
+/// multithreading, and the ThreadReadersWriterLockBracket must be built by the
+/// associated worker thread.
+/// \note Because of limitations on the thread pool behavior, this construct will not work properly under nested parallel execute (2+ levels)
+struct MultithreadReadersWriterLockBracket {
+  Ref<FastReadersWriterLock> rwLock;
+  UInt32 threadId;
+  UInt32 parentReadDepth;
+  UInt32 parentWriteDepth;
+};
+
+MultithreadReadersWriterLockBracket( Ref<FastReadersWriterLock> rwLock ) {
+  this.rwLock = rwLock;
+  this.threadId = getThreadIndex();
+  this.parentReadDepth = rwLock.perThreadStates[this.threadId].readDepth;
+  this.parentWriteDepth = rwLock.perThreadStates[this.threadId].writeDepth;
+
+  if( this.parentWriteDepth )
+    this.rwLock.parallelWritingAllowedDepth.atomicInc();
+}
+
+~MultithreadReadersWriterLockBracket() {
+  if( this.parentWriteDepth )
+    this.rwLock.parallelWritingAllowedDepth.atomicDec();
+}
+
+/// Brackets for propagating permissions from parent thread under ParallelExecute.
+/// If a multithreading is started from an already locked FastReadersWriterLock
+/// this must be used to properly preserve the states.
+/// The MultithreadReadersWriterLockBracket must be built by the thread starting the
+/// multithreading, and the ThreadReadersWriterLockBracket must be built by the
+/// associated worker thread.
+/// \note Because of limitations on the thread pool behavior, this construct will not work properly under nested parallel execute (2+ levels)
+struct ThreadReadersWriterLockBracket {
+  Ref<FastReadersWriterLock> rwLock;
+  UInt32 threadId;
+  UInt32 backupReadDepth;
+  UInt32 backupWriteDepth;
+};
+
+ThreadReadersWriterLockBracket( MultithreadReadersWriterLockBracket parentBracket ) {
+  this.rwLock = parentBracket.rwLock;
+  this.threadId = getThreadIndex();
+  this.backupReadDepth = this.rwLock.perThreadStates[this.threadId].readDepth;
+  this.backupWriteDepth = this.rwLock.perThreadStates[this.threadId].writeDepth;
+
+  // inherit permissions from parent thread
+  this.rwLock.perThreadStates[this.threadId].readDepth = parentBracket.parentReadDepth;
+  this.rwLock.perThreadStates[this.threadId].writeDepth = parentBracket.parentWriteDepth;
+}
+
+~ThreadReadersWriterLockBracket() {
+  this.rwLock.perThreadStates[this.threadId].readDepth = this.backupReadDepth;
+  this.rwLock.perThreadStates[this.threadId].writeDepth = this.backupWriteDepth;
+}

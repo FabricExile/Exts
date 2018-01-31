@@ -1,0 +1,231 @@
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+const String AppEvent_newScene = "onNewScene";
+const String AppEvent_postNewScene = "onPostNewScene";// Called after "onNewScene" as a 2nd step
+
+interface AppEventCallback {
+  onAppEvent!( String eventName );
+};
+
+/**
+  \versionadded 2.7.0
+  
+  The AppEventSingleton is used to send AppEvents (onNewScene, onPostNewScene) to regitered AppEventCallbacks. 
+  Because the AppEventSingleton doesn't owned the AppEventCallbacks, registered AppEventCallbacks must be 
+  unregistered when they are destructed. For the system to be thread-safe, the AppEventCallbacks and the 
+  AppEventSingleton must be created in the main thread. 
+*/
+object AppEventSingleton {
+  Ref<AppEventCallback> callbacks[String][];
+  private String currentEventName;
+};
+
+/// reports the amount and names of all registered events and callbacks.
+AppEventSingleton.fullReport() {
+  Size numEvents = this.callbacks.size();
+  if (numEvents == 0)
+  {
+    report("there are no events and no callbacks registered.");
+    return;
+  }
+  report("amount of registered events: " + String(numEvents));
+  report("{");
+  for (eventName, callbacks in this.callbacks)
+  {
+    UInt32 numNulls = 0;
+    for (UInt32 i=0;i<callbacks.size();i++)
+      if (callbacks[i] == null)
+        numNulls++;
+    report("  event \"" + eventName + "\" has " + String(callbacks.size()) + " callback(s)" + (numNulls ? " (" + String(numNulls) + " of them are  equal null)" : "") + ".");
+  }
+  report("}");
+}
+
+/// returns true if the callback is already registered for an event name.
+Boolean AppEventSingleton.isCallbackRegistered(String eventName, Ref<AppEventCallback> callback) {
+  if (callback == null)
+    return false;
+  if (!this.callbacks.has(eventName))
+    return false;
+  Ref<AppEventCallback> callbacks<> = this.callbacks.get(eventName);
+  for( Size i = 0; i < callbacks.size(); ++i )
+    if (callbacks[i] === callback)
+      return true;
+  return false;
+}
+
+/// registers a callback for an event name.
+AppEventSingleton.registerCallback!(String eventName, Ref<AppEventCallback> callback) {
+  if (callback == null) {
+    setError("Error in AppEventSingleton.registerCallback(): argument callback is null");
+    return;
+  }
+  if (this.isCallbackRegistered(eventName, callback)) {
+    setError("Error in AppEventSingleton.registerCallback(): callback already registered");
+    return;
+  }
+  if (this.callbacks.has(eventName))
+  {
+    Ref<AppEventCallback> callbacks[] = this.callbacks.get(eventName);
+    callbacks.push(callback);
+  }
+  else
+  {
+    Ref<AppEventCallback> callbacks[];
+    callbacks.push(callback);
+    this.callbacks[eventName] = callbacks;
+  }
+}
+
+/// unregisters an existing callback for an event name.
+AppEventSingleton.unregisterCallback!(String eventName, Ref<AppEventCallback> callback) {
+  if (callback == null) {
+    setError("AppEventSingleton.unregisterCallback(): eventName = " + eventName + ", argument callback is null");
+    return;
+  }
+  if (this.callbacks.has(eventName))
+  {
+    Ref<AppEventCallback> callbacks[] = this.callbacks.get(eventName);
+    if (eventName != this.currentEventName)
+    {
+      if (callbacks.size() == 1)
+      {
+        this.callbacks.delete(eventName);
+        return;
+      }
+      for( Size i = 0; i < callbacks.size(); ++i ) {
+        if( callbacks[i] === callback ) {
+          for( ; i + 1 < callbacks.size(); ++i )
+            callbacks[i] = callbacks[i + 1];
+          callbacks.resize(callbacks.size() - 1);
+          return;
+        }
+      }
+    }
+    else
+    {
+      for( Size i = 0; i < callbacks.size(); ++i ) {
+        if( callbacks[i] === callback ) {
+          callbacks[i] = null;
+          return;
+        }
+      }
+    }
+  }
+  setError("AppEventSingleton.unregisterCallback(): eventName = " + eventName + ", callback not registered");
+}
+
+/// unregisters all existing callbacks for an event name.
+AppEventSingleton.unregisterCallbacks!(String eventName) {
+  if (!this.callbacks.has(eventName))
+  {
+    setError("AppEventSingleton.unregisterAllCallbacks(): eventName = " + eventName + " doesn't exist");
+    return;
+  }
+
+  if (eventName != this.currentEventName)
+  {
+    this.callbacks.delete(eventName);
+  }
+  else
+  {
+    Ref<AppEventCallback> callbacks[] = this.callbacks.get(eventName);
+    for( Size i = 0; i < callbacks.size(); ++i )
+      callbacks[i] = null;
+  }
+}
+
+/// call all registered callbacks for an event name
+/// and, once done, remove any callback that is null.
+AppEventSingleton.onAppEvent!(String eventName) {
+  if( eventName == AppEvent_newScene )
+    Singleton_onNewScene();
+
+  if (!this.callbacks.has(eventName))
+    return;
+
+  String memCurrentEventName = this.currentEventName;
+
+  this.currentEventName = eventName;
+
+  Ref<AppEventCallback> callbacks[] = this.callbacks.get(eventName);
+
+  // call callbacks
+  for( Size i = 0; i < callbacks.size(); ++i )
+    if (callbacks[i] != null)
+      callbacks[i].onAppEvent(eventName);
+
+  // remove callbacks that are null
+  for( Size i = 0; i < callbacks.size(); ++i ) {
+    if( callbacks[i] == null ) {
+      for( Size j = i; j + 1 < callbacks.size(); ++j )
+        callbacks[j] = callbacks[j + 1];
+      callbacks.resize(callbacks.size() - 1);
+    }
+  }
+
+  // remove event if callbacks[] is empty
+  if (callbacks.size() == 0)
+    this.callbacks.delete(eventName);
+
+  this.currentEventName = memCurrentEventName;
+
+  // For the special case of newScene, we provide a postNewScene post-callback.
+  if( eventName == AppEvent_newScene )
+    this.onAppEvent( AppEvent_postNewScene );
+}
+
+/// returns true if the callback is already registered for an event name.
+Boolean IsRegisteredToAppEvent(String eventName, Ref<AppEventCallback> callback) {
+  Ref<AppEventSingleton> singl = Singleton_get( "AppEventSingl" );
+  if( !singl )
+    return false;
+
+  return singl.isCallbackRegistered(eventName, callback);
+}
+
+/// registers a callback for an event name.
+RegisterToAppEvent(String eventName, Ref<AppEventCallback> callback) {
+  Ref<AppEventSingleton> singl = GetOrCreateSingleton( "AppEventSingl", AppEventSingleton );
+  singl.registerCallback(eventName, callback);
+}
+
+/// reports the amount and names of all registered events and callbacks.
+FullReportAppEvent() {
+  Ref<AppEventSingleton> singl = Singleton_get( "AppEventSingl" );
+  if( !singl )
+  {
+    report("there are no events and no callbacks registered.");
+    return;
+  }
+
+  singl.fullReport();
+}
+
+/// unregisters an existing callback for an event name.
+UnregisterFromAppEvent(String eventName, Ref<AppEventCallback> callback) {
+  Ref<AppEventSingleton> singl = Singleton_get( "AppEventSingl" );
+  if( !singl )
+    return;// Silently ignore; singletons_removeAll might have been called
+  singl.unregisterCallback(eventName, callback);
+}
+
+/// unregisters all existing callbacks for an event name.
+UnregisterFromAppEvent(String eventName) {
+  Ref<AppEventSingleton> singl = Singleton_get( "AppEventSingl" );
+  if( !singl )
+    return;// Silently ignore; singletons_removeAll might have been called
+  singl.unregisterCallbacks(eventName);
+}
+
+/// invoke an event.
+SendAppEvent(String eventName) {
+  Ref<AppEventSingleton> singl = Singleton_get( "AppEventSingl" );
+  if( !singl ) {
+    if( eventName == AppEvent_newScene )
+      Singleton_onNewScene();
+  }
+  else
+    singl.onAppEvent(eventName );
+}

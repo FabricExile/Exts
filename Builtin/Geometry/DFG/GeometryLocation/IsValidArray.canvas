@@ -1,0 +1,70 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiDocUrl" : "http://docs.fabric-engine.com/FabricEngine/2.7.0/HTML/KLExtensionsGuide/Geometry/GeometryLocation.html",
+    "uiTooltip" : "Returns true if the location data was initialized. However, this is not verifying that the values are valid for a given geometry.\n\n Supported by GeometryLocation"
+    },
+  "title" : "IsValid[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "GeometryLocation[]" : [
+          {
+            "index" : -1,
+            "subIndex" : 0,
+            "barycentric" : {
+              "x" : 0,
+              "y" : 0,
+              "z" : 0
+              }
+            }
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "GeometryLocation[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean[]"
+      }
+    ],
+  "extDeps" : {
+    "Geometry" : "*"
+    },
+  "presetGUID" : "892C6D60F0E68CB5BC1E0793113E18BB",
+  "code" : "require Geometry;
+
+operator Geometry_GeometryLocation_isValid_task<<<index>>>(
+  io Boolean[] result
+, in GeometryLocation[] this
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].isValid();
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  Size task_size = this.size();
+  result.resize(task_size);
+  if(task_size < 10000 /* pex margin */) {
+    for(Size index = 0; index < task_size; index++) {
+      Geometry_GeometryLocation_isValid_task(index, result, this);
+    }
+  } else {
+    Geometry_GeometryLocation_isValid_task<<<task_size>>>(result, this);
+  }
+}
+"
+  }

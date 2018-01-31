@@ -1,0 +1,1255 @@
+
+/*
+ *  Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+ */
+
+/// \internal
+const Integer PolygonMesh_ExecuteParallel_Count = 10000;
+
+/// \internal
+operator PolygonMesh_getPointsAsExternalArrayTask_d(Index index, io Float64 values<>, Size components, io PolygonMesh mesh) {
+  Index offset = index * components;
+  Vec3_d pos = mesh.getPointPosition_d(index);  
+  values[offset++] = pos.x;
+  values[offset++] = pos.y;
+  values[offset++] = pos.z;
+  if(components > 3)
+    values[offset] = 1.0;
+}
+
+/// Gets the point positions as a Float64 array.
+/// Values are ordered by polygon points (Poly0Point0, Poly0Point1, Poly0Point2, ..., Poly1Point0, Poly1Point1... ).
+/// \param components indicates the number of Float64 to be returned for each point, and should be 3 or 4. If 4, a 1.0 will pad the 4th component.
+/// \category ImportExportHelpers
+function PolygonMesh.getPointsAsExternalArray_d(io Float64 values<>, Size components) {
+  PolygonMesh foo = this;
+  if(values.size() / components >= this.pointCount()) {
+    if(this.pointCount() >= PolygonMesh_ExecuteParallel_Count) {
+      PolygonMesh_getPointsAsExternalArrayTask_d<<<this.pointCount()>>>(values, components, foo);
+    } else {
+      for(Size i=0;i<this.pointCount();i++) {
+        PolygonMesh_getPointsAsExternalArrayTask_d(i, values, components, foo);
+      }
+    }
+  }
+}
+
+/// \internal
+operator PolygonMesh_getPointsAsExternalArrayTask(Index index, io Float32 values<>, Size components, io PolygonMesh mesh) {
+  Index offset = index * components;
+  Vec3 pos = mesh.getPointPosition(index);  
+  values[offset++] = pos.x;
+  values[offset++] = pos.y;
+  values[offset++] = pos.z;
+  if(components > 3)
+    values[offset] = 1.0;
+}
+
+/// Gets the point positions as a Float32 array.
+/// Values are ordered by polygon points (Poly0Point0, Poly0Point1, Poly0Point2, ..., Poly1Point0, Poly1Point1... ).
+/// \param components indicates the number of Float32 to be returned for each point, and should be 3 or 4. If 4, a 1.0 will pad the 4th component.
+/// \category ImportExportHelpers
+function PolygonMesh.getPointsAsExternalArray(io Float32 values<>, Size components) {
+  PolygonMesh foo = this;
+  if(values.size() / components >= this.pointCount()) {
+    if(this.pointCount() >= PolygonMesh_ExecuteParallel_Count) {
+      PolygonMesh_getPointsAsExternalArrayTask<<<this.pointCount()>>>(values, components, foo);
+    } else {
+      for(Size i=0;i<this.pointCount();i++) {
+        PolygonMesh_getPointsAsExternalArrayTask(i, values, components, foo);
+      }
+    }
+  }
+}
+
+/// \internal
+operator PolygonMesh_setPointsFromExternalArrayTask_d(Index index, Float64 values<>, Size components, io PolygonMesh mesh) {
+  Index offset = index * components;
+  Vec3_d pos;
+  pos.x = values[offset++];
+  pos.y = values[offset++];
+  pos.z = values[offset++];
+  mesh.setPointPosition(index, pos);
+}
+
+/// Sets the point positions from a Float64 array.
+/// Values are expected to be ordered by polygon points (Poly0Point0, Poly0Point1, Poly0Point2, ..., Poly1Point0, Poly1Point1... ).
+/// \param components indicates the number of Float64 for each point. Only the 3 first values (XYZ) will be read.
+/// \category ImportExportHelpers
+function PolygonMesh.setPointsFromExternalArray_d!(Float64 values<>, Size components) {
+  PolygonMesh foo = this;
+  Size newSize = (values.size() - values.size() % components) / components;
+  if(newSize != this.pointCount()) {
+    this.clear();
+    // this.beginStructureChanges();
+    this.createPoints(newSize);
+    // this.endStructureChanges();
+  }
+
+  if(this.pointCount() >= PolygonMesh_ExecuteParallel_Count) {
+    PolygonMesh_setPointsFromExternalArrayTask_d<<<this.pointCount()>>>(values, components, foo);
+  } else {
+    for(Size i=0;i<this.pointCount();i++) {
+      PolygonMesh_setPointsFromExternalArrayTask_d(i, values, components, foo);
+    }
+  }
+  //Q: Is it ok to assume positions have changed? If they didn't, this will cause octree/gl buffers to be updated for nothing...
+  this.incrementPointPositionsVersion();
+}
+
+/// \internal
+operator PolygonMesh_setPointsFromExternalArrayTask(Index index, Float32 values<>, Size components, io PolygonMesh mesh) {
+  Index offset = index * components;
+  Vec3 pos;
+  pos.x = values[offset++];
+  pos.y = values[offset++];
+  pos.z = values[offset++];
+  mesh.setPointPosition(index, pos);
+}
+
+/// Sets the point positions from a Float32 array.
+/// Values are expected to be ordered by polygon points (Poly0Point0, Poly0Point1, Poly0Point2, ..., Poly1Point0, Poly1Point1... ).
+/// \param components indicates the number of Float32 for each point. Only the 3 first values (XYZ) will be read.
+/// \category ImportExportHelpers
+function PolygonMesh.setPointsFromExternalArray!(Float32 values<>, Size components) {
+  PolygonMesh foo = this;
+  Size newSize = (values.size() - values.size() % components) / components;
+  if(newSize != this.pointCount()) {
+    this.clear();
+    this.beginStructureChanges();
+    this.createPoints(newSize);
+    this.endStructureChanges();
+  }
+
+  if(this.pointCount() >= PolygonMesh_ExecuteParallel_Count) {
+    PolygonMesh_setPointsFromExternalArrayTask<<<this.pointCount()>>>(values, components, foo);
+  } else {
+    for(Size i=0;i<this.pointCount();i++) {
+      PolygonMesh_setPointsFromExternalArrayTask(i, values, components, foo);
+    }
+  }
+  //Q: Is it ok to assume positions have changed? If they didn't, this will cause octree/gl buffers to be updated for nothing...
+  this.incrementPointPositionsVersion();
+}
+
+/// Gets the normals as a Float32 array.
+/// If the size of `values` is :kl-ref:`PolygonMesh.pointCount` *3, values will be ordered by point.
+/// If the size of `values` is :kl-ref:`PolygonMesh.polygonPointsCount` *3, values will be ordered by 
+/// polygon points (Poly0Point0, Poly0Point1, Poly0Point2, ..., Poly1Point0, Poly1Point1... ).
+/// If the pointCount matches the polygonPointsCount the normals are returned in the order of the polygon points (nodes).
+/// \category ImportExportHelpers
+function PolygonMesh.getNormalsAsExternalArray(io Float32 values<>) {
+  if(values.size() / 3 >= this.polygonPointsCount()) {
+    Size offset = 0;
+    for(Size i=0;i<this.polygonCount();i++) {
+      Size count = this.getPolygonSize(i);
+      for(Size j=0;j<count;j++) {
+        Vec3 normal = this.getPolygonPointNormal(i, j);
+        values[offset++] = normal.x;
+        values[offset++] = normal.y;
+        values[offset++] = normal.z;
+      }
+    }
+  }
+  else if(values.size() / 3 == this.pointCount()) {
+    Size offset = 0;
+    for(Size i = 0; i < this.pointCount(); i++) {
+      Vec3 normal = this.getPointNormal(i);
+      values[offset++] = normal.x;
+      values[offset++] = normal.y;
+      values[offset++] = normal.z;
+    }
+  }
+}
+
+/// Gets the normals as a Float64 array.
+/// If the size of `values` is :kl-ref:`PolygonMesh.pointCount` *3, values will be ordered by point.
+/// If the size of `values` is :kl-ref:`PolygonMesh.polygonPointsCount` *3, values are ordered by 
+/// polygon points (Poly0Point0, Poly0Point1, Poly0Point2, ..., Poly1Point0, Poly1Point1... ).
+/// \category ImportExportHelpers
+function PolygonMesh.getNormalsAsExternalArray_d(io Float64 values<>) {
+  if(values.size() / 3 >= this.polygonPointsCount()) {
+    Size offset = 0;
+    for(Size i=0;i<this.polygonCount();i++) {
+      Size count = this.getPolygonSize(i);
+      for(Size j=0;j<count;j++) {
+        Vec3 normal = this.getPolygonPointNormal(i, j);
+        values[offset++] = normal.x;
+        values[offset++] = normal.y;
+        values[offset++] = normal.z;
+      }
+    }
+  }
+  else if(values.size() / 3 == this.pointCount()) {
+    Size offset = 0;
+    for(Size i = 0; i < this.pointCount(); i++) {
+      Vec3 normal = this.getPointNormal(i);
+      values[offset++] = normal.x;
+      values[offset++] = normal.y;
+      values[offset++] = normal.z;
+    }
+  }
+}
+
+/// Sets the normals from a Float32 array.
+/// Values are expected to be ordered by polygon points (Poly0Point0, Poly0Point1, Poly0Point2, ..., Poly1Point0, Poly1Point1... ).
+/// \category ImportExportHelpers
+function PolygonMesh.setNormalsFromExternalArray!(Float32 values<>) {
+  Size sampleCount = (values.size() - values.size() % 3) / 3;
+  if(sampleCount != this.polygonPointsCount())
+  {
+    setError("setNormalsFromExternalArray: sampleCount doesn't match! ("+sampleCount+" vs. "+this.polygonPointsCount()+").");
+    return;
+  }
+
+  Size offset = 0;
+  Ref<Vec3Attribute> attr = this.getOrCreateVec3Attribute( "normals" );
+  for(Size i=0;i<this.polygonCount();i++) {
+    Size count = this.getPolygonSize(i);
+    for(UInt32 j=0;j<count;j++) {
+      Vec3 value;
+      value.x = values[offset++];
+      value.y = values[offset++];
+      value.z = values[offset++];
+
+      this.setPolygonAttribute( i, j, attr, value );
+    }
+  }
+  attr.incrementVersion();
+}
+
+/// Sets the normals from a Float64 array (will be converted to Float32).
+/// Values are expected to be ordered by polygon points (Poly0Point0, Poly0Point1, Poly0Point2, ..., Poly1Point0, Poly1Point1... ).
+/// \category ImportExportHelpers
+function PolygonMesh.setNormalsFromExternalArray_d!(Float64 values<>) {
+  Size sampleCount = (values.size() - values.size() % 3) / 3;
+  if(sampleCount != this.polygonPointsCount())
+  {
+    setError("setNormalsFromExternalArray_d: sampleCount doesn't match! ("+sampleCount+" vs. "+this.polygonPointsCount()+").");
+    return;
+  }
+
+  Size offset = 0;
+  Ref<Vec3Attribute> attr = this.getOrCreateVec3Attribute( "normals" );
+  for(Size i=0;i<this.polygonCount();i++) {
+    Size count = this.getPolygonSize(i);
+    for(UInt32 j=0;j<count;j++) {
+      Vec3 value;
+      value.x = Float32(values[offset++]);
+      value.y = Float32(values[offset++]);
+      value.z = Float32(values[offset++]);
+      this.setPolygonAttribute( i, j, attr, value );
+    }
+  }
+  attr.incrementVersion();
+}
+
+/// Gets the polygon sizes and polygon points as two external arrays.
+/// \param counts Polygon sizes. The size of the array should be :kl-ref:`PolygonMesh.polygonCount`
+/// \param indices Packed polygon points, in polygon point order. The size of the array should be :kl-ref:`PolygonMesh.polygonPointsCount`
+/// \category ImportExportHelpers
+function PolygonMesh.getTopologyAsCountsIndicesExternalArrays(io UInt32 counts<>, io UInt32 indices<>) {
+  Size countOffset = 0;
+  Size indexOffset = 0;
+
+  if(counts.size() >= this.polygonCount() && indices.size() >= this.polygonPointsCount()) {
+    LocalIndexArray vertices;
+    for(Size i=0;i<this.polygonCount();i++) {
+      this.getPolygonPoints(i, vertices);
+      counts[countOffset++] = vertices.size();
+      for(UInt32 j=0;j<vertices.size();j++) {
+        indices[indexOffset++] = vertices.get(j);
+      }
+    }
+  }
+}
+
+/// Adds polygons from polygon sizes and polygon points as two external arrays.
+/// \param counts Polygon sizes, with one size per polygon to be created.
+/// \param indices Packed polygon points, ordered by polygon: [Poly0Point0, Poly0Point1, ..., Poly1Point0, ...]
+/// \category ImportExportHelpers
+function PolygonMesh.setTopologyFromCountsIndicesExternalArrays!(UInt32 counts<>, UInt32 indices<>) {
+  this.addPolygons(counts, indices);
+}
+
+/// Gets the polygon sizes and polygon points as a single packed array.
+/// `indices` should be of size :kl-ref:`PolygonMesh.polygonCount` + :kl-ref:`PolygonMesh.polygonPointsCount`.
+/// `indices` will be ordered by polygons, containing the polygon size, followed by its points,
+/// such as: [Poly0Size, Poly0Point0, Poly0Point1, ..., Poly1Size, Poly1Point0, ...]
+/// \category ImportExportHelpers
+function PolygonMesh.getTopologyAsCombinedExternalArray(io UInt32 indices<>) {
+  Size offset = 0;
+  if(indices.size() >= this.polygonCount() + this.polygonPointsCount()) {
+    LocalIndexArray vertices;
+    for(Size i=0;i<this.polygonCount();i++) {
+      this.getPolygonPoints(i, vertices);
+      indices[offset++] = vertices.size();
+      for(UInt32 j=0;j<vertices.size();j++) {
+        indices[offset++] = vertices.get(j);
+      }
+    }
+  }
+}
+
+
+/// Adds polygons from polygon sizes and polygon points as a single packed array.
+/// `indices` will be ordered by polygons, containing the polygon size, followed by its points,
+/// such as: [Poly0Size, Poly0Point0, Poly0Point1, ..., Poly1Size, Poly1Point0, ...]
+/// \category ImportExportHelpers
+function PolygonMesh.setTopologyFromCombinedExternalArray!(UInt32 indices<>) {
+  this.beginStructureChanges();
+
+  LocalIndexArray indexArray;
+  for( UInt32 ptIndexIter = 0; ptIndexIter < indices.size(); ) {
+    UInt32 polSize = indices[ptIndexIter++];
+    indexArray.resize(0);
+    for( Size j = 0; j < polSize; ++j )
+      indexArray.push( indices[ptIndexIter++] );
+    this.addPolygon( indexArray );
+  }
+
+  this.endStructureChanges();
+}
+
+/// returns true if the PolygonMesh has uvs (stored as a Vec2 attribute named 'uvs0')
+/// \category ImportExportHelpers
+function Boolean PolygonMesh.hasUVs() {
+  GeometryAttributes attributes = this.getAttributes();
+  return attributes.has('uvs0');
+}
+
+/// Gets the uvs as a Float32 array.
+/// The size of `values` should be :kl-ref:`PolygonMesh.polygonPointsCount` * `components`. Values are ordered by 
+/// polygon points (Poly0Point0, Poly0Point1, Poly0Point2, ..., Poly1Point0, Poly1Point1... ).
+/// \param components indicates the number of Float32 to be returned for each uv, and should be 2 or 3. If 3, a 0.0 will pad the 3rd component.
+/// \category ImportExportHelpers
+function PolygonMesh.getUVsAsExternalArray?(io Float32 values<>, Size components) {
+  Size sampleCount = (values.size() - values.size() % components) / components;
+  if(sampleCount != this.polygonPointsCount())
+  {
+    setError("getUVsAsExternalArray: sampleCount doesn't match! ("+sampleCount+" vs. "+this.polygonPointsCount()+").");
+    return;
+  }
+  if(!this.hasUVs())
+    return;
+
+  Size offset = 0;
+  Ref<Vec2Attribute> attr = this.getAttribute( "uvs0", Vec2Attribute );
+  for(Size i=0;i<this.polygonCount();i++) {
+    Size count = this.getPolygonSize(i);
+    for(UInt32 j=0;j<count;j++) {
+      Size index = this.getPolygonAttributeIndex(i, j);
+      Vec2 value = attr.values[index];
+      values[offset++] = value.x;
+      values[offset++] = value.y;
+      if(components == 3)
+        values[offset++] = 0.0;
+    }
+  }
+}
+
+/// Gets the uvs as a packed Vec2 array and an index array.
+/// The size of `indices` should be :kl-ref:`PolygonMesh.polygonPointsCount`.
+/// \category ImportExportHelpers
+function Vec2[] PolygonMesh.getUVsAsPackedArray(io UInt32 polygonPackedIndices[]) {
+  Vec2 result[];
+  if(this.hasUVs())
+  {
+    Vec2Attribute outVec2Values();
+    GeometryAttribute outValues = outVec2Values;
+
+    GeometryAttribute inValues = this.getAttribute( "uvs0", Vec2Attribute );
+    this.getPolygonPackedSharedAttributeValues(inValues, outValues, polygonPackedIndices);
+
+    result = outVec2Values.values;
+  }
+  return result;
+}
+
+/// Sets the uvs from a Float32 array.
+/// The size of `values` should be :kl-ref:`PolygonMesh.polygonPointsCount` * `components`. Values are ordered by 
+/// polygon points (Poly0Point0, Poly0Point1, Poly0Point2, ..., Poly1Point0, Poly1Point1... ).
+/// \param components indicates the number of Float32 for each uv, and should be 2 or 3. If 3, the 3rd component is ignored.
+/// \category ImportExportHelpers
+function PolygonMesh.setUVsFromExternalArray!(Float32 values<>, Size components) {
+  Size sampleCount = (values.size() - values.size() % components) / components;
+  if(sampleCount != this.polygonPointsCount())
+  {
+    setError("setUVsFromExternalArray: sampleCount doesn't match! ("+sampleCount+" vs. "+this.polygonPointsCount()+").");
+    return;
+  }
+
+  Size offset = 0;
+  Ref<Vec2Attribute> attr = this.getOrCreateVec2Attribute( "uvs0" );
+  for(Size i=0;i<this.polygonCount();i++) {
+    Size count = this.getPolygonSize(i);
+    for(UInt32 j=0;j<count;j++) {
+      Vec2 value;
+      value.x = values[offset++];
+      value.y = values[offset++];
+
+      this.setPolygonAttribute( i, j, attr, value );
+      offset += components - 2;
+    }
+  }
+  attr.incrementVersion();
+}
+
+/// returns true if the PolygonMesh has vertexColors (stored as a Color attribute named 'vertexColors')
+/// \category ImportExportHelpers
+function Boolean PolygonMesh.hasVertexColors() {
+  GeometryAttributes attributes = this.getAttributes();
+  return attributes.has('vertexColors');
+}
+
+/// Gets the colors as a Float32 array.
+/// The size of `values` should be :kl-ref:`PolygonMesh.polygonPointsCount` * `components`. Values are ordered by 
+/// polygon points (Poly0Point0, Poly0Point1, Poly0Point2, ..., Poly1Point0, Poly1Point1... ).
+/// \param components indicates the number of Float32 to be returned for each color, and should be 3 or 4.
+/// \category ImportExportHelpers
+function PolygonMesh.getVertexColorsAsExternalArray(io Float32 values<>, Size components) {
+  Size sampleCount = (values.size() - values.size() % components) / components;
+  if(sampleCount != this.polygonPointsCount())
+  {
+    setError("getVertexColorsAsExternalArray: sampleCount doesn't match! ("+sampleCount+" vs. "+this.polygonPointsCount()+").");
+    return;
+  }
+  if(!this.hasVertexColors())
+    return;
+
+  Size offset = 0;
+  Ref<ColorAttribute> attr = this.getAttribute( "vertexColors", ColorAttribute );
+  for(Size i=0;i<this.polygonCount();i++) {
+    Size count = this.getPolygonSize(i);
+    for(UInt32 j=0;j<count;j++) {
+      Size index = this.getPolygonAttributeIndex(i, j);
+      Color value = attr.values[index];
+      values[offset++] = value.r;
+      values[offset++] = value.g;
+      values[offset++] = value.b;
+      if(components == 4)
+        values[offset++] = value.a;
+    }
+  }
+}
+
+/// Sets the colors from a Float32 array.
+/// The size of `values` should be :kl-ref:`PolygonMesh.polygonPointsCount` * `components`. Values are ordered by 
+/// polygon points (Poly0Point0, Poly0Point1, Poly0Point2, ..., Poly1Point0, Poly1Point1... ).
+/// \param components indicates the number of Float32 for each color, and should be 3 or 4. If 3, the alpha will be set to 1.0.
+/// \category ImportExportHelpers
+function PolygonMesh.setVertexColorsFromExternalArray!(Float32 values<>, Size components) {
+  Size sampleCount = (values.size() - values.size() % components) / components;
+  if(sampleCount != this.polygonPointsCount()) {
+    setError("setVertexColorsFromExternalArray: sampleCount doesn't match! ("+sampleCount+" vs. "+this.polygonPointsCount()+").");
+    return;
+  }
+
+  Size offset = 0;
+  Ref<ColorAttribute> attr = this.getOrCreateColorAttribute( "vertexColors" );
+  for(Size i=0;i<this.polygonCount();i++) {
+    Size count = this.getPolygonSize(i);
+    for(UInt32 j=0;j<count;j++) {
+      Color value;
+      value.r = values[offset++];
+      value.g = values[offset++];
+      value.b = values[offset++];
+      if(components == 4)
+        value.a = values[offset++];
+
+      this.setPolygonAttribute( i, j, attr, value );
+    }
+  }
+  attr.incrementVersion();
+}
+
+
+/// Outputs the mesh data as an Arnold friendly way. This includes the structure, uvs and normals.
+/// \category ImportExportHelpers
+function Boolean PolygonMesh.getMeshExternalArrayForArnold(
+  io Xfo meshXfo,
+  io Boolean hasuv,
+  io UInt32 nsides<>,
+  io UInt32 vidxs<>,
+  io UInt32 nidxs<>,
+  io UInt32 uvidxs<>,
+  io Float32 nlist<>,
+  io Float32 vlist<>,
+  io Float32 uvlist<>)
+{
+  Vec2 uv;
+  UInt32 offset_ndixs, offset_vidxs, offset_nidxs, offset_vlist, offset_uvlist;
+  Mat44 posMat = meshXfo.toMat44();
+  Mat33 normMat = posMat.upperLeft().inverse().transpose();
+
+  hasuv = this.hasUVs();
+  Ref<Vec2Attribute> attrUVs = null;
+  if(hasuv) 
+    attrUVs = this.getAttribute("uvs0", Vec2Attribute);
+
+  // Get the nsides, vidxs, nidxs, nlist and the uvs
+  for(Size i=0; i<this.polygonCount(); ++i) {
+    LocalIndexArray vertices;
+    this.getPolygonPoints(i, vertices);
+    nsides[i] = vertices.size();
+    UInt32 count = this.getPolygonSize(i);
+
+    for(Size j=0;j<count; ++j) {
+      nidxs[offset_ndixs] = offset_ndixs;
+      uvidxs[offset_ndixs] = offset_ndixs;
+      ++offset_ndixs;
+      vidxs[offset_vidxs++] = vertices.get(j);
+
+      Vec3 normal = normMat * this.getPolygonPointNormal(i, j);
+      nlist[offset_nidxs++] = normal.x;
+      nlist[offset_nidxs++] = normal.y;
+      nlist[offset_nidxs++] = normal.z;
+
+      if(hasuv) {
+        uv = attrUVs.values[this.getPolygonAttributeIndex(i, j)];
+        uvlist[offset_uvlist++] = uv.x;
+        uvlist[offset_uvlist++] = uv.y;
+      }
+    }
+  }
+  
+  // Get the point list
+  for(Size i=0; i<this.pointCount(); ++i) {
+    Vec3 pos = posMat * this.getPointPosition(i);  
+    vlist[offset_vlist++] = (pos.x);
+    vlist[offset_vlist++] = (pos.y);
+    vlist[offset_vlist++] = (pos.z);
+  }
+
+  return true;
+} 
+
+/// Extracts the count and indices that enable the raw geometry attribute data to be indexed.
+/// This method is used by the Arnold DSO in Horde. 
+/// \category ImportExportHelpers
+function PolygonMesh.getTopologyCountsAndAttributeIndices(
+  out UInt32 nsides[],
+  out UInt32 attr_idxs[]
+){
+  nsides.resize(this.polygonCount());
+  attr_idxs.resize(0);
+  UInt32 offset_attr_idxs = 0;
+  for(Size i=0; i<this.polygonCount(); ++i) {
+    UInt32 count = this.getPolygonSize(i);
+    nsides[i] = count;
+    attr_idxs.resize(attr_idxs.size() + count);
+    for(Size j=0;j<count; ++j) {
+      attr_idxs[offset_attr_idxs++] = this.getPolygonAttributeIndex(i, j);
+    }
+  }
+}
+
+/// returns the triangle attribute index list as an external array (see :kl-ref:`PolygonMesh.generateAttributesTriangleList`)
+/// \category ImportExportHelpers
+function PolygonMesh.generateAttributesTriangleListAsExternalArray(io UInt32 triangles<>)
+{
+  UInt32 indices[] = this.generateAttributesTriangleList();
+  if(triangles.size() != indices.size()) 
+    return;
+
+  for(Size i=0;i<indices.size();i++)
+    triangles[i] = indices[i];
+}
+
+/// returns the size of the positions attribute
+/// \category ImportExportHelpers
+function Size PolygonMesh.getPositionsAttributeSize()
+{
+  return this.positionsAttribute.size();
+}
+
+/// returns the size of the normals attribute (0 if no normals)
+/// \category ImportExportHelpers
+function Size PolygonMesh.getNormalsAttributeSize()
+{
+  GeometryAttributes attributes = this.getAttributes();
+  Vec3Attribute attr = attributes.getAttribute('normals', Vec3Attribute);
+  if(attr == null)
+    return 0;
+  return attr.size();
+}
+
+/// returns the size of the `uvs0` attribute
+/// \category ImportExportHelpers
+function Size PolygonMesh.getUVAttributeSize()
+{
+  GeometryAttributes attributes = this.getAttributes();
+  Vec2Attribute attr = attributes.getAttribute('uvs0',Vec2Attribute);
+  if(attr == null)
+    return 0;
+  return attr.size();
+}
+
+/// returns the size of the `uvs0` attribute
+/// \category ImportExportHelpers
+function Size PolygonMesh.getVertexColorAttributeSize()
+{
+  GeometryAttributes attributes = this.getAttributes();
+  ColorAttribute attr = attributes.getAttribute('vertexColors',ColorAttribute);
+  if(attr == null)
+    return 0;
+  return attr.size();
+}
+
+/// Returns all attribute values for positions (including split values; see :ref:`polygonmeshattributes`)
+/// The returned values are aligned with attribute indices
+/// \category ImportExportHelpers
+function PolygonMesh.getPositionsAsExternalArrayForTriangle(io Float32 values<>) 
+{
+  Vec3Attribute  positions = this.positionsAttribute;
+  Size offset = 0;
+  for(Size i=0; i<positions.size(); i++)
+  {
+    Vec3 position = positions.values[i];
+    values[offset++] = position.x;
+    values[offset++] = position.y;
+    values[offset++] = position.z;
+  }
+}
+
+/// Returns all attribute values for normals (including split values; see :ref:`polygonmeshattributes`)
+/// The returned values are aligned with attribute indices
+/// \category ImportExportHelpers
+function PolygonMesh.getNormalAsExternalArrayForTriangle(io Float32 values<>) 
+{
+  GeometryAttributes attributes = this.getAttributes();
+  Vec3Attribute  normals = attributes.getAttribute('normals', Vec3Attribute);
+  if(normals == null)
+    return;
+  Size offset = 0;
+  for(Size i=0; i<normals.size(); i++)
+  {
+    // Get the data for the first vertex in the triangle.
+    Vec3 normal = normals.values[i];
+    values[offset++] = normal.x;
+    values[offset++] = normal.y;
+    values[offset++] = normal.z;
+  }
+}
+
+/// Returns all attribute values for UVs (including split values; see :ref:`polygonmeshattributes`)
+/// The returned values are aligned with attribute indices
+/// \category ImportExportHelpers
+function PolygonMesh.getUVAsExternalArrayForTriangle(io Float32 values<>) 
+{
+  GeometryAttributes attributes = this.getAttributes();
+  Vec2Attribute UVs = attributes.getAttribute("uvs0", Vec2Attribute);
+  if(UVs == null)
+    return;
+  Size offset = 0;
+  for(Size i=0; i<UVs.size(); i++)
+  {
+    // Get the data for the first vertex in the triangle.
+    Vec2 uv = UVs.values[i];
+    values[offset++] = uv.x;
+    values[offset++] = uv.y;
+  }
+}
+
+/// Returns all attribute values for Colors (including split values; see :ref:`polygonmeshattributes`)
+/// The returned values are aligned with attribute indices
+/// \category ImportExportHelpers
+function PolygonMesh.getColorAsExternalArrayForTriangle(io Float32 values<>) 
+{
+  GeometryAttributes attributes = this.getAttributes();
+  ColorAttribute vertexColors = attributes.getAttribute("vertexColors", Vec2Attribute);
+  if(vertexColors == null)
+    return;
+  Size offset = 0;
+  for(Size i=0; i<vertexColors.size(); i++)
+  {
+    // Get the data for the first vertex in the triangle.
+    Color color = vertexColors.values[i];
+    values[offset++] = color.r;
+    values[offset++] = color.g;
+    values[offset++] = color.b;
+    values[offset++] = color.a;
+  }
+}
+
+
+/// Gets a scalar attribute as a Float32 array.
+/// The size of `values` should be :kl-ref:`PolygonMesh.polygonPointsCount` * `components`. Values are ordered by 
+/// polygon points (Poly0Point0, Poly0Point1, Poly0Point2, ..., Poly1Point0, Poly1Point1... ).
+/// components is the number of floats in the destination array per value.
+/// \category ImportExportHelpers
+function PolygonMesh.getScalarAttributeAsExternalArray(io Float32 values<>, String attributeName, Size components) {
+  Size sampleCount = (values.size() - values.size() % components) / components;
+  if(sampleCount != this.polygonPointsCount())
+  {
+    setError("getScalarAttributeAsExternalArray: sampleCount doesn't match! ("+sampleCount+" vs. "+this.polygonPointsCount()+").");
+    return;
+  }
+ 
+  Size offset = 0;
+  Ref<ScalarAttribute> attr = this.getAttribute( attributeName , ScalarAttribute);
+  if(attr == null) {
+    setError("getScalarAttributeAsExternalArray: Scalar attribute \""+attributeName+"\" not found!");
+    return;
+  }
+  for(Size i=0;i<this.polygonCount();i++) {
+    Size count = this.getPolygonSize(i);
+    for(UInt32 j=0;j<count;j++) {
+      Size index = this.getPolygonAttributeIndex(i, j);
+      Scalar value = attr.values[index];
+      values[offset] = value;
+      offset += components;
+    }
+  }
+}
+
+
+
+/// Sets a scalar attribute from a Float32 array.
+/// The size of `values` should be :kl-ref:`PolygonMesh.polygonPointsCount` * `components`. Values are ordered by 
+/// polygon points (Poly0Point0, Poly0Point1, Poly0Point2, ..., Poly1Point0, Poly1Point1... ).
+/// components is the number of floats in the source array per value.
+/// \category ImportExportHelpers
+function PolygonMesh.setScalarAttributeFromExternalArray!(Float32 values<>, String attributeName, Size components) {
+  Size sampleCount = (values.size() - values.size() % components) / components;
+  if(sampleCount != this.polygonPointsCount()) {
+    setError("setScalarAttributeFromExternalArray: sampleCount doesn't match! ("+sampleCount+" vs. "+this.polygonPointsCount()+").");
+    return;
+  }
+
+  Size offset = 0;
+  Ref<ScalarAttribute> attr = this.getOrCreateScalarAttribute( attributeName );
+  for(Size i=0;i<this.polygonCount();i++) {
+    Size count = this.getPolygonSize(i);
+    for(UInt32 j=0;j<count;j++) {
+      Scalar value;
+      value = values[offset];
+      offset += components;
+
+      this.setPolygonAttribute( i, j, attr, value );
+    }
+  }
+  attr.incrementVersion();
+}
+
+ /// \internal
+operator PolygonMesh_setScalarPointAttributeFromExternalArray(Index index, Float32 values<>, Size components, io PolygonMesh mesh, io Ref<ScalarAttribute> attr) {
+  mesh.setPointAttribute( index, attr, Scalar(values[index * components]) );
+}
+
+/// Sets a scalar attribute from a Float32 array.
+/// The size of `values` should be :kl-ref:`PolygonMesh.pointCount` * `components`. Values are ordered by 
+/// points (Point0, Point1, Point2, ... ).
+/// components is the number of floats in the source array per value.
+/// \category ImportExportHelpers
+function PolygonMesh.setScalarPointAttributeFromExternalArray!(Float32 values<>, String attributeName, Size components) {
+  PolygonMesh foo = this;
+  Size sampleCount = (values.size() - values.size() % components) / components;
+  if(sampleCount != this.pointCount()) {
+    setError("setScalarPointAttributeFromExternalArray: sampleCount doesn't match! ("+sampleCount+" vs. "+this.pointCount()+").");
+    return;
+  }
+
+  Size offset = 0;
+  Ref<ScalarAttribute> attr = this.getOrCreateScalarAttribute( attributeName );
+  if(sampleCount >= PolygonMesh_ExecuteParallel_Count) {
+    PolygonMesh_setScalarPointAttributeFromExternalArray<<<sampleCount>>>(values, components, foo, attr);
+  } else {
+    for(Size i=0;i<this.pointCount();i++)
+      PolygonMesh_setScalarPointAttributeFromExternalArray(i, values, components, foo, attr);
+  }
+  attr.incrementVersion();
+}
+
+
+
+
+
+
+/// Gets a Vec2 attribute as a Float32 array.
+/// The size of `values` should be :kl-ref:`PolygonMesh.polygonPointsCount` * `components`. Values are ordered by 
+/// polygon points (Poly0Point0, Poly0Point1, Poly0Point2, ..., Poly1Point0, Poly1Point1... ).
+/// components is the number of floats in the destination array per value. Unused floats are left untouched.
+/// \category ImportExportHelpers
+function PolygonMesh.getVec2AttributeAsExternalArray(io Float32 values<>, String attributeName, Size components) {
+  Size sampleCount = (values.size() - values.size() % components) / components;
+  if(sampleCount != this.polygonPointsCount())
+  {
+    setError("getVec2AttributeAsExternalArray: sampleCount doesn't match! ("+sampleCount+" vs. "+this.polygonPointsCount()+").");
+    return;
+  }
+ 
+  Size offset = 0;
+  Ref<Vec2Attribute> attr = this.getAttribute( attributeName , Vec2Attribute);
+  if(attr == null) {
+    setError("getVec2AttributeAsExternalArray: Vec2 attribute \""+attributeName+"\" not found!");
+    return;
+  }
+  for(Size i=0;i<this.polygonCount();i++) {
+    Size count = this.getPolygonSize(i);
+    for(UInt32 j=0;j<count;j++) {
+      Size index = this.getPolygonAttributeIndex(i, j);
+      Vec2 value = attr.values[index];
+      values[offset] = value.x;
+      if(components > 1) 
+  values[offset+1] = value.y;
+      offset += components;
+    }
+  }
+}
+
+
+
+/// Sets a vec2 attribute from a Float32 array.
+/// The size of `values` should be :kl-ref:`PolygonMesh.polygonPointsCount` * `components`. Values are ordered by 
+/// polygon points (Poly0Point0, Poly0Point1, Poly0Point2, ..., Poly1Point0, Poly1Point1... ).
+/// components is the number of floats in the source array per value. 
+/// \category ImportExportHelpers
+function PolygonMesh.setVec2AttributeFromExternalArray!(Float32 values<>, String attributeName, Size components) {
+  Size sampleCount = (values.size() - values.size() % components) / components;
+  if(sampleCount != this.polygonPointsCount()) {
+    setError("setVec2AttributeFromExternalArray: sampleCount doesn't match! ("+sampleCount+" vs. "+this.polygonPointsCount()+").");
+    return;
+  }
+
+  Size offset = 0;
+  Ref<Vec2Attribute> attr = this.getOrCreateVec2Attribute( attributeName );
+  for(Size i=0;i<this.polygonCount();i++) {
+    Size count = this.getPolygonSize(i);
+    for(UInt32 j=0;j<count;j++) {
+      Vec2 value;
+      value.x = values[offset];
+      if(components > 1)
+        value.y = values[offset+1];
+      offset += components;
+
+      this.setPolygonAttribute( i, j, attr, value );
+    }
+  }
+  attr.incrementVersion();
+}
+
+
+ /// \internal
+operator PolygonMesh_setVec2PointAttributeFromExternalArray(Index index, Float32 values<>, Size components, io PolygonMesh mesh, io Ref<Vec2Attribute> attr) {
+  Vec2 v;
+  v.x = values[index * components];
+  if(components > 1)
+    v.y = values[index * components + 1];
+  mesh.setPointAttribute( index, attr, v );
+}
+
+/// Sets a Vec2 attribute from a Float32 array.
+/// The size of `values` should be :kl-ref:`PolygonMesh.pointCount` * `components`. Values are ordered by 
+/// points (Point0, Point1, Point2, ... ).
+/// components is the number of floats in the source array per value.
+/// \category ImportExportHelpers
+function PolygonMesh.setVec2PointAttributeFromExternalArray!(Float32 values<>, String attributeName, Size components) {
+  PolygonMesh foo = this;
+  Size sampleCount = (values.size() - values.size() % components) / components;
+  if(sampleCount != this.pointCount()) {
+    setError("setVec2PointAttributeFromExternalArray: sampleCount doesn't match! ("+sampleCount+" vs. "+this.pointCount()+").");
+    return;
+  }
+
+  Size offset = 0;
+  Ref<Vec2Attribute> attr = this.getOrCreateVec2Attribute( attributeName );
+  if(sampleCount >= PolygonMesh_ExecuteParallel_Count) {
+    PolygonMesh_setVec2PointAttributeFromExternalArray<<<sampleCount>>>(values, components, foo, attr);
+  } else {
+    for(Size i=0;i<this.pointCount();i++)
+      PolygonMesh_setVec2PointAttributeFromExternalArray(i, values, components, foo, attr);
+  }
+  attr.incrementVersion();
+}
+
+
+
+
+/// Gets a Vec3 attribute as a Float32 array.
+/// The size of `values` should be :kl-ref:`PolygonMesh.polygonPointsCount` * `components`. Values are ordered by 
+/// polygon points (Poly0Point0, Poly0Point1, Poly0Point2, ..., Poly1Point0, Poly1Point1... ).
+/// components is the number of floats in the destination array per value.
+/// \category ImportExportHelpers
+function PolygonMesh.getVec3AttributeAsExternalArray(io Float32 values<>, String attributeName, Size components) {
+  Size sampleCount = (values.size() - values.size() % components) / components;
+  if(sampleCount != this.polygonPointsCount())
+  {
+    setError("getVec3AttributeAsExternalArray: sampleCount doesn't match! ("+sampleCount+" vs. "+this.polygonPointsCount()+").");
+    return;
+  }
+ 
+  Size offset = 0;
+  Ref<Vec3Attribute> attr = this.getAttribute( attributeName , Vec3Attribute);
+  if(attr == null) {
+    setError("getVec3AttributeAsExternalArray: Vec3 attribute \""+attributeName+"\" not found!");
+    return;
+  }
+  for(Size i=0;i<this.polygonCount();i++) {
+    Size count = this.getPolygonSize(i);
+    for(UInt32 j=0;j<count;j++) {
+      Size index = this.getPolygonAttributeIndex(i, j);
+      Vec3 value = attr.values[index];
+      values[offset] = value.x;
+      if(components > 1) {
+  values[offset+1] = value.y;
+  if(components > 2)
+    values[offset+2] = value.z;
+      }
+      offset += components;
+    }
+  }
+}
+
+
+
+/// Sets a Vec3 attribute from a Float32 array.
+/// The size of `values` should be :kl-ref:`PolygonMesh.polygonPointsCount` * `components`. Values are ordered by 
+/// polygon points (Poly0Point0, Poly0Point1, Poly0Point2, ..., Poly1Point0, Poly1Point1... ).
+/// components is the number of floats in the source array per value. 
+/// \category ImportExportHelpers
+function PolygonMesh.setVec3AttributeFromExternalArray!(Float32 values<>, String attributeName, Size components) {
+  Size sampleCount = (values.size() - values.size() % components) / components;
+  if(sampleCount != this.polygonPointsCount()) {
+    setError("setVec3AttributeFromExternalArray: sampleCount doesn't match! ("+sampleCount+" vs. "+this.polygonPointsCount()+").");
+    return;
+  }
+
+  Size offset = 0;
+  Ref<Vec3Attribute> attr = this.getOrCreateVec3Attribute( attributeName );
+  for(Size i=0;i<this.polygonCount();i++) {
+    Size count = this.getPolygonSize(i);
+    for(UInt32 j=0;j<count;j++) {
+      Vec3 value;
+      value.x = values[offset];
+      if(components > 1) {
+        value.y = values[offset+1];
+        if(components > 2)
+          value.z = values[offset+2];
+      }
+      offset += components;
+
+      this.setPolygonAttribute( i, j, attr, value );
+    }
+  }
+  attr.incrementVersion();
+}
+
+
+
+
+ /// \internal
+operator PolygonMesh_setVec3PointAttributeFromExternalArray(Index index, Float32 values<>, Size components, io PolygonMesh mesh, io Ref<Vec3Attribute> attr) {
+  Vec3 v;
+  v.x = values[index * components];
+  if(components > 1) {
+    v.y = values[index * components + 1];
+    if(components > 2)
+      v.z = values[index * components + 2];
+  }
+  mesh.setPointAttribute( index, attr, v );
+}
+
+/// Sets a Vec3 attribute from a Float32 array.
+/// The size of `values` should be :kl-ref:`PolygonMesh.pointCount` * `components`. Values are ordered by 
+/// points (Point0, Point1, Point2, ... ).
+/// components is the number of floats in the source array per value.
+/// \category ImportExportHelpers
+function PolygonMesh.setVec3PointAttributeFromExternalArray!(Float32 values<>, String attributeName, Size components) {
+  PolygonMesh foo = this;
+  Size sampleCount = (values.size() - values.size() % components) / components;
+  if(sampleCount != this.pointCount()) {
+    setError("setVec3PointAttributeFromExternalArray: sampleCount doesn't match! ("+sampleCount+" vs. "+this.pointCount()+").");
+    return;
+  }
+
+  Size offset = 0;
+  Ref<Vec3Attribute> attr = this.getOrCreateVec3Attribute( attributeName );
+  if(sampleCount >= PolygonMesh_ExecuteParallel_Count) {
+    PolygonMesh_setVec3PointAttributeFromExternalArray<<<sampleCount>>>(values, components, foo, attr);
+  } else {
+    for(Size i=0;i<this.pointCount();i++)
+      PolygonMesh_setVec3PointAttributeFromExternalArray(i, values, components, foo, attr);
+  }
+  attr.incrementVersion();
+}
+
+
+
+
+
+
+/// Gets a color attribute as a Float32 array.
+/// The size of `values` should be :kl-ref:`PolygonMesh.polygonPointsCount` * `components`. Values are ordered by 
+/// polygon points (Poly0Point0, Poly0Point1, Poly0Point2, ..., Poly1Point0, Poly1Point1... ).
+/// components is the number of floats in the destination array per value.
+/// \category ImportExportHelpers
+function PolygonMesh.getColorAttributeAsExternalArray(io Float32 values<>, String attributeName, Size components) {
+  Size sampleCount = (values.size() - values.size() % components) / components;
+  if(sampleCount != this.polygonPointsCount())
+  {
+    setError("getColorAttributeAsExternalArray: sampleCount doesn't match! ("+sampleCount+" vs. "+this.polygonPointsCount()+").");
+    return;
+  }
+ 
+  Size offset = 0;
+  Ref<ColorAttribute> attr = this.getAttribute( attributeName , ColorAttribute);
+  if(attr == null) {
+    setError("getColorAttributeAsExternalArray: Color attribute \""+attributeName+"\" not found!");
+    return;
+  }
+  for(Size i=0;i<this.polygonCount();i++) {
+    Size count = this.getPolygonSize(i);
+    for(UInt32 j=0;j<count;j++) {
+      Size index = this.getPolygonAttributeIndex(i, j);
+      Color value = attr.values[index];
+      values[offset] = value.r;
+      if(components > 1) {
+        values[offset+1] = value.g;
+        if(components > 2) {
+          values[offset+2] = value.b;
+          if(components > 3)
+           values[offset+3] = value.a;
+        }
+      }
+      offset += components;
+    }
+  }
+}
+
+
+
+/// Sets a color attribute from a Float32 array.
+/// The size of `values` should be :kl-ref:`PolygonMesh.polygonPointsCount` * `components`. Values are ordered by 
+/// polygon points (Poly0Point0, Poly0Point1, Poly0Point2, ..., Poly1Point0, Poly1Point1... ).
+/// components is the number of floats in the source array per value. Unused floats are left untouched.
+/// \category ImportExportHelpers
+function PolygonMesh.setColorAttributeFromExternalArray!(Float32 values<>, String attributeName, Size components) {
+  Size sampleCount = (values.size() - values.size() % components) / components;
+  if(sampleCount != this.polygonPointsCount()) {
+    setError("setColorAttributeFromExternalArray: sampleCount doesn't match! ("+sampleCount+" vs. "+this.polygonPointsCount()+").");
+    return;
+  }
+
+  Size offset = 0;
+  Ref<ColorAttribute> attr = this.getOrCreateColorAttribute( attributeName );
+  for(Size i=0;i<this.polygonCount();i++) {
+    Size count = this.getPolygonSize(i);
+    for(UInt32 j=0;j<count;j++) {
+      Color value;
+      value.r = values[offset];
+      if(components > 1) {
+        value.g = values[offset+1];
+        if(components > 2) {
+          value.b = values[offset+2];
+          if(components > 3) 
+            value.a = values[offset+3];
+        }
+      }
+      offset += components;
+
+      this.setPolygonAttribute( i, j, attr, value );
+    }
+  }
+  attr.incrementVersion();
+}
+
+
+
+
+ /// \internal
+operator PolygonMesh_setColorPointAttributeFromExternalArray(Index index, Float32 values<>, Size components, io PolygonMesh mesh, io Ref<ColorAttribute> attr) {
+  Color v;
+  v.r = values[index * components];
+  if(components > 1) {
+    v.g = values[index * components + 1];
+    if(components > 2) {
+      v.b = values[index * components + 2];
+      if(components > 3)
+        v.a = values[index * components + 3];
+    }
+  }
+  mesh.setPointAttribute( index, attr, v );
+}
+
+/// Sets a Color attribute from a Float32 array.
+/// The size of `values` should be :kl-ref:`PolygonMesh.pointCount` * `components`. Values are ordered by 
+/// points (Point0, Point1, Point2, ... ).
+/// components is the number of floats in the source array per value.
+/// \category ImportExportHelpers
+function PolygonMesh.setColorPointAttributeFromExternalArray!(Float32 values<>, String attributeName, Size components) {
+  PolygonMesh foo = this;
+  Size sampleCount = (values.size() - values.size() % components) / components;
+  if(sampleCount != this.pointCount()) {
+    setError("setColorPointAttributeFromExternalArray: sampleCount doesn't match! ("+sampleCount+" vs. "+this.pointCount()+").");
+    return;
+  }
+
+  Size offset = 0;
+  Ref<ColorAttribute> attr = this.getOrCreateColorAttribute( attributeName );
+  if(sampleCount >= PolygonMesh_ExecuteParallel_Count) {
+    PolygonMesh_setColorPointAttributeFromExternalArray<<<sampleCount>>>(values, components, foo, attr);
+  } else {
+    for(Size i=0;i<this.pointCount();i++)
+      PolygonMesh_setColorPointAttributeFromExternalArray(i, values, components, foo, attr);
+  }
+  attr.incrementVersion();
+}
+
+
+
+
+
+
+
+
+/// Gets a skinning attribute as a Float32 array.
+/// The size of `values` should be :kl-ref:`PolygonMesh.pointCount` * `bones`. Values are ordered by 
+///  points (Point0, Point1, Point2... ).
+/// bones is the number of bones, so the number of floats in the destination array per point.
+/// \category ImportExportHelpers
+function PolygonMesh.getSkinningAttributeAsExternalArray(io Float32 values<>, String attributeName, Size bones) {
+  Size sampleCount = (values.size() - values.size() % bones) / bones;
+  if(sampleCount != this.pointCount())
+  {
+    setError("getSkinningAttributeAsExternalArray: sampleCount doesn't match! ("+sampleCount+" vs. "+this.pointCount()+").");
+    return;
+  }
+ 
+  Size offset = 0;
+  Ref<SkinningAttribute> attr = this.getAttribute( attributeName, SkinningAttribute );
+  if(attr == null) {
+    setError("getSkinningAttributeAsExternalArray: Skinning attribute \""+attributeName+"\" not found!");
+    return;
+  }
+
+  Scalar weight;
+  UInt16 id;
+  for(Size i=0;i<this.pointCount();i++) {
+    for( Size j = 0; j < bones; ++j ) values[offset+j] = 0.0;
+    for( Size j = 0; j < attr.getPairCount(0); ++j ) {
+      attr.getPair( i, j, id, weight );
+      if(id < bones) values[offset+id] = weight;
+    }
+    offset += bones;
+  }
+}
+
+
+
+/// Sets a skinning attribute from a Float32 array.
+/// The size of `values` should be :kl-ref:`PolygonMesh.pointCount` * `bones`. Values are ordered by 
+///  points then bones(Point0Bone0, Point0Bone1, Point0Bone2, ..., Point1Bone0, Point1Bone1... ).
+/// bones is the number of floats in the source array per value. 
+/// \category ImportExportHelpers
+function PolygonMesh.setSkinningAttributeFromExternalArray!(Float32 values<>, String attributeName, Size bones) {
+  Size sampleCount = (values.size() - values.size() % bones) / bones;
+  if(sampleCount != this.pointCount()) {
+    setError("setSkinnigAttributeFromExternalArray: sampleCount doesn't match! ("+sampleCount+" vs. "+this.pointCount()+").");
+    return;
+  }
+
+  Size offset = 0;
+  Ref<SkinningAttribute> attr = this.getOrCreateSkinningAttribute( attributeName );
+  for(Size i=0;i<this.pointCount();i++) {
+    LocalL16UInt32Array indices;
+    LocalL16ScalarArray weights;
+
+    for( Size j = 0; j < bones; ++j ) {
+      if( values[offset+j] > 0.0 ) {
+        indices.push(j);
+        weights.push(values[offset+j]);
+      }
+    }
+    this.setPointAttribute( i, attr, indices, weights );
+    offset += bones;
+  }
+  attr.incrementVersion();
+}
+
+
+
+
+ /// \internal
+operator PolygonMesh_setSkinningPointAttributeFromExternalArray(Index index, Float32 values<>, Size bones, io PolygonMesh mesh, io Ref<SkinningAttribute> attr) {
+  LocalL16UInt32Array indices;
+  LocalL16ScalarArray weights;
+  
+  Size offset = index * bones;
+  for( Size j = 0; j < bones; ++j ) {
+    if( values[offset+j] > 0.0 ) {
+      indices.push(j);
+      weights.push(values[offset+j]);
+    }
+  }
+  mesh.setPointAttribute( index, attr, indices, weights );
+}
+
+/// Sets a Skinning attribute from a Float32 array.
+/// The size of `values` should be :kl-ref:`PolygonMesh.pointCount` * `bones`. Values are ordered by 
+///  points then bones(Point0Bone0, Point0Bone1, Point0Bone2, ..., Point1Bone0, Point1Bone1... ).
+/// bones is the number of floats in the source array per value. 
+/// \category ImportExportHelpers
+function PolygonMesh.setSkinningPointAttributeFromExternalArray!(Float32 values<>, String attributeName, Size bones) {
+  PolygonMesh foo = this;
+  Size sampleCount = (values.size() - values.size() % bones) / bones;
+  if(sampleCount != this.pointCount()) {
+    setError("setSkinningPointAttributeFromExternalArray: sampleCount doesn't match! ("+sampleCount+" vs. "+this.pointCount()+").");
+    return;
+  }
+
+  Ref<SkinningAttribute> attr = this.getOrCreateSkinningAttribute( attributeName );
+  if(sampleCount >= PolygonMesh_ExecuteParallel_Count) {
+    PolygonMesh_setSkinningPointAttributeFromExternalArray<<<sampleCount>>>(values, bones, foo, attr);
+  } else {
+    for(Size i=0;i<this.pointCount();i++)
+      PolygonMesh_setSkinningPointAttributeFromExternalArray(i, values, bones, foo, attr);
+  }
+  attr.incrementVersion();
+}
+
+/// \dfgPresetOmit
+function PolygonMesh.setTextureReference!(Ref<PolygonMesh> referenceMesh)
+{
+  if(this.pointCount() != referenceMesh.pointCount())
+    return;
+
+  GeometryAttributes thisAttributes = this.getAttributes();
+  GeometryAttributes thatAttributes = referenceMesh.getAttributes();
+
+  Ref<Vec3Attribute> positionsAttribute = thatAttributes.getOrCreateVec3Attribute('positions');
+  Ref<Vec3Attribute> textureRefsAttribute = thisAttributes.getOrCreateVec3Attribute('textureRefs');
+
+  for(Size i=0;i<this.pointCount();i++)
+  {
+    this.setPointAttribute(i, textureRefsAttribute, positionsAttribute.values[i]);
+  }
+  textureRefsAttribute.incrementVersion();
+}
+
+/// \dfgPresetOmit
+function PolygonMesh.setTextureReference!()
+{
+  this.setTextureReference(this);
+}
+
+function Boolean PolygonMesh.hasTextureReference!()
+{
+  return this.has('textureRefs');  
+}
+
+/// \dfgPresetOmit
+function PolygonMesh PolygonMesh.createTextureReferenceMesh()
+{
+  PolygonMesh referenceMesh = this.clone();
+
+  Ref<Vec3Attribute> positionsAttribute = referenceMesh.getAttribute('positions');
+  Ref<Vec3Attribute> textureRefsAttribute = this.getAttribute('textureRefs');
+  if(textureRefsAttribute)
+  {
+    for(Size i=0;i<referenceMesh.pointCount();i++)
+      referenceMesh.setPointPosition(i, textureRefsAttribute.values[i]);
+    positionsAttribute.incrementVersion();
+  }
+  return referenceMesh;
+}

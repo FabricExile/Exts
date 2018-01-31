@@ -1,0 +1,910 @@
+//
+// Copyright (c) 2010-2017 Fabric Software Inc. All rights reserved.
+//
+/**
+The :kl-ref:`Mat44_d` represents a 4 by 4 matrix. It uses :kl-ref:`Vec4_d` types for each of the 4 rows.
+
+\rst
+  .. kl-example:: Mat44_d
+
+    // create a matrix 4x4
+    Vec4_d v0(1.0, 0.0, 0.0, 0.0);
+    Vec4_d v1(0.0, 1.0, 0.0, 0.0);
+    Vec4_d v2(0.0, 0.0, 1.0, 0.0);
+    Vec4_d v3(0.0, 0.0, 0.0, 1.0);
+    Mat44_d mat(v0, v1, v2, v3);
+
+
+  Fabric Engine Matrices are column-major rather than row-major
+  --------------------------------------------------------------
+  Most DCCs follow a row-major convention for expressing their matrices which implies that
+  multiplication of matrices occurs in the opposite order to those in Fabric Engine.
+
+  In Maya, to transform a point (P) by a matrix (WM), you would post-multiply the vector by the matrix 
+  by placing it on the left side of the matrix. 
+
+   (P' = P x WM)
+
+  In Fabric Engine, to transform a point (P) by a matrix (WM), you would post-multiply it by placing it on the right hand side of the matrix.
+
+   (P' = WM x P)
+
+  When multiplying matrices together, the order of the matrices is also swapped when compared to Maya.
+
+  To Transform a Matrix (M) into the space of a another matrix (WM), you would place the L on the right hand side of WM
+
+  (M' = WM x M)
+
+  In Maya and 3dsmax, the order of the matrices in the multiplication would be swapped. 
+
+  (M' = M x WM)
+
+\endrst
+
+
+\seealso Xfo, Mat33_d
+\dfgTypeColor Color(249, 157, 28)
+\dfgPresetColor Color(99, 129, 92)
+*/
+
+struct Mat44_d
+{
+  Vec4_d row0;
+  Vec4_d row1;
+  Vec4_d row2;
+  Vec4_d row3;
+};
+
+inline Mat44_d(){
+  this.setIdentity();
+}
+
+/// Constructor from scalars
+/// \dfgPresetDefault _00 1
+/// \dfgPresetDefault _11 1
+/// \dfgPresetDefault _22 1
+/// \dfgPresetDefault _33 1
+inline Mat44_d(
+  Float64 _00, Float64 _01, Float64 _02, Float64 _03,
+  Float64 _10, Float64 _11, Float64 _12, Float64 _13,
+  Float64 _20, Float64 _21, Float64 _22, Float64 _23,
+  Float64 _30, Float64 _31, Float64 _32, Float64 _33) {
+  this.set(_00, _01, _02, _03, _10, _11, _12, _13, _20, _21, _22, _23, _30, _31, _32, _33);
+}
+
+/// Constructor from vectors
+inline Mat44_d(in Vec4_d row0, in Vec4_d row1, in Vec4_d row2, in Vec4_d row3) {
+  this.setRows(row0, row1, row2, row3);
+}
+
+/// Constructor from Mat33
+inline Mat44_d(in Mat33_d upperLeft) {
+  this.setUpperLeft(upperLeft);
+  this.row3.t = 1;
+}
+
+/// Sets each component with a single scalar value.
+inline Mat44_d.set!(
+  Float64 _00, Float64 _01, Float64 _02, Float64 _03,
+  Float64 _10, Float64 _11, Float64 _12, Float64 _13,
+  Float64 _20, Float64 _21, Float64 _22, Float64 _23,
+  Float64 _30, Float64 _31, Float64 _32, Float64 _33
+) {
+  this.row0 = Vec4_d(_00, _01, _02, _03);
+  this.row1 = Vec4_d(_10, _11, _12, _13);
+  this.row2 = Vec4_d(_20, _21, _22, _23);
+  this.row3 = Vec4_d(_30, _31, _32, _33);
+}
+
+/// Setter from (standard/external) float32 array and an offset
+inline Mat44_d.set!(Float32 v<>, UInt32 o) {
+  if(v.size() >= 16 + o) {
+    this.row0.set(v, o + 0);
+    this.row1.set(v, o + 4);
+    this.row2.set(v, o + 8);
+    this.row3.set(v, o + 12);
+  }
+}
+
+/// Getter as external float32 array and an offset
+inline Mat44_d.get(io Float32 v<>, UInt32 o) {
+  if(v.size() >= 16 + o) {
+    this.row0.get(v, o + 0);
+    this.row1.get(v, o + 4);
+    this.row2.get(v, o + 8);
+    this.row3.get(v, o + 12);
+  }
+}
+
+/// Getter as float32 array and an offset
+inline Mat44_d.get(io Float32 v[], UInt32 o) {
+  if(v.size() < 16 + o)
+    v.resize(16 + o);
+  this.row0.get(v, o + 0);
+  this.row1.get(v, o + 4);
+  this.row2.get(v, o + 8);
+  this.row3.get(v, o + 12);
+}
+
+/// Setter from (standard/external) float64 array and an offset
+inline Mat44_d.set!(Float64 v<>, UInt32 o) {
+  if(v.size() >= 16 + o) {
+    this.row0.set(v, o + 0);
+    this.row1.set(v, o + 4);
+    this.row2.set(v, o + 8);
+    this.row3.set(v, o + 12);
+  }
+}
+
+/// Getter as external float64 array and an offset
+inline Mat44_d.get(io Float64 v<>, UInt32 o) {
+  if(v.size() >= 16 + o) {
+    this.row0.get(v, o + 0);
+    this.row1.get(v, o + 4);
+    this.row2.get(v, o + 8);
+    this.row3.get(v, o + 12);
+  }
+}
+
+/// Get to an external array, transposing in the process
+inline Mat44_d.getTr?(io Float64 v<>) {
+  v[ 0] = this.row0.x; v[ 1] = this.row1.x; v[ 2] = this.row2.x; v[ 3] = this.row3.x;
+  v[ 4] = this.row0.y; v[ 5] = this.row1.y; v[ 6] = this.row2.y; v[ 7] = this.row3.y;
+  v[ 8] = this.row0.z; v[ 9] = this.row1.z; v[10] = this.row2.z; v[11] = this.row3.z;
+  v[12] = this.row0.t; v[13] = this.row1.t; v[14] = this.row2.t; v[15] = this.row3.t;
+}
+
+/// Set from an external array, transposing in the process
+inline Mat44_d.setTr!(Float64 v<>) {
+  this.row0.x = Float64(v[ 0]);
+  this.row1.x = Float64(v[ 1]);
+  this.row2.x = Float64(v[ 2]);
+  this.row3.x = Float64(v[ 3]);
+  this.row0.y = Float64(v[ 4]);
+  this.row1.y = Float64(v[ 5]);
+  this.row2.y = Float64(v[ 6]);
+  this.row3.y = Float64(v[ 7]);
+  this.row0.z = Float64(v[ 8]);
+  this.row1.z = Float64(v[ 9]);
+  this.row2.z = Float64(v[10]);
+  this.row3.z = Float64(v[11]);
+  this.row0.t = Float64(v[12]);
+  this.row1.t = Float64(v[13]);
+  this.row2.t = Float64(v[14]);
+  this.row3.t = Float64(v[15]);
+}
+
+/// Getter as float64 array and an offset
+inline Mat44_d.get(io Float64 v[], UInt32 o) {
+  if(v.size() < 16 + o)
+    v.resize(16 + o);
+  this.row0.get(v, o + 0);
+  this.row1.get(v, o + 4);
+  this.row2.get(v, o + 8);
+  this.row3.get(v, o + 12);
+}
+
+/// Setter from (standard/external) float32 array
+inline Mat44_d.set!(Float32 v<>) {
+  this.set(v, 0);
+}
+
+/// Getter as external float32 array
+inline Mat44_d.get(io Float32 v<>) {
+  this.get(v, 0);
+}
+
+/// Getter as float32 array
+inline Mat44_d.get(io Float32 v[]) {
+  this.get(v, 0);
+}
+
+/// Setter from (standard/external) float64 array
+inline Mat44_d.set!(Float64 v<>) {
+  this.set(v, 0);
+}
+
+/// Getter as external float64 array
+inline Mat44_d.get(io Float64 v<>) {
+  this.get(v, 0);
+}
+
+/// Getter as float64 array
+inline Mat44_d.get(io Float64 v[]) {
+  this.get(v, 0);
+}
+
+inline Mat44_d.set!(Vec3_d translation, Mat33_d rotation, Vec3_d scaling) {
+  this.setTranslation(translation);
+  this.setUpperLeft(rotation);
+  this.setScaling(scaling);
+}
+
+/// \param shearing Shearing vector as  {x shearing along y, x shearing along z, y shearing along z}.
+inline Mat44_d.set!(Vec3_d translation, Mat33_d rotation, Vec3_d shearing, Vec3_d scaling) {
+  Mat33_d scaleShear( 
+            scaling.x, shearing.x*scaling.y, shearing.y*scaling.z,
+            0,                    scaling.y, shearing.z*scaling.z,
+            0,                            0,            scaling.z );
+
+  this.setUpperLeft(rotation * scaleShear);
+  this.setTranslation(translation);
+}
+
+inline Mat44_d.set!(Vec3_d translation, Quat_d rotation, Vec3_d scaling) {
+  this.setTranslation(translation);
+  this.setRotation(rotation);
+  this.setScaling(scaling);
+}
+
+/// \param shearing Shearing vector as  {x shearing along y, x shearing along z, y shearing along z}.
+inline Mat44_d.set!(Vec3_d translation, Quat_d rotation, Vec3_d shearing, Vec3_d scaling) {
+  this.set( translation, rotation.toMat33_d(), shearing, scaling );
+}
+
+
+/// set the upper left 3 x 3 components from a Mat33_d.
+/// the remaining components are set to the identify matrix's content.
+inline Mat44_d.setFromMat33_d!(in Mat33_d m) {
+  this.row0.x = m.row0.x; this.row0.y = m.row0.y; this.row0.z = m.row0.z; this.row0.t = Float64();
+  this.row1.x = m.row1.x; this.row1.y = m.row1.y; this.row1.z = m.row1.z; this.row1.t = Float64();
+  this.row2.x = m.row2.x; this.row2.y = m.row2.y; this.row2.z = m.row2.z; this.row2.t = Float64();
+  this.row3.x = Float64(); this.row3.y = Float64(); this.row3.z = Float64(); this.row3.t = Float64(1.0);
+}
+
+
+/// Setter from vectors, row-wise
+inline Mat44_d.setRows!(in Vec4_d row0, in Vec4_d row1, in Vec4_d row2, in Vec4_d row3) {
+  this.row0 = row0;
+  this.row1 = row1;
+  this.row2 = row2;
+  this.row3 = row3;
+}
+
+/// Setter from vectors, column-wise
+inline Mat44_d.setColumns!(in Vec4_d col0, in Vec4_d col1, in Vec4_d col2, in Vec4_d col3) {
+  this.row0.x = col0.x; this.row0.y = col1.x; this.row0.z = col2.x; this.row0.t = col3.x;
+  this.row1.x = col0.y; this.row1.y = col1.y; this.row1.z = col2.y; this.row1.t = col3.y;
+  this.row2.x = col0.z; this.row2.y = col1.z; this.row2.z = col2.z; this.row2.t = col3.z;
+  this.row3.x = col0.t; this.row3.y = col1.t; this.row3.z = col2.t; this.row3.t = col3.t;
+}
+
+/// setting all components of the matrix to 0.0
+inline Mat44_d.setNull!() {
+  Vec4_d nullVec4_d(Float64(), Float64(), Float64(), Float64());
+  this.row0 = this.row1 = this.row2 = this.row3 = nullVec4_d;
+}
+
+/// returns true if all components in this matrix are 0.0
+inline Boolean Mat44_d.isNull() {
+  Vec4_d nullVec4_d(Float64(), Float64(), Float64(), Float64());
+  return this.row0 == nullVec4_d && this.row1 == nullVec4_d && this.row2 == nullVec4_d && this.row3 == nullVec4_d;
+}
+
+/// setting this matrix to the identity matrix
+inline Mat44_d.setIdentity!() {
+  this.setNull();
+  this.setDiagonal(Float64(1.0));
+}
+
+/// setting the diagonal components of 
+/// this matrix to a scalar
+inline Mat44_d.setDiagonal!(in Float64 v) {
+  this.setNull();
+  this.row0.x = this.row1.y = this.row2.z = this.row3.t = v;
+}
+
+/// setting the diagonal components of this
+/// matrix to the components of a Vec3_d
+inline Mat44_d.setDiagonal!(in Vec3_d v) {
+  this.setNull();
+  this.row0.x = v.x;
+  this.row1.y = v.y;
+  this.row2.z = v.z;
+  this.row3.t = Float64(1.0);
+}
+
+/// matrix to the components of a Vec4_d
+inline Mat44_d.setDiagonal!(in Vec4_d v) {
+  this.setNull();
+  this.row0.x = v.x;
+  this.row1.y = v.y;
+  this.row2.z = v.z;
+  this.row3.t = v.t;
+}
+
+/// Returns true if this matrix is the same as another one
+inline Boolean Mat44_d.equal(in Mat44_d other) {
+  return this.row0.equal( other.row0 ) && this.row1.equal( other.row1 ) && this.row2.equal( other.row2 ) && this.row3.equal( other.row3 );
+}
+
+/// Returns true if this matrix is almost the same as another one
+/// (given a precision)
+inline Boolean Mat44_d.almostEqual(
+  in Mat44_d other,
+  in Float64 precision
+  ) {
+  return this.row0.almostEqual( other.row0, precision ) && this.row1.almostEqual( other.row1, precision ) && this.row2.almostEqual( other.row2, precision ) && this.row3.almostEqual( other.row3, precision );
+}
+
+/// Returns true if this matrix is almost the same as another one
+/// (using a default precision)
+inline Boolean Mat44_d.almostEqual(in Mat44_d other) {
+  return this.almostEqual(other, PRECISION);
+}
+
+/// Equals operator
+inline Boolean == (Mat44_d a, Mat44_d b) {
+  return a.equal(b);
+}
+
+/// Not equals operator
+inline Boolean != (Mat44_d a, Mat44_d b) {
+  return !a.equal(b);
+}
+
+/// Hash for this value
+inline UInt32 Mat44_d.hash() {
+  return this.row0.hash() ^ this.row1.hash() ^ this.row2.hash() ^ this.row3.hash();
+}
+
+/// Returns the addition of two matrices
+inline Mat44_d + (Mat44_d a, Mat44_d b) {
+  return Mat44_d( a.row0 + b.row0, a.row1 + b.row1, a.row2 + b.row2, a.row3 + b.row3 );
+}
+
+/// Adds another matrix to this one
+inline Mat44_d. += (Mat44_d other) {
+  this = this + other;
+}
+
+/// Returns the subtraction of two matrices
+inline Mat44_d - (Mat44_d a, Mat44_d b) {
+  return Mat44_d( a.row0 - b.row0, a.row1 - b.row1, a.row2 - b.row2, a.row3 - b.row3 );
+}
+
+/// Subtracts another matrix from this one
+inline Mat44_d. -= (Mat44_d other) {
+  this = this - other;
+}
+
+/// Returns the product of two matrices
+/// \dfgPresetDefault right {"row0": {"x": 1, "y": 0, "z": 0, "t": 0}, "row1": { "x": 0, "y": 1, "z": 0, "t": 0}, "row2": { "x": 0, "y": 0, "z": 1, "t": 0}, "row3": { "x": 0, "y": 0, "z": 0, "t": 1}}
+inline Mat44_d * (Mat44_d left, Mat44_d right) {
+  Mat44_d result;
+
+  result.row0.x = left.row0.x * right.row0.x + left.row0.y * right.row1.x + left.row0.z * right.row2.x + left.row0.t * right.row3.x;
+  result.row0.y = left.row0.x * right.row0.y + left.row0.y * right.row1.y + left.row0.z * right.row2.y + left.row0.t * right.row3.y;
+  result.row0.z = left.row0.x * right.row0.z + left.row0.y * right.row1.z + left.row0.z * right.row2.z + left.row0.t * right.row3.z;
+  result.row0.t = left.row0.x * right.row0.t + left.row0.y * right.row1.t + left.row0.z * right.row2.t + left.row0.t * right.row3.t;
+
+  result.row1.x = left.row1.x * right.row0.x + left.row1.y * right.row1.x + left.row1.z * right.row2.x + left.row1.t * right.row3.x;
+  result.row1.y = left.row1.x * right.row0.y + left.row1.y * right.row1.y + left.row1.z * right.row2.y + left.row1.t * right.row3.y;
+  result.row1.z = left.row1.x * right.row0.z + left.row1.y * right.row1.z + left.row1.z * right.row2.z + left.row1.t * right.row3.z;
+  result.row1.t = left.row1.x * right.row0.t + left.row1.y * right.row1.t + left.row1.z * right.row2.t + left.row1.t * right.row3.t;
+
+  result.row2.x = left.row2.x * right.row0.x + left.row2.y * right.row1.x + left.row2.z * right.row2.x + left.row2.t * right.row3.x;
+  result.row2.y = left.row2.x * right.row0.y + left.row2.y * right.row1.y + left.row2.z * right.row2.y + left.row2.t * right.row3.y;
+  result.row2.z = left.row2.x * right.row0.z + left.row2.y * right.row1.z + left.row2.z * right.row2.z + left.row2.t * right.row3.z;
+  result.row2.t = left.row2.x * right.row0.t + left.row2.y * right.row1.t + left.row2.z * right.row2.t + left.row2.t * right.row3.t;
+
+  result.row3.x = left.row3.x * right.row0.x + left.row3.y * right.row1.x + left.row3.z * right.row2.x + left.row3.t * right.row3.x;
+  result.row3.y = left.row3.x * right.row0.y + left.row3.y * right.row1.y + left.row3.z * right.row2.y + left.row3.t * right.row3.y;
+  result.row3.z = left.row3.x * right.row0.z + left.row3.y * right.row1.z + left.row3.z * right.row2.z + left.row3.t * right.row3.z;
+  result.row3.t = left.row3.x * right.row0.t + left.row3.y * right.row1.t + left.row3.z * right.row2.t + left.row3.t * right.row3.t;
+
+  return result;
+}
+
+/// Returns the product of a matrix and a Vec4_d
+inline Vec4_d * (Mat44_d mat44, Vec4_d vec4) {
+  return Vec4_d(
+    mat44.row0.x * vec4.x + mat44.row0.y * vec4.y + mat44.row0.z * vec4.z + mat44.row0.t * vec4.t,
+    mat44.row1.x * vec4.x + mat44.row1.y * vec4.y + mat44.row1.z * vec4.z + mat44.row1.t * vec4.t,
+    mat44.row2.x * vec4.x + mat44.row2.y * vec4.y + mat44.row2.z * vec4.z + mat44.row2.t * vec4.t,
+    mat44.row3.x * vec4.x + mat44.row3.y * vec4.y + mat44.row3.z * vec4.z + mat44.row3.t * vec4.t
+  );
+}
+
+/// Returns the product of a matrix and a Vec3_d
+inline Vec3_d * (Mat44_d mat44, Vec3_d vec3) {
+  const Float64 one = 1;
+  Vec4_d temp = mat44 * Vec4_d(vec3.x, vec3.y, vec3.z, one);
+  return temp.makeHomogeneousVec3_d();
+}
+
+/// Returns the product of a matrix and a scalar
+/// \dfgPresetDefault s 1
+inline Mat44_d * (Mat44_d mat44, Float64 s) {
+  return Mat44_d( mat44.row0 * s, mat44.row1 * s, mat44.row2 * s, mat44.row3 * s );
+}
+
+/// Returns the product of a scalar and a matrix
+/// \dfgPresetDefault s 1
+inline Mat44_d * (Float64 s, Mat44_d mat44) {
+  return Mat44_d( mat44.row0 * s, mat44.row1 * s, mat44.row2 * s, mat44.row3 * s );
+}
+
+/// Multiplies this matrix with another one
+/// \dfgPresetDefault other {"row0": {"x": 1, "y": 0, "z": 0, "t": 0}, "row1": { "x": 0, "y": 1, "z": 0, "t": 0}, "row2": { "x": 0, "y": 0, "z": 1, "t": 0}, "row3": { "x": 0, "y": 0, "z": 0, "t": 1}}
+inline Mat44_d. *= (Mat44_d other) {
+  this = this * other;
+}
+
+/// Multiplies this matrix with a scalar
+/// \dfgPresetDefault other 1
+inline Mat44_d. *= (Float64 other) {
+  this = this * other;
+}
+
+/// Returns the division of a matrix and a scalar
+/// \dfgPresetDefault s 1
+inline Mat44_d / (Mat44_d mat44, Float64 s) {
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( s ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( s, "Mat44_d.divide" );
+  return mat44 * (1.0 / s);
+}
+
+/// Divides this matrix by a scalar
+/// \dfgPresetDefault other 1
+inline Mat44_d. /= (Float64 other) {
+  this = this / other;
+}
+
+/// Overload method for the add operator
+inline Mat44_d Mat44_d.add(Mat44_d other) {
+  return this + other;
+}
+
+/// Overload method for the subtract operator
+inline Mat44_d Mat44_d.subtract(Mat44_d other) {
+  return this - other;
+}
+
+/// Overload method for the multiply operator
+/// \dfgPresetDefault other {"row0": {"x": 1, "y": 0, "z": 0, "t": 0}, "row1": { "x": 0, "y": 1, "z": 0, "t": 0}, "row2": { "x": 0, "y": 0, "z": 1, "t": 0}, "row3": { "x": 0, "y": 0, "z": 0, "t": 1}}
+inline Mat44_d Mat44_d.multiply(Mat44_d other) {
+  return this * other;
+}
+
+/// Returns the product of this matrix and a scalar
+/// \dfgPresetDefault other 1
+inline Mat44_d Mat44_d.multiplyFloat64(Float64 other) {
+  return this * other;
+}
+
+/// Returns the product of this matrix and a Vec3_d
+inline Vec3_d Mat44_d.multiplyVector3(Vec3_d other) {
+  return this * other;
+}
+
+/// Returns the product of this matrix and a Vec4_d
+inline Vec4_d Mat44_d.multiplyVector4(Vec4_d other) {
+  return this * other;
+}
+
+/// Returns the division of this matrix and a scalar
+/// \dfgPresetDefault other 1
+inline Mat44_d Mat44_d.divideFloat64(Float64 other) {
+  return this / other;
+}
+
+/// helper function for determinant and adjoint
+/// \internal
+function Boolean Mat44_d.internalCompute( in Boolean computeDet, io Float64 det, in Boolean computeAdjoint, io Mat44_d adjoint ) {
+  Float64 a0 = this.row0.x * this.row1.y - this.row0.y * this.row1.x;
+  Float64 a1 = this.row0.x * this.row1.z - this.row0.z * this.row1.x;
+  Float64 a2 = this.row0.x * this.row1.t - this.row0.t * this.row1.x;
+  Float64 a3 = this.row0.y * this.row1.z - this.row0.z * this.row1.y;
+  Float64 a4 = this.row0.y * this.row1.t - this.row0.t * this.row1.y;
+  Float64 a5 = this.row0.z * this.row1.t - this.row0.t * this.row1.z;
+  Float64 b0 = this.row2.x * this.row3.y - this.row2.y * this.row3.x;
+  Float64 b1 = this.row2.x * this.row3.z - this.row2.z * this.row3.x;
+  Float64 b2 = this.row2.x * this.row3.t - this.row2.t * this.row3.x;
+  Float64 b3 = this.row2.y * this.row3.z - this.row2.z * this.row3.y;
+  Float64 b4 = this.row2.y * this.row3.t - this.row2.t * this.row3.y;
+  Float64 b5 = this.row2.z * this.row3.t - this.row2.t * this.row3.z;
+
+  if(computeDet)
+    det = a0 * b5 - a1 * b4 + a2 * b3 + a3 * b2 - a4 * b1 + a5 * b0;
+
+  if(computeAdjoint) {
+    adjoint.row0.x =  + this.row1.y * b5 - this.row1.z * b4 + this.row1.t * b3;
+    adjoint.row0.y = -this.row0.y * b5 + this.row0.z * b4 - this.row0.t * b3;
+    adjoint.row0.z =  + this.row3.y * a5 - this.row3.z * a4 + this.row3.t * a3;
+    adjoint.row0.t = -this.row2.y * a5 + this.row2.z * a4 - this.row2.t * a3;
+    adjoint.row1.x = -this.row1.x * b5 + this.row1.z * b2 - this.row1.t * b1;
+    adjoint.row1.y =  + this.row0.x * b5 - this.row0.z * b2 + this.row0.t * b1;
+    adjoint.row1.z = -this.row3.x * a5 + this.row3.z * a2 - this.row3.t * a1;
+    adjoint.row1.t =  + this.row2.x * a5 - this.row2.z * a2 + this.row2.t * a1;
+    adjoint.row2.x =  + this.row1.x * b4 - this.row1.y * b2 + this.row1.t * b0;
+    adjoint.row2.y = -this.row0.x * b4 + this.row0.y * b2 - this.row0.t * b0;
+    adjoint.row2.z =  + this.row3.x * a4 - this.row3.y * a2 + this.row3.t * a0;
+    adjoint.row2.t = -this.row2.x * a4 + this.row2.y * a2 - this.row2.t * a0;
+    adjoint.row3.x = -this.row1.x * b3 + this.row1.y * b1 - this.row1.z * b0;
+    adjoint.row3.y =  + this.row0.x * b3 - this.row0.y * b1 + this.row0.z * b0;
+    adjoint.row3.z = -this.row3.x * a3 + this.row3.y * a1 - this.row3.z * a0;
+    adjoint.row3.t =  + this.row2.x * a3 - this.row2.y * a1 + this.row2.z * a0;
+  }
+  return true;//Dummy; make this an r-value func
+}
+
+/// Returns the determinant of this matrix
+inline Float64 Mat44_d.determinant() {
+  Float64 det;
+  Mat44_d dummy;
+  this.internalCompute(true, det, false, dummy);
+  return det;
+}
+
+/// Returns the adjoint matrix of this matrix
+inline Mat44_d Mat44_d.adjoint() {
+  Float64 dummy;
+  Mat44_d adjoint;
+  this.internalCompute(false, dummy, true, adjoint);
+  return adjoint;
+}
+
+/// Returns the inverse matrix of this matrix
+inline Mat44_d Mat44_d.inverse() {
+  Float64 det;
+  Mat44_d adjoint;
+  this.internalCompute(true, det, true, adjoint);
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( det ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( det, "Mat44_d.inverse" );
+  return adjoint / det;
+}
+
+/// Returns the inverse matrix of this matrix, always checking the determinant value.
+inline Mat44_d Mat44_d.inverse_safe() {
+  Float64 det;
+  Mat44_d adjoint;
+  this.internalCompute(true, det, true, adjoint);
+  if( Math_badDivisor( det ) )
+    return adjoint;
+  return adjoint / det;
+}
+
+/// Returns the transposed matrix of this matrix
+inline Mat44_d Mat44_d.transpose() {
+  Mat44_d r;
+  r.setColumns(this.row0,this.row1,this.row2,this.row3);
+  return r;
+}
+
+/// Returns the translation components of
+/// this matrix as a Vec3_d
+inline Vec3_d Mat44_d.translation() {
+  Vec3_d result;
+  result.x = this.row0.t;
+  result.y = this.row1.t;
+  result.z = this.row2.t;
+  return result;
+}
+
+/// Sets the translation components 
+/// of this matrix to 0.0
+inline Mat44_d.zeroTranslation!() {
+  this.row0.t = Float64();
+  this.row1.t = Float64();
+  this.row2.t = Float64();
+}
+
+/// Sets the translation components 
+/// of this matrix to a given Vec3_d
+inline Mat44_d.setTranslation!(Vec3_d tr) {
+  this.row0.t = tr.x;
+  this.row1.t = tr.y;
+  this.row2.t = tr.z;
+}
+
+/// replaces the upper left 3 x 3 components from a Mat33_d.
+inline Mat44_d.setUpperLeft!(in Mat33_d m) {
+  this.row0.x = m.row0.x; this.row0.y = m.row0.y; this.row0.z = m.row0.z;
+  this.row1.x = m.row1.x; this.row1.y = m.row1.y; this.row1.z = m.row1.z;
+  this.row2.x = m.row2.x; this.row2.y = m.row2.y; this.row2.z = m.row2.z;
+}
+
+/// set the upper left 3 x 3 components from a Quat_d.
+/// \note This will replace all the upper left, including scaling components if there was
+inline Mat44_d.setRotation!(in Quat_d q) {
+  this.setUpperLeft(q.toMat33_d());
+}
+
+/// Sets the scaling of the matrix by scaling the rows of the matrix. 
+/// \note This will preserve the existing matrix content
+inline Mat44_d.setScaling!(in Vec3_d v) {
+  Float64 len;
+
+  Vec3_d col0(this.row0.x, this.row1.x, this.row2.x);
+  Vec3_d col1(this.row0.y, this.row1.y, this.row2.y);
+  Vec3_d col2(this.row0.z, this.row1.z, this.row2.z);
+  
+  len = col0.length();
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( len ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( len, "Mat44_d.setScaling: Matrix is singular" );
+  col0 *= (v.x / len);
+
+  len = col1.length(); 
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( len ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( len, "Mat44_d.setScaling: Matrix is singular" );
+  col1 *= (v.y / len);
+
+  len = col2.length(); 
+  if( Fabric_Guarded && !Fabric_OnGPU && Math_badDivisor( len ) )//Perf: check first to avoid building the report string
+    Math_reportBadDivisor( len, "Mat44_d.setScaling: Matrix is singular" );
+  col2 *= (v.z / len);
+
+  this.row0.x = col0.x;
+  this.row1.x = col0.y;
+  this.row2.x = col0.z;
+
+  this.row0.y = col1.x;
+  this.row1.y = col1.y;
+  this.row2.y = col1.z;
+
+  this.row0.z = col2.x;
+  this.row1.z = col2.y;
+  this.row2.z = col2.z;
+}
+
+/// Returns the upper left 3 x 3 components
+/// of this matrix as a Mat33_d
+inline Mat33_d Mat44_d.upperLeft() {
+  Mat33_d result;
+
+  result.row0.x = this.row0.x;
+  result.row0.y = this.row0.y;
+  result.row0.z = this.row0.z;
+
+  result.row1.x = this.row1.x;
+  result.row1.y = this.row1.y;
+  result.row1.z = this.row1.z;
+
+  result.row2.x = this.row2.x;
+  result.row2.y = this.row2.y;
+  result.row2.z = this.row2.z;
+
+  return result;
+}
+
+
+/// Decompose the Mat44_d into the scaling, rotation and
+/// translation components and return them in the provided io args.
+/// Returns true if and only if the decomposition was lossless (and there were no issues)
+/// \param scaling Returns the decomposed scaling value of the Mat44_d
+/// \param rotation Returns the decomposed rotation value of the Mat44_d
+/// \param translation Returns the decomposed translation value of the Mat44_d
+/// \param silent If true, won't report Math warnings
+/// \param additionalLossChecks If true, will perform additional checks for the the losses during the conversion
+Boolean Mat44_d.decompose?(
+  out Vec3_d scaling,
+  out Mat33_d rotation,
+  out Vec3_d translation,
+  in Boolean silent,
+  in Boolean additionalLossChecks
+)
+{
+
+  if (abs(1.0 - this.row3.t) > 0.001) {
+    if( Fabric_Guarded && !Fabric_OnGPU && !silent )Math_reportWarning('Mat44_d.decompose: Cannot handle denormalized matrices: ' + this.row3.t);
+    rotation.setIdentity();
+    scaling = Vec3_d(1.0, 1.0, 1.0);
+    return false;
+  }
+
+  if ( abs(this.row3.x) > PRECISION || abs(this.row3.y) > PRECISION || abs(this.row3.z) > PRECISION ) {
+    if( Fabric_Guarded && !Fabric_OnGPU && !silent )Math_reportWarning('Mat44_d.decompose: Cannot handle perspective projection matrices');
+    rotation.setIdentity();
+    scaling = Vec3_d(1.0, 1.0, 1.0);
+    return false;
+  }
+
+  // A Mat33 is a pure rotation if and only if its determinant is 1 and it is orthogonal
+  Boolean success = true;
+
+  // Grab the translation
+  translation.x = this.row0.t;
+  translation.y = this.row1.t;
+  translation.z = this.row2.t;
+
+  Vec3_d col0(this.row0.x, this.row1.x, this.row2.x);
+  Vec3_d col1(this.row0.y, this.row1.y, this.row2.y);
+  Vec3_d col2(this.row0.z, this.row1.z, this.row2.z);
+
+  // Grab the X scale and normalize the first column
+  scaling.x = col0.length();
+  if( Math_badDivisor( scaling.x ) )
+  {
+    success = false;
+    if( Fabric_Guarded && !Fabric_OnGPU && !silent )//Perf: check first to avoid building the report string
+      Math_reportBadDivisor( scaling.x, "Mat44_d.decompose: Matrix is singular" );
+  }
+  col0 /= scaling.x;
+
+  // Make the 2nd row orthogonal to the 1st
+  {
+    Vec3_d colD = col0 * col0.dot(col1);
+    if( additionalLossChecks && !( colD.lengthSquared() < PRECISION ) )
+    {
+      success = false;
+      if( !silent )
+        Math_reportWarning( "Mat44_d.decompose: Non-orthogonal rotation matrix" );
+    }
+    col1 -= colD;
+  }
+
+  // Grab the Y scale and normalize
+  scaling.y = col1.length();
+  if( Math_badDivisor( scaling.y ) )
+  {
+    success = false;
+    if( Fabric_Guarded && !Fabric_OnGPU && !silent )//Perf: check first to avoid building the report string
+      Math_reportBadDivisor( scaling.y, "Mat44_d.decompose: Matrix is singular" );
+  }
+  col1 /= scaling.y;
+
+  // Make the 3rd row orthogonal to the 1st and 2nd
+  {
+    Vec3_d colD0 = col0 * col0.dot(col2);
+    Vec3_d colD1 = col1 * col1.dot(col2);
+    if( additionalLossChecks
+      && !( ( colD0.lengthSquared() < PRECISION ) && ( colD1.lengthSquared() < PRECISION ) ) )
+    {
+      success = false;
+      if( !silent )
+        Math_reportWarning( "Mat44_d.decompose: Non-orthogonal rotation matrix" );
+    }
+    col2 -= colD0;
+    col2 -= colD1;
+  }
+
+  scaling.z = col2.length();
+  if( Math_badDivisor( scaling.z ) )
+  {
+    success = false;
+    if( Fabric_Guarded && !Fabric_OnGPU && !silent )//Perf: check first to avoid building the report string
+      Math_reportBadDivisor( scaling.z, "Mat44_d.decompose: Matrix is singular" );
+  }
+  col2 /= scaling.z;
+
+  rotation = Mat33_d(col0.x, col1.x, col2.x,
+              col0.y, col1.y, col2.y,
+              col0.z, col1.z, col2.z);
+
+  // Fix negative scaling
+  Float64 det = rotation.determinant();
+  if( det < -PRECISION ) {
+    //Negative scales on 2 axis is the same as a 180 deg rot, and negative scales on 3 axis is the same as a 180 deg rot + negative scale on 1 axis.
+    //So we we'll just pick X axis and scale it negatively.
+    scaling.x = -scaling.x;
+    rotation.row0.x = -rotation.row0.x;
+    rotation.row1.x = -rotation.row1.x;
+    rotation.row2.x = -rotation.row2.x;
+    det = -det;
+  }
+
+  // The determinant must be 1.0
+  if( additionalLossChecks && !( abs( det - 1.0 ) < PRECISION ) )
+  {
+    success = false;
+    if( !silent )
+      Math_reportWarning( "Mat44_d.decompose: Determinant (= " + det + ") is not 1.0 (not a pure rotation matrix)" );
+  }
+
+  return success;
+}
+
+/// Decompose the Mat44_d into the scaling, rotation and
+/// translation components and return them in the provided io args.
+/// \param scaling Returns the decomposed scaling value of the Mat44_d
+/// \param rotation Returns the decomposed rotation value of the Mat44_d
+/// \param translation Returns the decomposed translation value of the Mat44_d
+inline Mat44_d.decompose?(out Vec3_d scaling, out Mat33_d rotation, out Vec3_d translation)
+{
+  this.decompose( scaling, rotation, translation, false, false );
+}
+
+
+/// Decompose the Mat44_d into the scaling, shearing, rotation and
+/// translation components and return them in the provided io args.
+/// Returns true if and only if the decomposition was lossless (and there were no issues)
+/// \param scaling Returns the decomposed scaling value of the Mat44_d
+/// \param shearing Returns the decomposed shearing value of the Mat44_d, as {x shearing along y, x shearing along z, y shearing along z}.
+/// \param rotation Returns the decomposed rotation value of the Mat44_d
+/// \param translation Returns the decomposed translation value of the Mat44_d
+/// \param silent If true, won't report Math warnings
+/// \param additionalLossChecks If true, will perform additional checks for the the losses during the conversion
+Boolean Mat44_d.decompose?(
+  out Vec3_d scaling,
+  out Vec3_d shearing,
+  out Mat33_d rotation,
+  out Vec3_d translation,
+  in Boolean silent,
+  in Boolean additionalLossChecks
+)
+{
+
+  if (abs(1.0 - this.row3.t) > 0.001) {
+    if( Fabric_Guarded && !Fabric_OnGPU && !silent )Math_reportWarning('Mat44_d.decompose: Cannot handle denormalized matrices: ' + this.row3.t);
+    rotation.setIdentity();
+    scaling = Vec3_d(1.0, 1.0, 1.0);
+    return false;
+  }
+
+  if ( abs(this.row3.x) > PRECISION || abs(this.row3.y) > PRECISION || abs(this.row3.z) > PRECISION ) {
+    if( Fabric_Guarded && !Fabric_OnGPU && !silent )Math_reportWarning('Mat44_d.decompose: Cannot handle perspective projection matrices');
+    rotation.setIdentity();
+    scaling = Vec3_d(1.0, 1.0, 1.0);
+    return false;
+  }
+
+  // Grab the translation
+  translation.x = this.row0.t;
+  translation.y = this.row1.t;
+  translation.z = this.row2.t;
+
+  return this.upperLeft().decompose( scaling, shearing, rotation, silent, additionalLossChecks );
+}
+
+/// Decompose the Mat44_d into the scaling, shearing, rotation and
+/// translation components and return them in the provided io args.
+/// \param scaling Returns the decomposed scaling value of the Mat44_d
+/// \param shearing Returns the decomposed shearing value of the Mat44_d, as {x shearing along y, x shearing along z, y shearing along z}.
+/// \param rotation Returns the decomposed rotation value of the Mat44_d
+/// \param translation Returns the decomposed translation value of the Mat44_d
+inline Mat44_d.decompose?(out Vec3_d scaling, out Vec3_d shearing, out Mat33_d rotation, out Vec3_d translation) {
+  this.decompose( scaling, shearing, rotation, translation, false, false );
+}
+
+
+
+
+/// Sets from Vec.
+inline Mat44_d(Vec_d vec) {
+  this.set(vec);
+}
+
+/// Sets from Vec.
+inline Mat44_d.set!(Vec_d vec) {
+  this.row0.x = vec.get(0);
+  this.row0.y = vec.get(1);
+  this.row0.z = vec.get(2);
+  this.row0.t = vec.get(3);
+  this.row1.x = vec.get(4);
+  this.row1.y = vec.get(5);
+  this.row1.z = vec.get(6);
+  this.row1.t = vec.get(7);
+  this.row2.x = vec.get(8);
+  this.row2.y = vec.get(9);
+  this.row2.z = vec.get(10);
+  this.row2.t = vec.get(11);
+  this.row3.x = vec.get(12);
+  this.row3.y = vec.get(13);
+  this.row3.z = vec.get(14);
+  this.row3.t = vec.get(15);
+}
+
+
+/// Converts to Vec.
+inline Vec_d Mat44_d.toVec() {
+  Vec_d vec(4);
+  vec.set(0, this.row0.x);
+  vec.set(1, this.row0.y);
+  vec.set(2, this.row0.z);
+  vec.set(3, this.row0.t);
+  vec.set(4, this.row1.x);
+  vec.set(5, this.row1.y);
+  vec.set(6, this.row1.z);
+  vec.set(7, this.row1.t);
+  vec.set(8, this.row2.x);
+  vec.set(9, this.row2.y);
+  vec.set(10, this.row2.z);
+  vec.set(11, this.row2.t);
+  vec.set(12, this.row3.x);
+  vec.set(13, this.row3.y);
+  vec.set(14, this.row3.z);
+  vec.set(15, this.row3.t);
+  return vec;
+}
+

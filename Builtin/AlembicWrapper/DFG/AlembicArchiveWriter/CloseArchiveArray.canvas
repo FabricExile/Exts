@@ -1,0 +1,58 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "closes the file after writing\n\nSupported types:\n  this: AlembicArchiveWriter\n  close: Boolean\n"
+    },
+  "title" : "CloseArchive[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicArchiveWriter[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "close",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "Boolean[]" : [
+          false
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "Boolean[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "49E78AF9A840F211E931AD6F8396CE01",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicArchiveWriter_closeArchive_task<<<index>>>(
+  io AlembicArchiveWriter[] this
+, in Boolean[] close
+) {
+  this[index < this.size() ? index : this.size() - 1].closeArchive(close[index < close.size() ? index : close.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( close.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < close.size()) task_size = close.size();
+  for(Size index = 0; index < task_size; index++) {
+    AlembicWrapper_AlembicArchiveWriter_closeArchive_task(index, this, close);
+  }
+}
+"
+  }

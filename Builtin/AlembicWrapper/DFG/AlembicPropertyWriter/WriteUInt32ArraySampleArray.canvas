@@ -1,0 +1,67 @@
+{
+  "objectType" : "Func",
+  "metadata" : {
+    "uiTooltip" : "stores the value in the property as a UInt32.\n\nSupported types:\n  this: AlembicPropertyWriter\n  values: UInt32[]\n  result: Boolean\n"
+    },
+  "title" : "WriteUInt32ArraySample[]",
+  "ports" : [
+    {
+      "objectType" : "ExecPort",
+      "name" : "exec",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "Execute"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "this",
+      "nodePortType" : "IO",
+      "execPortType" : "IO",
+      "typeSpec" : "AlembicPropertyWriter[]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "values",
+      "nodePortType" : "Out",
+      "defaultValues" : {
+        "UInt32[][]" : [
+          []
+          ]
+        },
+      "execPortType" : "In",
+      "typeSpec" : "UInt32[][]"
+      },
+    {
+      "objectType" : "ExecPort",
+      "name" : "result",
+      "nodePortType" : "In",
+      "execPortType" : "Out",
+      "typeSpec" : "Boolean[]"
+      }
+    ],
+  "extDeps" : {
+    "AlembicWrapper" : "*"
+    },
+  "presetGUID" : "8443649381CC8E8D45DF3ED753E1061A",
+  "code" : "require AlembicWrapper;
+
+operator AlembicWrapper_AlembicPropertyWriter_writeUInt32ArraySample_task<<<index>>>(
+  io Boolean[] result
+, io AlembicPropertyWriter[] this
+, in UInt32[][] values
+) {
+  result[index] = this[index < this.size() ? index : this.size() - 1].writeUInt32ArraySample(values[index < values.size() ? index : values.size() - 1]);
+}
+
+dfgEntry {
+  if( this.size() == 0) return;
+  if( values.size() == 0) return;
+  Size task_size = this.size();
+  if(task_size < values.size()) task_size = values.size();
+  result.resize(task_size);
+  for(Size index = 0; index < task_size; index++) {
+    AlembicWrapper_AlembicPropertyWriter_writeUInt32ArraySample_task(index, result, this, values);
+  }
+}
+"
+  }

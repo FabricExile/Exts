@@ -1,0 +1,184 @@
+/*
+ *  Copyright (c) 2010-2016, Fabric Software Inc. All rights reserved.
+ */
+
+namespace Tool {
+
+  /// \internal
+  struct BaseHierarchyNode_childData {
+    String name;
+    Object child;
+    Ref<HierarchyNode> hierChild;
+  };
+
+  /// Implements base functionality for the HierarchyNode interface.
+  /// See:ref:`TPG.hierarchy - properties` for more information about tool hierarchy and components.
+  object BaseHierarchyNode : HierarchyNode, Component{
+
+    private String name;// if there is a parent, this must be in synch with parent's name for "this"
+    private BaseHierarchyNode_childData children[];
+    private Index nameToChildIndex[String];
+    private Index objectToChildIndex[Object];
+
+    private Ref<Object> parent_;//Ref: avoid circular references (leak)
+    private Ref<HierarchyNode> parentHierarchyNode;
+
+    Ref<HierarchyNode> container;//If we are a sub-component, this should be the interface entry point being used
+  };
+
+  BaseHierarchyNode() {
+    this.container = this;
+  }
+
+  /// \internal
+  /// \param container This is not the parent, but rather "this" owner under a composition usage (HasA)
+  BaseHierarchyNode.setContainer!( Ref<HierarchyNode> container ) {
+    this.container = container;
+  }
+
+  String BaseHierarchyNode.getName() {
+    return this.name;
+  }
+
+  BaseHierarchyNode.setName!( String name ) {
+    if( Boolean( this.name ) && this.name != name && Boolean( this.parentHierarchyNode ) )
+      throw( "BaseHierarchyNode.setName: not supported if a parent is defined" );
+    this.name = name;
+  }
+
+  String BaseHierarchyNode.getPath() {
+    String parentPath;
+    if( this.parentHierarchyNode ) {
+      parentPath = this.parentHierarchyNode.getPath();
+      return parentPath + '/' + this.name;
+    } else
+      return this.name;
+  }
+
+  Ref<Object> BaseHierarchyNode.getParent() {
+    return this.parent_;
+  }
+
+  Size BaseHierarchyNode.childCount() {
+    return this.children.size();
+  }
+
+  Ref<Object> BaseHierarchyNode.getChild( Index i ) {
+    return this.children[i].child;
+  }
+
+  Ref<Object> BaseHierarchyNode.getChild( String subPath ) {
+    Index childIndex = this.nameToChildIndex.get( subPath, InvalidIndex );
+    if( childIndex != InvalidIndex )
+      return this.children[childIndex].child;
+
+    // Check if it is a path
+    String partition[] = subPath.partition( '/' );
+    if( partition[2] ) {
+      Ref<HierarchyNode> child = this.getChild( partition[0] );
+      if( !child )
+        return null;
+      return child.getChild( partition[2] );
+    }
+    return null;
+  }
+
+  String BaseHierarchyNode.getChildName( Index i ) {
+    return this.children[i].name;
+  }
+
+  String BaseHierarchyNode.getChildName( Ref<Object> child ) {
+    Index childIndex = this.objectToChildIndex.get( child, InvalidIndex );
+    return childIndex == InvalidIndex ? String() : this.children[childIndex].name;
+  }
+
+  Ref<Object> BaseHierarchyNode.addChild!( String name, Ref<Object> child ) {
+    Index childIndex = this.nameToChildIndex.get( name, InvalidIndex );
+    if( childIndex != InvalidIndex )
+      this.removeChild( name );
+
+    if( this.objectToChildIndex.has( child ) )
+      throw( "BaseHierarchyNode.addChild: " + this.getPath() + " already has this child under another name" );
+
+    childIndex = this.children.size();
+
+    BaseHierarchyNode_childData childData;
+    childData.name = name;
+    childData.child = child;
+    childData.hierChild = child;
+    this.children.push( childData );
+    if( childData.hierChild ) {
+      childData.hierChild.setName( name );
+      childData.hierChild.setParent( this.container );
+    }
+
+    if( StructureDebugTrace )
+      report( "AddChild: " + this.getPath() + "/" + name + " (type =" + child.type() + ", index = " + childIndex + ")" );
+
+    this.nameToChildIndex[name] = childIndex;
+    this.objectToChildIndex[child] = childIndex;
+    return child;
+  }
+
+  BaseHierarchyNode.removeChild!( String name ) {
+    Index childIndex = this.nameToChildIndex.get( name, InvalidIndex );
+    if( childIndex == InvalidIndex )
+      throw( "BaseHierarchyNode.removeChild: " + this.getPath() + " has no child '" + name + "'" );
+
+    this.nameToChildIndex.delete( name );
+    this.objectToChildIndex.delete( this.children[childIndex].child );
+    if( this.children[childIndex].hierChild )
+      this.children[childIndex].hierChild.setParent( null );
+
+    if( StructureDebugTrace )
+      report( "RemoveChild: " + this.getPath() + "/" + name + " (type =" + this.children[childIndex].child.type() + ", index = " + childIndex + ")" );
+
+    // shuffle so there is no hole in the index range
+    Index lastIndex = this.children.size() - 1;
+    if( childIndex != lastIndex ) {
+      this.nameToChildIndex.delete( this.children[lastIndex].name );
+      this.objectToChildIndex.delete( this.children[lastIndex].child );
+      this.nameToChildIndex[this.children[lastIndex].name] = childIndex;
+      this.objectToChildIndex[this.children[lastIndex].child] = childIndex;
+      this.children[childIndex] = this.children[lastIndex];
+    }
+    this.children.resize( lastIndex );
+  }
+
+  BaseHierarchyNode.setParent!( Ref<Object> parent_ ) {
+    if( Boolean( this.parent_ ) && this.parent_ !== parent_ && Boolean( parent_ ) )
+      throw( "Error: " + this.getPath() + " already has a parent" );
+
+    if( this.parent_ !== parent_ ) {
+      this.parent_ = parent_;
+      this.parentHierarchyNode = parent_;
+      this.container.parentHierarchyChanged();
+    }
+  }
+
+  /// Notify children recursively
+  BaseHierarchyNode.parentHierarchyChanged!( ) {
+    for( Size i = 0; i < this.children.size(); ++i ) {
+      if( this.children[i].hierChild )
+        this.children[i].hierChild.parentHierarchyChanged();
+    }
+  }
+
+  /// \internal
+  /// To be overriden.
+  BaseHierarchyNode.componentAdded!( Ref<Component> child ) {
+    if( this.objectToChildIndex.get( child, InvalidIndex ) == InvalidIndex )
+      report( "BaseHierarchyNode.componentAdded: warning: added component is not a child: " + child.getPath() );
+  }
+
+  /// \internal
+  /// To be overriden.
+  BaseHierarchyNode.componentRemoved!( Ref<Component> child ) {}
+
+  /// \internal
+  BaseHierarchyNode.invalidate!( ) {
+    this.parent_ = null;
+    this.parentHierarchyNode = null;
+    this.container = null;
+  }
+}// namespace Tool
